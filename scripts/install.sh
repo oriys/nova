@@ -1,125 +1,95 @@
 #!/bin/bash
 # Nova Serverless Platform - Linux Server Setup
-# Run this script on your Linux server to install all dependencies
-#
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/oriys/nova/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/oriys/nova/main/scripts/install.sh | sudo bash
 # Or:
-#   scp scripts/install.sh user@server:/tmp/ && ssh user@server 'bash /tmp/install.sh'
+#   scp scripts/install.sh user@server:/tmp/ && ssh user@server 'sudo bash /tmp/install.sh'
 
 set -e
 
-NOVA_VERSION="${NOVA_VERSION:-latest}"
 INSTALL_DIR="/opt/nova"
 FC_VERSION="v1.7.0"
 KERNEL_URL="https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.11/x86_64/vmlinux-5.10.225"
+ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-minirootfs-3.19.0-x86_64.tar.gz"
+WASMTIME_VERSION="v18.0.2"
+ROOTFS_SIZE_MB=256
 
-RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+RED='\033[0;31m'
 NC='\033[0m'
 
 log()  { echo -e "${GREEN}[+]${NC} $1"; }
 warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 err()  { echo -e "${RED}[!]${NC} $1" >&2; exit 1; }
 
-check_root() {
-    [[ $EUID -eq 0 ]] || err "Please run as root: sudo $0"
-}
-
+# ─── Checks ──────────────────────────────────────────────
+check_root()   { [[ $EUID -eq 0 ]] || err "Run as root: sudo $0"; }
 check_system() {
-    [[ "$(uname)" == "Linux" ]] || err "This script only works on Linux"
-    [[ "$(uname -m)" == "x86_64" ]] || err "Only x86_64 architecture is supported"
-
-    # Check KVM support
-    if [[ ! -e /dev/kvm ]]; then
-        warn "/dev/kvm not found. Firecracker requires KVM support."
-        warn "If running in a VM, enable nested virtualization."
-    fi
+    [[ "$(uname)" == "Linux" ]]   || err "Linux only"
+    [[ "$(uname -m)" == "x86_64" ]] || err "x86_64 only"
+    [[ -e /dev/kvm ]] || warn "/dev/kvm not found - Firecracker needs KVM"
 }
 
 install_deps() {
     log "Installing dependencies..."
     if command -v apt-get &>/dev/null; then
-        apt-get update
-        apt-get install -y curl wget e2fsprogs debootstrap
+        apt-get update -qq
+        apt-get install -y -qq curl e2fsprogs >/dev/null
     elif command -v yum &>/dev/null; then
-        yum install -y curl wget e2fsprogs
-    elif command -v apk &>/dev/null; then
-        apk add curl wget e2fsprogs
+        yum install -y -q curl e2fsprogs
     fi
 }
 
+# ─── Firecracker ─────────────────────────────────────────
 install_firecracker() {
+    if command -v firecracker &>/dev/null; then
+        log "Firecracker already installed: $(firecracker --version)"
+        return
+    fi
     log "Installing Firecracker ${FC_VERSION}..."
-    local tmp_dir=$(mktemp -d)
-    cd "${tmp_dir}"
-
-    curl -fsSL -o firecracker.tgz \
+    local tmp=$(mktemp -d)
+    curl -fsSL -o "${tmp}/fc.tgz" \
         "https://github.com/firecracker-microvm/firecracker/releases/download/${FC_VERSION}/firecracker-${FC_VERSION}-x86_64.tgz"
-    tar -xzf firecracker.tgz
-
-    mv release-*/firecracker-* /usr/local/bin/firecracker
-    mv release-*/jailer-* /usr/local/bin/jailer
+    tar -xzf "${tmp}/fc.tgz" -C "${tmp}"
+    mv ${tmp}/release-*/firecracker-* /usr/local/bin/firecracker
+    mv ${tmp}/release-*/jailer-*      /usr/local/bin/jailer
     chmod +x /usr/local/bin/firecracker /usr/local/bin/jailer
-
-    cd /
-    rm -rf "${tmp_dir}"
-
-    log "Firecracker installed: $(firecracker --version)"
+    rm -rf "${tmp}"
+    log "Firecracker $(firecracker --version)"
 }
 
-setup_dirs() {
-    log "Creating directories..."
-    mkdir -p ${INSTALL_DIR}/{kernel,rootfs,bin}
-    mkdir -p /tmp/nova/{sockets,vsock,logs}
-    chmod 755 ${INSTALL_DIR} /tmp/nova
-}
-
+# ─── Kernel ──────────────────────────────────────────────
 download_kernel() {
     log "Downloading kernel..."
+    mkdir -p ${INSTALL_DIR}/kernel
     curl -fsSL -o ${INSTALL_DIR}/kernel/vmlinux "${KERNEL_URL}"
-    chmod 644 ${INSTALL_DIR}/kernel/vmlinux
-    log "Kernel ready: ${INSTALL_DIR}/kernel/vmlinux"
+    log "Kernel: ${INSTALL_DIR}/kernel/vmlinux ($(du -h ${INSTALL_DIR}/kernel/vmlinux | cut -f1))"
 }
 
-build_rootfs() {
-    local runtime=$1
-    local output="${INSTALL_DIR}/rootfs/${runtime}.ext4"
-    local size_mb=256
-    local mount_dir=$(mktemp -d)
+# ─── Rootfs builder ─────────────────────────────────────
+#
+# Only 3 images:
+#   base.ext4   - Alpine + init + nova-agent (for Go/Rust)
+#   python.ext4 - base + python3
+#   wasm.ext4   - base + wasmtime
+#
+build_base_rootfs() {
+    local output="${INSTALL_DIR}/rootfs/base.ext4"
+    local mnt=$(mktemp -d)
 
-    log "Building ${runtime} rootfs..."
-
-    # Create ext4 image
-    dd if=/dev/zero of="${output}" bs=1M count=${size_mb} 2>/dev/null
+    log "Building base rootfs..."
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
     mkfs.ext4 -F -q "${output}"
-    mount -o loop "${output}" "${mount_dir}"
+    mount -o loop "${output}" "${mnt}"
 
-    # Download Alpine minirootfs
-    local alpine_url="https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-minirootfs-3.19.0-x86_64.tar.gz"
-    curl -fsSL "${alpine_url}" | tar -xzf - -C "${mount_dir}"
+    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
 
-    # Install runtime
-    case "${runtime}" in
-        python)
-            chroot "${mount_dir}" /bin/sh -c "apk add --no-cache python3 py3-pip"
-            ;;
-        go)
-            chroot "${mount_dir}" /bin/sh -c "apk add --no-cache go"
-            ;;
-        rust)
-            chroot "${mount_dir}" /bin/sh -c "apk add --no-cache libgcc libstdc++"
-            ;;
-        wasm)
-            # Install wasmtime
-            curl -fsSL "https://github.com/bytecodealliance/wasmtime/releases/download/v18.0.2/wasmtime-v18.0.2-x86_64-linux.tar.xz" \
-                | tar -xJf - -C "${mount_dir}/usr/local/bin" --strip-components=1 --wildcards '*/wasmtime'
-            ;;
-    esac
+    # DNS
+    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
-    # Create init script
-    cat > "${mount_dir}/init" << 'INIT'
+    # init
+    cat > "${mnt}/init" << 'INIT'
 #!/bin/sh
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
@@ -128,77 +98,100 @@ ip link set lo up
 ip link set eth0 up 2>/dev/null
 exec /usr/local/bin/nova-agent
 INIT
-    chmod +x "${mount_dir}/init"
+    chmod +x "${mnt}/init"
 
-    # Copy nova-agent if exists
-    [[ -f ${INSTALL_DIR}/bin/nova-agent ]] && cp ${INSTALL_DIR}/bin/nova-agent "${mount_dir}/usr/local/bin/"
+    # Copy nova-agent if already present
+    [[ -f ${INSTALL_DIR}/bin/nova-agent ]] && \
+        cp ${INSTALL_DIR}/bin/nova-agent "${mnt}/usr/local/bin/" && \
+        chmod +x "${mnt}/usr/local/bin/nova-agent"
 
-    umount "${mount_dir}"
-    rmdir "${mount_dir}"
-    log "Created: ${output} ($(du -h ${output} | cut -f1))"
+    umount "${mnt}" && rmdir "${mnt}"
+    log "base.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
+build_python_rootfs() {
+    local base="${INSTALL_DIR}/rootfs/base.ext4"
+    local output="${INSTALL_DIR}/rootfs/python.ext4"
+    local mnt=$(mktemp -d)
+
+    log "Building python rootfs (base + python3)..."
+    cp "${base}" "${output}"
+    mount -o loop "${output}" "${mnt}"
+
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache python3 py3-pip" >/dev/null 2>&1
+
+    umount "${mnt}" && rmdir "${mnt}"
+    log "python.ext4 ready ($(du -h ${output} | cut -f1))"
+}
+
+build_wasm_rootfs() {
+    local base="${INSTALL_DIR}/rootfs/base.ext4"
+    local output="${INSTALL_DIR}/rootfs/wasm.ext4"
+    local mnt=$(mktemp -d)
+
+    log "Building wasm rootfs (base + wasmtime)..."
+    cp "${base}" "${output}"
+    mount -o loop "${output}" "${mnt}"
+
+    curl -fsSL \
+        "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
+        | tar -xJf - -C "${mnt}/usr/local/bin" --strip-components=1 --wildcards '*/wasmtime'
+
+    umount "${mnt}" && rmdir "${mnt}"
+    log "wasm.ext4 ready ($(du -h ${output} | cut -f1))"
+}
+
+# ─── Redis ───────────────────────────────────────────────
 install_redis() {
-    log "Checking Redis..."
     if command -v redis-server &>/dev/null; then
         log "Redis already installed"
+        return
+    fi
+    log "Installing Redis..."
+    if command -v apt-get &>/dev/null; then
+        apt-get install -y -qq redis-server >/dev/null
+        systemctl enable --now redis-server
+    elif command -v yum &>/dev/null; then
+        yum install -y -q redis
+        systemctl enable --now redis
     else
-        if command -v apt-get &>/dev/null; then
-            apt-get install -y redis-server
-            systemctl enable redis-server
-            systemctl start redis-server
-        elif command -v yum &>/dev/null; then
-            yum install -y redis
-            systemctl enable redis
-            systemctl start redis
-        else
-            warn "Please install Redis manually"
-        fi
+        warn "Install Redis manually"
     fi
 }
 
-setup_permissions() {
-    log "Setting up permissions..."
-    # Allow non-root users to use KVM
-    if getent group kvm > /dev/null; then
-        chmod 666 /dev/kvm 2>/dev/null || true
-    fi
-}
-
-print_summary() {
-    echo ""
-    echo "============================================"
-    echo "  Nova Serverless Platform - Setup Complete"
-    echo "============================================"
-    echo ""
-    echo "Installed components:"
-    echo "  Firecracker: $(which firecracker)"
-    echo "  Kernel:      ${INSTALL_DIR}/kernel/vmlinux"
-    echo "  Rootfs:      ${INSTALL_DIR}/rootfs/*.ext4"
-    echo ""
-    echo "Next steps:"
-    echo "  1. Copy nova binary:  scp bin/nova server:${INSTALL_DIR}/bin/"
-    echo "  2. Copy nova-agent:   scp bin/nova-agent server:${INSTALL_DIR}/bin/"
-    echo "  3. Start Redis:       systemctl start redis"
-    echo "  4. Run nova:          ${INSTALL_DIR}/bin/nova --help"
-    echo ""
-}
-
+# ─── Main ────────────────────────────────────────────────
 main() {
     check_root
     check_system
     install_deps
-    setup_dirs
+
+    mkdir -p ${INSTALL_DIR}/{kernel,rootfs,bin}
+    mkdir -p /tmp/nova/{sockets,vsock,logs}
+
     install_firecracker
     download_kernel
 
-    for runtime in python go rust wasm; do
-        build_rootfs "${runtime}"
-    done
+    build_base_rootfs
+    build_python_rootfs
+    build_wasm_rootfs
 
     install_redis
-    setup_permissions
-    print_summary
+
+    # Permissions
+    chmod 666 /dev/kvm 2>/dev/null || true
+
+    echo ""
+    echo "========================================"
+    echo "  Nova Setup Complete"
+    echo "========================================"
+    echo ""
+    echo "  ${INSTALL_DIR}/kernel/vmlinux"
+    echo "  ${INSTALL_DIR}/rootfs/base.ext4     (Go, Rust)"
+    echo "  ${INSTALL_DIR}/rootfs/python.ext4   (Python)"
+    echo "  ${INSTALL_DIR}/rootfs/wasm.ext4     (WASM)"
+    echo ""
+    echo "  Next: copy bin/nova + bin/nova-agent to ${INSTALL_DIR}/bin/"
+    echo ""
 }
 
 main "$@"

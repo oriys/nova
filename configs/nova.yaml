@@ -1,14 +1,14 @@
 # Nova Serverless Platform Configuration
 
-# Redis configuration
+# Redis
 redis:
   addr: "localhost:6379"
   password: ""
   db: 0
 
-# Firecracker configuration
+# Firecracker
 firecracker:
-  binary: "/usr/bin/firecracker"
+  binary: "/usr/local/bin/firecracker"
   kernel: "/opt/nova/kernel/vmlinux"
   rootfs_dir: "/opt/nova/rootfs"
   socket_dir: "/tmp/nova/sockets"
@@ -16,13 +16,11 @@ firecracker:
   log_dir: "/tmp/nova/logs"
   boot_timeout: "10s"
 
-# VM Pool configuration
+# VM Pool
 pool:
-  # VM idle timeout (no calls within this duration = destroy)
-  idle_ttl: "60s"
+  idle_ttl: "60s"   # destroy VM after 1 min idle
 
-# Supported runtimes and their rootfs images:
-# - /opt/nova/rootfs/python.ext4  (Python 3.x)
-# - /opt/nova/rootfs/go.ext4      (Go 1.22)
-# - /opt/nova/rootfs/rust.ext4    (Rust binaries)
-# - /opt/nova/rootfs/wasm.ext4    (Wasmtime runtime)
+# Rootfs mapping:
+#   base.ext4   -> Go, Rust  (static binaries, no runtime needed)
+#   python.ext4 -> Python    (needs interpreter)
+#   wasm.ext4   -> WASM      (needs wasmtime)

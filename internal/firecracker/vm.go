@@ -111,7 +111,7 @@ func (m *Manager) CreateVM(ctx context.Context, runtime domain.Runtime) (*VM, er
 		LastUsed:   time.Now(),
 	}
 
-	rootfsPath := filepath.Join(m.config.RootfsDir, string(runtime)+".ext4")
+	rootfsPath := filepath.Join(m.config.RootfsDir, rootfsForRuntime(runtime))
 	if _, err := os.Stat(rootfsPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("rootfs not found for runtime %s: %s", runtime, rootfsPath)
 	}
@@ -277,6 +277,21 @@ func copyFile(src, dst string) error {
 
 	_, err = io.Copy(dstFile, srcFile)
 	return err
+}
+
+// rootfsForRuntime maps runtime to rootfs image.
+// Go and Rust are statically compiled, they share the minimal base image.
+// Python needs an interpreter, WASM needs wasmtime.
+func rootfsForRuntime(rt domain.Runtime) string {
+	switch rt {
+	case domain.RuntimePython:
+		return "python.ext4"
+	case domain.RuntimeWasm:
+		return "wasm.ext4"
+	default:
+		// Go, Rust: static binaries, base image is enough
+		return "base.ext4"
+	}
 }
 
 // Vsock message types
