@@ -1,0 +1,27 @@
+# Nova Serverless Platform Configuration
+
+# Redis configuration
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+# Firecracker configuration
+firecracker:
+  binary: "/usr/bin/firecracker"
+  kernel: "/opt/nova/kernel/vmlinux"
+  rootfs_dir: "/opt/nova/rootfs"
+  socket_dir: "/tmp/nova/sockets"
+  vsock_dir: "/tmp/nova/vsock"
+  log_dir: "/tmp/nova/logs"
+  boot_timeout: "10s"
+
+# VM Pool configuration
+pool:
+  # VM idle timeout (no calls within this duration = destroy)
+  idle_ttl: "60s"
+
+# Network configuration (optional, for advanced setups)
+network:
+  bridge: "novabr0"
+  subnet: "172.30.0.0/24"
