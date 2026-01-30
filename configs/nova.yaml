@@ -21,7 +21,8 @@ pool:
   # VM idle timeout (no calls within this duration = destroy)
   idle_ttl: "60s"
 
-# Network configuration (optional, for advanced setups)
-network:
-  bridge: "novabr0"
-  subnet: "172.30.0.0/24"
+# Supported runtimes and their rootfs images:
+# - /opt/nova/rootfs/python.ext4  (Python 3.x)
+# - /opt/nova/rootfs/go.ext4      (Go 1.22)
+# - /opt/nova/rootfs/rust.ext4    (Rust binaries)
+# - /opt/nova/rootfs/wasm.ext4    (Wasmtime runtime)

@@ -23,3 +23,7 @@ Thumbs.db
 
 # Temporary
 /tmp/
+
+# Assets (large binary files - download via make setup-kernel/setup-rootfs)
+assets/kernel/
+assets/rootfs/*.ext4
