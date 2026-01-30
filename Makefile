@@ -1,15 +1,23 @@
-.PHONY: build clean install setup-dirs setup-firecracker setup-kernel setup-rootfs setup-all
+.PHONY: build build-linux clean install deploy setup-dirs setup-firecracker setup-kernel setup-rootfs setup-all
 
 BINARY_DIR := bin
 NOVA_BIN := $(BINARY_DIR)/nova
+NOVA_LINUX := $(BINARY_DIR)/nova-linux
 AGENT_BIN := $(BINARY_DIR)/nova-agent
 ASSETS_DIR := assets
+SERVER ?= user@server
 
 build: $(NOVA_BIN) $(AGENT_BIN)
+
+build-linux: $(NOVA_LINUX) $(AGENT_BIN)
 
 $(NOVA_BIN): cmd/nova/main.go internal/**/*.go
 	@mkdir -p $(BINARY_DIR)
 	CGO_ENABLED=0 go build -o $@ ./cmd/nova
+
+$(NOVA_LINUX): cmd/nova/main.go internal/**/*.go
+	@mkdir -p $(BINARY_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $@ ./cmd/nova
 
 $(AGENT_BIN): cmd/agent/main.go
 	@mkdir -p $(BINARY_DIR)
@@ -20,6 +28,12 @@ clean:
 
 install: build
 	sudo cp $(NOVA_BIN) /usr/local/bin/nova
+
+# Deploy to Linux server (from macOS)
+# Usage: make deploy SERVER=user@your-server
+deploy: build-linux
+	@echo "Deploying to $(SERVER)..."
+	./scripts/deploy.sh $(SERVER)
 
 # Setup runtime directories
 setup-dirs:
