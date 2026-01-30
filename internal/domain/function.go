@@ -14,6 +14,16 @@ const (
 	RuntimeWasm   Runtime = "wasm"
 )
 
+// ExecutionMode determines how functions are executed
+type ExecutionMode string
+
+const (
+	// ModeProcess forks a new process for each invocation (default)
+	ModeProcess ExecutionMode = "process"
+	// ModePersistent keeps function process alive for connection reuse
+	ModePersistent ExecutionMode = "persistent"
+)
+
 func (r Runtime) IsValid() bool {
 	switch r {
 	case RuntimePython, RuntimeGo, RuntimeRust, RuntimeWasm:
@@ -40,6 +50,7 @@ type Function struct {
 	MemoryMB    int               `json:"memory_mb"`
 	TimeoutS    int               `json:"timeout_s"`
 	MinReplicas int               `json:"min_replicas"`
+	Mode        ExecutionMode     `json:"mode,omitempty"` // "process" or "persistent"
 	Limits      *ResourceLimits   `json:"limits,omitempty"`
 	EnvVars     map[string]string `json:"env_vars,omitempty"`
 	CreatedAt   time.Time         `json:"created_at"`

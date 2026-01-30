@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -27,6 +28,17 @@ const (
 	CodePath       = "/code/handler"
 )
 
+// ExecutionMode determines how functions are executed
+type ExecutionMode string
+
+const (
+	// ModeProcess: Fork new process for each invocation (default, isolated)
+	ModeProcess ExecutionMode = "process"
+	// ModePersistent: Keep function process alive, send requests via stdin/stdout
+	// Enables connection reuse for databases, etc.
+	ModePersistent ExecutionMode = "persistent"
+)
+
 type Message struct {
 	Type    int             `json:"type"`
 	Payload json.RawMessage `json:"payload"`
@@ -36,6 +48,7 @@ type InitPayload struct {
 	Runtime string            `json:"runtime"`
 	Handler string            `json:"handler"`
 	EnvVars map[string]string `json:"env_vars"`
+	Mode    ExecutionMode     `json:"mode,omitempty"` // "process" or "persistent"
 }
 
 type ExecPayload struct {
@@ -52,7 +65,11 @@ type RespPayload struct {
 }
 
 type Agent struct {
-	function *InitPayload
+	function          *InitPayload
+	persistentProc    *exec.Cmd
+	persistentIn      io.WriteCloser
+	persistentOut     *bufio.Reader
+	persistentOutRaw  io.ReadCloser
 }
 
 func main() {
@@ -162,13 +179,67 @@ func (a *Agent) handleInit(payload json.RawMessage) (*Message, error) {
 	if err := json.Unmarshal(payload, &init); err != nil {
 		return nil, err
 	}
+
+	// Default to process mode
+	if init.Mode == "" {
+		init.Mode = ModeProcess
+	}
+
 	a.function = &init
-	fmt.Printf("[agent] Init: runtime=%s handler=%s\n", init.Runtime, init.Handler)
+	fmt.Printf("[agent] Init: runtime=%s handler=%s mode=%s\n", init.Runtime, init.Handler, init.Mode)
+
+	// For persistent mode, start the process now
+	if init.Mode == ModePersistent {
+		if err := a.startPersistentProcess(); err != nil {
+			return nil, fmt.Errorf("start persistent process: %w", err)
+		}
+	}
 
 	return &Message{
 		Type:    MsgTypeResp,
 		Payload: json.RawMessage(`{"status":"initialized"}`),
 	}, nil
+}
+
+// startPersistentProcess starts a long-running function process for connection reuse
+func (a *Agent) startPersistentProcess() error {
+	var cmd *exec.Cmd
+	switch a.function.Runtime {
+	case "python":
+		// Python persistent mode: reads JSON lines from stdin, writes to stdout
+		cmd = exec.Command("python3", "-u", CodePath, "--persistent")
+	case "go", "rust":
+		cmd = exec.Command(CodePath, "--persistent")
+	default:
+		return fmt.Errorf("persistent mode not supported for runtime: %s", a.function.Runtime)
+	}
+
+	cmd.Env = append(os.Environ(), "NOVA_MODE=persistent")
+	for k, v := range a.function.EnvVars {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	a.persistentProc = cmd
+	a.persistentIn = stdin
+	a.persistentOutRaw = stdout
+	a.persistentOut = bufio.NewReader(stdout)
+
+	fmt.Printf("[agent] Persistent process started (pid=%d)\n", cmd.Process.Pid)
+	return nil
 }
 
 func (a *Agent) handleExec(payload json.RawMessage) (*Message, error) {
@@ -200,6 +271,12 @@ func (a *Agent) handleExec(payload json.RawMessage) (*Message, error) {
 }
 
 func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, error) {
+	// Use persistent mode if available
+	if a.function.Mode == ModePersistent && a.persistentProc != nil {
+		return a.executePersistent(input)
+	}
+
+	// Process mode: fork new process each time
 	if err := os.WriteFile("/tmp/input.json", input, 0644); err != nil {
 		return nil, err
 	}
@@ -209,7 +286,6 @@ func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, error) 
 	case "python":
 		cmd = exec.Command("python3", CodePath, "/tmp/input.json")
 	case "go", "rust":
-		// Permissions set during image creation
 		cmd = exec.Command(CodePath, "/tmp/input.json")
 	case "wasm":
 		cmd = exec.Command("wasmtime", CodePath, "--", "/tmp/input.json")
@@ -235,6 +311,58 @@ func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, error) 
 	}
 	result, _ := json.Marshal(string(output))
 	return result, nil
+}
+
+// executePersistent sends request to long-running process via stdin/stdout
+func (a *Agent) executePersistent(input json.RawMessage) (json.RawMessage, error) {
+	// Protocol: write JSON line to stdin, read JSON line from stdout
+	// Format: {"input": ...}\n -> {"output": ...}\n
+
+	req := map[string]json.RawMessage{"input": input}
+	reqBytes, _ := json.Marshal(req)
+	reqBytes = append(reqBytes, '\n')
+
+	if _, err := a.persistentIn.Write(reqBytes); err != nil {
+		// Process may have died, try to restart
+		a.stopPersistentProcess()
+		if err := a.startPersistentProcess(); err != nil {
+			return nil, fmt.Errorf("restart persistent process: %w", err)
+		}
+		if _, err := a.persistentIn.Write(reqBytes); err != nil {
+			return nil, fmt.Errorf("write to persistent process: %w", err)
+		}
+	}
+
+	// Read response line
+	line, err := a.persistentOut.ReadBytes('\n')
+	if err != nil {
+		return nil, fmt.Errorf("read from persistent process: %w", err)
+	}
+
+	var resp struct {
+		Output json.RawMessage `json:"output"`
+		Error  string          `json:"error,omitempty"`
+	}
+	if err := json.Unmarshal(line, &resp); err != nil {
+		return nil, fmt.Errorf("parse persistent response: %w", err)
+	}
+	if resp.Error != "" {
+		return nil, fmt.Errorf("%s", resp.Error)
+	}
+	return resp.Output, nil
+}
+
+func (a *Agent) stopPersistentProcess() {
+	if a.persistentProc != nil {
+		a.persistentIn.Close()
+		a.persistentOutRaw.Close()
+		a.persistentProc.Process.Kill()
+		a.persistentProc.Wait()
+		a.persistentProc = nil
+		a.persistentIn = nil
+		a.persistentOut = nil
+		a.persistentOutRaw = nil
+	}
 }
 
 func readMessage(conn net.Conn) (*Message, error) {

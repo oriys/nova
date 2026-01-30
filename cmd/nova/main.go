@@ -68,6 +68,7 @@ func registerCmd() *cobra.Command {
 		diskBandwidth  int64
 		netRxBandwidth int64
 		netTxBandwidth int64
+		mode           string
 		envVars        []string
 	)
 
@@ -110,6 +111,7 @@ func registerCmd() *cobra.Command {
 				MemoryMB:    memoryMB,
 				TimeoutS:    timeoutS,
 				MinReplicas: minReplicas,
+				Mode:        domain.ExecutionMode(mode),
 				EnvVars:     envMap,
 				CreatedAt:   time.Now(),
 				UpdatedAt:   time.Now(),
@@ -138,6 +140,7 @@ func registerCmd() *cobra.Command {
 			fmt.Printf("  Code:         %s\n", fn.CodePath)
 			fmt.Printf("  Memory:       %d MB\n", fn.MemoryMB)
 			fmt.Printf("  vCPUs:        %d\n", vcpus)
+			fmt.Printf("  Mode:         %s\n", fn.Mode)
 			fmt.Printf("  Min Replicas: %d\n", fn.MinReplicas)
 			if fn.Limits != nil {
 				if fn.Limits.DiskIOPS > 0 {
@@ -169,6 +172,7 @@ func registerCmd() *cobra.Command {
 	cmd.Flags().Int64Var(&netRxBandwidth, "net-rx-bandwidth", 0, "Max network RX bandwidth in bytes/s (0 = unlimited)")
 	cmd.Flags().Int64Var(&netTxBandwidth, "net-tx-bandwidth", 0, "Max network TX bandwidth in bytes/s (0 = unlimited)")
 	cmd.Flags().StringArrayVarP(&envVars, "env", "e", nil, "Environment variables (KEY=VALUE)")
+	cmd.Flags().StringVar(&mode, "mode", "process", "Execution mode (process, persistent)")
 
 	cmd.MarkFlagRequired("runtime")
 	cmd.MarkFlagRequired("code")
