@@ -11,7 +11,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/mdlayher/vsock"
+	"github.com/oriys/nova/internal/pkg/vsock"
 )
 
 const (
@@ -103,6 +103,8 @@ func mountCodeDrive() {
 	cmd := exec.Command("mount", "-t", "ext4", "-o", "ro", "/dev/vdb", CodeMountPoint)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "[agent] Mount /dev/vdb: %s (%v)\n", out, err)
+		// Critical failure: cannot access code
+		os.Exit(1)
 	} else {
 		fmt.Printf("[agent] Mounted code drive at %s\n", CodeMountPoint)
 	}
@@ -207,7 +209,7 @@ func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, error) 
 	case "python":
 		cmd = exec.Command("python3", CodePath, "/tmp/input.json")
 	case "go", "rust":
-		os.Chmod(CodePath, 0755)
+		// Permissions set during image creation
 		cmd = exec.Command(CodePath, "/tmp/input.json")
 	case "wasm":
 		cmd = exec.Command("wasmtime", CodePath, "--", "/tmp/input.json")

@@ -30,6 +30,7 @@ type Function struct {
 	CodePath  string            `json:"code_path"`
 	MemoryMB  int               `json:"memory_mb"`
 	TimeoutS  int               `json:"timeout_s"`
+	MinReplicas int             `json:"min_replicas"`
 	EnvVars   map[string]string `json:"env_vars,omitempty"`
 	CreatedAt time.Time         `json:"created_at"`
 	UpdatedAt time.Time         `json:"updated_at"`

@@ -62,6 +62,7 @@ func registerCmd() *cobra.Command {
 		codePath string
 		memoryMB int
 		timeoutS int
+		minReplicas int
 		envVars  []string
 	)
 
@@ -96,16 +97,17 @@ func registerCmd() *cobra.Command {
 			}
 
 			fn := &domain.Function{
-				ID:        uuid.New().String(),
-				Name:      name,
-				Runtime:   rt,
-				Handler:   handler,
-				CodePath:  codePath,
-				MemoryMB:  memoryMB,
-				TimeoutS:  timeoutS,
-				EnvVars:   envMap,
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
+				ID:          uuid.New().String(),
+				Name:        name,
+				Runtime:     rt,
+				Handler:     handler,
+				CodePath:    codePath,
+				MemoryMB:    memoryMB,
+				TimeoutS:    timeoutS,
+				MinReplicas: minReplicas,
+				EnvVars:     envMap,
+				CreatedAt:   time.Now(),
+				UpdatedAt:   time.Now(),
 			}
 
 			if err := s.SaveFunction(context.Background(), fn); err != nil {
@@ -113,11 +115,12 @@ func registerCmd() *cobra.Command {
 			}
 
 			fmt.Printf("Function registered:\n")
-			fmt.Printf("  ID:      %s\n", fn.ID)
-			fmt.Printf("  Name:    %s\n", fn.Name)
-			fmt.Printf("  Runtime: %s\n", fn.Runtime)
-			fmt.Printf("  Handler: %s\n", fn.Handler)
-			fmt.Printf("  Code:    %s\n", fn.CodePath)
+			fmt.Printf("  ID:           %s\n", fn.ID)
+			fmt.Printf("  Name:         %s\n", fn.Name)
+			fmt.Printf("  Runtime:      %s\n", fn.Runtime)
+			fmt.Printf("  Handler:      %s\n", fn.Handler)
+			fmt.Printf("  Code:         %s\n", fn.CodePath)
+			fmt.Printf("  Min Replicas: %d\n", fn.MinReplicas)
 			return nil
 		},
 	}
@@ -127,6 +130,7 @@ func registerCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&codePath, "code", "c", "", "Path to code file/directory")
 	cmd.Flags().IntVarP(&memoryMB, "memory", "m", 128, "Memory in MB")
 	cmd.Flags().IntVarP(&timeoutS, "timeout", "t", 30, "Timeout in seconds")
+	cmd.Flags().IntVar(&minReplicas, "min-replicas", 0, "Minimum number of warm replicas")
 	cmd.Flags().StringArrayVarP(&envVars, "env", "e", nil, "Environment variables (KEY=VALUE)")
 
 	cmd.MarkFlagRequired("runtime")
@@ -330,7 +334,7 @@ func daemonCmd() *cobra.Command {
 			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 			// Status ticker
-			ticker := time.NewTicker(30 * time.Second)
+			ticker := time.NewTicker(10 * time.Second) // Check more frequently for scaling
 			defer ticker.Stop()
 
 			for {
@@ -341,6 +345,19 @@ func daemonCmd() *cobra.Command {
 					mgr.Shutdown()
 					return nil
 				case <-ticker.C:
+					// Maintenance: Ensure minimum replicas
+					ctx := context.Background()
+					funcs, err := s.ListFunctions(ctx)
+					if err != nil {
+						fmt.Printf("[daemon] Error listing functions: %v\n", err)
+					} else {
+						for _, fn := range funcs {
+							if err := p.EnsureReady(ctx, fn); err != nil {
+								fmt.Printf("[daemon] Error ensuring ready for %s: %v\n", fn.Name, err)
+							}
+						}
+					}
+
 					stats := p.Stats()
 					fmt.Printf("[daemon] Active VMs: %d\n", stats["active_vms"])
 				}
