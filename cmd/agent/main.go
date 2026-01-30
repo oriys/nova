@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
 )
 
@@ -19,6 +18,10 @@ const (
 	MsgTypePing = 4
 
 	VsockPort = 9999
+
+	// Function code is on second drive, mounted at /code
+	CodeMountPoint = "/code"
+	CodePath       = "/code/handler"
 )
 
 type Message struct {
@@ -27,11 +30,9 @@ type Message struct {
 }
 
 type InitPayload struct {
-	FunctionID string            `json:"function_id"`
-	Runtime    string            `json:"runtime"`
-	Handler    string            `json:"handler"`
-	CodePath   string            `json:"code_path"`
-	EnvVars    map[string]string `json:"env_vars"`
+	Runtime string            `json:"runtime"`
+	Handler string            `json:"handler"`
+	EnvVars map[string]string `json:"env_vars"`
 }
 
 type ExecPayload struct {
@@ -54,6 +55,9 @@ type Agent struct {
 func main() {
 	fmt.Println("[agent] Nova guest agent starting...")
 
+	// Mount code drive (second block device /dev/vdb)
+	mountCodeDrive()
+
 	listener, err := listenVsock(VsockPort)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[agent] Failed to listen: %v\n", err)
@@ -69,14 +73,24 @@ func main() {
 			fmt.Fprintf(os.Stderr, "[agent] Accept error: %v\n", err)
 			continue
 		}
-
 		go handleConnection(conn)
 	}
 }
 
+func mountCodeDrive() {
+	os.MkdirAll(CodeMountPoint, 0755)
+	cmd := exec.Command("mount", "-t", "ext4", "-o", "ro", "/dev/vdb", CodeMountPoint)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "[agent] Mount /dev/vdb failed: %s: %v\n", out, err)
+		// Non-fatal: might be running outside a VM for testing
+	} else {
+		fmt.Printf("[agent] Mounted code drive at %s\n", CodeMountPoint)
+	}
+}
+
 func listenVsock(port int) (net.Listener, error) {
-	// For demo: use unix socket that host connects to
-	// In real firecracker, this would be vsock listener
+	// In real Firecracker VM: use vsock
+	// For dev/testing: fallback to unix socket
 	sockPath := fmt.Sprintf("/tmp/nova-agent-%d.sock", port)
 	os.Remove(sockPath)
 	return net.Listen("unix", sockPath)
@@ -97,7 +111,6 @@ func handleConnection(conn net.Conn) {
 
 		resp, err := agent.handleMessage(msg)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[agent] Handle error: %v\n", err)
 			resp = &Message{
 				Type:    MsgTypeResp,
 				Payload: json.RawMessage(fmt.Sprintf(`{"error":"%s"}`, err.Error())),
@@ -129,9 +142,8 @@ func (a *Agent) handleInit(payload json.RawMessage) (*Message, error) {
 	if err := json.Unmarshal(payload, &init); err != nil {
 		return nil, err
 	}
-
 	a.function = &init
-	fmt.Printf("[agent] Initialized function: %s (runtime: %s)\n", init.FunctionID, init.Runtime)
+	fmt.Printf("[agent] Init: runtime=%s handler=%s\n", init.Runtime, init.Handler)
 
 	return &Message{
 		Type:    MsgTypeResp,
@@ -150,14 +162,13 @@ func (a *Agent) handleExec(payload json.RawMessage) (*Message, error) {
 	}
 
 	start := time.Now()
-	output, execErr := a.executeFunction(req.Input, req.TimeoutS)
+	output, execErr := a.executeFunction(req.Input)
 	duration := time.Since(start).Milliseconds()
 
 	resp := RespPayload{
 		RequestID:  req.RequestID,
 		DurationMs: duration,
 	}
-
 	if execErr != nil {
 		resp.Error = execErr.Error()
 	} else {
@@ -168,54 +179,45 @@ func (a *Agent) handleExec(payload json.RawMessage) (*Message, error) {
 	return &Message{Type: MsgTypeResp, Payload: respData}, nil
 }
 
-func (a *Agent) executeFunction(input json.RawMessage, timeoutS int) (json.RawMessage, error) {
-	var cmd *exec.Cmd
-
+func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, error) {
 	// Write input to temp file
-	inputFile := "/tmp/input.json"
-	if err := os.WriteFile(inputFile, input, 0644); err != nil {
+	if err := os.WriteFile("/tmp/input.json", input, 0644); err != nil {
 		return nil, err
 	}
 
+	// Code is always at /code/handler (from code drive)
+	var cmd *exec.Cmd
 	switch a.function.Runtime {
 	case "python":
-		cmd = exec.Command("python3", a.function.CodePath, inputFile)
-	case "go":
-		// Assume compiled binary
-		cmd = exec.Command(a.function.CodePath, inputFile)
-	case "rust":
-		cmd = exec.Command(a.function.CodePath, inputFile)
+		cmd = exec.Command("python3", CodePath, "/tmp/input.json")
+	case "go", "rust":
+		// Static binary, execute directly
+		os.Chmod(CodePath, 0755)
+		cmd = exec.Command(CodePath, "/tmp/input.json")
 	case "wasm":
-		cmd = exec.Command("wasmtime", a.function.CodePath, "--", inputFile)
+		cmd = exec.Command("wasmtime", CodePath, "--", "/tmp/input.json")
 	default:
 		return nil, fmt.Errorf("unsupported runtime: %s", a.function.Runtime)
 	}
 
-	// Set environment
-	cmd.Env = os.Environ()
+	// Set env vars
+	cmd.Env = append(os.Environ(), "NOVA_CODE_DIR="+CodeMountPoint)
 	for k, v := range a.function.EnvVars {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	// Set working directory
-	cmd.Dir = filepath.Dir(a.function.CodePath)
-
 	output, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("execution failed: %s", string(exitErr.Stderr))
+			return nil, fmt.Errorf("exit %d: %s", exitErr.ExitCode(), string(exitErr.Stderr))
 		}
 		return nil, err
 	}
 
-	// Try to parse as JSON, otherwise wrap as string
-	var result json.RawMessage
 	if json.Valid(output) {
-		result = output
-	} else {
-		result, _ = json.Marshal(string(output))
+		return output, nil
 	}
-
+	result, _ := json.Marshal(string(output))
 	return result, nil
 }
 
@@ -224,18 +226,12 @@ func readMessage(conn net.Conn) (*Message, error) {
 	if _, err := io.ReadFull(conn, lenBuf); err != nil {
 		return nil, err
 	}
-
-	msgLen := binary.BigEndian.Uint32(lenBuf)
-	data := make([]byte, msgLen)
+	data := make([]byte, binary.BigEndian.Uint32(lenBuf))
 	if _, err := io.ReadFull(conn, data); err != nil {
 		return nil, err
 	}
-
 	var msg Message
-	if err := json.Unmarshal(data, &msg); err != nil {
-		return nil, err
-	}
-	return &msg, nil
+	return &msg, json.Unmarshal(data, &msg)
 }
 
 func writeMessage(conn net.Conn, msg *Message) error {
@@ -243,10 +239,8 @@ func writeMessage(conn net.Conn, msg *Message) error {
 	if err != nil {
 		return err
 	}
-
 	lenBuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(lenBuf, uint32(len(data)))
-
 	if _, err := conn.Write(lenBuf); err != nil {
 		return err
 	}

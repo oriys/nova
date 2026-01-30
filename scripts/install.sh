@@ -78,64 +78,79 @@ build_base_rootfs() {
     local output="${INSTALL_DIR}/rootfs/base.ext4"
     local mnt=$(mktemp -d)
 
-    log "Building base rootfs..."
+    log "Building base rootfs (minimal, no distro)..."
+    dd if=/dev/zero of="${output}" bs=1M count=32 2>/dev/null
+    mkfs.ext4 -F -q "${output}"
+    mount -o loop "${output}" "${mnt}"
+
+    # Minimal directory structure
+    mkdir -p "${mnt}"/{dev,proc,sys,tmp,code,usr/local/bin}
+
+    # init = nova-agent (static binary)
+    if [[ -f ${INSTALL_DIR}/bin/nova-agent ]]; then
+        cp ${INSTALL_DIR}/bin/nova-agent "${mnt}/init"
+        chmod +x "${mnt}/init"
+    else
+        # Placeholder init that waits for agent to be injected
+        cat > "${mnt}/init" << 'INIT'
+#!/bin/sh
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+echo "ERROR: nova-agent not found, halting"
+sleep infinity
+INIT
+        chmod +x "${mnt}/init"
+    fi
+
+    umount "${mnt}" && rmdir "${mnt}"
+    log "base.ext4 ready ($(du -h ${output} | cut -f1)) - Go/Rust runtime"
+}
+
+build_python_rootfs() {
+    local output="${INSTALL_DIR}/rootfs/python.ext4"
+    local mnt=$(mktemp -d)
+
+    log "Building python rootfs (Alpine + python3)..."
     dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
     mkfs.ext4 -F -q "${output}"
     mount -o loop "${output}" "${mnt}"
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
-
-    # DNS
+    mkdir -p "${mnt}"/{code,tmp}
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
-    # init
-    cat > "${mnt}/init" << 'INIT'
-#!/bin/sh
-mount -t proc proc /proc
-mount -t sysfs sysfs /sys
-mount -t devtmpfs devtmpfs /dev
-ip link set lo up
-ip link set eth0 up 2>/dev/null
-exec /usr/local/bin/nova-agent
-INIT
-    chmod +x "${mnt}/init"
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache python3" >/dev/null 2>&1
 
-    # Copy nova-agent if already present
+    # init = nova-agent
     [[ -f ${INSTALL_DIR}/bin/nova-agent ]] && \
-        cp ${INSTALL_DIR}/bin/nova-agent "${mnt}/usr/local/bin/" && \
-        chmod +x "${mnt}/usr/local/bin/nova-agent"
-
-    umount "${mnt}" && rmdir "${mnt}"
-    log "base.ext4 ready ($(du -h ${output} | cut -f1))"
-}
-
-build_python_rootfs() {
-    local base="${INSTALL_DIR}/rootfs/base.ext4"
-    local output="${INSTALL_DIR}/rootfs/python.ext4"
-    local mnt=$(mktemp -d)
-
-    log "Building python rootfs (base + python3)..."
-    cp "${base}" "${output}"
-    mount -o loop "${output}" "${mnt}"
-
-    chroot "${mnt}" /bin/sh -c "apk add --no-cache python3 py3-pip" >/dev/null 2>&1
+        cp ${INSTALL_DIR}/bin/nova-agent "${mnt}/init" && \
+        chmod +x "${mnt}/init"
 
     umount "${mnt}" && rmdir "${mnt}"
     log "python.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
 build_wasm_rootfs() {
-    local base="${INSTALL_DIR}/rootfs/base.ext4"
     local output="${INSTALL_DIR}/rootfs/wasm.ext4"
     local mnt=$(mktemp -d)
 
-    log "Building wasm rootfs (base + wasmtime)..."
-    cp "${base}" "${output}"
+    log "Building wasm rootfs (Alpine + wasmtime)..."
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q "${output}"
     mount -o loop "${output}" "${mnt}"
+
+    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
+    mkdir -p "${mnt}"/{code,tmp}
 
     curl -fsSL \
         "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
         | tar -xJf - -C "${mnt}/usr/local/bin" --strip-components=1 --wildcards '*/wasmtime'
+
+    # init = nova-agent
+    [[ -f ${INSTALL_DIR}/bin/nova-agent ]] && \
+        cp ${INSTALL_DIR}/bin/nova-agent "${mnt}/init" && \
+        chmod +x "${mnt}/init"
 
     umount "${mnt}" && rmdir "${mnt}"
     log "wasm.ext4 ready ($(du -h ${output} | cut -f1))"

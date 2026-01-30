@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -24,6 +25,13 @@ const (
 	VMStateCreating VMState = "creating"
 	VMStateRunning  VMState = "running"
 	VMStateStopped  VMState = "stopped"
+
+	// Fixed path inside VM where function code lives
+	GuestCodeDir  = "/code"
+	GuestCodePath = "/code/handler"
+
+	// Code drive size (16MB, enough for any single function)
+	codeDriveSizeMB = 16
 )
 
 type Config struct {
@@ -40,7 +48,7 @@ type Config struct {
 
 func DefaultConfig() *Config {
 	return &Config{
-		FirecrackerBin: "/usr/bin/firecracker",
+		FirecrackerBin: "/usr/local/bin/firecracker",
 		KernelPath:     "/opt/nova/kernel/vmlinux",
 		RootfsDir:      "/opt/nova/rootfs",
 		SocketDir:      "/tmp/nova/sockets",
@@ -53,25 +61,25 @@ func DefaultConfig() *Config {
 }
 
 type VM struct {
-	ID        string
-	Runtime   domain.Runtime
-	State     VMState
-	CID       uint32
+	ID         string
+	Runtime    domain.Runtime
+	State      VMState
+	CID        uint32
 	SocketPath string
 	VsockPath  string
-	GuestIP   string
-	Cmd       *exec.Cmd
-	CreatedAt time.Time
-	LastUsed  time.Time
-	mu        sync.RWMutex
+	CodeDrive  string // path to per-VM code drive
+	Cmd        *exec.Cmd
+	CreatedAt  time.Time
+	LastUsed   time.Time
+	mu         sync.RWMutex
 }
 
 type Manager struct {
-	config   *Config
-	vms      map[string]*VM
-	mu       sync.RWMutex
-	nextCID  uint32
-	cidMu    sync.Mutex
+	config  *Config
+	vms     map[string]*VM
+	mu      sync.RWMutex
+	nextCID uint32
+	cidMu   sync.Mutex
 }
 
 func NewManager(cfg *Config) (*Manager, error) {
@@ -96,13 +104,16 @@ func (m *Manager) allocateCID() uint32 {
 	return cid
 }
 
-func (m *Manager) CreateVM(ctx context.Context, runtime domain.Runtime) (*VM, error) {
+// CreateVM boots a microVM for the given function.
+// rootfs (drive 0) is shared read-only per runtime.
+// code (drive 1) is a small per-VM ext4 with the function binary/script injected.
+func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error) {
 	vmID := uuid.New().String()[:8]
 	cid := m.allocateCID()
 
 	vm := &VM{
 		ID:         vmID,
-		Runtime:    runtime,
+		Runtime:    fn.Runtime,
 		State:      VMStateCreating,
 		CID:        cid,
 		SocketPath: filepath.Join(m.config.SocketDir, vmID+".sock"),
@@ -111,17 +122,21 @@ func (m *Manager) CreateVM(ctx context.Context, runtime domain.Runtime) (*VM, er
 		LastUsed:   time.Now(),
 	}
 
-	rootfsPath := filepath.Join(m.config.RootfsDir, rootfsForRuntime(runtime))
+	// Verify rootfs exists (shared, read-only)
+	rootfsPath := filepath.Join(m.config.RootfsDir, rootfsForRuntime(fn.Runtime))
 	if _, err := os.Stat(rootfsPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("rootfs not found for runtime %s: %s", runtime, rootfsPath)
+		return nil, fmt.Errorf("rootfs not found: %s", rootfsPath)
 	}
 
-	vmRootfs := filepath.Join(m.config.RootfsDir, vmID+".ext4")
-	if err := copyFile(rootfsPath, vmRootfs); err != nil {
-		return nil, fmt.Errorf("copy rootfs: %w", err)
+	// Create per-VM code drive with function code injected
+	codeDrive := filepath.Join(m.config.SocketDir, vmID+"-code.ext4")
+	if err := buildCodeDrive(codeDrive, fn.CodePath); err != nil {
+		return nil, fmt.Errorf("build code drive: %w", err)
 	}
+	vm.CodeDrive = codeDrive
 
-	fcConfig := m.buildConfig(vm, vmRootfs)
+	// Write firecracker config
+	fcConfig := m.buildConfig(vm, rootfsPath, codeDrive)
 	configPath := filepath.Join(m.config.SocketDir, vmID+".json")
 	configData, _ := json.MarshalIndent(fcConfig, "", "  ")
 	if err := os.WriteFile(configPath, configData, 0644); err != nil {
@@ -161,7 +176,37 @@ func (m *Manager) CreateVM(ctx context.Context, runtime domain.Runtime) (*VM, er
 	return vm, nil
 }
 
-func (m *Manager) buildConfig(vm *VM, rootfsPath string) map[string]interface{} {
+// buildCodeDrive creates a small ext4 image and injects the function code at /handler.
+// Uses mkfs.ext4 + debugfs, no root/mount required.
+func buildCodeDrive(drivePath, codePath string) error {
+	// Create empty image
+	f, err := os.Create(drivePath)
+	if err != nil {
+		return err
+	}
+	if err := f.Truncate(int64(codeDriveSizeMB) * 1024 * 1024); err != nil {
+		f.Close()
+		return err
+	}
+	f.Close()
+
+	// Format as ext4
+	if out, err := exec.Command("mkfs.ext4", "-F", "-q", drivePath).CombinedOutput(); err != nil {
+		return fmt.Errorf("mkfs.ext4: %s: %w", out, err)
+	}
+
+	// Inject function code using debugfs (no mount needed)
+	debugfsCmd := fmt.Sprintf("write %s handler\n", codePath)
+	cmd := exec.Command("debugfs", "-w", drivePath)
+	cmd.Stdin = strings.NewReader(debugfsCmd)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("debugfs inject: %s: %w", out, err)
+	}
+
+	return nil
+}
+
+func (m *Manager) buildConfig(vm *VM, rootfsPath, codeDrivePath string) map[string]interface{} {
 	return map[string]interface{}{
 		"boot-source": map[string]interface{}{
 			"kernel_image_path": m.config.KernelPath,
@@ -172,7 +217,13 @@ func (m *Manager) buildConfig(vm *VM, rootfsPath string) map[string]interface{} 
 				"drive_id":       "rootfs",
 				"path_on_host":   rootfsPath,
 				"is_root_device": true,
-				"is_read_only":   false,
+				"is_read_only":   true,
+			},
+			{
+				"drive_id":       "code",
+				"path_on_host":   codeDrivePath,
+				"is_root_device": false,
+				"is_read_only":   true,
 			},
 		},
 		"machine-config": map[string]interface{}{
@@ -223,10 +274,11 @@ func (m *Manager) StopVM(vmID string) error {
 		vm.Cmd.Wait()
 	}
 
+	// Cleanup per-VM files
 	os.Remove(vm.SocketPath)
 	os.Remove(vm.VsockPath)
+	os.Remove(vm.CodeDrive)
 	os.Remove(filepath.Join(m.config.SocketDir, vm.ID+".json"))
-	os.Remove(filepath.Join(m.config.RootfsDir, vm.ID+".ext4"))
 
 	vm.State = VMStateStopped
 	return nil
@@ -262,26 +314,9 @@ func (m *Manager) Shutdown() {
 	}
 }
 
-func copyFile(src, dst string) error {
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-
-	dstFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer dstFile.Close()
-
-	_, err = io.Copy(dstFile, srcFile)
-	return err
-}
-
 // rootfsForRuntime maps runtime to rootfs image.
-// Go and Rust are statically compiled, they share the minimal base image.
-// Python needs an interpreter, WASM needs wasmtime.
+// Go/Rust: static binaries, minimal base is enough.
+// Python: needs interpreter. WASM: needs wasmtime.
 func rootfsForRuntime(rt domain.Runtime) string {
 	switch rt {
 	case domain.RuntimePython:
@@ -289,12 +324,12 @@ func rootfsForRuntime(rt domain.Runtime) string {
 	case domain.RuntimeWasm:
 		return "wasm.ext4"
 	default:
-		// Go, Rust: static binaries, base image is enough
 		return "base.ext4"
 	}
 }
 
-// Vsock message types
+// ─── Vsock protocol ─────────────────────────────────────
+
 const (
 	MsgTypeInit = 1
 	MsgTypeExec = 2
@@ -308,11 +343,9 @@ type VsockMessage struct {
 }
 
 type InitPayload struct {
-	FunctionID string            `json:"function_id"`
-	Runtime    string            `json:"runtime"`
-	Handler    string            `json:"handler"`
-	CodePath   string            `json:"code_path"`
-	EnvVars    map[string]string `json:"env_vars"`
+	Runtime string            `json:"runtime"`
+	Handler string            `json:"handler"`
+	EnvVars map[string]string `json:"env_vars"`
 }
 
 type ExecPayload struct {
@@ -322,10 +355,10 @@ type ExecPayload struct {
 }
 
 type RespPayload struct {
-	RequestID string          `json:"request_id"`
-	Output    json.RawMessage `json:"output"`
-	Error     string          `json:"error,omitempty"`
-	DurationMs int64          `json:"duration_ms"`
+	RequestID  string          `json:"request_id"`
+	Output     json.RawMessage `json:"output"`
+	Error      string          `json:"error,omitempty"`
+	DurationMs int64           `json:"duration_ms"`
 }
 
 type VsockClient struct {
@@ -385,11 +418,9 @@ func (c *VsockClient) Receive() (*VsockMessage, error) {
 
 func (c *VsockClient) Init(fn *domain.Function) error {
 	payload, _ := json.Marshal(&InitPayload{
-		FunctionID: fn.ID,
-		Runtime:    string(fn.Runtime),
-		Handler:    fn.Handler,
-		CodePath:   fn.CodePath,
-		EnvVars:    fn.EnvVars,
+		Runtime: string(fn.Runtime),
+		Handler: fn.Handler,
+		EnvVars: fn.EnvVars,
 	})
 
 	if err := c.Send(&VsockMessage{Type: MsgTypeInit, Payload: payload}); err != nil {

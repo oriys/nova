@@ -107,7 +107,7 @@ func (p *Pool) Acquire(ctx context.Context, fn *domain.Function) (*PooledVM, err
 	// Cold start: create new VM
 	fmt.Printf("[pool] Cold start: creating VM for function %s (runtime: %s)\n", fn.Name, fn.Runtime)
 
-	vm, err := p.manager.CreateVM(ctx, fn.Runtime)
+	vm, err := p.manager.CreateVM(ctx, fn)
 	if err != nil {
 		return nil, fmt.Errorf("create VM: %w", err)
 	}
