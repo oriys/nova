@@ -269,9 +269,32 @@ func (m *Manager) StopVM(vmID string) error {
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
 
+	// 1. Try graceful shutdown via vsock
+	if conn, err := net.DialTimeout("unix", vm.VsockPath, time.Second); err == nil {
+		msg, _ := json.Marshal(&VsockMessage{Type: MsgTypeStop})
+		lenBuf := make([]byte, 4)
+		binary.BigEndian.PutUint32(lenBuf, uint32(len(msg)))
+		conn.Write(lenBuf)
+		conn.Write(msg)
+		conn.Close()
+		// Give agent a moment to exit
+		time.Sleep(200 * time.Millisecond)
+	}
+
 	if vm.Cmd != nil && vm.Cmd.Process != nil {
-		syscall.Kill(-vm.Cmd.Process.Pid, syscall.SIGKILL)
-		vm.Cmd.Wait()
+		// 2. SIGTERM
+		syscall.Kill(-vm.Cmd.Process.Pid, syscall.SIGTERM)
+
+		// Wait up to 2 seconds for clean exit
+		done := make(chan struct{})
+		go func() { vm.Cmd.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			// 3. SIGKILL as last resort
+			syscall.Kill(-vm.Cmd.Process.Pid, syscall.SIGKILL)
+			vm.Cmd.Wait()
+		}
 	}
 
 	// Cleanup per-VM files
@@ -335,6 +358,7 @@ const (
 	MsgTypeExec = 2
 	MsgTypeResp = 3
 	MsgTypePing = 4
+	MsgTypeStop = 5
 )
 
 type VsockMessage struct {

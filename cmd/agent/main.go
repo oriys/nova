@@ -8,7 +8,10 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"time"
+
+	"github.com/mdlayher/vsock"
 )
 
 const (
@@ -16,10 +19,10 @@ const (
 	MsgTypeExec = 2
 	MsgTypeResp = 3
 	MsgTypePing = 4
+	MsgTypeStop = 5
 
 	VsockPort = 9999
 
-	// Function code is on second drive, mounted at /code
 	CodeMountPoint = "/code"
 	CodePath       = "/code/handler"
 )
@@ -55,17 +58,16 @@ type Agent struct {
 func main() {
 	fmt.Println("[agent] Nova guest agent starting...")
 
-	// Mount code drive (second block device /dev/vdb)
 	mountCodeDrive()
 
-	listener, err := listenVsock(VsockPort)
+	listener, err := listen(VsockPort)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[agent] Failed to listen: %v\n", err)
 		os.Exit(1)
 	}
 	defer listener.Close()
 
-	fmt.Printf("[agent] Listening on vsock port %d\n", VsockPort)
+	fmt.Printf("[agent] Listening on port %d\n", VsockPort)
 
 	for {
 		conn, err := listener.Accept()
@@ -77,23 +79,33 @@ func main() {
 	}
 }
 
+// listen creates a vsock listener in a VM, or falls back to Unix socket for dev.
+func listen(port int) (net.Listener, error) {
+	if runtime.GOOS == "linux" {
+		// Try vsock first (works inside Firecracker VM)
+		l, err := vsock.Listen(uint32(port), nil)
+		if err == nil {
+			fmt.Println("[agent] Using AF_VSOCK")
+			return l, nil
+		}
+		fmt.Fprintf(os.Stderr, "[agent] vsock unavailable: %v, falling back to unix socket\n", err)
+	}
+
+	// Fallback: Unix socket for local dev/testing
+	sockPath := fmt.Sprintf("/tmp/nova-agent-%d.sock", port)
+	os.Remove(sockPath)
+	fmt.Printf("[agent] Using unix socket: %s\n", sockPath)
+	return net.Listen("unix", sockPath)
+}
+
 func mountCodeDrive() {
 	os.MkdirAll(CodeMountPoint, 0755)
 	cmd := exec.Command("mount", "-t", "ext4", "-o", "ro", "/dev/vdb", CodeMountPoint)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "[agent] Mount /dev/vdb failed: %s: %v\n", out, err)
-		// Non-fatal: might be running outside a VM for testing
+		fmt.Fprintf(os.Stderr, "[agent] Mount /dev/vdb: %s (%v)\n", out, err)
 	} else {
 		fmt.Printf("[agent] Mounted code drive at %s\n", CodeMountPoint)
 	}
-}
-
-func listenVsock(port int) (net.Listener, error) {
-	// In real Firecracker VM: use vsock
-	// For dev/testing: fallback to unix socket
-	sockPath := fmt.Sprintf("/tmp/nova-agent-%d.sock", port)
-	os.Remove(sockPath)
-	return net.Listen("unix", sockPath)
 }
 
 func handleConnection(conn net.Conn) {
@@ -107,6 +119,12 @@ func handleConnection(conn net.Conn) {
 				fmt.Fprintf(os.Stderr, "[agent] Read error: %v\n", err)
 			}
 			return
+		}
+
+		if msg.Type == MsgTypeStop {
+			fmt.Println("[agent] Received stop, shutting down...")
+			writeMessage(conn, &Message{Type: MsgTypeResp, Payload: json.RawMessage(`{"status":"stopping"}`)})
+			os.Exit(0)
 		}
 
 		resp, err := agent.handleMessage(msg)
@@ -180,18 +198,15 @@ func (a *Agent) handleExec(payload json.RawMessage) (*Message, error) {
 }
 
 func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, error) {
-	// Write input to temp file
 	if err := os.WriteFile("/tmp/input.json", input, 0644); err != nil {
 		return nil, err
 	}
 
-	// Code is always at /code/handler (from code drive)
 	var cmd *exec.Cmd
 	switch a.function.Runtime {
 	case "python":
 		cmd = exec.Command("python3", CodePath, "/tmp/input.json")
 	case "go", "rust":
-		// Static binary, execute directly
 		os.Chmod(CodePath, 0755)
 		cmd = exec.Command(CodePath, "/tmp/input.json")
 	case "wasm":
@@ -200,7 +215,6 @@ func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, error) 
 		return nil, fmt.Errorf("unsupported runtime: %s", a.function.Runtime)
 	}
 
-	// Set env vars
 	cmd.Env = append(os.Environ(), "NOVA_CODE_DIR="+CodeMountPoint)
 	for k, v := range a.function.EnvVars {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
