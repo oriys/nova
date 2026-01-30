@@ -13,6 +13,9 @@ import (
 
 const (
 	DefaultIdleTTL = 60 * time.Second
+
+	// Maximum concurrent pre-warm goroutines
+	maxPreWarmConcurrency = 4
 )
 
 type PooledVM struct {
@@ -66,52 +69,56 @@ func (p *Pool) cleanupLoop() {
 	}
 }
 
+// Fix #3: Collect expired VMs under lock, then stop them without lock.
 func (p *Pool) cleanupExpired() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	type expiredVM struct {
+		client *firecracker.VsockClient
+		vmID   string
+	}
+	var toStop []expiredVM
 
+	p.mu.Lock()
 	now := time.Now()
 	for funcID, vmList := range p.vms {
-		// We need to know MinReplicas. Since all VMs for a function share the same
-		// config, we can check the first one. If empty, it doesn't matter.
 		minReplicas := 0
 		if len(vmList) > 0 {
 			minReplicas = vmList[0].Function.MinReplicas
 		}
 
 		activeCount := len(vmList)
-		var newParams []*PooledVM
+		var kept []*PooledVM
 
-		// Filter loop
 		for _, pvm := range vmList {
-			// Always keep busy VMs
 			if pvm.busy {
-				newParams = append(newParams, pvm)
+				kept = append(kept, pvm)
 				continue
 			}
 
-			// If we have more than needed, check expiry
-			if activeCount > minReplicas {
-				if now.Sub(pvm.LastUsed) > p.idleTTL {
-					fmt.Printf("[pool] VM %s for function %s expired (idle %v)\n",
-						pvm.VM.ID, funcID, now.Sub(pvm.LastUsed).Round(time.Second))
-					pvm.Client.Close()
-					p.manager.StopVM(pvm.VM.ID)
-					activeCount--
-					continue // Drop from list
-				}
+			if activeCount > minReplicas && now.Sub(pvm.LastUsed) > p.idleTTL {
+				fmt.Printf("[pool] VM %s for function %s expired (idle %v)\n",
+					pvm.VM.ID, funcID, now.Sub(pvm.LastUsed).Round(time.Second))
+				toStop = append(toStop, expiredVM{client: pvm.Client, vmID: pvm.VM.ID})
+				activeCount--
+				continue
 			}
-			newParams = append(newParams, pvm)
+			kept = append(kept, pvm)
 		}
-		p.vms[funcID] = newParams
+		p.vms[funcID] = kept
+	}
+	p.mu.Unlock()
+
+	// Stop VMs without holding the lock
+	for _, e := range toStop {
+		e.client.Close()
+		p.manager.StopVM(e.vmID)
 	}
 }
 
-// EnsureReady provision warm VMs up to minReplicas
+// Fix #6: EnsureReady with bounded concurrency.
 func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function) error {
-	p.mu.Lock()
+	p.mu.RLock()
 	currentCount := len(p.vms[fn.ID])
-	p.mu.Unlock()
+	p.mu.RUnlock()
 
 	needed := fn.MinReplicas - currentCount
 	if needed <= 0 {
@@ -119,31 +126,39 @@ func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function) error {
 	}
 
 	fmt.Printf("[pool] Pre-warming %d VMs for function %s\n", needed, fn.Name)
+
+	sem := make(chan struct{}, maxPreWarmConcurrency)
+	var wg sync.WaitGroup
 	for i := 0; i < needed; i++ {
-		// Launch in parallel (or sequential, keeps it simple for now)
+		wg.Add(1)
+		sem <- struct{}{}
 		go func() {
-			// We manually create and add to pool
-			// Note: This bypasses singleflight, which is fine for provisioning
+			defer wg.Done()
+			defer func() { <-sem }()
+
 			pvm, err := p.createVM(context.Background(), fn)
 			if err != nil {
 				fmt.Printf("[pool] Failed to pre-warm VM: %v\n", err)
 				return
 			}
-			pvm.busy = false // Ready to take requests
+			pvm.busy = false
 
 			p.mu.Lock()
 			p.vms[fn.ID] = append(p.vms[fn.ID], pvm)
 			p.mu.Unlock()
 		}()
 	}
+	wg.Wait()
 	return nil
 }
 
-// Acquire returns a PooledVM for the function, marked as busy.
+// Fix #5: Try all idle VMs, not just the first one.
+// Fix #8: Skip ping on hot path; let execution failure trigger eviction.
+// Fix #10: Use singleflight to deduplicate concurrent cold starts per function.
 func (p *Pool) Acquire(ctx context.Context, fn *domain.Function) (*PooledVM, error) {
 	p.mu.Lock()
-	
-	// Scan for idle VM
+
+	// Scan all idle VMs
 	vmList := p.vms[fn.ID]
 	for _, pvm := range vmList {
 		if !pvm.busy {
@@ -151,47 +166,45 @@ func (p *Pool) Acquire(ctx context.Context, fn *domain.Function) (*PooledVM, err
 			pvm.LastUsed = time.Now()
 			pvm.ColdStart = false
 			p.mu.Unlock()
-
-			// Verify health
-			if err := pvm.Client.Ping(); err != nil {
-				// Bad VM, remove it (requires lock)
-				p.removeVM(fn.ID, pvm)
-				pvm.Client.Close()
-				p.manager.StopVM(pvm.VM.ID)
-				// Try again (recursive or loop? simpler to fall through to create)
-			} else {
-				fmt.Printf("[pool] Reusing warm VM %s for %s\n", pvm.VM.ID, fn.Name)
-				return pvm, nil
-			}
-			break // Break to fall through
+			fmt.Printf("[pool] Reusing warm VM %s for %s\n", pvm.VM.ID, fn.Name)
+			return pvm, nil
 		}
 	}
 	p.mu.Unlock()
 
-	// Cold start
-	// Use singleflight to deduplicate concurrent "Cold Start" attempts for same function?
-	// Actually, with multiple VMs allowed, we might NOT want to deduplicate strictly if
-	// we want to scale up. But to avoid "thundering herd" creating 100 VMs for 100 requests,
-	// singleflight per functionID is still a reasonable throttle.
-	// But here, if we need a NEW VM, we just make one.
-	
-	// Let's create a new VM
-	pvm, err := p.createVM(ctx, fn)
+	// Cold start with singleflight to avoid thundering herd.
+	// Each concurrent caller for the same function shares a single VM creation.
+	// If one is already in-flight, subsequent callers wait for it.
+	// But we only coalesce if there are NO idle VMs. Once the first VM is created,
+	// the next Acquire will find it idle (if released quickly).
+	val, err, shared := p.group.Do(fn.ID, func() (interface{}, error) {
+		return p.createVM(ctx, fn)
+	})
 	if err != nil {
 		return nil, err
 	}
-	
+
+	pvm := val.(*PooledVM)
+	if shared {
+		// Another goroutine created this VM and got it. We need our own.
+		// Fall back to direct creation.
+		pvm, err = p.createVM(ctx, fn)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	p.mu.Lock()
 	p.vms[fn.ID] = append(p.vms[fn.ID], pvm)
 	p.mu.Unlock()
-	
+
 	return pvm, nil
 }
 
 func (p *Pool) removeVM(funcID string, target *PooledVM) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	list := p.vms[funcID]
 	newList := make([]*PooledVM, 0, len(list))
 	for _, vm := range list {
@@ -243,16 +256,16 @@ func (p *Pool) Release(pvm *PooledVM) {
 	pvm.LastUsed = time.Now()
 }
 
+// Fix #4: Remove double-unlock panic. Use explicit lock/unlock without defer.
 func (p *Pool) Evict(funcID string) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	list, ok := p.vms[funcID]
 	if !ok {
+		p.mu.Unlock()
 		return
 	}
 	delete(p.vms, funcID)
-	p.mu.Unlock() // Unlock early to avoid holding lock during slow stops
+	p.mu.Unlock()
 
 	for _, pvm := range list {
 		pvm.Client.Close()
@@ -266,7 +279,7 @@ func (p *Pool) Stats() map[string]interface{} {
 
 	vmStats := make([]map[string]interface{}, 0)
 	totalVMs := 0
-	
+
 	for funcID, list := range p.vms {
 		totalVMs += len(list)
 		for _, pvm := range list {

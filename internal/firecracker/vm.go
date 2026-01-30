@@ -1,6 +1,7 @@
 package firecracker
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -73,6 +75,9 @@ type VM struct {
 	SocketPath string
 	VsockPath  string
 	CodeDrive  string // path to per-VM code drive
+	TapDevice  string // TAP device name (e.g., "nova-abc123")
+	GuestIP    string // IP assigned to guest (e.g., "172.30.0.2")
+	GuestMAC   string // MAC address for guest
 	Cmd        *exec.Cmd
 	CreatedAt  time.Time
 	LastUsed   time.Time
@@ -80,13 +85,18 @@ type VM struct {
 }
 
 type Manager struct {
-	config       *Config
-	vms          map[string]*VM
-	mu           sync.RWMutex
-	nextCID      uint32
-	cidMu        sync.Mutex
-	templateOnce sync.Once
-	httpClient   *http.Client
+	config        *Config
+	vms           map[string]*VM
+	mu            sync.RWMutex
+	nextCID       uint32
+	nextIP        uint32 // last octet for IP allocation
+	cidMu         sync.Mutex
+	ipMu          sync.Mutex
+	templateReady atomic.Bool
+	templateMu    sync.Mutex
+	bridgeReady   atomic.Bool
+	bridgeMu      sync.Mutex
+	httpClient    *http.Client
 }
 
 func NewManager(cfg *Config) (*Manager, error) {
@@ -100,6 +110,7 @@ func NewManager(cfg *Config) (*Manager, error) {
 		config:  cfg,
 		vms:     make(map[string]*VM),
 		nextCID: 100,
+		nextIP:  2, // Start from .2 (.1 is bridge)
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(_ context.Context, _, addr string) (net.Conn, error) {
@@ -116,6 +127,118 @@ func (m *Manager) allocateCID() uint32 {
 	cid := m.nextCID
 	m.nextCID++
 	return cid
+}
+
+// allocateIP returns next available IP in subnet (e.g., "172.30.0.2")
+func (m *Manager) allocateIP() string {
+	m.ipMu.Lock()
+	defer m.ipMu.Unlock()
+	// Parse base from config (e.g., "172.30.0.0/24" -> "172.30.0")
+	parts := strings.Split(m.config.Subnet, "/")
+	base := strings.TrimSuffix(parts[0], ".0")
+	ip := fmt.Sprintf("%s.%d", base, m.nextIP)
+	m.nextIP++
+	if m.nextIP > 254 {
+		m.nextIP = 2 // wrap around, skip .0 and .1
+	}
+	return ip
+}
+
+// generateMAC creates a locally-administered MAC address from VM ID
+func generateMAC(vmID string) string {
+	// Use VM ID hash for last 3 bytes, prefix with 02:FC:00 (locally administered)
+	h := 0
+	for _, c := range vmID {
+		h = h*31 + int(c)
+	}
+	return fmt.Sprintf("02:FC:00:%02X:%02X:%02X", (h>>16)&0xFF, (h>>8)&0xFF, h&0xFF)
+}
+
+// ensureBridge creates the network bridge if it doesn't exist
+func (m *Manager) ensureBridge() error {
+	if m.bridgeReady.Load() {
+		return nil
+	}
+	m.bridgeMu.Lock()
+	defer m.bridgeMu.Unlock()
+	if m.bridgeReady.Load() {
+		return nil
+	}
+
+	bridge := m.config.BridgeName
+	// Parse gateway IP from subnet (e.g., "172.30.0.0/24" -> "172.30.0.1/24")
+	parts := strings.Split(m.config.Subnet, "/")
+	baseIP := strings.TrimSuffix(parts[0], ".0")
+	gatewayIP := baseIP + ".1"
+	cidr := "24"
+	if len(parts) > 1 {
+		cidr = parts[1]
+	}
+
+	// Check if bridge exists
+	if _, err := exec.Command("ip", "link", "show", bridge).Output(); err != nil {
+		// Create bridge
+		if out, err := exec.Command("ip", "link", "add", bridge, "type", "bridge").CombinedOutput(); err != nil {
+			return fmt.Errorf("create bridge: %s: %w", out, err)
+		}
+	}
+
+	// Set bridge IP
+	exec.Command("ip", "addr", "flush", "dev", bridge).Run()
+	if out, err := exec.Command("ip", "addr", "add", gatewayIP+"/"+cidr, "dev", bridge).CombinedOutput(); err != nil {
+		// Ignore "already exists" error
+		if !strings.Contains(string(out), "RTNETLINK answers: File exists") {
+			return fmt.Errorf("set bridge ip: %s: %w", out, err)
+		}
+	}
+
+	// Bring up bridge
+	if out, err := exec.Command("ip", "link", "set", bridge, "up").CombinedOutput(); err != nil {
+		return fmt.Errorf("bring up bridge: %s: %w", out, err)
+	}
+
+	// Enable IP forwarding
+	os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1"), 0644)
+
+	// Setup NAT (masquerade) for outbound traffic
+	exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-s", m.config.Subnet, "-j", "MASQUERADE").Run()
+	if out, err := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-s", m.config.Subnet, "-j", "MASQUERADE").CombinedOutput(); err != nil {
+		return fmt.Errorf("setup NAT: %s: %w", out, err)
+	}
+
+	m.bridgeReady.Store(true)
+	return nil
+}
+
+// createTAP creates a TAP device and attaches it to the bridge
+func (m *Manager) createTAP(vmID string) (string, error) {
+	tap := "nova-" + vmID[:6]
+
+	// Create TAP device
+	if out, err := exec.Command("ip", "tuntap", "add", tap, "mode", "tap").CombinedOutput(); err != nil {
+		return "", fmt.Errorf("create tap: %s: %w", out, err)
+	}
+
+	// Attach to bridge
+	if out, err := exec.Command("ip", "link", "set", tap, "master", m.config.BridgeName).CombinedOutput(); err != nil {
+		exec.Command("ip", "link", "del", tap).Run()
+		return "", fmt.Errorf("attach tap to bridge: %s: %w", out, err)
+	}
+
+	// Bring up TAP
+	if out, err := exec.Command("ip", "link", "set", tap, "up").CombinedOutput(); err != nil {
+		exec.Command("ip", "link", "del", tap).Run()
+		return "", fmt.Errorf("bring up tap: %s: %w", out, err)
+	}
+
+	return tap, nil
+}
+
+// deleteTAP removes a TAP device
+func deleteTAP(tap string) {
+	if tap != "" {
+		exec.Command("ip", "link", "del", tap).Run()
+	}
 }
 
 // CreateVM boots a microVM for the given function.
@@ -146,6 +269,18 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error
 		return nil, fmt.Errorf("build code drive: %w", err)
 	}
 	vm.CodeDrive = codeDrive
+
+	// Setup network
+	if err := m.ensureBridge(); err != nil {
+		return nil, fmt.Errorf("ensure bridge: %w", err)
+	}
+	tap, err := m.createTAP(vmID)
+	if err != nil {
+		return nil, fmt.Errorf("create tap: %w", err)
+	}
+	vm.TapDevice = tap
+	vm.GuestIP = m.allocateIP()
+	vm.GuestMAC = generateMAC(vmID)
 
 	// Check for snapshot
 	snapshotPath := filepath.Join(m.config.SnapshotDir, fn.ID+".snap")
@@ -190,7 +325,7 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error
 		err = m.apiLoadSnapshot(ctx, vm, snapshotPath, memPath)
 	} else {
 		// Regular Boot
-		err = m.apiBoot(ctx, vm, rootfsPath, codeDrive, fn.MemoryMB)
+		err = m.apiBoot(ctx, vm, rootfsPath, codeDrive, fn)
 	}
 
 	if err != nil {
@@ -243,35 +378,74 @@ func (m *Manager) CreateSnapshot(ctx context.Context, vmID string, funcID string
 	return nil
 }
 
+// buildRateLimiter creates a Firecracker rate limiter config
+func buildRateLimiter(bandwidth, ops int64) map[string]interface{} {
+	limiter := make(map[string]interface{})
+	if bandwidth > 0 {
+		limiter["bandwidth"] = map[string]interface{}{
+			"size":          bandwidth,
+			"refill_time":   1000, // 1 second in ms
+			"one_time_burst": 0,
+		}
+	}
+	if ops > 0 {
+		limiter["ops"] = map[string]interface{}{
+			"size":          ops,
+			"refill_time":   1000,
+			"one_time_burst": 0,
+		}
+	}
+	return limiter
+}
+
 // apiBoot configures and boots the VM via API
-func (m *Manager) apiBoot(ctx context.Context, vm *VM, rootfs, codeDrive string, mem int) error {
-	if mem <= 0 { mem = 128 }
-	
-	// 1. Boot Source
+func (m *Manager) apiBoot(ctx context.Context, vm *VM, rootfs, codeDrive string, fn *domain.Function) error {
+	mem := fn.MemoryMB
+	if mem <= 0 {
+		mem = 128
+	}
+	vcpus := 1
+	if fn.Limits != nil && fn.Limits.VCPUs > 0 {
+		vcpus = fn.Limits.VCPUs
+	}
+
+	// Parse gateway IP for boot args
+	parts := strings.Split(m.config.Subnet, "/")
+	baseIP := strings.TrimSuffix(parts[0], ".0")
+	gatewayIP := baseIP + ".1"
+
+	// 1. Boot Source - add IP config via kernel cmdline
+	bootArgs := fmt.Sprintf(
+		"console=ttyS0 reboot=k panic=1 pci=off init=/init quiet 8250.nr_uarts=0 ip=%s::%s:255.255.255.0::eth0:off",
+		vm.GuestIP, gatewayIP,
+	)
 	bs := map[string]interface{}{
 		"kernel_image_path": m.config.KernelPath,
-		"boot_args":         "console=ttyS0 reboot=k panic=1 pci=off init=/init quiet 8250.nr_uarts=0",
+		"boot_args":         bootArgs,
 	}
 	if err := m.apiCall(ctx, vm, "PUT", "/boot-source", bs); err != nil {
 		return fmt.Errorf("boot-source: %w", err)
 	}
 
-	// 2. Drives
+	// 2. Drives with optional rate limiting
 	root := map[string]interface{}{
-		"drive_id": "rootfs",
-		"path_on_host": rootfs,
+		"drive_id":       "rootfs",
+		"path_on_host":   rootfs,
 		"is_root_device": true,
-		"is_read_only": true,
+		"is_read_only":   true,
 	}
 	if err := m.apiCall(ctx, vm, "PUT", "/drives/rootfs", root); err != nil {
 		return fmt.Errorf("drive rootfs: %w", err)
 	}
-	
+
 	code := map[string]interface{}{
-		"drive_id": "code",
-		"path_on_host": codeDrive,
+		"drive_id":       "code",
+		"path_on_host":   codeDrive,
 		"is_root_device": false,
-		"is_read_only": true,
+		"is_read_only":   true,
+	}
+	if fn.Limits != nil && (fn.Limits.DiskIOPS > 0 || fn.Limits.DiskBandwidth > 0) {
+		code["rate_limiter"] = buildRateLimiter(fn.Limits.DiskBandwidth, fn.Limits.DiskIOPS)
 	}
 	if err := m.apiCall(ctx, vm, "PUT", "/drives/code", code); err != nil {
 		return fmt.Errorf("drive code: %w", err)
@@ -279,23 +453,42 @@ func (m *Manager) apiBoot(ctx context.Context, vm *VM, rootfs, codeDrive string,
 
 	// 3. Machine Config
 	mc := map[string]interface{}{
-		"vcpu_count": 1,
+		"vcpu_count":   vcpus,
 		"mem_size_mib": mem,
 	}
 	if err := m.apiCall(ctx, vm, "PUT", "/machine-config", mc); err != nil {
 		return fmt.Errorf("machine-config: %w", err)
 	}
 
-	// 4. Vsock
+	// 4. Network interface
+	netIface := map[string]interface{}{
+		"iface_id":     "eth0",
+		"guest_mac":    vm.GuestMAC,
+		"host_dev_name": vm.TapDevice,
+	}
+	// Apply network rate limiter if configured
+	if fn.Limits != nil && (fn.Limits.NetRxBandwidth > 0 || fn.Limits.NetTxBandwidth > 0) {
+		if fn.Limits.NetRxBandwidth > 0 {
+			netIface["rx_rate_limiter"] = buildRateLimiter(fn.Limits.NetRxBandwidth, 0)
+		}
+		if fn.Limits.NetTxBandwidth > 0 {
+			netIface["tx_rate_limiter"] = buildRateLimiter(fn.Limits.NetTxBandwidth, 0)
+		}
+	}
+	if err := m.apiCall(ctx, vm, "PUT", "/network-interfaces/eth0", netIface); err != nil {
+		return fmt.Errorf("network interface: %w", err)
+	}
+
+	// 5. Vsock
 	vs := map[string]interface{}{
 		"guest_cid": vm.CID,
-		"uds_path": vm.VsockPath,
+		"uds_path":  vm.VsockPath,
 	}
 	if err := m.apiCall(ctx, vm, "PUT", "/vsock", vs); err != nil {
 		return fmt.Errorf("vsock: %w", err)
 	}
 
-	// 5. Action: InstanceStart
+	// 6. Action: InstanceStart
 	if err := m.apiCall(ctx, vm, "PUT", "/actions", map[string]interface{}{"action_type": "InstanceStart"}); err != nil {
 		return fmt.Errorf("start: %w", err)
 	}
@@ -347,6 +540,43 @@ func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath
 	return nil
 }
 
+// httpClientForSocket returns a cached HTTP client that dials the given Unix socket.
+// Each unique socket path gets its own client with connection pooling.
+var (
+	socketClients   = make(map[string]*http.Client)
+	socketClientsMu sync.Mutex
+)
+
+func httpClientForSocket(socketPath string) *http.Client {
+	socketClientsMu.Lock()
+	defer socketClientsMu.Unlock()
+
+	if c, ok := socketClients[socketPath]; ok {
+		return c
+	}
+	c := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", socketPath)
+			},
+			MaxIdleConns:        2,
+			MaxIdleConnsPerHost: 2,
+			IdleConnTimeout:     30 * time.Second,
+		},
+	}
+	socketClients[socketPath] = c
+	return c
+}
+
+func removeSocketClient(socketPath string) {
+	socketClientsMu.Lock()
+	defer socketClientsMu.Unlock()
+	if c, ok := socketClients[socketPath]; ok {
+		c.CloseIdleConnections()
+		delete(socketClients, socketPath)
+	}
+}
+
 func (m *Manager) apiCall(ctx context.Context, vm *VM, method, path string, body interface{}) error {
 	var bodyReader io.Reader
 	if body != nil {
@@ -354,29 +584,15 @@ func (m *Manager) apiCall(ctx context.Context, vm *VM, method, path string, body
 		bodyReader = bytes.NewReader(data)
 	}
 
-	// Dial using the VM's socket path as the "host"
-	// The Transport DialContext handles the unix socket connection
 	req, err := http.NewRequestWithContext(ctx, method, "http://localhost"+path, bodyReader)
 	if err != nil {
 		return err
-	}
-	
-	// Hack: Put the socket path in the URL Host or use a custom transport per request?
-	// The single httpClient has a Dial that uses `addr`. 
-	// We need to pass the socket path.
-	// We can use a custom transport for EACH call, or update the specific request's context.
-	// Easiest: Create a new Transport/Client for this request.
-	client := &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", vm.SocketPath)
-			},
-		},
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
+	client := httpClientForSocket(vm.SocketPath)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -410,43 +626,29 @@ func (m *Manager) waitForSocket(ctx context.Context, path string) error {
 
 // buildCodeDrive creates a small ext4 image and injects the function code at /handler.
 // Uses a cached template image to avoid repeated mkfs calls.
+// Template creation is retryable on failure (unlike sync.Once).
 func (m *Manager) buildCodeDrive(drivePath, codePath string) error {
 	templatePath := filepath.Join(m.config.SocketDir, "template-code.ext4")
 
-	// Create template once
-	var templateErr error
-	m.templateOnce.Do(func() {
-		// Create empty image
-		f, err := os.Create(templatePath)
-		if err != nil {
-			templateErr = err
-			return
+	// Retryable template creation using atomic bool + mutex
+	if !m.templateReady.Load() {
+		m.templateMu.Lock()
+		if !m.templateReady.Load() {
+			if err := createTemplate(templatePath); err != nil {
+				m.templateMu.Unlock()
+				return err
+			}
+			m.templateReady.Store(true)
 		}
-		if err := f.Truncate(int64(codeDriveSizeMB) * 1024 * 1024); err != nil {
-			f.Close()
-			templateErr = err
-			return
-		}
-		f.Close()
-
-		// Format as ext4
-		if out, err := exec.Command("mkfs.ext4", "-F", "-q", templatePath).CombinedOutput(); err != nil {
-			templateErr = fmt.Errorf("mkfs.ext4: %s: %w", out, err)
-			return
-		}
-	})
-	if templateErr != nil {
-		return templateErr
+		m.templateMu.Unlock()
 	}
 
-	// Copy template to new drive
-	if err := copyFile(templatePath, drivePath); err != nil {
+	// Buffered copy of template to new drive
+	if err := copyFileBuffered(templatePath, drivePath); err != nil {
 		return err
 	}
 
 	// Inject function code using debugfs (no mount needed)
-	// write: copy file
-	// sif: set inode field (mode 0100755 = regular file + rwxr-xr-x)
 	debugfsCmd := fmt.Sprintf("write %s handler\nsif handler mode 0100755\n", codePath)
 	cmd := exec.Command("debugfs", "-w", drivePath)
 	cmd.Stdin = strings.NewReader(debugfsCmd)
@@ -457,7 +659,25 @@ func (m *Manager) buildCodeDrive(drivePath, codePath string) error {
 	return nil
 }
 
-func copyFile(src, dst string) error {
+func createTemplate(path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	if err := f.Truncate(int64(codeDriveSizeMB) * 1024 * 1024); err != nil {
+		f.Close()
+		return err
+	}
+	f.Close()
+
+	if out, err := exec.Command("mkfs.ext4", "-F", "-q", path).CombinedOutput(); err != nil {
+		os.Remove(path)
+		return fmt.Errorf("mkfs.ext4: %s: %w", out, err)
+	}
+	return nil
+}
+
+func copyFileBuffered(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -470,7 +690,8 @@ func copyFile(src, dst string) error {
 	}
 	defer out.Close()
 
-	_, err = io.Copy(out, in)
+	buf := make([]byte, 256*1024) // 256KB buffer
+	_, err = io.CopyBuffer(out, bufio.NewReaderSize(in, 256*1024), buf)
 	return err
 }
 
@@ -535,6 +756,8 @@ func (m *Manager) StopVM(vmID string) error {
 	}
 
 	// Cleanup per-VM files
+	removeSocketClient(vm.SocketPath)
+	deleteTAP(vm.TapDevice)
 	os.Remove(vm.SocketPath)
 	os.Remove(vm.VsockPath)
 	os.Remove(vm.CodeDrive)

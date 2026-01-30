@@ -57,13 +57,18 @@ func getStore() (*store.RedisStore, error) {
 
 func registerCmd() *cobra.Command {
 	var (
-		runtime  string
-		handler  string
-		codePath string
-		memoryMB int
-		timeoutS int
-		minReplicas int
-		envVars  []string
+		runtime        string
+		handler        string
+		codePath       string
+		memoryMB       int
+		timeoutS       int
+		minReplicas    int
+		vcpus          int
+		diskIOPS       int64
+		diskBandwidth  int64
+		netRxBandwidth int64
+		netTxBandwidth int64
+		envVars        []string
 	)
 
 	cmd := &cobra.Command{
@@ -110,6 +115,17 @@ func registerCmd() *cobra.Command {
 				UpdatedAt:   time.Now(),
 			}
 
+			// Apply resource limits if any are set
+			if vcpus > 1 || diskIOPS > 0 || diskBandwidth > 0 || netRxBandwidth > 0 || netTxBandwidth > 0 {
+				fn.Limits = &domain.ResourceLimits{
+					VCPUs:          vcpus,
+					DiskIOPS:       diskIOPS,
+					DiskBandwidth:  diskBandwidth,
+					NetRxBandwidth: netRxBandwidth,
+					NetTxBandwidth: netTxBandwidth,
+				}
+			}
+
 			if err := s.SaveFunction(context.Background(), fn); err != nil {
 				return err
 			}
@@ -120,7 +136,23 @@ func registerCmd() *cobra.Command {
 			fmt.Printf("  Runtime:      %s\n", fn.Runtime)
 			fmt.Printf("  Handler:      %s\n", fn.Handler)
 			fmt.Printf("  Code:         %s\n", fn.CodePath)
+			fmt.Printf("  Memory:       %d MB\n", fn.MemoryMB)
+			fmt.Printf("  vCPUs:        %d\n", vcpus)
 			fmt.Printf("  Min Replicas: %d\n", fn.MinReplicas)
+			if fn.Limits != nil {
+				if fn.Limits.DiskIOPS > 0 {
+					fmt.Printf("  Disk IOPS:    %d\n", fn.Limits.DiskIOPS)
+				}
+				if fn.Limits.DiskBandwidth > 0 {
+					fmt.Printf("  Disk BW:      %d bytes/s\n", fn.Limits.DiskBandwidth)
+				}
+				if fn.Limits.NetRxBandwidth > 0 {
+					fmt.Printf("  Net RX BW:    %d bytes/s\n", fn.Limits.NetRxBandwidth)
+				}
+				if fn.Limits.NetTxBandwidth > 0 {
+					fmt.Printf("  Net TX BW:    %d bytes/s\n", fn.Limits.NetTxBandwidth)
+				}
+			}
 			return nil
 		},
 	}
@@ -131,6 +163,11 @@ func registerCmd() *cobra.Command {
 	cmd.Flags().IntVarP(&memoryMB, "memory", "m", 128, "Memory in MB")
 	cmd.Flags().IntVarP(&timeoutS, "timeout", "t", 30, "Timeout in seconds")
 	cmd.Flags().IntVar(&minReplicas, "min-replicas", 0, "Minimum number of warm replicas")
+	cmd.Flags().IntVar(&vcpus, "vcpus", 1, "Number of vCPUs (1-32)")
+	cmd.Flags().Int64Var(&diskIOPS, "disk-iops", 0, "Max disk IOPS (0 = unlimited)")
+	cmd.Flags().Int64Var(&diskBandwidth, "disk-bandwidth", 0, "Max disk bandwidth in bytes/s (0 = unlimited)")
+	cmd.Flags().Int64Var(&netRxBandwidth, "net-rx-bandwidth", 0, "Max network RX bandwidth in bytes/s (0 = unlimited)")
+	cmd.Flags().Int64Var(&netTxBandwidth, "net-tx-bandwidth", 0, "Max network TX bandwidth in bytes/s (0 = unlimited)")
 	cmd.Flags().StringArrayVarP(&envVars, "env", "e", nil, "Environment variables (KEY=VALUE)")
 
 	cmd.MarkFlagRequired("runtime")

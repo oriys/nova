@@ -22,18 +22,28 @@ func (r Runtime) IsValid() bool {
 	return false
 }
 
+// ResourceLimits defines VM resource constraints
+type ResourceLimits struct {
+	VCPUs         int   `json:"vcpus,omitempty"`           // vCPU count (1-32, default: 1)
+	DiskIOPS      int64 `json:"disk_iops,omitempty"`       // Max disk IOPS (0 = unlimited)
+	DiskBandwidth int64 `json:"disk_bandwidth,omitempty"`  // Max disk bandwidth bytes/s (0 = unlimited)
+	NetRxBandwidth int64 `json:"net_rx_bandwidth,omitempty"` // Max network RX bytes/s (0 = unlimited)
+	NetTxBandwidth int64 `json:"net_tx_bandwidth,omitempty"` // Max network TX bytes/s (0 = unlimited)
+}
+
 type Function struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Runtime   Runtime           `json:"runtime"`
-	Handler   string            `json:"handler"`
-	CodePath  string            `json:"code_path"`
-	MemoryMB  int               `json:"memory_mb"`
-	TimeoutS  int               `json:"timeout_s"`
-	MinReplicas int             `json:"min_replicas"`
-	EnvVars   map[string]string `json:"env_vars,omitempty"`
-	CreatedAt time.Time         `json:"created_at"`
-	UpdatedAt time.Time         `json:"updated_at"`
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Runtime     Runtime           `json:"runtime"`
+	Handler     string            `json:"handler"`
+	CodePath    string            `json:"code_path"`
+	MemoryMB    int               `json:"memory_mb"`
+	TimeoutS    int               `json:"timeout_s"`
+	MinReplicas int               `json:"min_replicas"`
+	Limits      *ResourceLimits   `json:"limits,omitempty"`
+	EnvVars     map[string]string `json:"env_vars,omitempty"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
 }
 
 func (f *Function) MarshalBinary() ([]byte, error) {
