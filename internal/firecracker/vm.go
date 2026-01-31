@@ -778,19 +778,29 @@ func copyFileBuffered(src, dst string) error {
 
 func (m *Manager) waitForVsock(ctx context.Context, vm *VM) error {
 	deadline := time.Now().Add(m.config.BootTimeout)
+	sawSocket := false
+	var lastDialErr error
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(vm.VsockPath); err == nil {
+			sawSocket = true
 			conn, err := dialVsock(vm, time.Second)
 			if err == nil {
 				conn.Close()
 				return nil
 			}
+			lastDialErr = err
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(100 * time.Millisecond):
 		}
+	}
+	if !sawSocket {
+		return fmt.Errorf("vsock timeout: socket not created: %s", vm.VsockPath)
+	}
+	if lastDialErr != nil {
+		return fmt.Errorf("vsock timeout: %w", lastDialErr)
 	}
 	return fmt.Errorf("vsock timeout")
 }

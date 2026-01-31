@@ -65,11 +65,11 @@ type RespPayload struct {
 }
 
 type Agent struct {
-	function          *InitPayload
-	persistentProc    *exec.Cmd
-	persistentIn      io.WriteCloser
-	persistentOut     *bufio.Reader
-	persistentOutRaw  io.ReadCloser
+	function         *InitPayload
+	persistentProc   *exec.Cmd
+	persistentIn     io.WriteCloser
+	persistentOut    *bufio.Reader
+	persistentOutRaw io.ReadCloser
 }
 
 func main() {
@@ -113,18 +113,6 @@ func listen(port int) (net.Listener, error) {
 	os.Remove(sockPath)
 	fmt.Printf("[agent] Using unix socket: %s\n", sockPath)
 	return net.Listen("unix", sockPath)
-}
-
-func mountCodeDrive() {
-	os.MkdirAll(CodeMountPoint, 0755)
-	cmd := exec.Command("mount", "-t", "ext4", "-o", "ro", "/dev/vdb", CodeMountPoint)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "[agent] Mount /dev/vdb: %s (%v)\n", out, err)
-		// Critical failure: cannot access code
-		os.Exit(1)
-	} else {
-		fmt.Printf("[agent] Mounted code drive at %s\n", CodeMountPoint)
-	}
 }
 
 func handleConnection(conn net.Conn) {
