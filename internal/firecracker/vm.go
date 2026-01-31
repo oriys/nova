@@ -994,10 +994,10 @@ func (c *VsockClient) initLocked() error {
 func (c *VsockClient) redialAndInitLocked(timeout time.Duration) error {
 	hadConn := c.conn != nil
 	_ = c.closeLocked()
-	// Small delay after closing to let the vsock proxy clean up before redialing.
-	// This avoids race conditions where the proxy hasn't finished cleanup.
+	// Delay after closing to let the vsock proxy clean up before redialing.
+	// The proxy needs time to fully tear down the previous connection.
 	if hadConn {
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 	if err := c.dialLocked(timeout); err != nil {
 		return err
@@ -1097,7 +1097,7 @@ func (c *VsockClient) Execute(reqID string, input json.RawMessage, timeoutS int)
 		if err := c.redialAndInitLocked(5 * time.Second); err != nil {
 			lastErr = err
 			if attempt < 2 {
-				time.Sleep(20 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond)
 			}
 			continue
 		}
@@ -1109,7 +1109,7 @@ func (c *VsockClient) Execute(reqID string, input json.RawMessage, timeoutS int)
 			lastErr = err
 			_ = c.closeLocked()
 			if isBrokenConnErr(err) && attempt < 2 {
-				time.Sleep(20 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond)
 				continue
 			}
 			return nil, err
@@ -1121,7 +1121,7 @@ func (c *VsockClient) Execute(reqID string, input json.RawMessage, timeoutS int)
 			lastErr = err
 			_ = c.closeLocked()
 			if isBrokenConnErr(err) && attempt < 2 {
-				time.Sleep(20 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond)
 				continue
 			}
 			return nil, err
