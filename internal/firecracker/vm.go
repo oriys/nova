@@ -198,7 +198,9 @@ func (m *Manager) ensureBridge() error {
 	}
 
 	// Enable IP forwarding
-	os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1"), 0644)
+	if err := os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1"), 0644); err != nil {
+		return fmt.Errorf("enable ip forwarding: %w", err)
+	}
 
 	// Setup NAT (masquerade) for outbound traffic
 	exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-s", m.config.Subnet, "-j", "MASQUERADE").Run()
@@ -258,6 +260,10 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error
 		LastUsed:   time.Now(),
 	}
 
+	// Clean up any stale sockets before starting Firecracker.
+	_ = os.Remove(vm.SocketPath)
+	_ = os.Remove(vm.VsockPath)
+
 	// Prepare resources
 	rootfsPath := filepath.Join(m.config.RootfsDir, rootfsForRuntime(fn.Runtime))
 	if _, err := os.Stat(rootfsPath); os.IsNotExist(err) {
@@ -312,10 +318,14 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error
 		logFile.Close()
 		return nil, fmt.Errorf("start firecracker: %w", err)
 	}
+	if err := logFile.Close(); err != nil {
+		m.StopVM(vm.ID)
+		return nil, fmt.Errorf("close log file: %w", err)
+	}
 	vm.Cmd = cmd
 	
 	// Wait for API socket
-	if err := m.waitForSocket(ctx, vm.SocketPath); err != nil {
+	if err := m.waitForSocket(ctx, vm.SocketPath, cmd.Process, m.config.BootTimeout); err != nil {
 		m.StopVM(vm.ID) // cleanup
 		return nil, fmt.Errorf("wait api socket: %w", err)
 	}
@@ -415,9 +425,13 @@ func (m *Manager) apiBoot(ctx context.Context, vm *VM, rootfs, codeDrive string,
 	gatewayIP := baseIP + ".1"
 
 	// 1. Boot Source - add IP config via kernel cmdline
+	netmask, err := netmaskFromCIDR(m.config.Subnet)
+	if err != nil {
+		return fmt.Errorf("parse subnet: %w", err)
+	}
 	bootArgs := fmt.Sprintf(
-		"console=ttyS0 reboot=k panic=1 pci=off init=/init quiet 8250.nr_uarts=0 ip=%s::%s:255.255.255.0::eth0:off",
-		vm.GuestIP, gatewayIP,
+		"console=ttyS0 reboot=k panic=1 pci=off init=/init quiet 8250.nr_uarts=0 ip=%s::%s:%s::eth0:off",
+		vm.GuestIP, gatewayIP, netmask,
 	)
 	bs := map[string]interface{}{
 		"kernel_image_path": m.config.KernelPath,
@@ -451,16 +465,7 @@ func (m *Manager) apiBoot(ctx context.Context, vm *VM, rootfs, codeDrive string,
 		return fmt.Errorf("drive code: %w", err)
 	}
 
-	// 3. Machine Config
-	mc := map[string]interface{}{
-		"vcpu_count":   vcpus,
-		"mem_size_mib": mem,
-	}
-	if err := m.apiCall(ctx, vm, "PUT", "/machine-config", mc); err != nil {
-		return fmt.Errorf("machine-config: %w", err)
-	}
-
-	// 4. Network interface
+	// 3. Network interface
 	netIface := map[string]interface{}{
 		"iface_id":     "eth0",
 		"guest_mac":    vm.GuestMAC,
@@ -479,13 +484,22 @@ func (m *Manager) apiBoot(ctx context.Context, vm *VM, rootfs, codeDrive string,
 		return fmt.Errorf("network interface: %w", err)
 	}
 
-	// 5. Vsock
+	// 4. Vsock
 	vs := map[string]interface{}{
 		"guest_cid": vm.CID,
 		"uds_path":  vm.VsockPath,
 	}
 	if err := m.apiCall(ctx, vm, "PUT", "/vsock", vs); err != nil {
 		return fmt.Errorf("vsock: %w", err)
+	}
+
+	// 5. Machine Config
+	mc := map[string]interface{}{
+		"vcpu_count":   vcpus,
+		"mem_size_mib": mem,
+	}
+	if err := m.apiCall(ctx, vm, "PUT", "/machine-config", mc); err != nil {
+		return fmt.Errorf("machine-config: %w", err)
 	}
 
 	// 6. Action: InstanceStart
@@ -606,12 +620,20 @@ func (m *Manager) apiCall(ctx context.Context, vm *VM, method, path string, body
 	return nil
 }
 
-func (m *Manager) waitForSocket(ctx context.Context, path string) error {
+func (m *Manager) waitForSocket(ctx context.Context, path string, proc *os.Process, timeout time.Duration) error {
 	deadline, _ := ctx.Deadline()
 	if deadline.IsZero() {
-		deadline = time.Now().Add(5 * time.Second)
+		if timeout <= 0 {
+			timeout = 5 * time.Second
+		}
+		deadline = time.Now().Add(timeout)
 	}
 	for time.Now().Before(deadline) {
+		if proc != nil {
+			if err := proc.Signal(syscall.Signal(0)); err != nil {
+				return fmt.Errorf("firecracker exited before socket ready: %w", err)
+			}
+		}
 		if _, err := os.Stat(path); err == nil {
 			conn, err := net.Dial("unix", path)
 			if err == nil {
@@ -622,6 +644,18 @@ func (m *Manager) waitForSocket(ctx context.Context, path string) error {
 		time.Sleep(50 * time.Millisecond)
 	}
 	return fmt.Errorf("socket timeout")
+}
+
+func netmaskFromCIDR(subnet string) (string, error) {
+	_, ipNet, err := net.ParseCIDR(subnet)
+	if err != nil {
+		return "", err
+	}
+	mask := ipNet.Mask
+	if len(mask) != 4 {
+		return "", fmt.Errorf("unexpected netmask length: %d", len(mask))
+	}
+	return fmt.Sprintf("%d.%d.%d.%d", mask[0], mask[1], mask[2], mask[3]), nil
 }
 
 // buildCodeDrive creates a small ext4 image and injects the function code at /handler.
