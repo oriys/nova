@@ -50,8 +50,8 @@ latest_firecracker_version() {
 
 # ─── Firecracker ─────────────────────────────────────────
 install_firecracker() {
-    local fc_bin="${INSTALL_DIR}/bin/firecracker"
-    local jailer_bin="${INSTALL_DIR}/bin/jailer"
+    local fc_bin="${INSTALL_DIR}/bin/firecracker-v1.14.1-x86_64"
+    local jailer_bin="${INSTALL_DIR}/bin/jailer-v1.14.1-x86_64"
 
     if [[ -x "${fc_bin}" ]]; then
         warn "Existing Firecracker detected: $(${fc_bin} --version) - overwriting"
@@ -67,14 +67,15 @@ install_firecracker() {
     tar -xzf "${tmp}/fc.tgz" -C "${tmp}"
     # Handle both old (release-*/) and new (flat) archive structures
     if ls ${tmp}/release-*/firecracker-* &>/dev/null 2>&1; then
-        install -m 0755 ${tmp}/release-*/firecracker-* /opt/nova/bin/firecracker
-        install -m 0755 ${tmp}/release-*/jailer-*      /opt/nova/bin/jailer
+        install -m 0755 ${tmp}/release-*/firecracker-* /opt/nova/bin
+        install -m 0755 ${tmp}/release-*/jailer-*      /opt/nova/bin
     else
-        install -m 0755 ${tmp}/firecracker-${FC_VERSION}-${arch} /opt/nova/bin/firecracker
-        install -m 0755 ${tmp}/jailer-${FC_VERSION}-${arch}      /opt/nova/bin/jailer
+        install -m 0755 ${tmp}/firecracker-${FC_VERSION}-${arch} /opt/nova/bin
+        install -m 0755 ${tmp}/jailer-${FC_VERSION}-${arch}      /opt/nova/bin
     fi
     rm -rf "${tmp}"
     # Symlink to /usr/local/bin for convenience
+    mv
     ln -sf "${fc_bin}" /usr/local/bin/firecracker
     ln -sf "${jailer_bin}" /usr/local/bin/jailer
     log "Firecracker $(${fc_bin} --version)"
