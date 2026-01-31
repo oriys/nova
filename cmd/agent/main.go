@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/oriys/nova/internal/pkg/vsock"
@@ -26,6 +27,8 @@ const (
 
 	CodeMountPoint = "/code"
 	CodePath       = "/code/handler"
+
+	defaultPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 )
 
 // ExecutionMode determines how functions are executed
@@ -206,7 +209,7 @@ func (a *Agent) startPersistentProcess() error {
 		return fmt.Errorf("persistent mode not supported for runtime: %s", a.function.Runtime)
 	}
 
-	cmd.Env = append(os.Environ(), "NOVA_MODE=persistent")
+	cmd.Env = append(defaultEnv(), "NOVA_MODE=persistent", "NOVA_CODE_DIR="+CodeMountPoint)
 	for k, v := range a.function.EnvVars {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
@@ -285,7 +288,7 @@ func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, error) 
 		return nil, fmt.Errorf("unsupported runtime: %s", a.function.Runtime)
 	}
 
-	cmd.Env = append(os.Environ(), "NOVA_CODE_DIR="+CodeMountPoint)
+	cmd.Env = append(defaultEnv(), "NOVA_CODE_DIR="+CodeMountPoint)
 	for k, v := range a.function.EnvVars {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
@@ -342,6 +345,20 @@ func (a *Agent) executePersistent(input json.RawMessage) (json.RawMessage, error
 		return nil, fmt.Errorf("%s", resp.Error)
 	}
 	return resp.Output, nil
+}
+
+func defaultEnv() []string {
+	env := os.Environ()
+	for i, kv := range env {
+		if strings.HasPrefix(kv, "PATH=") {
+			if len(kv) > len("PATH=") {
+				return env
+			}
+			env[i] = "PATH=" + defaultPath
+			return env
+		}
+	}
+	return append(env, "PATH="+defaultPath)
 }
 
 func (a *Agent) stopPersistentProcess() {
