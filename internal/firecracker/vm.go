@@ -55,12 +55,15 @@ type Config struct {
 	BootTimeout    time.Duration
 }
 
+// NovaDir is the base installation directory for nova
+const NovaDir = "/opt/nova"
+
 func DefaultConfig() *Config {
 	return &Config{
-		FirecrackerBin: "/usr/local/bin/firecracker",
-		KernelPath:     "/opt/nova/kernel/vmlinux",
-		RootfsDir:      "/opt/nova/rootfs",
-		SnapshotDir:    "/opt/nova/snapshots",
+		FirecrackerBin: NovaDir + "/bin/firecracker",
+		KernelPath:     NovaDir + "/kernel/vmlinux",
+		RootfsDir:      NovaDir + "/rootfs",
+		SnapshotDir:    NovaDir + "/snapshots",
 		SocketDir:      "/tmp/nova/sockets",
 		VsockDir:       "/tmp/nova/vsock",
 		LogDir:         "/tmp/nova/logs",
@@ -334,8 +337,8 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error
 	}
 
 	if useSnapshot {
-		// Load Snapshot
-		err = m.apiLoadSnapshot(ctx, vm, snapshotPath, memPath)
+		// Load Snapshot (pass funcID for metadata lookup)
+		err = m.apiLoadSnapshot(ctx, vm, snapshotPath, memPath, fn.ID)
 	} else {
 		// Regular Boot
 		err = m.apiBoot(ctx, vm, rootfsPath, codeDrive, fn)
@@ -357,6 +360,12 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error
 	}
 
 	return vm, nil
+}
+
+// snapshotMeta stores metadata needed for snapshot restore.
+type snapshotMeta struct {
+	VsockPath string `json:"vsock_path"`
+	VsockCID  uint32 `json:"vsock_cid"`
 }
 
 // CreateSnapshot pauses the VM, creates snapshot files, and stops the VM.
@@ -386,8 +395,17 @@ func (m *Manager) CreateSnapshot(ctx context.Context, vmID string, funcID string
 		return fmt.Errorf("create snapshot: %w", err)
 	}
 
-	// Stop VM after snapshot (it's reusable but for safety we usually discard)
-	// We leave it to the caller to StopVM if they want.
+	// Save metadata for snapshot restore (vsock path, CID, etc.)
+	meta := snapshotMeta{
+		VsockPath: vm.VsockPath,
+		VsockCID:  vm.CID,
+	}
+	metaData, _ := json.Marshal(meta)
+	metaPath := filepath.Join(m.config.SnapshotDir, funcID+".meta")
+	if err := os.WriteFile(metaPath, metaData, 0644); err != nil {
+		return fmt.Errorf("write snapshot metadata: %w", err)
+	}
+
 	return nil
 }
 
@@ -427,6 +445,13 @@ func (m *Manager) apiBoot(ctx context.Context, vm *VM, rootfs, codeDrive string,
 	baseIP := strings.TrimSuffix(parts[0], ".0")
 	gatewayIP := baseIP + ".1"
 
+	// 0. Logger (configure early for debugging)
+	logPath := filepath.Join(m.config.LogDir, vm.ID+"-fc.log")
+	_ = m.apiCall(ctx, vm, "PUT", "/logger", map[string]interface{}{
+		"log_path": logPath,
+		"level":    "Warning",
+	})
+
 	// 1. Boot Source - add IP config via kernel cmdline
 	netmask, err := netmaskFromCIDR(m.config.Subnet)
 	if err != nil {
@@ -444,12 +469,13 @@ func (m *Manager) apiBoot(ctx context.Context, vm *VM, rootfs, codeDrive string,
 		return fmt.Errorf("boot-source: %w", err)
 	}
 
-	// 2. Drives with optional rate limiting
+	// 2. Drives with optional rate limiting and async IO
 	root := map[string]interface{}{
 		"drive_id":       "rootfs",
 		"path_on_host":   rootfs,
 		"is_root_device": true,
 		"is_read_only":   true,
+		"io_engine":      "Async",
 	}
 	if err := m.apiCall(ctx, vm, "PUT", "/drives/rootfs", root); err != nil {
 		return fmt.Errorf("drive rootfs: %w", err)
@@ -460,6 +486,7 @@ func (m *Manager) apiBoot(ctx context.Context, vm *VM, rootfs, codeDrive string,
 		"path_on_host":   codeDrive,
 		"is_root_device": false,
 		"is_read_only":   true,
+		"io_engine":      "Async",
 	}
 	if fn.Limits != nil && (fn.Limits.DiskIOPS > 0 || fn.Limits.DiskBandwidth > 0) {
 		code["rate_limiter"] = buildRateLimiter(fn.Limits.DiskBandwidth, fn.Limits.DiskIOPS)
@@ -513,38 +540,38 @@ func (m *Manager) apiBoot(ctx context.Context, vm *VM, rootfs, codeDrive string,
 	return nil
 }
 
-func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath string) error {
-	// Enable vsock before loading? Firecracker docs say restoration restores device state.
-	// However, the vsock UDS path might need to be set if it changed (it changes per VM ID).
-	// Snapshot restore typically requires matching device config.
-	// But Firecracker allows updating config on restore in newer versions.
-	// Simplified: We assume snapshot was taken with generic config, but UDS path is problematic.
-	// Workaround: We don't change UDS path in snapshot? No, UDS path is host-side.
-	// Actually, Firecracker re-binds to UDS path specified in config *or* updated via API?
-	// The `load_snapshot` API doesn't take Vsock config.
+func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath, funcID string) error {
+	// Per Firecracker docs (v1.12+), only Logger and Metrics may be configured
+	// before snapshot/load. All other resources (vsock, drives, network) are
+	// restored from the snapshot state.
+	//
+	// The vsock UDS path is restored to the path used when the snapshot was
+	// created, so we read the saved metadata and update vm.VsockPath accordingly.
+	// Network TAP devices can be overridden via the network_overrides field
+	// added in Firecracker v1.12.
 
-	// This is tricky. If we load a snapshot, the vsock device state (CID) is restored.
-	// The host UDS path must be valid.
-	// We might need to "patch" the VM after load, or ensure the snapshot VM had a generic path?
-	// Actually, `snapshot/load` restores the *guest* state. Host resources (tap, vsock uds) are re-attached?
-	// Let's rely on `resume_vm: true` handling it, but we might need to configure Vsock backend *before* load?
-	// Documentation says: "Configure the microVM... then Load Snapshot".
-
-	// We'll set up Vsock (with NEW UDS path) and other devices, THEN load snapshot with `resume_vm: true`.
-	// This allows the restored guest to talk to the new socket.
-
-	vs := map[string]interface{}{
-		"guest_cid": vm.CID, // Must match snapshot? Yes, or guest gets confused.
-		"uds_path":  vm.VsockPath,
+	// Load snapshot metadata to get the original vsock path
+	metaPath := filepath.Join(m.config.SnapshotDir, funcID+".meta")
+	metaData, err := os.ReadFile(metaPath)
+	if err != nil {
+		return fmt.Errorf("read snapshot metadata: %w", err)
 	}
-	if err := m.apiCall(ctx, vm, "PUT", "/vsock", vs); err != nil {
-		return fmt.Errorf("vsock: %w", err)
+	var meta snapshotMeta
+	if err := json.Unmarshal(metaData, &meta); err != nil {
+		return fmt.Errorf("parse snapshot metadata: %w", err)
 	}
 
-	// We also need to re-attach drives?
-	// Firecracker snapshot usually contains device state.
-	// But host paths might need to be set if changed.
-	// For now, let's assume we just call Load.
+	// Clean up stale vsock socket at the original path and update VM
+	_ = os.Remove(meta.VsockPath)
+	vm.VsockPath = meta.VsockPath
+	vm.CID = meta.VsockCID
+
+	// Configure logger before snapshot load (allowed per API)
+	logPath := filepath.Join(m.config.LogDir, vm.ID+"-fc.log")
+	_ = m.apiCall(ctx, vm, "PUT", "/logger", map[string]interface{}{
+		"log_path": logPath,
+		"level":    "Warning",
+	})
 
 	req := map[string]interface{}{
 		"snapshot_path": snapPath,
@@ -554,6 +581,18 @@ func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath
 		},
 		"resume_vm": true,
 	}
+
+	// Use network_overrides (v1.12+) to rebind the restored network interface
+	// to the new TAP device created for this VM.
+	if vm.TapDevice != "" {
+		req["network_overrides"] = []map[string]interface{}{
+			{
+				"iface_id":      "eth0",
+				"host_dev_name": vm.TapDevice,
+			},
+		}
+	}
+
 	if err := m.apiCall(ctx, vm, "PUT", "/snapshot/load", req); err != nil {
 		return fmt.Errorf("load snapshot: %w", err)
 	}

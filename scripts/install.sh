@@ -12,8 +12,8 @@ export PATH
 
 INSTALL_DIR="/opt/nova"
 FC_VERSION="latest"
-ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-minirootfs-3.19.0-x86_64.tar.gz"
-WASMTIME_VERSION="v18.0.2"
+ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-minirootfs-3.21.3-x86_64.tar.gz"
+WASMTIME_VERSION="v29.0.1"
 ROOTFS_SIZE_MB=256
 
 GREEN='\033[0;32m'
@@ -50,25 +50,34 @@ latest_firecracker_version() {
 
 # ─── Firecracker ─────────────────────────────────────────
 install_firecracker() {
-    if command -v firecracker &>/dev/null; then
-        warn "Existing Firecracker detected: $(firecracker --version) - overwriting"
-    elif [[ -x /usr/local/bin/firecracker ]]; then
-        warn "Existing Firecracker detected: $(/usr/local/bin/firecracker --version) - overwriting"
+    local fc_bin="${INSTALL_DIR}/bin/firecracker"
+    local jailer_bin="${INSTALL_DIR}/bin/jailer"
+
+    if [[ -x "${fc_bin}" ]]; then
+        warn "Existing Firecracker detected: $(${fc_bin} --version) - overwriting"
     fi
     if [[ "${FC_VERSION}" == "latest" || -z "${FC_VERSION}" ]]; then
         FC_VERSION="$(latest_firecracker_version)"
     fi
     log "Installing Firecracker ${FC_VERSION}..."
     local tmp=$(mktemp -d)
-    curl -fsSL -o "${tmp}/fc.tgz" \
-        "https://github.com/firecracker-microvm/firecracker/releases/download/${FC_VERSION}/firecracker-${FC_VERSION}-x86_64.tgz"
+    local arch="$(uname -m)"
+    local fc_url="https://github.com/firecracker-microvm/firecracker/releases/download/${FC_VERSION}/firecracker-${FC_VERSION}-${arch}.tgz"
+    curl -fsSL -o "${tmp}/fc.tgz" "${fc_url}"
     tar -xzf "${tmp}/fc.tgz" -C "${tmp}"
-    mkdir -p /usr/local/bin
-    install -Dm 0755 ${tmp}/release-*/firecracker-* /usr/local/bin/firecracker
-    install -Dm 0755 ${tmp}/release-*/jailer-*      /usr/local/bin/jailer
-    chmod +x /usr/local/bin/firecracker /usr/local/bin/jailer
+    # Handle both old (release-*/) and new (flat) archive structures
+    if ls ${tmp}/release-*/firecracker-* &>/dev/null 2>&1; then
+        install -m 0755 ${tmp}/release-*/firecracker-* "${fc_bin}"
+        install -m 0755 ${tmp}/release-*/jailer-*      "${jailer_bin}"
+    else
+        install -m 0755 ${tmp}/firecracker-${FC_VERSION}-${arch} "${fc_bin}"
+        install -m 0755 ${tmp}/jailer-${FC_VERSION}-${arch}      "${jailer_bin}"
+    fi
     rm -rf "${tmp}"
-    log "Firecracker $(/usr/local/bin/firecracker --version)"
+    # Symlink to /usr/local/bin for convenience
+    ln -sf "${fc_bin}" /usr/local/bin/firecracker
+    ln -sf "${jailer_bin}" /usr/local/bin/jailer
+    log "Firecracker $(${fc_bin} --version)"
 }
 
 # ─── Kernel ──────────────────────────────────────────────
@@ -81,10 +90,28 @@ download_kernel() {
     local kernel_key
     arch="$(uname -m)"
     latest_version="$(latest_firecracker_version)"
+    # Extract major.minor from version (e.g., v1.14.1 -> v1.14)
     ci_version="${latest_version%.*}"
-    kernel_key=$(curl -fsSL "http://spec.ccfc.min.s3.amazonaws.com/?prefix=firecracker-ci/${ci_version}/${arch}/vmlinux-&list-type=2" \
+
+    # Try to find kernel from Firecracker CI bucket
+    kernel_key=$(curl -fsSL "http://spec.ccfc.min.s3.amazonaws.com/?prefix=firecracker-ci/${ci_version}/${arch}/vmlinux-&list-type=2" 2>/dev/null \
         | grep -oP "(?<=<Key>)(firecracker-ci/${ci_version}/${arch}/vmlinux-[0-9]+\\.[0-9]+\\.[0-9]{1,3})(?=</Key>)" \
         | sort -V | tail -1)
+
+    # Fallback: try previous minor version if current not found
+    if [[ -z "${kernel_key}" ]]; then
+        local major_minor="${ci_version#v}"
+        local major="${major_minor%.*}"
+        local minor="${major_minor#*.}"
+        if [[ ${minor} -gt 0 ]]; then
+            local fallback_version="v${major}.$((minor - 1))"
+            warn "Kernel not found for ${ci_version}, trying ${fallback_version}"
+            kernel_key=$(curl -fsSL "http://spec.ccfc.min.s3.amazonaws.com/?prefix=firecracker-ci/${fallback_version}/${arch}/vmlinux-&list-type=2" 2>/dev/null \
+                | grep -oP "(?<=<Key>)(firecracker-ci/${fallback_version}/${arch}/vmlinux-[0-9]+\\.[0-9]+\\.[0-9]{1,3})(?=</Key>)" \
+                | sort -V | tail -1)
+        fi
+    fi
+
     if [[ -z "${kernel_key}" ]]; then
         err "Failed to locate Firecracker CI kernel for ${ci_version}/${arch}"
     fi
@@ -205,8 +232,11 @@ main() {
     check_system
     install_deps
 
-    mkdir -p ${INSTALL_DIR}/{kernel,rootfs,bin}
+    # Create directories (idempotent - creates if not exist, no error if exist)
+    log "Setting up directories..."
+    mkdir -p ${INSTALL_DIR}/{kernel,rootfs,bin,snapshots}
     mkdir -p /tmp/nova/{sockets,vsock,logs}
+    chmod 755 ${INSTALL_DIR} ${INSTALL_DIR}/{kernel,rootfs,bin,snapshots}
 
     install_firecracker
     download_kernel
@@ -225,12 +255,16 @@ main() {
     echo "  Nova Setup Complete"
     echo "========================================"
     echo ""
+    echo "  Installed to: ${INSTALL_DIR}"
+    echo ""
+    echo "  ${INSTALL_DIR}/bin/           (nova, nova-agent)"
     echo "  ${INSTALL_DIR}/kernel/vmlinux"
     echo "  ${INSTALL_DIR}/rootfs/base.ext4     (Go, Rust)"
     echo "  ${INSTALL_DIR}/rootfs/python.ext4   (Python)"
     echo "  ${INSTALL_DIR}/rootfs/wasm.ext4     (WASM)"
+    echo "  ${INSTALL_DIR}/snapshots/     (VM snapshots)"
     echo ""
-    echo "  Next: copy bin/nova + bin/nova-agent to ${INSTALL_DIR}/bin/"
+    echo "  Next: copy nova and nova-agent binaries to ${INSTALL_DIR}/bin/"
     echo ""
 }
 
