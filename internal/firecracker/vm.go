@@ -992,7 +992,13 @@ func (c *VsockClient) initLocked() error {
 }
 
 func (c *VsockClient) redialAndInitLocked(timeout time.Duration) error {
+	hadConn := c.conn != nil
 	_ = c.closeLocked()
+	// Small delay after closing to let the vsock proxy clean up before redialing.
+	// This avoids race conditions where the proxy hasn't finished cleanup.
+	if hadConn {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if err := c.dialLocked(timeout); err != nil {
 		return err
 	}
@@ -1067,9 +1073,11 @@ func (c *VsockClient) Init(fn *domain.Function) error {
 		EnvVars: fn.EnvVars,
 	})
 	c.initPayload = payload
-	// Keep connection open for subsequent Execute calls to reuse.
-	// Closing here causes race conditions with the vsock proxy.
-	return c.redialAndInitLocked(5 * time.Second)
+	if err := c.redialAndInitLocked(5 * time.Second); err != nil {
+		return err
+	}
+	// Close connection after init. Execute() will establish a fresh connection.
+	return c.closeLocked()
 }
 
 func (c *VsockClient) Execute(reqID string, input json.RawMessage, timeoutS int) (*RespPayload, error) {
@@ -1085,13 +1093,13 @@ func (c *VsockClient) Execute(reqID string, input json.RawMessage, timeoutS int)
 	execMsg := &VsockMessage{Type: MsgTypeExec, Payload: payload}
 
 	var lastErr error
-	for attempt := 0; attempt < 2; attempt++ {
-		// Reuse existing connection if available, only redial if nil or on retry
-		if c.conn == nil {
-			if err := c.redialAndInitLocked(5 * time.Second); err != nil {
-				lastErr = err
-				continue
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := c.redialAndInitLocked(5 * time.Second); err != nil {
+			lastErr = err
+			if attempt < 2 {
+				time.Sleep(20 * time.Millisecond)
 			}
+			continue
 		}
 
 		deadline := time.Now().Add(time.Duration(timeoutS+5) * time.Second)
@@ -1100,7 +1108,8 @@ func (c *VsockClient) Execute(reqID string, input json.RawMessage, timeoutS int)
 		if err := c.sendLocked(execMsg); err != nil {
 			lastErr = err
 			_ = c.closeLocked()
-			if attempt == 0 && isBrokenConnErr(err) {
+			if isBrokenConnErr(err) && attempt < 2 {
+				time.Sleep(20 * time.Millisecond)
 				continue
 			}
 			return nil, err
@@ -1111,7 +1120,8 @@ func (c *VsockClient) Execute(reqID string, input json.RawMessage, timeoutS int)
 		if err != nil {
 			lastErr = err
 			_ = c.closeLocked()
-			if attempt == 0 && isBrokenConnErr(err) {
+			if isBrokenConnErr(err) && attempt < 2 {
+				time.Sleep(20 * time.Millisecond)
 				continue
 			}
 			return nil, err
@@ -1123,7 +1133,7 @@ func (c *VsockClient) Execute(reqID string, input json.RawMessage, timeoutS int)
 			return nil, err
 		}
 
-		// Keep connection open for potential reuse by next Execute call
+		_ = c.closeLocked()
 		return &result, nil
 	}
 
@@ -1137,23 +1147,17 @@ func (c *VsockClient) Ping() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Reuse existing connection if available
-	if c.conn == nil {
-		if err := c.redialAndInitLocked(5 * time.Second); err != nil {
-			return err
-		}
+	if err := c.redialAndInitLocked(5 * time.Second); err != nil {
+		return err
 	}
+	defer c.closeLocked()
 
 	_ = c.conn.SetDeadline(time.Now().Add(3 * time.Second))
 	if err := c.sendLocked(&VsockMessage{Type: MsgTypePing}); err != nil {
-		_ = c.closeLocked()
 		return err
 	}
 	_, err := c.receiveLocked()
 	_ = c.conn.SetDeadline(time.Time{})
-	if err != nil {
-		_ = c.closeLocked()
-	}
 	return err
 }
 
