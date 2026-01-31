@@ -357,6 +357,9 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error
 	m.vms[vm.ID] = vm
 	m.mu.Unlock()
 
+	// Monitor the Firecracker process - clean up if it dies unexpectedly
+	go m.monitorProcess(vm)
+
 	if err := m.waitForVsock(ctx, vm); err != nil {
 		m.StopVM(vm.ID)
 		return nil, fmt.Errorf("wait vsock: %w", err)
@@ -804,6 +807,45 @@ func (m *Manager) waitForVsock(ctx context.Context, vm *VM) error {
 		return fmt.Errorf("vsock timeout: %w", lastDialErr)
 	}
 	return fmt.Errorf("vsock timeout")
+}
+
+// monitorProcess watches a Firecracker process and cleans up if it dies unexpectedly.
+func (m *Manager) monitorProcess(vm *VM) {
+	if vm.Cmd == nil || vm.Cmd.Process == nil {
+		return
+	}
+
+	// Wait for process to exit
+	err := vm.Cmd.Wait()
+
+	// Check if VM is still in our map (if not, it was intentionally stopped)
+	m.mu.RLock()
+	_, stillTracked := m.vms[vm.ID]
+	m.mu.RUnlock()
+
+	if stillTracked {
+		// Process died unexpectedly - clean up
+		exitCode := -1
+		if vm.Cmd.ProcessState != nil {
+			exitCode = vm.Cmd.ProcessState.ExitCode()
+		}
+		fmt.Printf("[firecracker] VM %s died unexpectedly (exit=%d, err=%v)\n", vm.ID, exitCode, err)
+
+		// Remove from manager and clean up resources
+		m.mu.Lock()
+		delete(m.vms, vm.ID)
+		m.mu.Unlock()
+
+		// Clean up per-VM files
+		removeSocketClient(vm.SocketPath)
+		deleteTAP(vm.TapDevice)
+		os.Remove(vm.SocketPath)
+		os.Remove(vm.VsockPath)
+		os.Remove(vm.CodeDrive)
+		os.Remove(filepath.Join(m.config.SocketDir, vm.ID+".json"))
+
+		vm.State = VMStateStopped
+	}
 }
 
 func (m *Manager) StopVM(vmID string) error {
