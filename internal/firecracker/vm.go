@@ -22,6 +22,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/oriys/nova/internal/domain"
+	"github.com/oriys/nova/internal/logging"
+	"github.com/oriys/nova/internal/metrics"
 )
 
 type VMState string
@@ -36,8 +38,14 @@ const (
 	GuestCodeDir  = "/code"
 	GuestCodePath = "/code/handler"
 
-	// Code drive size (16MB, enough for any single function)
-	codeDriveSizeMB = 16
+	// Default code drive size for template (16MB, suitable for most functions)
+	defaultCodeDriveSizeMB = 16
+
+	// Minimum code drive size (4MB) for small functions
+	minCodeDriveSizeMB = 4
+
+	// Ext4 overhead factor - actual usable space is ~85% of drive size
+	ext4OverheadFactor = 0.85
 
 	// Default vsock port used by the guest agent (must match cmd/agent)
 	defaultVsockPort = 9999
@@ -359,6 +367,12 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error
 	m.vms[vm.ID] = vm
 	m.mu.Unlock()
 
+	// Record metrics
+	metrics.Global().RecordVMCreated()
+	if useSnapshot {
+		metrics.Global().RecordSnapshotHit()
+	}
+
 	// Monitor the Firecracker process - clean up if it dies unexpectedly
 	go m.monitorProcess(vm)
 
@@ -411,10 +425,22 @@ func (m *Manager) CreateSnapshot(ctx context.Context, vmID string, funcID string
 	metaData, _ := json.Marshal(meta)
 	metaPath := filepath.Join(m.config.SnapshotDir, funcID+".meta")
 	if err := os.WriteFile(metaPath, metaData, 0644); err != nil {
-		return fmt.Errorf("write snapshot metadata: %w", err)
+		return errors.New("write snapshot metadata: " + err.Error())
 	}
 
 	return nil
+}
+
+// ResumeVM resumes a paused VM (e.g., after snapshot creation)
+func (m *Manager) ResumeVM(ctx context.Context, vmID string) error {
+	m.mu.RLock()
+	vm, ok := m.vms[vmID]
+	m.mu.RUnlock()
+	if !ok {
+		return errors.New("vm not found")
+	}
+
+	return m.apiCall(ctx, vm, "PATCH", "/vm", map[string]interface{}{"state": "Resumed"})
 }
 
 // buildRateLimiter creates a Firecracker rate limiter config
@@ -711,28 +737,58 @@ func netmaskFromCIDR(subnet string) (string, error) {
 	return fmt.Sprintf("%d.%d.%d.%d", mask[0], mask[1], mask[2], mask[3]), nil
 }
 
-// buildCodeDrive creates a small ext4 image and injects the function code at /handler.
-// Uses a cached template image to avoid repeated mkfs calls.
-// Template creation is retryable on failure (unlike sync.Once).
+// buildCodeDrive creates an ext4 image and injects the function code at /handler.
+// Uses a cached template image for small functions to avoid repeated mkfs calls.
+// For larger functions, creates a custom-sized drive.
 func (m *Manager) buildCodeDrive(drivePath, codePath string) error {
-	templatePath := filepath.Join(m.config.SocketDir, "template-code.ext4")
-
-	// Retryable template creation using atomic bool + mutex
-	if !m.templateReady.Load() {
-		m.templateMu.Lock()
-		if !m.templateReady.Load() {
-			if err := createTemplate(templatePath); err != nil {
-				m.templateMu.Unlock()
-				return err
-			}
-			m.templateReady.Store(true)
-		}
-		m.templateMu.Unlock()
+	// Get code file size
+	fi, err := os.Stat(codePath)
+	if err != nil {
+		return fmt.Errorf("stat code file: %w", err)
 	}
+	codeSizeMB := float64(fi.Size()) / (1024 * 1024)
 
-	// Buffered copy of template to new drive
-	if err := copyFileBuffered(templatePath, drivePath); err != nil {
-		return err
+	// Calculate required drive size (code + ext4 overhead + buffer)
+	requiredSizeMB := int(codeSizeMB/ext4OverheadFactor) + 2 // +2MB buffer for ext4 metadata
+
+	// Determine if we can use the standard template
+	useTemplate := requiredSizeMB <= defaultCodeDriveSizeMB
+	var driveSizeMB int
+
+	if useTemplate {
+		// Use cached template for small functions
+		templatePath := filepath.Join(m.config.SocketDir, "template-code.ext4")
+
+		// Retryable template creation using atomic bool + mutex
+		if !m.templateReady.Load() {
+			m.templateMu.Lock()
+			if !m.templateReady.Load() {
+				if err := createTemplateDrive(templatePath, defaultCodeDriveSizeMB); err != nil {
+					m.templateMu.Unlock()
+					return err
+				}
+				m.templateReady.Store(true)
+			}
+			m.templateMu.Unlock()
+		}
+
+		// Buffered copy of template to new drive
+		if err := copyFileBuffered(templatePath, drivePath); err != nil {
+			return err
+		}
+		driveSizeMB = defaultCodeDriveSizeMB
+	} else {
+		// Create custom-sized drive for large functions
+		driveSizeMB = requiredSizeMB
+		if driveSizeMB < minCodeDriveSizeMB {
+			driveSizeMB = minCodeDriveSizeMB
+		}
+		logging.Op().Info("creating custom code drive",
+			"size_mb", driveSizeMB,
+			"code_size_mb", codeSizeMB)
+		if err := createTemplateDrive(drivePath, driveSizeMB); err != nil {
+			return err
+		}
 	}
 
 	// Inject function code using debugfs (no mount needed)
@@ -740,18 +796,18 @@ func (m *Manager) buildCodeDrive(drivePath, codePath string) error {
 	cmd := exec.Command("debugfs", "-w", drivePath)
 	cmd.Stdin = strings.NewReader(debugfsCmd)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("debugfs inject: %s: %w", out, err)
+		return fmt.Errorf("debugfs inject (drive=%dMB, code=%.1fMB): %s: %w", driveSizeMB, codeSizeMB, out, err)
 	}
 
 	return nil
 }
 
-func createTemplate(path string) error {
+func createTemplateDrive(path string, sizeMB int) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return err
 	}
-	if err := f.Truncate(int64(codeDriveSizeMB) * 1024 * 1024); err != nil {
+	if err := f.Truncate(int64(sizeMB) * 1024 * 1024); err != nil {
 		f.Close()
 		return err
 	}
@@ -784,31 +840,64 @@ func copyFileBuffered(src, dst string) error {
 
 func (m *Manager) waitForVsock(ctx context.Context, vm *VM) error {
 	deadline := time.Now().Add(m.config.BootTimeout)
-	sawSocket := false
+
+	// Phase 1: Wait for socket file to be created using inotify
+	socketDir := filepath.Dir(vm.VsockPath)
+	socketName := filepath.Base(vm.VsockPath)
+
+	// Check if socket already exists
+	if _, err := os.Stat(vm.VsockPath); err != nil {
+		// Socket doesn't exist, use inotify to wait for it
+		if err := waitForFileInotify(ctx, socketDir, socketName, deadline); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+			// Inotify failed, fall back to polling
+			for time.Now().Before(deadline) {
+				if _, err := os.Stat(vm.VsockPath); err == nil {
+					break
+				}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(50 * time.Millisecond):
+				}
+			}
+		}
+	}
+
+	// Phase 2: Socket file exists, wait for it to be connectable
+	// Use shorter intervals since socket file is already present
 	var lastDialErr error
 	for time.Now().Before(deadline) {
-		if _, err := os.Stat(vm.VsockPath); err == nil {
-			sawSocket = true
-			conn, err := dialVsock(vm, time.Second)
-			if err == nil {
-				conn.Close()
-				return nil
+		if _, err := os.Stat(vm.VsockPath); err != nil {
+			// Socket disappeared, wait for it again
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(20 * time.Millisecond):
 			}
-			lastDialErr = err
+			continue
 		}
+
+		conn, err := dialVsock(vm, time.Second)
+		if err == nil {
+			conn.Close()
+			return nil
+		}
+		lastDialErr = err
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(20 * time.Millisecond): // Faster polling once socket exists
 		}
 	}
-	if !sawSocket {
-		return fmt.Errorf("vsock timeout: socket not created: %s", vm.VsockPath)
-	}
+
 	if lastDialErr != nil {
 		return fmt.Errorf("vsock timeout: %w", lastDialErr)
 	}
-	return fmt.Errorf("vsock timeout")
+	return fmt.Errorf("vsock timeout: socket not created: %s", vm.VsockPath)
 }
 
 // monitorProcess watches a Firecracker process and cleans up if it dies unexpectedly.
@@ -831,7 +920,13 @@ func (m *Manager) monitorProcess(vm *VM) {
 		if vm.Cmd.ProcessState != nil {
 			exitCode = vm.Cmd.ProcessState.ExitCode()
 		}
-		fmt.Printf("[firecracker] VM %s died unexpectedly (exit=%d, err=%v)\n", vm.ID, exitCode, err)
+		logging.Op().Error("VM died unexpectedly",
+			"vm_id", vm.ID,
+			"exit_code", exitCode,
+			"error", err)
+
+		// Record crash metric
+		metrics.Global().RecordVMCrashed()
 
 		// Remove from manager and clean up resources
 		m.mu.Lock()
@@ -859,6 +954,9 @@ func (m *Manager) StopVM(vmID string) error {
 	}
 	delete(m.vms, vmID)
 	m.mu.Unlock()
+
+	// Record metric
+	metrics.Global().RecordVMStopped()
 
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
@@ -928,9 +1026,21 @@ func (m *Manager) Shutdown() {
 	}
 	m.mu.Unlock()
 
+	// Stop all VMs in parallel
+	var wg sync.WaitGroup
 	for _, id := range ids {
-		m.StopVM(id)
+		wg.Add(1)
+		go func(vmID string) {
+			defer wg.Done()
+			m.StopVM(vmID)
+		}(id)
 	}
+	wg.Wait()
+}
+
+// SnapshotDir returns the directory where snapshots are stored.
+func (m *Manager) SnapshotDir() string {
+	return m.config.SnapshotDir
 }
 
 // rootfsForRuntime maps runtime to rootfs image.
