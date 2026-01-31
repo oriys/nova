@@ -11,11 +11,6 @@ log() { echo "[+] $1"; }
 # Check root
 [[ $EUID -eq 0 ]] || { echo "Run as root: sudo $0"; exit 1; }
 
-# Build binaries
-log "Building binaries..."
-CGO_ENABLED=0 go build -o bin/nova ./cmd/nova
-CGO_ENABLED=0 go build -o bin/nova-agent ./cmd/agent
-
 # Copy binaries
 log "Installing binaries to ${INSTALL_DIR}/bin/..."
 mkdir -p ${INSTALL_DIR}/bin
