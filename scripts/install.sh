@@ -60,8 +60,8 @@ install_firecracker() {
         "https://github.com/firecracker-microvm/firecracker/releases/download/${FC_VERSION}/firecracker-${FC_VERSION}-x86_64.tgz"
     tar -xzf "${tmp}/fc.tgz" -C "${tmp}"
     mkdir -p /usr/local/bin
-    install -m 0755 ${tmp}/release-*/firecracker-* /usr/local/bin/firecracker
-    install -m 0755 ${tmp}/release-*/jailer-*      /usr/local/bin/jailer
+    install -Dm 0755 ${tmp}/release-*/firecracker-* /usr/local/bin/firecracker
+    install -Dm 0755 ${tmp}/release-*/jailer-*      /usr/local/bin/jailer
     chmod +x /usr/local/bin/firecracker /usr/local/bin/jailer
     rm -rf "${tmp}"
     log "Firecracker $(/usr/local/bin/firecracker --version)"
