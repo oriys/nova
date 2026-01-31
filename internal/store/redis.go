@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/oriys/nova/internal/domain"
 	"github.com/go-redis/redis/v8"
@@ -104,4 +105,65 @@ func (s *RedisStore) ListFunctions(ctx context.Context) ([]*domain.Function, err
 		functions = append(functions, fn)
 	}
 	return functions, nil
+}
+
+// UpdateFunction updates an existing function with partial data.
+// Only non-zero fields in the update struct will be applied.
+type FunctionUpdate struct {
+	Handler        *string
+	CodePath       *string
+	MemoryMB       *int
+	TimeoutS       *int
+	MinReplicas    *int
+	Mode           *domain.ExecutionMode
+	Limits         *domain.ResourceLimits
+	EnvVars        map[string]string
+	MergeEnvVars   bool // If true, merge envvars instead of replace
+}
+
+func (s *RedisStore) UpdateFunction(ctx context.Context, name string, update *FunctionUpdate) (*domain.Function, error) {
+	fn, err := s.GetFunctionByName(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply updates
+	if update.Handler != nil {
+		fn.Handler = *update.Handler
+	}
+	if update.CodePath != nil {
+		fn.CodePath = *update.CodePath
+	}
+	if update.MemoryMB != nil {
+		fn.MemoryMB = *update.MemoryMB
+	}
+	if update.TimeoutS != nil {
+		fn.TimeoutS = *update.TimeoutS
+	}
+	if update.MinReplicas != nil {
+		fn.MinReplicas = *update.MinReplicas
+	}
+	if update.Mode != nil {
+		fn.Mode = *update.Mode
+	}
+	if update.Limits != nil {
+		fn.Limits = update.Limits
+	}
+	if update.EnvVars != nil {
+		if update.MergeEnvVars && fn.EnvVars != nil {
+			for k, v := range update.EnvVars {
+				fn.EnvVars[k] = v
+			}
+		} else {
+			fn.EnvVars = update.EnvVars
+		}
+	}
+
+	fn.UpdatedAt = time.Now()
+
+	if err := s.SaveFunction(ctx, fn); err != nil {
+		return nil, err
+	}
+
+	return fn, nil
 }

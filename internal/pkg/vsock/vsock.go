@@ -1,14 +1,13 @@
 package vsock
 
 import (
-	"fmt"
 	"net"
+
+	"github.com/mdlayher/vsock"
 )
 
-// Listen is a stub for the mdlayher/vsock.Listen function.
-// In a real environment, this would use the kernel's vsock capabilities.
-// For this disconnected environment, it returns an error to force fallback to Unix sockets,
-// or we could implement a mock if needed.
+// Listen creates a vsock listener on the specified port.
+// Uses the mdlayher/vsock package for AF_VSOCK support.
 func Listen(port uint32, config interface{}) (net.Listener, error) {
-	return nil, fmt.Errorf("vsock not implemented in this environment")
+	return vsock.Listen(port, nil)
 }

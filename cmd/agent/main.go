@@ -210,6 +210,10 @@ func (a *Agent) startPersistentProcess() error {
 		cmd = exec.Command("python3", "-u", CodePath, "--persistent")
 	case "go", "rust":
 		cmd = exec.Command(CodePath, "--persistent")
+	case "wasm":
+		// WASM persistent mode: wasmtime with stdin/stdout communication
+		// The WASM module must implement a loop reading JSON from stdin
+		cmd = exec.Command("wasmtime", CodePath, "--", "--persistent")
 	default:
 		return fmt.Errorf("persistent mode not supported for runtime: %s", a.function.Runtime)
 	}

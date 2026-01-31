@@ -53,6 +53,7 @@ type Config struct {
 	BridgeName     string
 	Subnet         string
 	BootTimeout    time.Duration
+	LogLevel       string // Firecracker log level: Error, Warning, Info, Debug
 }
 
 // NovaDir is the base installation directory for nova
@@ -70,6 +71,7 @@ func DefaultConfig() *Config {
 		BridgeName:     "novabr0",
 		Subnet:         "172.30.0.0/24",
 		BootTimeout:    10 * time.Second,
+		LogLevel:       "Warning",
 	}
 }
 
@@ -449,7 +451,7 @@ func (m *Manager) apiBoot(ctx context.Context, vm *VM, rootfs, codeDrive string,
 	logPath := filepath.Join(m.config.LogDir, vm.ID+"-fc.log")
 	_ = m.apiCall(ctx, vm, "PUT", "/logger", map[string]interface{}{
 		"log_path": logPath,
-		"level":    "Warning",
+		"level":    m.config.LogLevel,
 	})
 
 	// 1. Boot Source - add IP config via kernel cmdline
@@ -570,7 +572,7 @@ func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath
 	logPath := filepath.Join(m.config.LogDir, vm.ID+"-fc.log")
 	_ = m.apiCall(ctx, vm, "PUT", "/logger", map[string]interface{}{
 		"log_path": logPath,
-		"level":    "Warning",
+		"level":    m.config.LogLevel,
 	})
 
 	req := map[string]interface{}{

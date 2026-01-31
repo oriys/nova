@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -41,7 +44,9 @@ func main() {
 		listCmd(),
 		getCmd(),
 		deleteCmd(),
+		updateCmd(),
 		invokeCmd(),
+		snapshotCmd(),
 		daemonCmd(),
 	)
 
@@ -344,13 +349,196 @@ func invokeCmd() *cobra.Command {
 	return cmd
 }
 
-func daemonCmd() *cobra.Command {
-	var idleTTL time.Duration
+func updateCmd() *cobra.Command {
+	var (
+		handler        string
+		codePath       string
+		memoryMB       int
+		timeoutS       int
+		minReplicas    int
+		vcpus          int
+		diskIOPS       int64
+		diskBandwidth  int64
+		netRxBandwidth int64
+		netTxBandwidth int64
+		mode           string
+		envVars        []string
+		mergeEnv       bool
+	)
 
 	cmd := &cobra.Command{
-		Use:   "daemon",
-		Short: "Run as daemon (keeps VMs warm)",
-		Long:  "Run nova as a daemon that maintains warm VMs and handles invocations",
+		Use:   "update <name>",
+		Short: "Update an existing function",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+
+			s, err := getStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+
+			update := &store.FunctionUpdate{
+				MergeEnvVars: mergeEnv,
+			}
+
+			// Only set fields that were explicitly provided
+			if cmd.Flags().Changed("handler") {
+				update.Handler = &handler
+			}
+			if cmd.Flags().Changed("code") {
+				if _, err := os.Stat(codePath); os.IsNotExist(err) {
+					return fmt.Errorf("code path not found: %s", codePath)
+				}
+				update.CodePath = &codePath
+			}
+			if cmd.Flags().Changed("memory") {
+				update.MemoryMB = &memoryMB
+			}
+			if cmd.Flags().Changed("timeout") {
+				update.TimeoutS = &timeoutS
+			}
+			if cmd.Flags().Changed("min-replicas") {
+				update.MinReplicas = &minReplicas
+			}
+			if cmd.Flags().Changed("mode") {
+				m := domain.ExecutionMode(mode)
+				update.Mode = &m
+			}
+			if cmd.Flags().Changed("vcpus") || cmd.Flags().Changed("disk-iops") ||
+				cmd.Flags().Changed("disk-bandwidth") || cmd.Flags().Changed("net-rx-bandwidth") ||
+				cmd.Flags().Changed("net-tx-bandwidth") {
+				update.Limits = &domain.ResourceLimits{
+					VCPUs:          vcpus,
+					DiskIOPS:       diskIOPS,
+					DiskBandwidth:  diskBandwidth,
+					NetRxBandwidth: netRxBandwidth,
+					NetTxBandwidth: netTxBandwidth,
+				}
+			}
+			if len(envVars) > 0 {
+				envMap := make(map[string]string)
+				for _, e := range envVars {
+					parts := strings.SplitN(e, "=", 2)
+					if len(parts) == 2 {
+						envMap[parts[0]] = parts[1]
+					}
+				}
+				update.EnvVars = envMap
+			}
+
+			fn, err := s.UpdateFunction(context.Background(), name, update)
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("Function '%s' updated:\n", fn.Name)
+			fmt.Printf("  Handler:      %s\n", fn.Handler)
+			fmt.Printf("  Code:         %s\n", fn.CodePath)
+			fmt.Printf("  Memory:       %d MB\n", fn.MemoryMB)
+			fmt.Printf("  Timeout:      %d s\n", fn.TimeoutS)
+			fmt.Printf("  Mode:         %s\n", fn.Mode)
+			fmt.Printf("  Min Replicas: %d\n", fn.MinReplicas)
+			fmt.Printf("  Updated:      %s\n", fn.UpdatedAt.Format(time.RFC3339))
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&handler, "handler", "H", "", "Handler function")
+	cmd.Flags().StringVarP(&codePath, "code", "c", "", "Path to code file/directory")
+	cmd.Flags().IntVarP(&memoryMB, "memory", "m", 0, "Memory in MB")
+	cmd.Flags().IntVarP(&timeoutS, "timeout", "t", 0, "Timeout in seconds")
+	cmd.Flags().IntVar(&minReplicas, "min-replicas", 0, "Minimum number of warm replicas")
+	cmd.Flags().IntVar(&vcpus, "vcpus", 1, "Number of vCPUs")
+	cmd.Flags().Int64Var(&diskIOPS, "disk-iops", 0, "Max disk IOPS")
+	cmd.Flags().Int64Var(&diskBandwidth, "disk-bandwidth", 0, "Max disk bandwidth bytes/s")
+	cmd.Flags().Int64Var(&netRxBandwidth, "net-rx-bandwidth", 0, "Max network RX bytes/s")
+	cmd.Flags().Int64Var(&netTxBandwidth, "net-tx-bandwidth", 0, "Max network TX bytes/s")
+	cmd.Flags().StringArrayVarP(&envVars, "env", "e", nil, "Environment variables (KEY=VALUE)")
+	cmd.Flags().BoolVar(&mergeEnv, "merge-env", true, "Merge env vars instead of replacing")
+	cmd.Flags().StringVar(&mode, "mode", "", "Execution mode (process, persistent)")
+
+	return cmd
+}
+
+func snapshotCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "snapshot",
+		Short: "Manage function snapshots",
+	}
+
+	cmd.AddCommand(snapshotCreateCmd())
+	cmd.AddCommand(snapshotListCmd())
+	cmd.AddCommand(snapshotDeleteCmd())
+
+	return cmd
+}
+
+func snapshotCreateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "create <function-name>",
+		Short: "Create a snapshot of a warm VM",
+		Long:  "Creates a snapshot of an existing warm VM. The function must have at least one warm VM.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			funcName := args[0]
+
+			s, err := getStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+
+			fn, err := s.GetFunctionByName(context.Background(), funcName)
+			if err != nil {
+				return err
+			}
+
+			cfg := firecracker.DefaultConfig()
+			mgr, err := firecracker.NewManager(cfg)
+			if err != nil {
+				return fmt.Errorf("create VM manager: %w", err)
+			}
+			defer mgr.Shutdown()
+
+			p := pool.NewPool(mgr, pool.DefaultIdleTTL)
+			defer p.Shutdown()
+
+			// Create a VM specifically for snapshotting
+			fmt.Printf("Creating VM for snapshot of %s...\n", fn.Name)
+			ctx := context.Background()
+
+			pvm, err := p.Acquire(ctx, fn)
+			if err != nil {
+				return fmt.Errorf("acquire VM: %w", err)
+			}
+
+			// Create snapshot
+			fmt.Printf("Creating snapshot...\n")
+			if err := mgr.CreateSnapshot(ctx, pvm.VM.ID, fn.ID); err != nil {
+				p.Release(pvm)
+				return fmt.Errorf("create snapshot: %w", err)
+			}
+
+			// Stop the VM after snapshotting (it's paused by CreateSnapshot)
+			pvm.Client.Close()
+			mgr.StopVM(pvm.VM.ID)
+
+			fmt.Printf("Snapshot created for function '%s'\n", fn.Name)
+			fmt.Printf("  Location: %s/%s.snap\n", cfg.SnapshotDir, fn.ID)
+			fmt.Printf("  Memory:   %s/%s.mem\n", cfg.SnapshotDir, fn.ID)
+			fmt.Printf("\nNext invocation will use the snapshot for faster cold starts.\n")
+			return nil
+		},
+	}
+}
+
+func snapshotListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all snapshots",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := getStore()
 			if err != nil {
@@ -359,29 +547,162 @@ func daemonCmd() *cobra.Command {
 			defer s.Close()
 
 			cfg := firecracker.DefaultConfig()
+
+			funcs, err := s.ListFunctions(context.Background())
+			if err != nil {
+				return err
+			}
+
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "FUNCTION\tSNAPSHOT\tSIZE\tCREATED")
+
+			hasSnapshots := false
+			for _, fn := range funcs {
+				snapPath := filepath.Join(cfg.SnapshotDir, fn.ID+".snap")
+				memPath := filepath.Join(cfg.SnapshotDir, fn.ID+".mem")
+
+				snapInfo, err := os.Stat(snapPath)
+				if err != nil {
+					continue
+				}
+				memInfo, _ := os.Stat(memPath)
+
+				hasSnapshots = true
+				totalSize := snapInfo.Size()
+				if memInfo != nil {
+					totalSize += memInfo.Size()
+				}
+
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+					fn.Name,
+					fn.ID+".snap",
+					formatBytes(totalSize),
+					snapInfo.ModTime().Format("2006-01-02 15:04:05"),
+				)
+			}
+			w.Flush()
+
+			if !hasSnapshots {
+				fmt.Println("No snapshots found")
+			}
+			return nil
+		},
+	}
+}
+
+func snapshotDeleteCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "delete <function-name>",
+		Aliases: []string{"rm"},
+		Short:   "Delete a function's snapshot",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			funcName := args[0]
+
+			s, err := getStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+
+			fn, err := s.GetFunctionByName(context.Background(), funcName)
+			if err != nil {
+				return err
+			}
+
+			cfg := firecracker.DefaultConfig()
+			snapPath := filepath.Join(cfg.SnapshotDir, fn.ID+".snap")
+			memPath := filepath.Join(cfg.SnapshotDir, fn.ID+".mem")
+			metaPath := filepath.Join(cfg.SnapshotDir, fn.ID+".meta")
+
+			deleted := false
+			for _, path := range []string{snapPath, memPath, metaPath} {
+				if err := os.Remove(path); err == nil {
+					deleted = true
+				}
+			}
+
+			if deleted {
+				fmt.Printf("Snapshot deleted for function '%s'\n", fn.Name)
+			} else {
+				fmt.Printf("No snapshot found for function '%s'\n", fn.Name)
+			}
+			return nil
+		},
+	}
+}
+
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+func daemonCmd() *cobra.Command {
+	var (
+		idleTTL  time.Duration
+		httpAddr string
+		logLevel string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "daemon",
+		Short: "Run as daemon (keeps VMs warm, optional HTTP API)",
+		Long:  "Run nova as a daemon that maintains warm VMs and optionally exposes an HTTP API",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := getStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+
+			cfg := firecracker.DefaultConfig()
+			cfg.LogLevel = logLevel
 			mgr, err := firecracker.NewManager(cfg)
 			if err != nil {
 				return fmt.Errorf("create VM manager: %w", err)
 			}
 
 			p := pool.NewPool(mgr, idleTTL)
+			exec := executor.New(s, p)
 
 			fmt.Printf("Nova daemon started\n")
-			fmt.Printf("  Redis:    %s\n", redisAddr)
-			fmt.Printf("  Idle TTL: %s\n", idleTTL)
+			fmt.Printf("  Redis:     %s\n", redisAddr)
+			fmt.Printf("  Idle TTL:  %s\n", idleTTL)
+			fmt.Printf("  Log Level: %s\n", logLevel)
+
+			// Start HTTP server if address is provided
+			var httpServer *http.Server
+			if httpAddr != "" {
+				httpServer = startHTTPServer(httpAddr, s, exec, p)
+				fmt.Printf("  HTTP API:  http://%s\n", httpAddr)
+			}
+
 			fmt.Printf("\nWaiting for signals (Ctrl+C to stop)...\n")
 
 			sigCh := make(chan os.Signal, 1)
 			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 			// Status ticker
-			ticker := time.NewTicker(10 * time.Second) // Check more frequently for scaling
+			ticker := time.NewTicker(10 * time.Second)
 			defer ticker.Stop()
 
 			for {
 				select {
 				case <-sigCh:
 					fmt.Println("\nShutting down...")
+					if httpServer != nil {
+						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+						httpServer.Shutdown(ctx)
+						cancel()
+					}
 					p.Shutdown()
 					mgr.Shutdown()
 					return nil
@@ -407,5 +728,102 @@ func daemonCmd() *cobra.Command {
 	}
 
 	cmd.Flags().DurationVar(&idleTTL, "idle-ttl", 60*time.Second, "VM idle timeout")
+	cmd.Flags().StringVar(&httpAddr, "http", "", "HTTP API address (e.g., :8080)")
+	cmd.Flags().StringVar(&logLevel, "log-level", "Warning", "Firecracker log level (Error, Warning, Info, Debug)")
 	return cmd
+}
+
+// HTTP API Server
+
+func startHTTPServer(addr string, s *store.RedisStore, exec *executor.Executor, p *pool.Pool) *http.Server {
+	mux := http.NewServeMux()
+
+	// Health check
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
+	// List functions
+	mux.HandleFunc("GET /functions", func(w http.ResponseWriter, r *http.Request) {
+		funcs, err := s.ListFunctions(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(funcs)
+	})
+
+	// Get function
+	mux.HandleFunc("GET /functions/{name}", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		fn, err := s.GetFunctionByName(r.Context(), name)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(fn)
+	})
+
+	// Delete function
+	mux.HandleFunc("DELETE /functions/{name}", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		fn, err := s.GetFunctionByName(r.Context(), name)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		if err := s.DeleteFunction(r.Context(), fn.ID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Evict VMs for this function
+		p.Evict(fn.ID)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "name": name})
+	})
+
+	// Invoke function
+	mux.HandleFunc("POST /functions/{name}/invoke", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+
+		var payload json.RawMessage
+		if r.ContentLength > 0 {
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+				return
+			}
+		} else {
+			payload = json.RawMessage("{}")
+		}
+
+		resp, err := exec.Invoke(r.Context(), name, payload)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
+
+	// Pool stats
+	mux.HandleFunc("GET /stats", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(p.Stats())
+	})
+
+	server := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("[http] Server error: %v\n", err)
+		}
+	}()
+
+	return server
 }
