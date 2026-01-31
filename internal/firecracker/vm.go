@@ -945,11 +945,9 @@ type VsockClient struct {
 }
 
 func NewVsockClient(vm *VM) (*VsockClient, error) {
-	conn, err := dialVsock(vm, 5*time.Second)
-	if err != nil {
-		return nil, fmt.Errorf("dial vsock: %w", err)
-	}
-	return &VsockClient{vm: vm, conn: conn}, nil
+	// Dial on demand. In practice, the underlying UDS-backed vsock connection may
+	// be short-lived; keeping a long-lived connection is error-prone.
+	return &VsockClient{vm: vm}, nil
 }
 
 func (c *VsockClient) Close() error {
@@ -1069,26 +1067,10 @@ func (c *VsockClient) Init(fn *domain.Function) error {
 		EnvVars: fn.EnvVars,
 	})
 	c.initPayload = payload
-
-	if c.conn == nil {
-		if err := c.dialLocked(5 * time.Second); err != nil {
-			return err
-		}
-	}
-
-	if err := c.sendLocked(&VsockMessage{Type: MsgTypeInit, Payload: payload}); err != nil {
+	if err := c.redialAndInitLocked(5 * time.Second); err != nil {
 		return err
 	}
-
-	resp, err := c.receiveLocked()
-	if err != nil {
-		return err
-	}
-
-	if resp.Type != MsgTypeResp {
-		return fmt.Errorf("unexpected response type: %d", resp.Type)
-	}
-	return nil
+	return c.closeLocked()
 }
 
 func (c *VsockClient) Execute(reqID string, input json.RawMessage, timeoutS int) (*RespPayload, error) {
@@ -1101,84 +1083,69 @@ func (c *VsockClient) Execute(reqID string, input json.RawMessage, timeoutS int)
 		TimeoutS:  timeoutS,
 	})
 
-	if c.conn == nil {
+	execMsg := &VsockMessage{Type: MsgTypeExec, Payload: payload}
+
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
 		if err := c.redialAndInitLocked(5 * time.Second); err != nil {
+			lastErr = err
+			continue
+		}
+
+		deadline := time.Now().Add(time.Duration(timeoutS+5) * time.Second)
+		_ = c.conn.SetDeadline(deadline)
+
+		if err := c.sendLocked(execMsg); err != nil {
+			lastErr = err
+			_ = c.closeLocked()
+			if attempt == 0 && isBrokenConnErr(err) {
+				continue
+			}
 			return nil, err
 		}
-	}
 
-	deadline := time.Now().Add(time.Duration(timeoutS+5) * time.Second)
-	_ = c.conn.SetDeadline(deadline)
-
-	if err := c.sendLocked(&VsockMessage{Type: MsgTypeExec, Payload: payload}); err != nil {
-		if isBrokenConnErr(err) {
-			if err2 := c.redialAndInitLocked(5 * time.Second); err2 == nil {
-				deadline = time.Now().Add(time.Duration(timeoutS+5) * time.Second)
-				_ = c.conn.SetDeadline(deadline)
-				if err3 := c.sendLocked(&VsockMessage{Type: MsgTypeExec, Payload: payload}); err3 == nil {
-					resp, err4 := c.receiveLocked()
-					_ = c.conn.SetDeadline(time.Time{})
-					if err4 == nil {
-						var result RespPayload
-						if err := json.Unmarshal(resp.Payload, &result); err != nil {
-							return nil, err
-						}
-						return &result, nil
-					}
-					if isBrokenConnErr(err4) {
-						_ = c.closeLocked()
-					}
-					return nil, err4
-				} else if isBrokenConnErr(err3) {
-					_ = c.closeLocked()
-					return nil, err3
-				} else {
-					return nil, err3
-				}
+		resp, err := c.receiveLocked()
+		_ = c.conn.SetDeadline(time.Time{})
+		if err != nil {
+			lastErr = err
+			_ = c.closeLocked()
+			if attempt == 0 && isBrokenConnErr(err) {
+				continue
 			}
-			_ = c.closeLocked()
+			return nil, err
 		}
-		return nil, err
+
+		var result RespPayload
+		if err := json.Unmarshal(resp.Payload, &result); err != nil {
+			_ = c.closeLocked()
+			return nil, err
+		}
+
+		_ = c.closeLocked()
+		return &result, nil
 	}
 
-	resp, err := c.receiveLocked()
-	_ = c.conn.SetDeadline(time.Time{})
-	if err != nil {
-		if isBrokenConnErr(err) {
-			_ = c.closeLocked()
-		}
-		return nil, err
+	if lastErr != nil {
+		return nil, lastErr
 	}
-
-	var result RespPayload
-	if err := json.Unmarshal(resp.Payload, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
+	return nil, errors.New("vsock execute failed")
 }
 
 func (c *VsockClient) Ping() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.conn == nil {
-		if err := c.redialAndInitLocked(5 * time.Second); err != nil {
-			return err
-		}
+	if err := c.redialAndInitLocked(5 * time.Second); err != nil {
+		return err
 	}
+	defer c.closeLocked()
 
 	_ = c.conn.SetDeadline(time.Now().Add(3 * time.Second))
 	if err := c.sendLocked(&VsockMessage{Type: MsgTypePing}); err != nil {
-		if isBrokenConnErr(err) {
-			_ = c.closeLocked()
-		}
 		return err
 	}
 	_, err := c.receiveLocked()
 	_ = c.conn.SetDeadline(time.Time{})
-	if isBrokenConnErr(err) {
-		_ = c.closeLocked()
-	}
 	return err
 }
 
