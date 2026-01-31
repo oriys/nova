@@ -67,11 +67,11 @@ install_firecracker() {
     tar -xzf "${tmp}/fc.tgz" -C "${tmp}"
     # Handle both old (release-*/) and new (flat) archive structures
     if ls ${tmp}/release-*/firecracker-* &>/dev/null 2>&1; then
-        install -m 0755 ${tmp}/release-*/firecracker-* "${fc_bin}"
-        install -m 0755 ${tmp}/release-*/jailer-*      "${jailer_bin}"
+        install -m 0755 ${tmp}/release-*/firecracker-* /opt/nova/bin/firecracker
+        install -m 0755 ${tmp}/release-*/jailer-*      /opt/nova/bin/jailer
     else
-        install -m 0755 ${tmp}/firecracker-${FC_VERSION}-${arch} "${fc_bin}"
-        install -m 0755 ${tmp}/jailer-${FC_VERSION}-${arch}      "${jailer_bin}"
+        install -m 0755 ${tmp}/firecracker-${FC_VERSION}-${arch} /opt/nova/bin/firecracker
+        install -m 0755 ${tmp}/jailer-${FC_VERSION}-${arch}      /opt/nova/bin/jailer
     fi
     rm -rf "${tmp}"
     # Symlink to /usr/local/bin for convenience
