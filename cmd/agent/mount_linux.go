@@ -22,6 +22,13 @@ func mountCodeDrive() {
 		os.Exit(1)
 	}
 
+	// Rootfs is mounted read-only for sharing; provide a writable tmpfs at /tmp.
+	// This is needed because the agent writes request payloads to /tmp/input.json.
+	if err := unix.Mount("tmpfs", "/tmp", "tmpfs", 0, "mode=1777,size=64m"); err != nil && !errors.Is(err, unix.EBUSY) {
+		fmt.Fprintf(os.Stderr, "[agent] Mount tmpfs /tmp: %v\n", err)
+		os.Exit(1)
+	}
+
 	var lastErr error
 	for i := 0; i < 40; i++ { // ~2s total
 		err := unix.Mount("/dev/vdb", CodeMountPoint, "ext4", unix.MS_RDONLY, "")
