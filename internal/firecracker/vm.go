@@ -19,8 +19,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/oriys/nova/internal/domain"
 	"github.com/google/uuid"
+	"github.com/oriys/nova/internal/domain"
 )
 
 type VMState string
@@ -37,6 +37,9 @@ const (
 
 	// Code drive size (16MB, enough for any single function)
 	codeDriveSizeMB = 16
+
+	// Default vsock port used by the guest agent (must match cmd/agent)
+	defaultVsockPort = 9999
 )
 
 type Config struct {
@@ -304,8 +307,8 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error
 		return nil, fmt.Errorf("create log file: %w", err)
 	}
 
-	// Note: We don't pass --config-file if loading from snapshot, 
-	// or we pass a minimal one. For simplicity, we start without config 
+	// Note: We don't pass --config-file if loading from snapshot,
+	// or we pass a minimal one. For simplicity, we start without config
 	// and use API to configure/load.
 	cmd := exec.CommandContext(ctx, m.config.FirecrackerBin,
 		"--api-sock", vm.SocketPath,
@@ -323,7 +326,7 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error
 		return nil, fmt.Errorf("close log file: %w", err)
 	}
 	vm.Cmd = cmd
-	
+
 	// Wait for API socket
 	if err := m.waitForSocket(ctx, vm.SocketPath, cmd.Process, m.config.BootTimeout); err != nil {
 		m.StopVM(vm.ID) // cleanup
@@ -373,7 +376,7 @@ func (m *Manager) CreateSnapshot(ctx context.Context, vmID string, funcID string
 	// Create Snapshot
 	snapPath := filepath.Join(m.config.SnapshotDir, funcID+".snap")
 	memPath := filepath.Join(m.config.SnapshotDir, funcID+".mem")
-	
+
 	req := map[string]interface{}{
 		"snapshot_type": "Full",
 		"snapshot_path": snapPath,
@@ -393,15 +396,15 @@ func buildRateLimiter(bandwidth, ops int64) map[string]interface{} {
 	limiter := make(map[string]interface{})
 	if bandwidth > 0 {
 		limiter["bandwidth"] = map[string]interface{}{
-			"size":          bandwidth,
-			"refill_time":   1000, // 1 second in ms
+			"size":           bandwidth,
+			"refill_time":    1000, // 1 second in ms
 			"one_time_burst": 0,
 		}
 	}
 	if ops > 0 {
 		limiter["ops"] = map[string]interface{}{
-			"size":          ops,
-			"refill_time":   1000,
+			"size":           ops,
+			"refill_time":    1000,
 			"one_time_burst": 0,
 		}
 	}
@@ -467,8 +470,8 @@ func (m *Manager) apiBoot(ctx context.Context, vm *VM, rootfs, codeDrive string,
 
 	// 3. Network interface
 	netIface := map[string]interface{}{
-		"iface_id":     "eth0",
-		"guest_mac":    vm.GuestMAC,
+		"iface_id":      "eth0",
+		"guest_mac":     vm.GuestMAC,
 		"host_dev_name": vm.TapDevice,
 	}
 	// Apply network rate limiter if configured
@@ -519,33 +522,36 @@ func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath
 	// Workaround: We don't change UDS path in snapshot? No, UDS path is host-side.
 	// Actually, Firecracker re-binds to UDS path specified in config *or* updated via API?
 	// The `load_snapshot` API doesn't take Vsock config.
-	
+
 	// This is tricky. If we load a snapshot, the vsock device state (CID) is restored.
 	// The host UDS path must be valid.
 	// We might need to "patch" the VM after load, or ensure the snapshot VM had a generic path?
 	// Actually, `snapshot/load` restores the *guest* state. Host resources (tap, vsock uds) are re-attached?
 	// Let's rely on `resume_vm: true` handling it, but we might need to configure Vsock backend *before* load?
 	// Documentation says: "Configure the microVM... then Load Snapshot".
-	
+
 	// We'll set up Vsock (with NEW UDS path) and other devices, THEN load snapshot with `resume_vm: true`.
 	// This allows the restored guest to talk to the new socket.
-	
+
 	vs := map[string]interface{}{
 		"guest_cid": vm.CID, // Must match snapshot? Yes, or guest gets confused.
-		"uds_path": vm.VsockPath,
+		"uds_path":  vm.VsockPath,
 	}
 	if err := m.apiCall(ctx, vm, "PUT", "/vsock", vs); err != nil {
 		return fmt.Errorf("vsock: %w", err)
 	}
 
 	// We also need to re-attach drives?
-	// Firecracker snapshot usually contains device state. 
+	// Firecracker snapshot usually contains device state.
 	// But host paths might need to be set if changed.
 	// For now, let's assume we just call Load.
-	
+
 	req := map[string]interface{}{
 		"snapshot_path": snapPath,
-		"mem_file_path": memPath,
+		"mem_backend": map[string]interface{}{
+			"backend_type": "File",
+			"backend_path": memPath,
+		},
 		"resume_vm": true,
 	}
 	if err := m.apiCall(ctx, vm, "PUT", "/snapshot/load", req); err != nil {
@@ -733,7 +739,7 @@ func (m *Manager) waitForVsock(ctx context.Context, vm *VM) error {
 	deadline := time.Now().Add(m.config.BootTimeout)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(vm.VsockPath); err == nil {
-			conn, err := net.DialTimeout("unix", vm.VsockPath, time.Second)
+			conn, err := dialVsock(vm, time.Second)
 			if err == nil {
 				conn.Close()
 				return nil
@@ -762,7 +768,7 @@ func (m *Manager) StopVM(vmID string) error {
 	defer vm.mu.Unlock()
 
 	// 1. Try graceful shutdown via vsock
-	if conn, err := net.DialTimeout("unix", vm.VsockPath, time.Second); err == nil {
+	if conn, err := dialVsock(vm, time.Second); err == nil {
 		msg, _ := json.Marshal(&VsockMessage{Type: MsgTypeStop})
 		lenBuf := make([]byte, 4)
 		binary.BigEndian.PutUint32(lenBuf, uint32(len(msg)))
@@ -885,7 +891,7 @@ type VsockClient struct {
 }
 
 func NewVsockClient(vm *VM) (*VsockClient, error) {
-	conn, err := net.DialTimeout("unix", vm.VsockPath, 5*time.Second)
+	conn, err := dialVsock(vm, 5*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("dial vsock: %w", err)
 	}
@@ -988,4 +994,38 @@ func (c *VsockClient) Ping() error {
 	}
 	_, err := c.Receive()
 	return err
+}
+
+func dialVsock(vm *VM, timeout time.Duration) (net.Conn, error) {
+	dialer := net.Dialer{Timeout: timeout}
+	conn, err := dialer.Dial("unix", vm.VsockPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := sendVsockConnect(conn, defaultVsockPort, timeout); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return conn, nil
+}
+
+func sendVsockConnect(conn net.Conn, port int, timeout time.Duration) error {
+	if timeout > 0 {
+		_ = conn.SetDeadline(time.Now().Add(timeout))
+	}
+	if _, err := fmt.Fprintf(conn, "CONNECT %d\n", port); err != nil {
+		return err
+	}
+	reader := bufio.NewReader(conn)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(line, "OK") {
+		return fmt.Errorf("vsock connect failed: %s", strings.TrimSpace(line))
+	}
+	if timeout > 0 {
+		_ = conn.SetDeadline(time.Time{})
+	}
+	return nil
 }

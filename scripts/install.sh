@@ -11,8 +11,7 @@ PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export PATH
 
 INSTALL_DIR="/opt/nova"
-FC_VERSION="v1.7.0"
-KERNEL_URL="https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.11/x86_64/vmlinux-5.10.225"
+FC_VERSION="latest"
 ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-minirootfs-3.19.0-x86_64.tar.gz"
 WASMTIME_VERSION="v18.0.2"
 ROOTFS_SIZE_MB=256
@@ -44,15 +43,20 @@ install_deps() {
     fi
 }
 
+latest_firecracker_version() {
+    local release_url="https://github.com/firecracker-microvm/firecracker/releases"
+    basename "$(curl -fsSLI -o /dev/null -w "%{url_effective}" ${release_url}/latest)"
+}
+
 # ─── Firecracker ─────────────────────────────────────────
 install_firecracker() {
     if command -v firecracker &>/dev/null; then
-        log "Firecracker already installed: $(firecracker --version)"
-        return
+        warn "Existing Firecracker detected: $(firecracker --version) - overwriting"
+    elif [[ -x /usr/local/bin/firecracker ]]; then
+        warn "Existing Firecracker detected: $(/usr/local/bin/firecracker --version) - overwriting"
     fi
-    if [[ -x /usr/local/bin/firecracker ]]; then
-        log "Firecracker already installed: $(/usr/local/bin/firecracker --version)"
-        return
+    if [[ "${FC_VERSION}" == "latest" || -z "${FC_VERSION}" ]]; then
+        FC_VERSION="$(latest_firecracker_version)"
     fi
     log "Installing Firecracker ${FC_VERSION}..."
     local tmp=$(mktemp -d)
@@ -71,7 +75,20 @@ install_firecracker() {
 download_kernel() {
     log "Downloading kernel..."
     mkdir -p ${INSTALL_DIR}/kernel
-    curl -fsSL -o ${INSTALL_DIR}/kernel/vmlinux "${KERNEL_URL}"
+    local arch
+    local latest_version
+    local ci_version
+    local kernel_key
+    arch="$(uname -m)"
+    latest_version="$(latest_firecracker_version)"
+    ci_version="${latest_version%.*}"
+    kernel_key=$(curl -fsSL "http://spec.ccfc.min.s3.amazonaws.com/?prefix=firecracker-ci/${ci_version}/${arch}/vmlinux-&list-type=2" \
+        | grep -oP "(?<=<Key>)(firecracker-ci/${ci_version}/${arch}/vmlinux-[0-9]+\\.[0-9]+\\.[0-9]{1,3})(?=</Key>)" \
+        | sort -V | tail -1)
+    if [[ -z "${kernel_key}" ]]; then
+        err "Failed to locate Firecracker CI kernel for ${ci_version}/${arch}"
+    fi
+    curl -fsSL -o "${INSTALL_DIR}/kernel/vmlinux" "https://s3.amazonaws.com/spec.ccfc.min/${kernel_key}"
     log "Kernel: ${INSTALL_DIR}/kernel/vmlinux ($(du -h ${INSTALL_DIR}/kernel/vmlinux | cut -f1))"
 }
 
