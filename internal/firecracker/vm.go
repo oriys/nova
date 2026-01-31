@@ -316,7 +316,9 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error
 	// Note: We don't pass --config-file if loading from snapshot,
 	// or we pass a minimal one. For simplicity, we start without config
 	// and use API to configure/load.
-	cmd := exec.CommandContext(ctx, m.config.FirecrackerBin,
+	// Use exec.Command (not CommandContext) so the process survives beyond
+	// the HTTP request that created it.
+	cmd := exec.Command(m.config.FirecrackerBin,
 		"--api-sock", vm.SocketPath,
 	)
 	cmd.Stdout = logFile
