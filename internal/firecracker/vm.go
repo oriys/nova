@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -937,8 +938,10 @@ type RespPayload struct {
 }
 
 type VsockClient struct {
-	vm   *VM
-	conn net.Conn
+	vm          *VM
+	conn        net.Conn
+	mu          sync.Mutex
+	initPayload json.RawMessage
 }
 
 func NewVsockClient(vm *VM) (*VsockClient, error) {
@@ -950,13 +953,70 @@ func NewVsockClient(vm *VM) (*VsockClient, error) {
 }
 
 func (c *VsockClient) Close() error {
-	if c.conn != nil {
-		return c.conn.Close()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closeLocked()
+}
+
+func (c *VsockClient) closeLocked() error {
+	if c.conn == nil {
+		return nil
+	}
+	err := c.conn.Close()
+	c.conn = nil
+	return err
+}
+
+func (c *VsockClient) dialLocked(timeout time.Duration) error {
+	conn, err := dialVsock(c.vm, timeout)
+	if err != nil {
+		return err
+	}
+	c.conn = conn
+	return nil
+}
+
+func (c *VsockClient) initLocked() error {
+	if c.initPayload == nil {
+		return errors.New("missing init payload")
+	}
+	if err := c.sendLocked(&VsockMessage{Type: MsgTypeInit, Payload: c.initPayload}); err != nil {
+		return err
+	}
+	resp, err := c.receiveLocked()
+	if err != nil {
+		return err
+	}
+	if resp.Type != MsgTypeResp {
+		return fmt.Errorf("unexpected response type: %d", resp.Type)
+	}
+	return nil
+}
+
+func (c *VsockClient) redialAndInitLocked(timeout time.Duration) error {
+	_ = c.closeLocked()
+	if err := c.dialLocked(timeout); err != nil {
+		return err
+	}
+	if c.initPayload != nil {
+		if err := c.initLocked(); err != nil {
+			_ = c.closeLocked()
+			return err
+		}
 	}
 	return nil
 }
 
 func (c *VsockClient) Send(msg *VsockMessage) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.sendLocked(msg)
+}
+
+func (c *VsockClient) sendLocked(msg *VsockMessage) error {
+	if c.conn == nil {
+		return errors.New("vsock not connected")
+	}
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return err
@@ -965,14 +1025,22 @@ func (c *VsockClient) Send(msg *VsockMessage) error {
 	lenBuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(lenBuf, uint32(len(data)))
 
-	if _, err := c.conn.Write(lenBuf); err != nil {
+	if err := writeFull(c.conn, lenBuf); err != nil {
 		return err
 	}
-	_, err = c.conn.Write(data)
-	return err
+	return writeFull(c.conn, data)
 }
 
 func (c *VsockClient) Receive() (*VsockMessage, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.receiveLocked()
+}
+
+func (c *VsockClient) receiveLocked() (*VsockMessage, error) {
+	if c.conn == nil {
+		return nil, errors.New("vsock not connected")
+	}
 	lenBuf := make([]byte, 4)
 	if _, err := io.ReadFull(c.conn, lenBuf); err != nil {
 		return nil, err
@@ -992,17 +1060,27 @@ func (c *VsockClient) Receive() (*VsockMessage, error) {
 }
 
 func (c *VsockClient) Init(fn *domain.Function) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	payload, _ := json.Marshal(&InitPayload{
 		Runtime: string(fn.Runtime),
 		Handler: fn.Handler,
 		EnvVars: fn.EnvVars,
 	})
+	c.initPayload = payload
 
-	if err := c.Send(&VsockMessage{Type: MsgTypeInit, Payload: payload}); err != nil {
+	if c.conn == nil {
+		if err := c.dialLocked(5 * time.Second); err != nil {
+			return err
+		}
+	}
+
+	if err := c.sendLocked(&VsockMessage{Type: MsgTypeInit, Payload: payload}); err != nil {
 		return err
 	}
 
-	resp, err := c.Receive()
+	resp, err := c.receiveLocked()
 	if err != nil {
 		return err
 	}
@@ -1014,20 +1092,61 @@ func (c *VsockClient) Init(fn *domain.Function) error {
 }
 
 func (c *VsockClient) Execute(reqID string, input json.RawMessage, timeoutS int) (*RespPayload, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	payload, _ := json.Marshal(&ExecPayload{
 		RequestID: reqID,
 		Input:     input,
 		TimeoutS:  timeoutS,
 	})
 
-	c.conn.SetDeadline(time.Now().Add(time.Duration(timeoutS+5) * time.Second))
+	if c.conn == nil {
+		if err := c.redialAndInitLocked(5 * time.Second); err != nil {
+			return nil, err
+		}
+	}
 
-	if err := c.Send(&VsockMessage{Type: MsgTypeExec, Payload: payload}); err != nil {
+	deadline := time.Now().Add(time.Duration(timeoutS+5) * time.Second)
+	_ = c.conn.SetDeadline(deadline)
+
+	if err := c.sendLocked(&VsockMessage{Type: MsgTypeExec, Payload: payload}); err != nil {
+		if isBrokenConnErr(err) {
+			if err2 := c.redialAndInitLocked(5 * time.Second); err2 == nil {
+				deadline = time.Now().Add(time.Duration(timeoutS+5) * time.Second)
+				_ = c.conn.SetDeadline(deadline)
+				if err3 := c.sendLocked(&VsockMessage{Type: MsgTypeExec, Payload: payload}); err3 == nil {
+					resp, err4 := c.receiveLocked()
+					_ = c.conn.SetDeadline(time.Time{})
+					if err4 == nil {
+						var result RespPayload
+						if err := json.Unmarshal(resp.Payload, &result); err != nil {
+							return nil, err
+						}
+						return &result, nil
+					}
+					if isBrokenConnErr(err4) {
+						_ = c.closeLocked()
+					}
+					return nil, err4
+				} else if isBrokenConnErr(err3) {
+					_ = c.closeLocked()
+					return nil, err3
+				} else {
+					return nil, err3
+				}
+			}
+			_ = c.closeLocked()
+		}
 		return nil, err
 	}
 
-	resp, err := c.Receive()
+	resp, err := c.receiveLocked()
+	_ = c.conn.SetDeadline(time.Time{})
 	if err != nil {
+		if isBrokenConnErr(err) {
+			_ = c.closeLocked()
+		}
 		return nil, err
 	}
 
@@ -1039,11 +1158,27 @@ func (c *VsockClient) Execute(reqID string, input json.RawMessage, timeoutS int)
 }
 
 func (c *VsockClient) Ping() error {
-	c.conn.SetDeadline(time.Now().Add(3 * time.Second))
-	if err := c.Send(&VsockMessage{Type: MsgTypePing}); err != nil {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.conn == nil {
+		if err := c.redialAndInitLocked(5 * time.Second); err != nil {
+			return err
+		}
+	}
+
+	_ = c.conn.SetDeadline(time.Now().Add(3 * time.Second))
+	if err := c.sendLocked(&VsockMessage{Type: MsgTypePing}); err != nil {
+		if isBrokenConnErr(err) {
+			_ = c.closeLocked()
+		}
 		return err
 	}
-	_, err := c.Receive()
+	_, err := c.receiveLocked()
+	_ = c.conn.SetDeadline(time.Time{})
+	if isBrokenConnErr(err) {
+		_ = c.closeLocked()
+	}
 	return err
 }
 
@@ -1079,4 +1214,23 @@ func sendVsockConnect(conn net.Conn, port int, timeout time.Duration) error {
 		_ = conn.SetDeadline(time.Time{})
 	}
 	return nil
+}
+
+func writeFull(conn net.Conn, b []byte) error {
+	for len(b) > 0 {
+		n, err := conn.Write(b)
+		if err != nil {
+			return err
+		}
+		b = b[n:]
+	}
+	return nil
+}
+
+func isBrokenConnErr(err error) bool {
+	return err != nil && (errors.Is(err, io.EOF) ||
+		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.ECONNABORTED) ||
+		errors.Is(err, syscall.ENOTCONN))
 }
