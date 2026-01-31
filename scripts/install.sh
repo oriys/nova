@@ -7,6 +7,9 @@
 
 set -e
 
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
 INSTALL_DIR="/opt/nova"
 FC_VERSION="v1.7.0"
 KERNEL_URL="https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.11/x86_64/vmlinux-5.10.225"
@@ -47,6 +50,10 @@ install_firecracker() {
         log "Firecracker already installed: $(firecracker --version)"
         return
     fi
+    if [[ -x /usr/local/bin/firecracker ]]; then
+        log "Firecracker already installed: $(/usr/local/bin/firecracker --version)"
+        return
+    fi
     log "Installing Firecracker ${FC_VERSION}..."
     local tmp=$(mktemp -d)
     curl -fsSL -o "${tmp}/fc.tgz" \
@@ -56,7 +63,7 @@ install_firecracker() {
     mv ${tmp}/release-*/jailer-*      /usr/local/bin/jailer
     chmod +x /usr/local/bin/firecracker /usr/local/bin/jailer
     rm -rf "${tmp}"
-    log "Firecracker $(firecracker --version)"
+    log "Firecracker $(/usr/local/bin/firecracker --version)"
 }
 
 # ─── Kernel ──────────────────────────────────────────────
