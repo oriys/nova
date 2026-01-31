@@ -29,6 +29,9 @@ const (
 	CodePath       = "/code/handler"
 
 	defaultPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+	pythonPath   = "/usr/bin/python3"
+	wasmtimePath = "/usr/local/bin/wasmtime"
 )
 
 // ExecutionMode determines how functions are executed
@@ -199,13 +202,13 @@ func (a *Agent) startPersistentProcess() error {
 	switch a.function.Runtime {
 	case "python":
 		// Python persistent mode: reads JSON lines from stdin, writes to stdout
-		cmd = exec.Command("python3", "-u", CodePath, "--persistent")
+		cmd = exec.Command(resolveBinary(pythonPath, "python3"), "-u", CodePath, "--persistent")
 	case "go", "rust":
 		cmd = exec.Command(CodePath, "--persistent")
 	case "wasm":
 		// WASM persistent mode: wasmtime with stdin/stdout communication
 		// The WASM module must implement a loop reading JSON from stdin
-		cmd = exec.Command("wasmtime", CodePath, "--", "--persistent")
+		cmd = exec.Command(resolveBinary(wasmtimePath, "wasmtime"), CodePath, "--", "--persistent")
 	default:
 		return fmt.Errorf("persistent mode not supported for runtime: %s", a.function.Runtime)
 	}
@@ -280,11 +283,11 @@ func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, error) 
 	var cmd *exec.Cmd
 	switch a.function.Runtime {
 	case "python":
-		cmd = exec.Command("python3", CodePath, "/tmp/input.json")
+		cmd = exec.Command(resolveBinary(pythonPath, "python3"), CodePath, "/tmp/input.json")
 	case "go", "rust":
 		cmd = exec.Command(CodePath, "/tmp/input.json")
 	case "wasm":
-		cmd = exec.Command("wasmtime", CodePath, "--", "/tmp/input.json")
+		cmd = exec.Command(resolveBinary(wasmtimePath, "wasmtime"), CodePath, "--", "/tmp/input.json")
 	default:
 		return nil, fmt.Errorf("unsupported runtime: %s", a.function.Runtime)
 	}
@@ -366,6 +369,15 @@ func ensurePath() {
 	if os.Getenv("PATH") == "" {
 		_ = os.Setenv("PATH", defaultPath)
 	}
+}
+
+func resolveBinary(preferredPath, name string) string {
+	if preferredPath != "" {
+		if fi, err := os.Stat(preferredPath); err == nil && !fi.IsDir() {
+			return preferredPath
+		}
+	}
+	return name
 }
 
 func (a *Agent) stopPersistentProcess() {
