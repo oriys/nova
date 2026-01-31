@@ -1038,10 +1038,9 @@ func (c *VsockClient) initLocked() error {
 func (c *VsockClient) redialAndInitLocked(timeout time.Duration) error {
 	hadConn := c.conn != nil
 	_ = c.closeLocked()
-	// Delay after closing to let the vsock proxy clean up before redialing.
-	// The proxy needs time to fully tear down the previous connection.
+	// Small delay after closing to let the vsock proxy clean up.
 	if hadConn {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 	if err := c.dialLocked(timeout); err != nil {
 		return err
@@ -1070,13 +1069,11 @@ func (c *VsockClient) sendLocked(msg *VsockMessage) error {
 		return err
 	}
 
-	lenBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(lenBuf, uint32(len(data)))
-
-	if err := writeFull(c.conn, lenBuf); err != nil {
-		return err
-	}
-	return writeFull(c.conn, data)
+	// Batch length prefix and data into single write to reduce syscalls
+	buf := make([]byte, 4+len(data))
+	binary.BigEndian.PutUint32(buf[:4], uint32(len(data)))
+	copy(buf[4:], data)
+	return writeFull(c.conn, buf)
 }
 
 func (c *VsockClient) Receive() (*VsockMessage, error) {
@@ -1136,12 +1133,15 @@ func (c *VsockClient) Execute(reqID string, input json.RawMessage, timeoutS int)
 
 	execMsg := &VsockMessage{Type: MsgTypeExec, Payload: payload}
 
+	// Exponential backoff: 10ms, 25ms, 50ms
+	backoff := []time.Duration{10 * time.Millisecond, 25 * time.Millisecond, 50 * time.Millisecond}
+
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		if err := c.redialAndInitLocked(5 * time.Second); err != nil {
 			lastErr = err
 			if attempt < 2 {
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(backoff[attempt])
 			}
 			continue
 		}
@@ -1153,7 +1153,7 @@ func (c *VsockClient) Execute(reqID string, input json.RawMessage, timeoutS int)
 			lastErr = err
 			_ = c.closeLocked()
 			if isBrokenConnErr(err) && attempt < 2 {
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(backoff[attempt])
 				continue
 			}
 			return nil, err
@@ -1165,7 +1165,7 @@ func (c *VsockClient) Execute(reqID string, input json.RawMessage, timeoutS int)
 			lastErr = err
 			_ = c.closeLocked()
 			if isBrokenConnErr(err) && attempt < 2 {
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(backoff[attempt])
 				continue
 			}
 			return nil, err
