@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/store"
-	"github.com/google/uuid"
 )
 
 type Executor struct {
@@ -41,6 +41,7 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 
 	resp, err := pvm.Client.Execute(reqID, payload, fn.TimeoutS)
 	if err != nil {
+		e.pool.EvictVM(fn.ID, pvm)
 		return nil, fmt.Errorf("execute: %w", err)
 	}
 

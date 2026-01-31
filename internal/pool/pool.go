@@ -273,6 +273,35 @@ func (p *Pool) Evict(funcID string) {
 	}
 }
 
+// EvictVM removes a single VM from the pool and stops it.
+func (p *Pool) EvictVM(funcID string, target *PooledVM) {
+	if target == nil {
+		return
+	}
+
+	p.mu.Lock()
+	list, ok := p.vms[funcID]
+	if !ok {
+		p.mu.Unlock()
+		return
+	}
+	newList := make([]*PooledVM, 0, len(list))
+	for _, pvm := range list {
+		if pvm != target {
+			newList = append(newList, pvm)
+		}
+	}
+	if len(newList) == 0 {
+		delete(p.vms, funcID)
+	} else {
+		p.vms[funcID] = newList
+	}
+	p.mu.Unlock()
+
+	target.Client.Close()
+	p.manager.StopVM(target.VM.ID)
+}
+
 func (p *Pool) Stats() map[string]interface{} {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
