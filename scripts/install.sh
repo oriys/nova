@@ -75,7 +75,6 @@ install_firecracker() {
     fi
     rm -rf "${tmp}"
     # Symlink to /usr/local/bin for convenience
-    mv
     ln -sf "${fc_bin}" /usr/local/bin/firecracker
     ln -sf "${jailer_bin}" /usr/local/bin/jailer
     log "Firecracker $(${fc_bin} --version)"
