@@ -7,7 +7,7 @@
 
 set -e
 
-PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/nova/bin"
 export PATH
 
 INSTALL_DIR="/opt/nova"
