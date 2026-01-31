@@ -1,0 +1,13 @@
+# Build artifacts
+build/
+target/
+
+# Compiled binaries
+hello-go
+hello-rust
+cpu_intensive_go
+disk_test_go
+*.exe
+
+# Cargo lock (optional)
+Cargo.lock

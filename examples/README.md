@@ -2,6 +2,16 @@
 
 测试用例覆盖 CPU 计算、超时、网络、磁盘 I/O 四种场景，每种场景提供 Python、Go、Rust 三种语言实现。
 
+## 快速测试
+
+```bash
+# 测试所有运行时 (Python, Go, Rust)
+./test_all_runtimes.sh
+
+# 仅测试 Python 和 Go
+./test_hello.sh
+```
+
 ## 用例列表
 
 | 场景 | Python | Go | Rust |

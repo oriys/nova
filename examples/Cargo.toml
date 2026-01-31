@@ -1,0 +1,34 @@
+[package]
+name = "nova-examples"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "hello-rust"
+path = "hello.rs"
+
+[[bin]]
+name = "cpu-intensive-rust"
+path = "cpu_intensive.rs"
+
+[[bin]]
+name = "timeout-test-rust"
+path = "timeout_test.rs"
+
+[[bin]]
+name = "network-test-rust"
+path = "network_test.rs"
+
+[[bin]]
+name = "disk-test-rust"
+path = "disk_test.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+ureq = "2.9"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
