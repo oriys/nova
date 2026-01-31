@@ -78,6 +78,7 @@ type Agent struct {
 func main() {
 	fmt.Println("[agent] Nova guest agent starting...")
 
+	ensurePath()
 	mountCodeDrive()
 
 	listener, err := listen(VsockPort)
@@ -359,6 +360,12 @@ func defaultEnv() []string {
 		}
 	}
 	return append(env, "PATH="+defaultPath)
+}
+
+func ensurePath() {
+	if os.Getenv("PATH") == "" {
+		_ = os.Setenv("PATH", defaultPath)
+	}
 }
 
 func (a *Agent) stopPersistentProcess() {
