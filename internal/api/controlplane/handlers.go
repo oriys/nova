@@ -35,6 +35,12 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// Runtimes
 	mux.HandleFunc("GET /runtimes", h.ListRuntimes)
+	mux.HandleFunc("POST /runtimes", h.CreateRuntime)
+	mux.HandleFunc("DELETE /runtimes/{id}", h.DeleteRuntime)
+
+	// Configuration
+	mux.HandleFunc("GET /config", h.GetConfig)
+	mux.HandleFunc("PUT /config", h.UpdateConfig)
 
 	// Snapshot management
 	mux.HandleFunc("GET /snapshots", h.ListSnapshots)
@@ -288,65 +294,129 @@ func (h *Handler) DeleteFunction(w http.ResponseWriter, r *http.Request) {
 
 // ListRuntimes handles GET /runtimes
 func (h *Handler) ListRuntimes(w http.ResponseWriter, r *http.Request) {
-	runtimes := []map[string]interface{}{
-		// Python versions
-		{"id": "python", "name": "Python", "version": "3.12", "status": "available"},
-		{"id": "python3.11", "name": "Python", "version": "3.11", "status": "available"},
-		{"id": "python3.10", "name": "Python", "version": "3.10", "status": "available"},
-		{"id": "python3.9", "name": "Python", "version": "3.9", "status": "available"},
-		// Go versions
-		{"id": "go", "name": "Go", "version": "1.22", "status": "available"},
-		{"id": "go1.21", "name": "Go", "version": "1.21", "status": "available"},
-		{"id": "go1.20", "name": "Go", "version": "1.20", "status": "available"},
-		// Node.js versions
-		{"id": "node", "name": "Node.js", "version": "22.x", "status": "available"},
-		{"id": "node20", "name": "Node.js", "version": "20.x", "status": "available"},
-		{"id": "node18", "name": "Node.js", "version": "18.x", "status": "available"},
-		// Rust versions
-		{"id": "rust", "name": "Rust", "version": "1.76", "status": "available"},
-		{"id": "rust1.75", "name": "Rust", "version": "1.75", "status": "available"},
-		// Deno & Bun
-		{"id": "deno", "name": "Deno", "version": "1.40", "status": "available"},
-		{"id": "bun", "name": "Bun", "version": "1.0", "status": "available"},
-		// Ruby versions
-		{"id": "ruby", "name": "Ruby", "version": "3.3", "status": "available"},
-		{"id": "ruby3.2", "name": "Ruby", "version": "3.2", "status": "available"},
-		// JVM languages
-		{"id": "java", "name": "Java", "version": "21", "status": "available"},
-		{"id": "java17", "name": "Java", "version": "17", "status": "available"},
-		{"id": "java11", "name": "Java", "version": "11", "status": "available"},
-		{"id": "kotlin", "name": "Kotlin", "version": "1.9", "status": "available"},
-		{"id": "scala", "name": "Scala", "version": "3.3", "status": "available"},
-		// Other languages
-		{"id": "php", "name": "PHP", "version": "8.3", "status": "available"},
-		{"id": "php8.2", "name": "PHP", "version": "8.2", "status": "available"},
-		{"id": "dotnet", "name": ".NET", "version": "8.0", "status": "available"},
-		{"id": "dotnet7", "name": ".NET", "version": "7.0", "status": "available"},
-		{"id": "elixir", "name": "Elixir", "version": "1.16", "status": "available"},
-		{"id": "swift", "name": "Swift", "version": "5.9", "status": "available"},
-		{"id": "zig", "name": "Zig", "version": "0.11", "status": "available"},
-		{"id": "lua", "name": "Lua", "version": "5.4", "status": "available"},
-		{"id": "perl", "name": "Perl", "version": "5.38", "status": "available"},
-		{"id": "r", "name": "R", "version": "4.3", "status": "available"},
-		{"id": "julia", "name": "Julia", "version": "1.10", "status": "available"},
-		{"id": "wasm", "name": "WebAssembly", "version": "wasmtime", "status": "available"},
+	runtimes, err := h.Store.ListRuntimes(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	// Count functions per runtime
-	funcs, _ := h.Store.ListFunctions(r.Context())
-	runtimeCounts := make(map[string]int)
-	for _, fn := range funcs {
-		runtimeCounts[string(fn.Runtime)]++
-	}
-
-	// Add function counts to runtimes
-	for i := range runtimes {
-		id := runtimes[i]["id"].(string)
-		runtimes[i]["functions_count"] = runtimeCounts[id]
+	// Ensure we return empty array instead of null
+	if runtimes == nil {
+		runtimes = []*store.RuntimeRecord{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(runtimes)
+}
+
+// CreateRuntime handles POST /runtimes
+func (h *Handler) CreateRuntime(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		Version string `json:"version"`
+		Status  string `json:"status"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	if req.ID == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+	if req.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if req.Version == "" {
+		http.Error(w, "version is required", http.StatusBadRequest)
+		return
+	}
+	if req.Status == "" {
+		req.Status = "available"
+	}
+
+	rt := &store.RuntimeRecord{
+		ID:      req.ID,
+		Name:    req.Name,
+		Version: req.Version,
+		Status:  req.Status,
+	}
+
+	if err := h.Store.SaveRuntime(r.Context(), rt); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(rt)
+}
+
+// DeleteRuntime handles DELETE /runtimes/{id}
+func (h *Handler) DeleteRuntime(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "runtime id is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Store.DeleteRuntime(r.Context(), id); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "deleted",
+		"id":      id,
+	})
+}
+
+// GetConfig handles GET /config
+func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
+	config, err := h.Store.GetConfig(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Ensure we return empty object instead of null
+	if config == nil {
+		config = make(map[string]string)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(config)
+}
+
+// UpdateConfig handles PUT /config
+func (h *Handler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
+	var updates map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	for key, value := range updates {
+		if err := h.Store.SetConfig(r.Context(), key, value); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Return updated config
+	config, err := h.Store.GetConfig(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(config)
 }
 
 // ListSnapshots handles GET /snapshots

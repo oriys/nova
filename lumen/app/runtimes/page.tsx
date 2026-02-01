@@ -5,9 +5,9 @@ import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { runtimesApi } from "@/lib/api"
+import { runtimesApi, CreateRuntimeRequest } from "@/lib/api"
 import { transformRuntime, RuntimeInfo } from "@/lib/types"
-import { RefreshCw, Box, CheckCircle, AlertTriangle, Wrench } from "lucide-react"
+import { RefreshCw, Box, CheckCircle, AlertTriangle, Wrench, Plus, Trash2, X } from "lucide-react"
 import { RuntimeIcon, getRuntimeColor } from "@/components/runtime-logos"
 import { cn } from "@/lib/utils"
 
@@ -15,6 +15,16 @@ export default function RuntimesPage() {
   const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [formData, setFormData] = useState<CreateRuntimeRequest>({
+    id: "",
+    name: "",
+    version: "",
+    status: "available",
+  })
 
   const fetchData = useCallback(async () => {
     try {
@@ -33,6 +43,36 @@ export default function RuntimesPage() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  const handleCreate = async () => {
+    if (!formData.id || !formData.name || !formData.version) return
+    try {
+      setCreating(true)
+      await runtimesApi.create(formData)
+      setShowCreateDialog(false)
+      setFormData({ id: "", name: "", version: "", status: "available" })
+      fetchData()
+    } catch (err) {
+      console.error("Failed to create runtime:", err)
+      setError(err instanceof Error ? err.message : "Failed to create runtime")
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    try {
+      setDeleting(true)
+      await runtimesApi.delete(id)
+      setDeleteConfirmId(null)
+      fetchData()
+    } catch (err) {
+      console.error("Failed to delete runtime:", err)
+      setError(err instanceof Error ? err.message : "Failed to delete runtime")
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -55,6 +95,9 @@ export default function RuntimesPage() {
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
             <p className="font-medium">Failed to load runtimes</p>
             <p className="text-sm mt-1">{error}</p>
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => { setError(null); fetchData(); }}>
+              Retry
+            </Button>
           </div>
         </div>
       </DashboardLayout>
@@ -72,11 +115,70 @@ export default function RuntimesPage() {
               {loading ? "Loading..." : `${runtimes.length} runtimes available`}
             </p>
           </div>
-          <Button variant="outline" onClick={fetchData} disabled={loading}>
-            <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setShowCreateDialog(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Runtime
+            </Button>
+            <Button variant="outline" onClick={fetchData} disabled={loading}>
+              <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
+              Refresh
+            </Button>
+          </div>
         </div>
+
+        {/* Create Runtime Dialog */}
+        {showCreateDialog && (
+          <div className="rounded-xl border border-border bg-card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-card-foreground">Add Runtime</h3>
+              <Button variant="ghost" size="sm" onClick={() => setShowCreateDialog(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">ID</label>
+                <input
+                  type="text"
+                  placeholder="e.g. python3.13"
+                  className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  value={formData.id}
+                  onChange={(e) => setFormData({ ...formData, id: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Python"
+                  className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Version</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 3.13"
+                  className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  value={formData.version}
+                  onChange={(e) => setFormData({ ...formData, version: e.target.value })}
+                />
+              </div>
+              <div className="flex items-end">
+                <Button
+                  onClick={handleCreate}
+                  disabled={creating || !formData.id || !formData.name || !formData.version}
+                  className="w-full"
+                >
+                  {creating ? "Creating..." : "Create"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {loading
@@ -100,7 +202,7 @@ export default function RuntimesPage() {
                 return (
                   <div
                     key={runtime.id}
-                    className="rounded-xl border border-border bg-card p-6 transition-shadow hover:shadow-md"
+                    className="group rounded-xl border border-border bg-card p-6 transition-shadow hover:shadow-md"
                   >
                     <div className="flex items-start gap-4">
                       <div
@@ -123,28 +225,61 @@ export default function RuntimesPage() {
                           v{runtime.version}
                         </p>
                       </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                        onClick={() => setDeleteConfirmId(runtime.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
 
-                    <div className="mt-4 flex items-center justify-between">
-                      <Badge
-                        variant="secondary"
-                        className={cn(
-                          "text-xs",
-                          runtime.status === "available" &&
-                            "bg-success/10 text-success border-0",
-                          runtime.status === "deprecated" &&
-                            "bg-warning/10 text-warning border-0",
-                          runtime.status === "maintenance" &&
-                            "bg-muted text-muted-foreground border-0"
-                        )}
-                      >
-                        {runtime.status}
-                      </Badge>
-                      <span className="text-sm text-muted-foreground">
-                        {runtime.functionsCount} function
-                        {runtime.functionsCount !== 1 ? "s" : ""}
-                      </span>
-                    </div>
+                    {/* Delete confirmation */}
+                    {deleteConfirmId === runtime.id && (
+                      <div className="mt-4 flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3">
+                        <p className="text-xs text-destructive flex-1">Delete this runtime?</p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeleteConfirmId(null)}
+                          disabled={deleting}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDelete(runtime.id)}
+                          disabled={deleting}
+                        >
+                          {deleting ? "Deleting..." : "Delete"}
+                        </Button>
+                      </div>
+                    )}
+
+                    {deleteConfirmId !== runtime.id && (
+                      <div className="mt-4 flex items-center justify-between">
+                        <Badge
+                          variant="secondary"
+                          className={cn(
+                            "text-xs",
+                            runtime.status === "available" &&
+                              "bg-success/10 text-success border-0",
+                            runtime.status === "deprecated" &&
+                              "bg-warning/10 text-warning border-0",
+                            runtime.status === "maintenance" &&
+                              "bg-muted text-muted-foreground border-0"
+                          )}
+                        >
+                          {runtime.status}
+                        </Badge>
+                        <span className="text-sm text-muted-foreground">
+                          {runtime.functionsCount} function
+                          {runtime.functionsCount !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )
               })}

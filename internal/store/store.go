@@ -30,6 +30,24 @@ type MetadataStore interface {
 	GetAlias(ctx context.Context, funcID, aliasName string) (*domain.FunctionAlias, error)
 	ListAliases(ctx context.Context, funcID string) ([]*domain.FunctionAlias, error)
 	DeleteAlias(ctx context.Context, funcID, aliasName string) error
+
+	// Invocation logs
+	SaveInvocationLog(ctx context.Context, log *InvocationLog) error
+	ListInvocationLogs(ctx context.Context, functionID string, limit int) ([]*InvocationLog, error)
+	ListAllInvocationLogs(ctx context.Context, limit int) ([]*InvocationLog, error)
+	GetInvocationLog(ctx context.Context, requestID string) (*InvocationLog, error)
+	GetFunctionTimeSeries(ctx context.Context, functionID string, hours int) ([]TimeSeriesBucket, error)
+	GetGlobalTimeSeries(ctx context.Context, hours int) ([]TimeSeriesBucket, error)
+
+	// Runtimes
+	SaveRuntime(ctx context.Context, rt *RuntimeRecord) error
+	GetRuntime(ctx context.Context, id string) (*RuntimeRecord, error)
+	ListRuntimes(ctx context.Context) ([]*RuntimeRecord, error)
+	DeleteRuntime(ctx context.Context, id string) error
+
+	// Config
+	GetConfig(ctx context.Context) (map[string]string, error)
+	SetConfig(ctx context.Context, key, value string) error
 }
 
 // Store is the combined backend store: Postgres for metadata + Redis for caching/rate limits/logs/secrets.

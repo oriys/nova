@@ -129,7 +129,7 @@ export function transformLog(log: ApiLogEntry): LogEntry {
     id: log.request_id,
     functionId: log.function_id,
     functionName: log.function_name,
-    timestamp: log.timestamp,
+    timestamp: log.created_at,
     level,
     message,
     requestId: log.request_id,

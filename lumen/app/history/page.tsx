@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { functionsApi, metricsApi } from "@/lib/api"
+import { functionsApi, invocationsApi } from "@/lib/api"
 import { transformFunction, FunctionData } from "@/lib/types"
 import {
   RefreshCw,
@@ -25,6 +25,7 @@ import {
   Clock,
   ExternalLink,
   Zap,
+  Snowflake,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -52,55 +53,27 @@ export default function HistoryPage() {
       setLoading(true)
       setError(null)
 
-      const [funcs, metrics] = await Promise.all([
+      const [funcs, logs] = await Promise.all([
         functionsApi.list(),
-        metricsApi.global(),
+        invocationsApi.list(200),
       ])
 
       // Transform functions
-      const transformedFuncs = funcs.map((fn) => {
-        const funcMetrics = metrics.functions?.[fn.id]
-        return transformFunction(
-          fn,
-          funcMetrics
-            ? {
-                function_id: fn.id,
-                function_name: fn.name,
-                invocations: funcMetrics,
-                pool: { active_vms: 0, busy_vms: 0, idle_vms: 0 },
-              }
-            : undefined
-        )
-      })
+      const transformedFuncs = funcs.map((fn) => transformFunction(fn))
       setFunctions(transformedFuncs)
 
-      // Build invocation history from logs
-      const allInvocations: InvocationRecord[] = []
-      for (const fn of funcs.slice(0, 10)) {
-        try {
-          const logs = await functionsApi.logs(fn.name, 30)
-          for (const log of logs) {
-            allInvocations.push({
-              id: log.request_id,
-              functionId: log.function_id,
-              functionName: log.function_name,
-              timestamp: log.timestamp,
-              status: log.success ? "success" : "failed",
-              duration: log.duration_ms,
-              coldStart: false, // Would need additional data from backend
-            })
-          }
-        } catch {
-          // Skip functions without logs
-        }
-      }
+      // Transform logs to invocation records
+      const records: InvocationRecord[] = logs.map((log) => ({
+        id: log.request_id,
+        functionId: log.function_id,
+        functionName: log.function_name,
+        timestamp: log.created_at,
+        status: log.success ? "success" : "failed",
+        duration: log.duration_ms,
+        coldStart: log.cold_start,
+      }))
 
-      // Sort by timestamp descending
-      allInvocations.sort(
-        (a, b) =>
-          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-      )
-      setInvocations(allInvocations)
+      setInvocations(records)
     } catch (err) {
       console.error("Failed to fetch history:", err)
       setError(err instanceof Error ? err.message : "Failed to load history")
@@ -131,6 +104,7 @@ export default function HistoryPage() {
   const totalInvocations = invocations.length
   const successCount = invocations.filter((i) => i.status === "success").length
   const failedCount = invocations.filter((i) => i.status === "failed").length
+  const coldStartCount = invocations.filter((i) => i.coldStart).length
   const avgDuration =
     invocations.length > 0
       ? Math.round(
@@ -205,7 +179,7 @@ export default function HistoryPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-center gap-2">
               <Zap className="h-4 w-4 text-primary" />
@@ -231,6 +205,15 @@ export default function HistoryPage() {
             </div>
             <p className="text-2xl font-semibold text-destructive mt-1">
               {loading ? "..." : failedCount}
+            </p>
+          </div>
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="flex items-center gap-2">
+              <Snowflake className="h-4 w-4 text-blue-500" />
+              <p className="text-sm text-muted-foreground">Cold Starts</p>
+            </div>
+            <p className="text-2xl font-semibold text-blue-500 mt-1">
+              {loading ? "..." : coldStartCount}
             </p>
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
@@ -265,6 +248,9 @@ export default function HistoryPage() {
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
                     Duration
                   </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
+                    Cold Start
+                  </th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">
                     Actions
                   </th>
@@ -274,7 +260,7 @@ export default function HistoryPage() {
                 {loading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i} className="border-b border-border">
-                      <td colSpan={6} className="px-4 py-3">
+                      <td colSpan={7} className="px-4 py-3">
                         <div className="h-4 bg-muted rounded animate-pulse" />
                       </td>
                     </tr>
@@ -282,7 +268,7 @@ export default function HistoryPage() {
                 ) : filteredInvocations.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="px-4 py-8 text-center text-muted-foreground"
                     >
                       No invocations found
@@ -332,6 +318,16 @@ export default function HistoryPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">
                         {inv.duration}ms
+                      </td>
+                      <td className="px-4 py-3">
+                        {inv.coldStart ? (
+                          <Badge variant="secondary" className="text-xs bg-blue-500/10 text-blue-500 border-0">
+                            <Snowflake className="h-3 w-3 mr-1" />
+                            Cold
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Warm</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <Button variant="ghost" size="sm" asChild>

@@ -78,6 +78,36 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			updated_at TIMESTAMPTZ NOT NULL,
 			PRIMARY KEY (function_id, name)
 		)`,
+		`CREATE TABLE IF NOT EXISTS invocation_logs (
+			id TEXT PRIMARY KEY,
+			function_id TEXT NOT NULL,
+			function_name TEXT NOT NULL,
+			runtime TEXT NOT NULL,
+			duration_ms BIGINT NOT NULL,
+			cold_start BOOLEAN NOT NULL DEFAULT FALSE,
+			success BOOLEAN NOT NULL DEFAULT TRUE,
+			error_message TEXT,
+			input_size INTEGER DEFAULT 0,
+			output_size INTEGER DEFAULT 0,
+			stdout TEXT,
+			stderr TEXT,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_invocation_logs_function_id ON invocation_logs(function_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_invocation_logs_created_at ON invocation_logs(created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_invocation_logs_func_time ON invocation_logs(function_id, created_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS runtimes (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			version TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'available',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE TABLE IF NOT EXISTS config (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
 	}
 
 	for _, stmt := range stmts {
@@ -415,6 +445,364 @@ func (s *PostgresStore) DeleteAlias(ctx context.Context, funcID, aliasName strin
 	}
 	if ct.RowsAffected() == 0 {
 		return fmt.Errorf("alias not found: %s@%s", funcID, aliasName)
+	}
+	return nil
+}
+
+// InvocationLog represents a single function invocation record
+type InvocationLog struct {
+	ID           string    `json:"id"`
+	FunctionID   string    `json:"function_id"`
+	FunctionName string    `json:"function_name"`
+	Runtime      string    `json:"runtime"`
+	DurationMs   int64     `json:"duration_ms"`
+	ColdStart    bool      `json:"cold_start"`
+	Success      bool      `json:"success"`
+	ErrorMessage string    `json:"error_message,omitempty"`
+	InputSize    int       `json:"input_size"`
+	OutputSize   int       `json:"output_size"`
+	Stdout       string    `json:"stdout,omitempty"`
+	Stderr       string    `json:"stderr,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// TimeSeriesBucket represents aggregated metrics for a time period
+type TimeSeriesBucket struct {
+	Timestamp   time.Time `json:"timestamp"`
+	Invocations int64     `json:"invocations"`
+	Errors      int64     `json:"errors"`
+	AvgDuration float64   `json:"avg_duration"`
+}
+
+// RuntimeRecord represents a runtime configuration in the database
+type RuntimeRecord struct {
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Version        string    `json:"version"`
+	Status         string    `json:"status"`
+	FunctionsCount int       `json:"functions_count"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// SaveInvocationLog saves an invocation log entry to the database
+func (s *PostgresStore) SaveInvocationLog(ctx context.Context, log *InvocationLog) error {
+	if log.ID == "" {
+		return fmt.Errorf("invocation log id is required")
+	}
+	if log.CreatedAt.IsZero() {
+		log.CreatedAt = time.Now()
+	}
+
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO invocation_logs (id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, stdout, stderr, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		ON CONFLICT (id) DO NOTHING
+	`, log.ID, log.FunctionID, log.FunctionName, log.Runtime, log.DurationMs, log.ColdStart, log.Success, log.ErrorMessage, log.InputSize, log.OutputSize, log.Stdout, log.Stderr, log.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("save invocation log: %w", err)
+	}
+	return nil
+}
+
+// ListInvocationLogs returns recent invocation logs for a function
+func (s *PostgresStore) ListInvocationLogs(ctx context.Context, functionID string, limit int) ([]*InvocationLog, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, stdout, stderr, created_at
+		FROM invocation_logs
+		WHERE function_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2
+	`, functionID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list invocation logs: %w", err)
+	}
+	defer rows.Close()
+
+	var logs []*InvocationLog
+	for rows.Next() {
+		var log InvocationLog
+		var errorMessage, stdout, stderr *string
+		if err := rows.Scan(&log.ID, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &stdout, &stderr, &log.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan invocation log: %w", err)
+		}
+		if errorMessage != nil {
+			log.ErrorMessage = *errorMessage
+		}
+		if stdout != nil {
+			log.Stdout = *stdout
+		}
+		if stderr != nil {
+			log.Stderr = *stderr
+		}
+		logs = append(logs, &log)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list invocation logs rows: %w", err)
+	}
+	return logs, nil
+}
+
+// ListAllInvocationLogs returns recent invocation logs across all functions
+func (s *PostgresStore) ListAllInvocationLogs(ctx context.Context, limit int) ([]*InvocationLog, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, stdout, stderr, created_at
+		FROM invocation_logs
+		ORDER BY created_at DESC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list all invocation logs: %w", err)
+	}
+	defer rows.Close()
+
+	var logs []*InvocationLog
+	for rows.Next() {
+		var log InvocationLog
+		var errorMessage, stdout, stderr *string
+		if err := rows.Scan(&log.ID, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &stdout, &stderr, &log.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan invocation log: %w", err)
+		}
+		if errorMessage != nil {
+			log.ErrorMessage = *errorMessage
+		}
+		if stdout != nil {
+			log.Stdout = *stdout
+		}
+		if stderr != nil {
+			log.Stderr = *stderr
+		}
+		logs = append(logs, &log)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list all invocation logs rows: %w", err)
+	}
+	return logs, nil
+}
+
+// GetInvocationLog retrieves a single invocation log by request ID
+func (s *PostgresStore) GetInvocationLog(ctx context.Context, requestID string) (*InvocationLog, error) {
+	var log InvocationLog
+	var errorMessage, stdout, stderr *string
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, stdout, stderr, created_at
+		FROM invocation_logs
+		WHERE id = $1
+	`, requestID).Scan(&log.ID, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &stdout, &stderr, &log.CreatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, fmt.Errorf("invocation log not found: %s", requestID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get invocation log: %w", err)
+	}
+	if errorMessage != nil {
+		log.ErrorMessage = *errorMessage
+	}
+	if stdout != nil {
+		log.Stdout = *stdout
+	}
+	if stderr != nil {
+		log.Stderr = *stderr
+	}
+	return &log, nil
+}
+
+// GetFunctionTimeSeries returns hourly aggregated metrics for a function
+func (s *PostgresStore) GetFunctionTimeSeries(ctx context.Context, functionID string, hours int) ([]TimeSeriesBucket, error) {
+	if hours <= 0 {
+		hours = 24
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			date_trunc('hour', created_at) AS bucket,
+			COUNT(*) AS invocations,
+			COUNT(*) FILTER (WHERE NOT success) AS errors,
+			AVG(duration_ms) AS avg_duration
+		FROM invocation_logs
+		WHERE function_id = $1
+		  AND created_at >= NOW() - INTERVAL '1 hour' * $2
+		GROUP BY bucket
+		ORDER BY bucket ASC
+	`, functionID, hours)
+	if err != nil {
+		return nil, fmt.Errorf("get function time series: %w", err)
+	}
+	defer rows.Close()
+
+	buckets := make([]TimeSeriesBucket, 0)
+	for rows.Next() {
+		var bucket TimeSeriesBucket
+		if err := rows.Scan(&bucket.Timestamp, &bucket.Invocations, &bucket.Errors, &bucket.AvgDuration); err != nil {
+			return nil, fmt.Errorf("scan time series: %w", err)
+		}
+		buckets = append(buckets, bucket)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get function time series rows: %w", err)
+	}
+	return buckets, nil
+}
+
+// GetGlobalTimeSeries returns hourly aggregated metrics across all functions
+func (s *PostgresStore) GetGlobalTimeSeries(ctx context.Context, hours int) ([]TimeSeriesBucket, error) {
+	if hours <= 0 {
+		hours = 24
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			date_trunc('hour', created_at) AS bucket,
+			COUNT(*) AS invocations,
+			COUNT(*) FILTER (WHERE NOT success) AS errors,
+			AVG(duration_ms) AS avg_duration
+		FROM invocation_logs
+		WHERE created_at >= NOW() - INTERVAL '1 hour' * $1
+		GROUP BY bucket
+		ORDER BY bucket ASC
+	`, hours)
+	if err != nil {
+		return nil, fmt.Errorf("get global time series: %w", err)
+	}
+	defer rows.Close()
+
+	buckets := make([]TimeSeriesBucket, 0)
+	for rows.Next() {
+		var bucket TimeSeriesBucket
+		if err := rows.Scan(&bucket.Timestamp, &bucket.Invocations, &bucket.Errors, &bucket.AvgDuration); err != nil {
+			return nil, fmt.Errorf("scan time series: %w", err)
+		}
+		buckets = append(buckets, bucket)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get global time series rows: %w", err)
+	}
+	return buckets, nil
+}
+
+// SaveRuntime creates or updates a runtime record
+func (s *PostgresStore) SaveRuntime(ctx context.Context, rt *RuntimeRecord) error {
+	if rt.ID == "" {
+		return fmt.Errorf("runtime id is required")
+	}
+	if rt.Status == "" {
+		rt.Status = "available"
+	}
+	if rt.CreatedAt.IsZero() {
+		rt.CreatedAt = time.Now()
+	}
+
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO runtimes (id, name, version, status, created_at)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (id) DO UPDATE SET
+			name = EXCLUDED.name,
+			version = EXCLUDED.version,
+			status = EXCLUDED.status
+	`, rt.ID, rt.Name, rt.Version, rt.Status, rt.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("save runtime: %w", err)
+	}
+	return nil
+}
+
+// GetRuntime retrieves a runtime by ID
+func (s *PostgresStore) GetRuntime(ctx context.Context, id string) (*RuntimeRecord, error) {
+	var rt RuntimeRecord
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, name, version, status, created_at
+		FROM runtimes
+		WHERE id = $1
+	`, id).Scan(&rt.ID, &rt.Name, &rt.Version, &rt.Status, &rt.CreatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, fmt.Errorf("runtime not found: %s", id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get runtime: %w", err)
+	}
+	return &rt, nil
+}
+
+// ListRuntimes returns all runtimes with function counts
+func (s *PostgresStore) ListRuntimes(ctx context.Context) ([]*RuntimeRecord, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT r.id, r.name, r.version, r.status, r.created_at, COUNT(f.id) as functions_count
+		FROM runtimes r
+		LEFT JOIN functions f ON f.data->>'runtime' = r.id
+		GROUP BY r.id, r.name, r.version, r.status, r.created_at
+		ORDER BY r.name, r.version DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list runtimes: %w", err)
+	}
+	defer rows.Close()
+
+	var runtimes []*RuntimeRecord
+	for rows.Next() {
+		var rt RuntimeRecord
+		if err := rows.Scan(&rt.ID, &rt.Name, &rt.Version, &rt.Status, &rt.CreatedAt, &rt.FunctionsCount); err != nil {
+			return nil, fmt.Errorf("scan runtime: %w", err)
+		}
+		runtimes = append(runtimes, &rt)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list runtimes rows: %w", err)
+	}
+	return runtimes, nil
+}
+
+// DeleteRuntime removes a runtime by ID
+func (s *PostgresStore) DeleteRuntime(ctx context.Context, id string) error {
+	ct, err := s.pool.Exec(ctx, `DELETE FROM runtimes WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete runtime: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("runtime not found: %s", id)
+	}
+	return nil
+}
+
+// GetConfig retrieves all config key-value pairs
+func (s *PostgresStore) GetConfig(ctx context.Context) (map[string]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT key, value FROM config ORDER BY key`)
+	if err != nil {
+		return nil, fmt.Errorf("get config: %w", err)
+	}
+	defer rows.Close()
+
+	config := make(map[string]string)
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return nil, fmt.Errorf("scan config: %w", err)
+		}
+		config[key] = value
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get config rows: %w", err)
+	}
+	return config, nil
+}
+
+// SetConfig upserts a config key-value pair
+func (s *PostgresStore) SetConfig(ctx context.Context, key, value string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO config (key, value, updated_at)
+		VALUES ($1, $2, NOW())
+		ON CONFLICT (key) DO UPDATE SET
+			value = EXCLUDED.value,
+			updated_at = NOW()
+	`, key, value)
+	if err != nil {
+		return fmt.Errorf("set config: %w", err)
 	}
 	return nil
 }

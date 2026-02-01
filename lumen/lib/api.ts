@@ -43,11 +43,17 @@ export interface LogEntry {
   request_id: string;
   function_id: string;
   function_name: string;
-  timestamp: string;
+  runtime: string;
+  timestamp?: string;
+  created_at: string;
   stdout: string;
   stderr: string;
   duration_ms: number;
+  cold_start: boolean;
   success: boolean;
+  error_message?: string;
+  input_size?: number;
+  output_size?: number;
 }
 
 export interface InvokeResponse {
@@ -77,6 +83,7 @@ export interface FunctionMetrics {
     busy_vms: number;
     idle_vms: number;
   };
+  timeseries?: TimeSeriesPoint[];
 }
 
 export interface GlobalMetrics {
@@ -152,6 +159,13 @@ export interface UpdateFunctionRequest {
   limits?: ResourceLimits;
 }
 
+export interface CreateRuntimeRequest {
+  id: string;
+  name: string;
+  version: string;
+  status?: string;
+}
+
 class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -218,12 +232,37 @@ export const functionsApi = {
 // Runtimes API
 export const runtimesApi = {
   list: () => request<Runtime[]>("/runtimes"),
+
+  create: (data: CreateRuntimeRequest) =>
+    request<Runtime>("/runtimes", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: string) =>
+    request<{ status: string; id: string }>(`/runtimes/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
 };
+
+export interface TimeSeriesPoint {
+  timestamp: string;
+  invocations: number;
+  errors: number;
+  avg_duration: number;
+}
 
 // Metrics API
 export const metricsApi = {
   global: () => request<GlobalMetrics>("/metrics"),
+  timeseries: () => request<TimeSeriesPoint[]>("/metrics/timeseries"),
   stats: () => request<Record<string, unknown>>("/stats"),
+};
+
+// Invocations API (global history)
+export const invocationsApi = {
+  list: (limit: number = 100) =>
+    request<LogEntry[]>(`/invocations?limit=${limit}`),
 };
 
 // Health API
@@ -231,6 +270,16 @@ export const healthApi = {
   check: () => request<HealthStatus>("/health"),
   ready: () => request<{ status: string }>("/health/ready"),
   live: () => request<{ status: string }>("/health/live"),
+};
+
+// Config API
+export const configApi = {
+  get: () => request<Record<string, string>>("/config"),
+  update: (data: Record<string, string>) =>
+    request<Record<string, string>>("/config", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
 };
 
 // Snapshots API

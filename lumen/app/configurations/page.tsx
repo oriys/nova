@@ -14,8 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { healthApi, snapshotsApi } from "@/lib/api"
-import { RefreshCw, Server, Database, HardDrive, Trash2 } from "lucide-react"
+import { healthApi, snapshotsApi, configApi } from "@/lib/api"
+import { RefreshCw, Server, Database, HardDrive, Trash2, Save, CheckCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface Snapshot {
@@ -62,21 +62,30 @@ export default function ConfigurationsPage() {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
 
-  // Settings (local state only - would connect to backend in production)
+  // Settings from backend
   const [poolTTL, setPoolTTL] = useState("60")
   const [logLevel, setLogLevel] = useState("info")
+  const [dirty, setDirty] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
-      const [healthData, snapshotsData] = await Promise.all([
+      const [healthData, snapshotsData, configData] = await Promise.all([
         healthApi.check(),
         snapshotsApi.list().catch(() => []),
+        configApi.get().catch(() => ({} as Record<string, string>)),
       ])
       setHealth(healthData)
       setSnapshots(snapshotsData)
+
+      // Apply config from backend
+      if (configData["pool_ttl"]) setPoolTTL(configData["pool_ttl"])
+      if (configData["log_level"]) setLogLevel(configData["log_level"])
+      setDirty(false)
     } catch (err) {
       console.error("Failed to fetch config data:", err)
       setError(err instanceof Error ? err.message : "Failed to load configuration")
@@ -90,6 +99,25 @@ export default function ConfigurationsPage() {
     const interval = setInterval(fetchData, 30000)
     return () => clearInterval(interval)
   }, [fetchData])
+
+  const handleSave = async () => {
+    try {
+      setSaving(true)
+      setSaved(false)
+      await configApi.update({
+        pool_ttl: poolTTL,
+        log_level: logLevel,
+      })
+      setDirty(false)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (err) {
+      console.error("Failed to save config:", err)
+      setError(err instanceof Error ? err.message : "Failed to save configuration")
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const handleDeleteSnapshot = async (functionName: string) => {
     try {
@@ -108,6 +136,9 @@ export default function ConfigurationsPage() {
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
             <p className="font-medium">Failed to load configuration</p>
             <p className="text-sm mt-1">{error}</p>
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => { setError(null); fetchData(); }}>
+              Retry
+            </Button>
           </div>
         </div>
       </DashboardLayout>
@@ -207,7 +238,7 @@ export default function ConfigurationsPage() {
                 id="poolTTL"
                 type="number"
                 value={poolTTL}
-                onChange={(e) => setPoolTTL(e.target.value)}
+                onChange={(e) => { setPoolTTL(e.target.value); setDirty(true); }}
                 min="10"
                 max="3600"
               />
@@ -218,7 +249,7 @@ export default function ConfigurationsPage() {
 
             <div className="space-y-2">
               <Label htmlFor="logLevel">Log Level</Label>
-              <Select value={logLevel} onValueChange={setLogLevel}>
+              <Select value={logLevel} onValueChange={(v) => { setLogLevel(v); setDirty(true); }}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -234,10 +265,30 @@ export default function ConfigurationsPage() {
               </p>
             </div>
           </div>
-          <div className="mt-4">
-            <Button variant="outline" disabled>
-              Save Settings (requires restart)
+          <div className="mt-4 flex items-center gap-3">
+            <Button
+              variant="outline"
+              onClick={handleSave}
+              disabled={saving || !dirty}
+            >
+              {saving ? (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Save Settings
+                </>
+              )}
             </Button>
+            {saved && (
+              <span className="flex items-center gap-1 text-sm text-success">
+                <CheckCircle className="h-4 w-4" />
+                Saved
+              </span>
+            )}
           </div>
         </div>
 

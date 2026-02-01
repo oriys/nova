@@ -22,7 +22,7 @@ import (
 )
 
 type Executor struct {
-	store           store.MetadataStore
+	store           *store.Store
 	pool            *pool.Pool
 	logger          *logging.Logger
 	secretsResolver *secrets.Resolver
@@ -46,7 +46,7 @@ func WithSecretsResolver(resolver *secrets.Resolver) Option {
 	}
 }
 
-func New(store store.MetadataStore, pool *pool.Pool, opts ...Option) *Executor {
+func New(store *store.Store, pool *pool.Pool, opts ...Option) *Executor {
 	e := &Executor{
 		store:  store,
 		pool:   pool,
@@ -143,6 +143,10 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		logEntry.Error = err.Error()
 		e.logger.Log(logEntry)
 		observability.SetSpanError(span, err)
+
+		// Async persist invocation log to database
+		e.persistInvocationLog(reqID, fn, durationMs, pvm.ColdStart, false, err.Error(), len(payload), 0, "", "")
+
 		return nil, fmt.Errorf("execute: %w", err)
 	}
 
@@ -162,6 +166,9 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		}
 	}
 
+	// Async persist invocation log to database
+	e.persistInvocationLog(reqID, fn, durationMs, pvm.ColdStart, success, resp.Error, len(payload), len(resp.Output), resp.Stdout, resp.Stderr)
+
 	if success {
 		observability.SetSpanOK(span)
 	} else {
@@ -175,6 +182,29 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		DurationMs: durationMs,
 		ColdStart:  pvm.ColdStart,
 	}, nil
+}
+
+// persistInvocationLog asynchronously saves an invocation log to Postgres
+func (e *Executor) persistInvocationLog(reqID string, fn *domain.Function, durationMs int64, coldStart, success bool, errMsg string, inputSize, outputSize int, stdout, stderr string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = e.store.SaveInvocationLog(ctx, &store.InvocationLog{
+			ID:           reqID,
+			FunctionID:   fn.ID,
+			FunctionName: fn.Name,
+			Runtime:      string(fn.Runtime),
+			DurationMs:   durationMs,
+			ColdStart:    coldStart,
+			Success:      success,
+			ErrorMessage: errMsg,
+			InputSize:    inputSize,
+			OutputSize:   outputSize,
+			Stdout:       stdout,
+			Stderr:       stderr,
+			CreatedAt:    time.Now(),
+		})
+	}()
 }
 
 // refreshCodeHash checks if code file has changed and updates the function's hash.

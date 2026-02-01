@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/oriys/nova/internal/executor"
-	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/store"
@@ -35,7 +34,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Observability
 	mux.HandleFunc("GET /stats", h.Stats)
 	mux.Handle("GET /metrics", metrics.Global().JSONHandler())
+	mux.HandleFunc("GET /metrics/timeseries", h.GlobalTimeSeries)
 	mux.Handle("GET /metrics/prometheus", metrics.PrometheusHandler())
+	mux.HandleFunc("GET /invocations", h.ListAllInvocations)
 	mux.HandleFunc("GET /functions/{name}/logs", h.Logs)
 	mux.HandleFunc("GET /functions/{name}/metrics", h.FunctionMetrics)
 }
@@ -178,17 +179,11 @@ func (h *Handler) Logs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := logging.GetOutputStore()
-	if store == nil {
-		http.Error(w, "output capture not enabled", http.StatusServiceUnavailable)
-		return
-	}
-
 	// Get request_id from query params if specified
 	requestID := r.URL.Query().Get("request_id")
 	if requestID != "" {
-		entry, found := store.Get(requestID)
-		if !found {
+		entry, err := h.Store.GetInvocationLog(r.Context(), requestID)
+		if err != nil {
 			http.Error(w, "logs not found for request_id", http.StatusNotFound)
 			return
 		}
@@ -206,7 +201,45 @@ func (h *Handler) Logs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	entries := store.GetByFunction(fn.ID, tail)
+	entries, err := h.Store.ListInvocationLogs(r.Context(), fn.ID, tail)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Ensure we return empty array instead of null
+	if entries == nil {
+		entries = []*store.InvocationLog{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(entries)
+}
+
+// ListAllInvocations handles GET /invocations
+func (h *Handler) ListAllInvocations(w http.ResponseWriter, r *http.Request) {
+	limitStr := r.URL.Query().Get("limit")
+	limit := 100
+	if limitStr != "" {
+		if n, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil || n != 1 {
+			limit = 100
+		}
+	}
+	if limit > 500 {
+		limit = 500
+	}
+
+	entries, err := h.Store.ListAllInvocationLogs(r.Context(), limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Ensure we return empty array instead of null
+	if entries == nil {
+		entries = []*store.InvocationLog{}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(entries)
 }
@@ -241,13 +274,31 @@ func (h *Handler) FunctionMetrics(w http.ResponseWriter, r *http.Request) {
 	// Get pool stats for this function
 	poolStats := h.Pool.FunctionStats(fn.ID)
 
+	// Get time series data from Postgres
+	timeSeries, err := h.Store.GetFunctionTimeSeries(r.Context(), fn.ID, 24)
+	if err != nil {
+		timeSeries = []store.TimeSeriesBucket{}
+	}
+
 	result := map[string]interface{}{
 		"function_id":   fn.ID,
 		"function_name": fn.Name,
 		"invocations":   funcStats,
 		"pool":          poolStats,
+		"timeseries":    timeSeries,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+// GlobalTimeSeries handles GET /metrics/timeseries
+func (h *Handler) GlobalTimeSeries(w http.ResponseWriter, r *http.Request) {
+	timeSeries, err := h.Store.GetGlobalTimeSeries(r.Context(), 24)
+	if err != nil {
+		timeSeries = []store.TimeSeriesBucket{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(timeSeries)
 }
