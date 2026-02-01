@@ -2,12 +2,23 @@ package store
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/oriys/nova/internal/domain"
 )
+
+// FunctionUpdate contains optional fields for updating a function.
+type FunctionUpdate struct {
+	Handler      *string
+	CodePath     *string
+	MemoryMB     *int
+	TimeoutS     *int
+	MinReplicas  *int
+	Mode         *domain.ExecutionMode
+	Limits       *domain.ResourceLimits
+	EnvVars      map[string]string
+	MergeEnvVars bool
+}
 
 // MetadataStore is the durable metadata store (functions, versions, aliases).
 type MetadataStore interface {
@@ -48,26 +59,34 @@ type MetadataStore interface {
 	// Config
 	GetConfig(ctx context.Context) (map[string]string, error)
 	SetConfig(ctx context.Context, key, value string) error
+
+	// API Keys
+	SaveAPIKey(ctx context.Context, key *APIKeyRecord) error
+	GetAPIKeyByHash(ctx context.Context, keyHash string) (*APIKeyRecord, error)
+	GetAPIKeyByName(ctx context.Context, name string) (*APIKeyRecord, error)
+	ListAPIKeys(ctx context.Context) ([]*APIKeyRecord, error)
+	DeleteAPIKey(ctx context.Context, name string) error
+
+	// Secrets
+	SaveSecret(ctx context.Context, name, encryptedValue string) error
+	GetSecret(ctx context.Context, name string) (string, error)
+	DeleteSecret(ctx context.Context, name string) error
+	ListSecrets(ctx context.Context) (map[string]string, error)
+	SecretExists(ctx context.Context, name string) (bool, error)
+
+	// Rate limiting
+	CheckRateLimit(ctx context.Context, key string, maxTokens int, refillRate float64, requested int) (bool, int, error)
 }
 
-// Store is the combined backend store: Postgres for metadata + Redis for caching/rate limits/logs/secrets.
+// Store wraps the MetadataStore (Postgres) for all persistence.
 type Store struct {
 	MetadataStore
-	redis *RedisStore
 }
 
-func NewStore(meta MetadataStore, redisStore *RedisStore) *Store {
+func NewStore(meta MetadataStore) *Store {
 	return &Store{
 		MetadataStore: meta,
-		redis:         redisStore,
 	}
-}
-
-func (s *Store) Client() *redis.Client {
-	if s.redis == nil {
-		return nil
-	}
-	return s.redis.Client()
 }
 
 func (s *Store) PingPostgres(ctx context.Context) error {
@@ -77,41 +96,13 @@ func (s *Store) PingPostgres(ctx context.Context) error {
 	return s.MetadataStore.Ping(ctx)
 }
 
-func (s *Store) PingRedis(ctx context.Context) error {
-	if s.redis == nil {
-		return fmt.Errorf("redis not configured")
-	}
-	return s.redis.Ping(ctx)
-}
-
 func (s *Store) Ping(ctx context.Context) error {
-	var errs []error
-	if err := s.PingPostgres(ctx); err != nil {
-		errs = append(errs, fmt.Errorf("postgres: %w", err))
-	}
-	if err := s.PingRedis(ctx); err != nil {
-		errs = append(errs, fmt.Errorf("redis: %w", err))
-	}
-	if len(errs) > 0 {
-		return errors.Join(errs...)
-	}
-	return nil
+	return s.PingPostgres(ctx)
 }
 
 func (s *Store) Close() error {
-	var errs []error
 	if s.MetadataStore != nil {
-		if err := s.MetadataStore.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if s.redis != nil {
-		if err := s.redis.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if len(errs) > 0 {
-		return errors.Join(errs...)
+		return s.MetadataStore.Close()
 	}
 	return nil
 }

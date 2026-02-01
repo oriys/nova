@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { StatsCard } from "@/components/stats-card"
-import { DashboardCharts } from "@/components/dashboard-charts"
+import { DashboardCharts, TimeSeriesData } from "@/components/dashboard-charts"
 import { ActiveFunctionsTable } from "@/components/active-functions-table"
 import { RecentLogs } from "@/components/recent-logs"
 import { Activity, Zap, AlertTriangle, Clock } from "lucide-react"
@@ -14,6 +14,7 @@ import { transformFunction, transformLog, FunctionData, LogEntry } from "@/lib/t
 export default function DashboardPage() {
   const [functions, setFunctions] = useState<FunctionData[]>([])
   const [logs, setLogs] = useState<LogEntry[]>([])
+  const [timeSeries, setTimeSeries] = useState<TimeSeriesData[]>([])
   const [globalMetrics, setGlobalMetrics] = useState<{
     total: number
     success: number
@@ -29,10 +30,11 @@ export default function DashboardPage() {
         setLoading(true)
         setError(null)
 
-        // Fetch functions and metrics in parallel
-        const [funcs, metrics] = await Promise.all([
+        // Fetch functions, metrics, and time-series in parallel
+        const [funcs, metrics, timeSeriesData] = await Promise.all([
           functionsApi.list(),
           metricsApi.global(),
+          metricsApi.timeseries().catch(() => []),
         ])
 
         // Transform functions with their metrics
@@ -55,6 +57,15 @@ export default function DashboardPage() {
           failed: metrics.invocations?.failed ?? 0,
           avgLatency: Math.round(metrics.latency_ms?.avg ?? 0),
         })
+
+        // Transform time-series data
+        const chartData: TimeSeriesData[] = timeSeriesData.map((point) => ({
+          time: point.timestamp,
+          invocations: point.invocations,
+          errors: point.errors,
+          avgDuration: point.avg_duration,
+        }))
+        setTimeSeries(chartData)
 
         // Fetch logs for active functions (take first few)
         const logsPromises = funcs.slice(0, 3).map((fn) =>
@@ -140,7 +151,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Charts */}
-        <DashboardCharts />
+        <DashboardCharts data={timeSeries} loading={loading} />
 
         {/* Tables */}
         <div className="grid gap-6 lg:grid-cols-2">

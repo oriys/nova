@@ -24,7 +24,6 @@ import (
 	"github.com/oriys/nova/internal/firecracker"
 	novagrpc "github.com/oriys/nova/internal/grpc"
 	"github.com/oriys/nova/internal/logging"
-	"github.com/oriys/nova/internal/logs"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/observability"
 	"github.com/oriys/nova/internal/output"
@@ -38,9 +37,6 @@ import (
 
 var (
 	pgDSN      string
-	redisAddr  string
-	redisPass  string
-	redisDB    int
 	configFile string
 )
 
@@ -52,9 +48,6 @@ func main() {
 	}
 
 	rootCmd.PersistentFlags().StringVar(&pgDSN, "pg-dsn", "", "Postgres DSN (e.g., postgres://user:pass@host:5432/db?sslmode=disable)")
-	rootCmd.PersistentFlags().StringVar(&redisAddr, "redis", "localhost:6379", "Redis address")
-	rootCmd.PersistentFlags().StringVar(&redisPass, "redis-pass", "", "Redis password")
-	rootCmd.PersistentFlags().IntVar(&redisDB, "redis-db", 0, "Redis database")
 	rootCmd.PersistentFlags().StringVar(&configFile, "config", "", "Path to config file (optional, flags override)")
 
 	rootCmd.AddCommand(
@@ -90,22 +83,13 @@ func getStore() (*store.Store, error) {
 	if pgDSN != "" {
 		cfg.Postgres.DSN = pgDSN
 	}
-	cfg.Redis.Addr = redisAddr
-	cfg.Redis.Password = redisPass
-	cfg.Redis.DB = redisDB
 
 	pgStore, err := store.NewPostgresStore(context.Background(), cfg.Postgres.DSN)
 	if err != nil {
 		return nil, err
 	}
 
-	redisStore, err := store.NewRedisStore(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
-	if err != nil {
-		_ = pgStore.Close()
-		return nil, err
-	}
-
-	return store.NewStore(pgStore, redisStore), nil
+	return store.NewStore(pgStore), nil
 }
 
 func registerCmd() *cobra.Command {
@@ -1297,7 +1281,7 @@ Examples:
 			}
 			entry.NextRun = nextRun
 
-			// Note: In a real implementation, we'd persist this to Redis
+			// Note: In a real implementation, we'd persist this to the database
 			// For now, just show what would be scheduled
 			fmt.Printf("Schedule created:\n")
 			fmt.Printf("  ID:       %s\n", entry.ID)
@@ -1409,15 +1393,6 @@ func daemonCmd() *cobra.Command {
 			if cmd.Flags().Changed("pg-dsn") {
 				cfg.Postgres.DSN = pgDSN
 			}
-			if cmd.Flags().Changed("redis") {
-				cfg.Redis.Addr = redisAddr
-			}
-			if cmd.Flags().Changed("redis-pass") {
-				cfg.Redis.Password = redisPass
-			}
-			if cmd.Flags().Changed("redis-db") {
-				cfg.Redis.DB = redisDB
-			}
 			if cmd.Flags().Changed("idle-ttl") {
 				cfg.Pool.IdleTTL = idleTTL
 			}
@@ -1497,13 +1472,8 @@ func daemonCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			redisStore, err := store.NewRedisStore(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
-			if err != nil {
-				_ = pgStore.Close()
-				return err
-			}
 
-			s := store.NewStore(pgStore, redisStore)
+			s := store.NewStore(pgStore)
 			defer s.Close()
 
 			cfg.Firecracker.LogLevel = logLevel
@@ -1535,7 +1505,7 @@ func daemonCmd() *cobra.Command {
 				if err != nil {
 					logging.Op().Warn("failed to initialize secrets", "error", err)
 				} else if cipher != nil {
-					secretsStore := secrets.NewStore(s.Client(), cipher)
+					secretsStore := secrets.NewStore(s, cipher)
 					secretsResolver = secrets.NewResolver(secretsStore)
 					logging.Op().Info("secrets management enabled")
 				}
@@ -1550,7 +1520,6 @@ func daemonCmd() *cobra.Command {
 
 			logging.Op().Info("nova daemon started",
 				"postgres", true,
-				"redis", cfg.Redis.Addr,
 				"idle_ttl", cfg.Pool.IdleTTL.String(),
 				"log_level", cfg.Daemon.LogLevel)
 
@@ -1665,9 +1634,14 @@ func getSecretsStore() (*secrets.Store, error) {
 		return nil, fmt.Errorf("secrets not configured: set NOVA_MASTER_KEY or NOVA_MASTER_KEY_FILE")
 	}
 
-	s, err := store.NewRedisStore(redisAddr, redisPass, redisDB)
+	// Flags override env/defaults
+	if pgDSN != "" {
+		cfg.Postgres.DSN = pgDSN
+	}
+
+	pgStore, err := store.NewPostgresStore(context.Background(), cfg.Postgres.DSN)
 	if err != nil {
-		return nil, fmt.Errorf("connect to redis: %w", err)
+		return nil, fmt.Errorf("connect to postgres: %w", err)
 	}
 
 	var cipher *secrets.Cipher
@@ -1682,7 +1656,7 @@ func getSecretsStore() (*secrets.Store, error) {
 		return nil, fmt.Errorf("create cipher: %w", err)
 	}
 
-	return secrets.NewStore(s.Client(), cipher), nil
+	return secrets.NewStore(pgStore, cipher), nil
 }
 
 func secretSetCmd() *cobra.Command {
@@ -1827,13 +1801,70 @@ func apikeyCmd() *cobra.Command {
 	return cmd
 }
 
-func getAPIKeyStore() (*auth.APIKeyStore, error) {
-	s, err := store.NewRedisStore(redisAddr, redisPass, redisDB)
+func getAPIKeyManager() (*auth.APIKeyManager, error) {
+	s, err := getStore()
 	if err != nil {
-		return nil, fmt.Errorf("connect to redis: %w", err)
+		return nil, err
 	}
 
-	return auth.NewAPIKeyStore(s.Client()), nil
+	return auth.NewAPIKeyManager(&apiKeyStoreAdapter{s: s}), nil
+}
+
+// apiKeyStoreAdapter adapts store.Store to auth.APIKeyStore.
+type apiKeyStoreAdapter struct {
+	s *store.Store
+}
+
+func (a *apiKeyStoreAdapter) SaveAPIKey(ctx context.Context, key *auth.APIKey) error {
+	return a.s.SaveAPIKey(ctx, &store.APIKeyRecord{
+		Name: key.Name, KeyHash: key.KeyHash, Tier: key.Tier,
+		Enabled: key.Enabled, ExpiresAt: key.ExpiresAt,
+		CreatedAt: key.CreatedAt, UpdatedAt: key.UpdatedAt,
+	})
+}
+
+func (a *apiKeyStoreAdapter) GetAPIKeyByHash(ctx context.Context, keyHash string) (*auth.APIKey, error) {
+	rec, err := a.s.GetAPIKeyByHash(ctx, keyHash)
+	if err != nil {
+		return nil, err
+	}
+	return &auth.APIKey{
+		Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
+		Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
+		CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,
+	}, nil
+}
+
+func (a *apiKeyStoreAdapter) GetAPIKeyByName(ctx context.Context, name string) (*auth.APIKey, error) {
+	rec, err := a.s.GetAPIKeyByName(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return &auth.APIKey{
+		Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
+		Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
+		CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,
+	}, nil
+}
+
+func (a *apiKeyStoreAdapter) ListAPIKeys(ctx context.Context) ([]*auth.APIKey, error) {
+	recs, err := a.s.ListAPIKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]*auth.APIKey, len(recs))
+	for i, rec := range recs {
+		keys[i] = &auth.APIKey{
+			Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
+			Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
+			CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,
+		}
+	}
+	return keys, nil
+}
+
+func (a *apiKeyStoreAdapter) DeleteAPIKey(ctx context.Context, name string) error {
+	return a.s.DeleteAPIKey(ctx, name)
 }
 
 func apikeyCreateCmd() *cobra.Command {
@@ -1846,12 +1877,12 @@ func apikeyCreateCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
-			keyStore, err := getAPIKeyStore()
+			keyManager, err := getAPIKeyManager()
 			if err != nil {
 				return err
 			}
 
-			key, err := keyStore.Create(context.Background(), name, tier)
+			key, err := keyManager.Create(context.Background(), name, tier)
 			if err != nil {
 				return err
 			}
@@ -1875,12 +1906,12 @@ func apikeyListCmd() *cobra.Command {
 		Aliases: []string{"ls"},
 		Short:   "List all API keys",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			keyStore, err := getAPIKeyStore()
+			keyManager, err := getAPIKeyManager()
 			if err != nil {
 				return err
 			}
 
-			keys, err := keyStore.List(context.Background())
+			keys, err := keyManager.List(context.Background())
 			if err != nil {
 				return err
 			}
@@ -1914,12 +1945,12 @@ func apikeyRevokeCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
-			keyStore, err := getAPIKeyStore()
+			keyManager, err := getAPIKeyManager()
 			if err != nil {
 				return err
 			}
 
-			if err := keyStore.Revoke(context.Background(), name); err != nil {
+			if err := keyManager.Revoke(context.Background(), name); err != nil {
 				return err
 			}
 
@@ -1938,12 +1969,12 @@ func apikeyDeleteCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
-			keyStore, err := getAPIKeyStore()
+			keyManager, err := getAPIKeyManager()
 			if err != nil {
 				return err
 			}
 
-			if err := keyStore.Delete(context.Background(), name); err != nil {
+			if err := keyManager.Delete(context.Background(), name); err != nil {
 				return err
 			}
 
@@ -2225,9 +2256,7 @@ env:
 
 func logsCmd() *cobra.Command {
 	var (
-		follow       bool
-		tail         int64
-		since        string
+		tail         int
 		outputFormat string
 	)
 
@@ -2238,9 +2267,7 @@ func logsCmd() *cobra.Command {
 
 Examples:
   nova logs my-func              # Show recent logs
-  nova logs my-func -f           # Follow logs in real-time
   nova logs my-func --tail 100   # Show last 100 entries
-  nova logs my-func --since 1h   # Show logs from last hour
   nova logs my-func -o json      # Output as JSON`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -2257,56 +2284,10 @@ Examples:
 				return err
 			}
 
-			logStore := logs.NewStore(s.Client())
 			printer := output.NewPrinter(output.ParseFormat(outputFormat))
 
-			if follow {
-				// Real-time log streaming
-				ctx, cancel := context.WithCancel(context.Background())
-				defer cancel()
-
-				// Handle Ctrl+C
-				sigCh := make(chan os.Signal, 1)
-				signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-				go func() {
-					<-sigCh
-					cancel()
-				}()
-
-				ch, err := logStore.Tail(ctx, fn.ID)
-				if err != nil {
-					return fmt.Errorf("tail logs: %w", err)
-				}
-
-				printer.Info("Following logs for %s (Ctrl+C to stop)...", funcName)
-				for entry := range ch {
-					printer.PrintLogEntry(output.LogEntry{
-						Timestamp:  entry.Timestamp.Format("2006-01-02 15:04:05"),
-						RequestID:  entry.RequestID,
-						Function:   entry.Function,
-						Level:      entry.Level,
-						Message:    entry.Message,
-						DurationMs: entry.DurationMs,
-					})
-				}
-				return nil
-			}
-
-			// Query historical logs
-			opts := logs.QueryOptions{
-				FunctionID: fn.ID,
-				Limit:      tail,
-			}
-
-			if since != "" {
-				duration, err := time.ParseDuration(since)
-				if err != nil {
-					return fmt.Errorf("invalid duration: %s", since)
-				}
-				opts.Since = time.Now().Add(-duration)
-			}
-
-			entries, err := logStore.Query(context.Background(), opts)
+			// Query logs from Postgres
+			entries, err := s.ListInvocationLogs(context.Background(), fn.ID, tail)
 			if err != nil {
 				return fmt.Errorf("query logs: %w", err)
 			}
@@ -2317,12 +2298,16 @@ Examples:
 			}
 
 			for _, entry := range entries {
+				level := "info"
+				if !entry.Success {
+					level = "error"
+				}
 				printer.PrintLogEntry(output.LogEntry{
-					Timestamp:  entry.Timestamp.Format("2006-01-02 15:04:05"),
-					RequestID:  entry.RequestID,
-					Function:   entry.Function,
-					Level:      entry.Level,
-					Message:    entry.Message,
+					Timestamp:  entry.CreatedAt.Format("2006-01-02 15:04:05"),
+					RequestID:  entry.ID,
+					Function:   entry.FunctionName,
+					Level:      level,
+					Message:    entry.ErrorMessage,
 					DurationMs: entry.DurationMs,
 				})
 			}
@@ -2331,9 +2316,7 @@ Examples:
 		},
 	}
 
-	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow log output in real-time")
-	cmd.Flags().Int64Var(&tail, "tail", 50, "Number of recent log entries to show")
-	cmd.Flags().StringVar(&since, "since", "", "Show logs since duration (e.g., 1h, 30m, 24h)")
+	cmd.Flags().IntVar(&tail, "tail", 50, "Number of recent log entries to show")
 	cmd.Flags().StringVarP(&outputFormat, "output", "o", "table", "Output format (table, json)")
 
 	return cmd

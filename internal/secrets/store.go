@@ -4,27 +4,28 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"time"
-
-	"github.com/go-redis/redis/v8"
 )
 
-const (
-	secretPrefix = "nova:secret:"
-	secretIndex  = "nova:secrets"
-)
+// Backend defines the storage interface for secrets
+type Backend interface {
+	SaveSecret(ctx context.Context, name, encryptedValue string) error
+	GetSecret(ctx context.Context, name string) (string, error)
+	DeleteSecret(ctx context.Context, name string) error
+	ListSecrets(ctx context.Context) (map[string]string, error)
+	SecretExists(ctx context.Context, name string) (bool, error)
+}
 
-// Store manages encrypted secrets in Redis
+// Store manages encrypted secrets in the database
 type Store struct {
-	redis  *redis.Client
-	cipher *Cipher
+	backend Backend
+	cipher  *Cipher
 }
 
 // NewStore creates a new secrets store
-func NewStore(redis *redis.Client, cipher *Cipher) *Store {
+func NewStore(backend Backend, cipher *Cipher) *Store {
 	return &Store{
-		redis:  redis,
-		cipher: cipher,
+		backend: backend,
+		cipher:  cipher,
 	}
 }
 
@@ -35,22 +36,14 @@ func (s *Store) Set(ctx context.Context, name string, value []byte) error {
 		return fmt.Errorf("encrypt secret: %w", err)
 	}
 
-	// Store as base64 to ensure safe Redis storage
+	// Store as base64 to ensure safe storage
 	encoded := base64.StdEncoding.EncodeToString(encrypted)
-
-	pipe := s.redis.Pipeline()
-	pipe.Set(ctx, secretPrefix+name, encoded, 0)
-	pipe.HSet(ctx, secretIndex, name, time.Now().Format(time.RFC3339))
-	_, err = pipe.Exec(ctx)
-	return err
+	return s.backend.SaveSecret(ctx, name, encoded)
 }
 
 // Get retrieves and decrypts a secret
 func (s *Store) Get(ctx context.Context, name string) ([]byte, error) {
-	encoded, err := s.redis.Get(ctx, secretPrefix+name).Result()
-	if err == redis.Nil {
-		return nil, fmt.Errorf("secret not found: %s", name)
-	}
+	encoded, err := s.backend.GetSecret(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -70,23 +63,15 @@ func (s *Store) Get(ctx context.Context, name string) ([]byte, error) {
 
 // Delete removes a secret
 func (s *Store) Delete(ctx context.Context, name string) error {
-	pipe := s.redis.Pipeline()
-	pipe.Del(ctx, secretPrefix+name)
-	pipe.HDel(ctx, secretIndex, name)
-	_, err := pipe.Exec(ctx)
-	return err
+	return s.backend.DeleteSecret(ctx, name)
 }
 
 // List returns all secret names with their creation times
 func (s *Store) List(ctx context.Context) (map[string]string, error) {
-	return s.redis.HGetAll(ctx, secretIndex).Result()
+	return s.backend.ListSecrets(ctx)
 }
 
 // Exists checks if a secret exists
 func (s *Store) Exists(ctx context.Context, name string) (bool, error) {
-	n, err := s.redis.Exists(ctx, secretPrefix+name).Result()
-	if err != nil {
-		return false, err
-	}
-	return n > 0, nil
+	return s.backend.SecretExists(ctx, name)
 }

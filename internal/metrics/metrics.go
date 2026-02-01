@@ -8,6 +8,15 @@ import (
 	"time"
 )
 
+// TimeSeriesBucket stores metrics for a single time bucket
+type TimeSeriesBucket struct {
+	Timestamp    time.Time
+	Invocations  int64
+	Errors       int64
+	TotalLatency int64
+	Count        int64 // for calculating avg
+}
+
 // Metrics collects and exposes Nova runtime metrics
 type Metrics struct {
 	// Invocation metrics
@@ -31,6 +40,10 @@ type Metrics struct {
 	// Per-function metrics
 	funcMetrics sync.Map // funcID -> *FunctionMetrics
 
+	// Time-series data (hourly buckets for last 24 hours)
+	timeSeriesMu sync.RWMutex
+	timeSeries   []*TimeSeriesBucket
+
 	startTime time.Time
 }
 
@@ -51,6 +64,21 @@ var global = &Metrics{startTime: time.Now()}
 
 func init() {
 	global.MinLatencyMs.Store(int64(^uint64(0) >> 1)) // Max int64
+	global.initTimeSeries()
+}
+
+// initTimeSeries initializes time series buckets for the last 24 hours
+func (m *Metrics) initTimeSeries() {
+	m.timeSeriesMu.Lock()
+	defer m.timeSeriesMu.Unlock()
+
+	now := time.Now().Truncate(time.Hour)
+	m.timeSeries = make([]*TimeSeriesBucket, 24)
+	for i := 0; i < 24; i++ {
+		m.timeSeries[i] = &TimeSeriesBucket{
+			Timestamp: now.Add(time.Duration(i-23) * time.Hour),
+		}
+	}
 }
 
 // Global returns the global metrics instance
@@ -105,8 +133,57 @@ func (m *Metrics) RecordInvocationWithDetails(funcID, funcName, runtime string, 
 	updateMin(&fm.MinMs, durationMs)
 	updateMax(&fm.MaxMs, durationMs)
 
+	// Time series recording
+	m.recordTimeSeries(durationMs, !success)
+
 	// Prometheus bridge
 	RecordPrometheusInvocation(funcName, runtime, durationMs, coldStart, success)
+}
+
+// recordTimeSeries adds an invocation to the current time bucket
+func (m *Metrics) recordTimeSeries(durationMs int64, isError bool) {
+	m.timeSeriesMu.Lock()
+	defer m.timeSeriesMu.Unlock()
+
+	now := time.Now().Truncate(time.Hour)
+
+	// Check if we need to rotate buckets
+	if len(m.timeSeries) > 0 {
+		lastBucket := m.timeSeries[len(m.timeSeries)-1]
+		hoursDiff := int(now.Sub(lastBucket.Timestamp).Hours())
+
+		if hoursDiff > 0 {
+			// Rotate buckets
+			if hoursDiff >= 24 {
+				// Reset all buckets
+				m.timeSeries = make([]*TimeSeriesBucket, 24)
+				for i := 0; i < 24; i++ {
+					m.timeSeries[i] = &TimeSeriesBucket{
+						Timestamp: now.Add(time.Duration(i-23) * time.Hour),
+					}
+				}
+			} else {
+				// Shift and add new buckets
+				m.timeSeries = m.timeSeries[hoursDiff:]
+				for i := 0; i < hoursDiff; i++ {
+					m.timeSeries = append(m.timeSeries, &TimeSeriesBucket{
+						Timestamp: lastBucket.Timestamp.Add(time.Duration(i+1) * time.Hour),
+					})
+				}
+			}
+		}
+	}
+
+	// Record to current bucket
+	if len(m.timeSeries) > 0 {
+		bucket := m.timeSeries[len(m.timeSeries)-1]
+		bucket.Invocations++
+		bucket.TotalLatency += durationMs
+		bucket.Count++
+		if isError {
+			bucket.Errors++
+		}
+	}
 }
 
 // RecordVMCreated records a new VM creation
@@ -225,6 +302,35 @@ func (m *Metrics) JSONHandler() http.Handler {
 		result := m.Snapshot()
 		result["functions"] = m.FunctionStats()
 		json.NewEncoder(w).Encode(result)
+	})
+}
+
+// TimeSeries returns the time-series data for the last 24 hours
+func (m *Metrics) TimeSeries() []map[string]interface{} {
+	m.timeSeriesMu.RLock()
+	defer m.timeSeriesMu.RUnlock()
+
+	result := make([]map[string]interface{}, len(m.timeSeries))
+	for i, bucket := range m.timeSeries {
+		avgDuration := float64(0)
+		if bucket.Count > 0 {
+			avgDuration = float64(bucket.TotalLatency) / float64(bucket.Count)
+		}
+		result[i] = map[string]interface{}{
+			"timestamp":    bucket.Timestamp.Format(time.RFC3339),
+			"invocations":  bucket.Invocations,
+			"errors":       bucket.Errors,
+			"avg_duration": avgDuration,
+		}
+	}
+	return result
+}
+
+// TimeSeriesHandler returns an HTTP handler for time-series metrics
+func (m *Metrics) TimeSeriesHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(m.TimeSeries())
 	})
 }
 

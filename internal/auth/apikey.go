@@ -6,17 +6,9 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
-
-	"github.com/go-redis/redis/v8"
-)
-
-const (
-	apikeyPrefix = "nova:apikey:"
-	apikeyIndex  = "nova:apikeys"
 )
 
 // APIKey represents a stored API key
@@ -30,9 +22,18 @@ type APIKey struct {
 	UpdatedAt time.Time  `json:"updated_at"`
 }
 
+// APIKeyStore interface for API key operations
+type APIKeyStore interface {
+	SaveAPIKey(ctx context.Context, key *APIKey) error
+	GetAPIKeyByHash(ctx context.Context, keyHash string) (*APIKey, error)
+	GetAPIKeyByName(ctx context.Context, name string) (*APIKey, error)
+	ListAPIKeys(ctx context.Context) ([]*APIKey, error)
+	DeleteAPIKey(ctx context.Context, name string) error
+}
+
 // APIKeyAuthenticator validates API keys
 type APIKeyAuthenticator struct {
-	redis      *redis.Client
+	store      APIKeyStore
 	staticKeys map[string]staticKey // hash -> key info
 }
 
@@ -43,7 +44,7 @@ type staticKey struct {
 
 // APIKeyAuthConfig holds API key authenticator configuration
 type APIKeyAuthConfig struct {
-	Redis      *redis.Client
+	Store      APIKeyStore
 	StaticKeys []StaticKeyConfig
 }
 
@@ -57,7 +58,7 @@ type StaticKeyConfig struct {
 // NewAPIKeyAuthenticator creates a new API key authenticator
 func NewAPIKeyAuthenticator(cfg APIKeyAuthConfig) *APIKeyAuthenticator {
 	auth := &APIKeyAuthenticator{
-		redis:      cfg.Redis,
+		store:      cfg.Store,
 		staticKeys: make(map[string]staticKey),
 	}
 
@@ -105,9 +106,9 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) *Identity {
 		}
 	}
 
-	// Check Redis
-	if a.redis != nil {
-		if id := a.checkRedisKey(r.Context(), keyHash); id != nil {
+	// Check database
+	if a.store != nil {
+		if id := a.checkStoreKey(r.Context(), keyHash); id != nil {
 			return id
 		}
 	}
@@ -115,15 +116,10 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) *Identity {
 	return nil
 }
 
-// checkRedisKey looks up the key hash in Redis
-func (a *APIKeyAuthenticator) checkRedisKey(ctx context.Context, keyHash string) *Identity {
-	data, err := a.redis.Get(ctx, apikeyPrefix+keyHash).Bytes()
-	if err != nil {
-		return nil
-	}
-
-	var apiKey APIKey
-	if err := json.Unmarshal(data, &apiKey); err != nil {
+// checkStoreKey looks up the key hash in the store
+func (a *APIKeyAuthenticator) checkStoreKey(ctx context.Context, keyHash string) *Identity {
+	apiKey, err := a.store.GetAPIKeyByHash(ctx, keyHash)
+	if err != nil || apiKey == nil {
 		return nil
 	}
 
@@ -146,7 +142,7 @@ func (a *APIKeyAuthenticator) checkRedisKey(ctx context.Context, keyHash string)
 		Subject: "apikey:" + apiKey.Name,
 		KeyName: apiKey.Name,
 		Tier:    tier,
-		Claims:  map[string]any{"source": "redis"},
+		Claims:  map[string]any{"source": "postgres"},
 	}
 }
 
@@ -156,33 +152,33 @@ func hashAPIKey(key string) string {
 	return hex.EncodeToString(h[:])
 }
 
-// APIKeyStore manages API keys in Redis
-type APIKeyStore struct {
-	redis *redis.Client
+// APIKeyManager manages API keys in the database
+type APIKeyManager struct {
+	store APIKeyStore
 }
 
-// NewAPIKeyStore creates a new API key store
-func NewAPIKeyStore(redis *redis.Client) *APIKeyStore {
-	return &APIKeyStore{redis: redis}
+// NewAPIKeyManager creates a new API key manager
+func NewAPIKeyManager(store APIKeyStore) *APIKeyManager {
+	return &APIKeyManager{store: store}
 }
 
 // Create creates a new API key and returns the plaintext key
-func (s *APIKeyStore) Create(ctx context.Context, name, tier string) (string, error) {
+func (m *APIKeyManager) Create(ctx context.Context, name, tier string) (string, error) {
+	// Check if name already exists
+	existing, _ := m.store.GetAPIKeyByName(ctx, name)
+	if existing != nil {
+		return "", fmt.Errorf("API key with name '%s' already exists", name)
+	}
+
 	// Generate random key
 	key := generateAPIKey()
 	keyHash := hashAPIKey(key)
-
-	// Check if name already exists
-	existing, _ := s.redis.HGet(ctx, apikeyIndex, name).Result()
-	if existing != "" {
-		return "", fmt.Errorf("API key with name '%s' already exists", name)
-	}
 
 	if tier == "" {
 		tier = "default"
 	}
 
-	apiKey := APIKey{
+	apiKey := &APIKey{
 		Name:      name,
 		KeyHash:   keyHash,
 		Tier:      tier,
@@ -191,16 +187,7 @@ func (s *APIKeyStore) Create(ctx context.Context, name, tier string) (string, er
 		UpdatedAt: time.Now(),
 	}
 
-	data, err := json.Marshal(apiKey)
-	if err != nil {
-		return "", err
-	}
-
-	// Store key and index atomically
-	pipe := s.redis.Pipeline()
-	pipe.Set(ctx, apikeyPrefix+keyHash, data, 0)
-	pipe.HSet(ctx, apikeyIndex, name, keyHash)
-	if _, err := pipe.Exec(ctx); err != nil {
+	if err := m.store.SaveAPIKey(ctx, apiKey); err != nil {
 		return "", err
 	}
 
@@ -208,55 +195,18 @@ func (s *APIKeyStore) Create(ctx context.Context, name, tier string) (string, er
 }
 
 // Get retrieves an API key by name
-func (s *APIKeyStore) Get(ctx context.Context, name string) (*APIKey, error) {
-	keyHash, err := s.redis.HGet(ctx, apikeyIndex, name).Result()
-	if err == redis.Nil {
-		return nil, fmt.Errorf("API key not found: %s", name)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	data, err := s.redis.Get(ctx, apikeyPrefix+keyHash).Bytes()
-	if err != nil {
-		return nil, err
-	}
-
-	var apiKey APIKey
-	if err := json.Unmarshal(data, &apiKey); err != nil {
-		return nil, err
-	}
-
-	return &apiKey, nil
+func (m *APIKeyManager) Get(ctx context.Context, name string) (*APIKey, error) {
+	return m.store.GetAPIKeyByName(ctx, name)
 }
 
 // List returns all API keys
-func (s *APIKeyStore) List(ctx context.Context) ([]*APIKey, error) {
-	hashes, err := s.redis.HGetAll(ctx, apikeyIndex).Result()
-	if err != nil {
-		return nil, err
-	}
-
-	keys := make([]*APIKey, 0, len(hashes))
-	for _, hash := range hashes {
-		data, err := s.redis.Get(ctx, apikeyPrefix+hash).Bytes()
-		if err != nil {
-			continue
-		}
-
-		var apiKey APIKey
-		if err := json.Unmarshal(data, &apiKey); err != nil {
-			continue
-		}
-		keys = append(keys, &apiKey)
-	}
-
-	return keys, nil
+func (m *APIKeyManager) List(ctx context.Context) ([]*APIKey, error) {
+	return m.store.ListAPIKeys(ctx)
 }
 
 // Revoke disables an API key
-func (s *APIKeyStore) Revoke(ctx context.Context, name string) error {
-	apiKey, err := s.Get(ctx, name)
+func (m *APIKeyManager) Revoke(ctx context.Context, name string) error {
+	apiKey, err := m.store.GetAPIKeyByName(ctx, name)
 	if err != nil {
 		return err
 	}
@@ -264,29 +214,12 @@ func (s *APIKeyStore) Revoke(ctx context.Context, name string) error {
 	apiKey.Enabled = false
 	apiKey.UpdatedAt = time.Now()
 
-	data, err := json.Marshal(apiKey)
-	if err != nil {
-		return err
-	}
-
-	return s.redis.Set(ctx, apikeyPrefix+apiKey.KeyHash, data, 0).Err()
+	return m.store.SaveAPIKey(ctx, apiKey)
 }
 
 // Delete removes an API key
-func (s *APIKeyStore) Delete(ctx context.Context, name string) error {
-	keyHash, err := s.redis.HGet(ctx, apikeyIndex, name).Result()
-	if err == redis.Nil {
-		return fmt.Errorf("API key not found: %s", name)
-	}
-	if err != nil {
-		return err
-	}
-
-	pipe := s.redis.Pipeline()
-	pipe.Del(ctx, apikeyPrefix+keyHash)
-	pipe.HDel(ctx, apikeyIndex, name)
-	_, err = pipe.Exec(ctx)
-	return err
+func (m *APIKeyManager) Delete(ctx context.Context, name string) error {
+	return m.store.DeleteAPIKey(ctx, name)
 }
 
 // generateAPIKey creates a random API key with sk_ prefix

@@ -71,11 +71,10 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	pgOK := h.Store.PingPostgres(ctx) == nil
-	redisOK := h.Store.PingRedis(ctx) == nil
 	stats := h.Pool.Stats()
 
 	status := "ok"
-	if !pgOK || !redisOK {
+	if !pgOK {
 		status = "degraded"
 	}
 
@@ -84,7 +83,6 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 		"status": status,
 		"components": map[string]interface{}{
 			"postgres": pgOK,
-			"redis":    redisOK,
 			"pool": map[string]interface{}{
 				"active_vms":  stats["active_vms"],
 				"total_pools": stats["total_pools"],
@@ -116,16 +114,6 @@ func (h *Handler) HealthReady(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Store.PingRedis(ctx); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": "not_ready",
-			"error":  "redis unavailable: " + err.Error(),
-		})
-		return
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
@@ -143,17 +131,6 @@ func (h *Handler) HealthStartup(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status": "starting",
 			"error":  "waiting for postgres: " + err.Error(),
-		})
-		return
-	}
-
-	// Check Redis is reachable
-	if err := h.Store.PingRedis(ctx); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": "starting",
-			"error":  "waiting for redis: " + err.Error(),
 		})
 		return
 	}

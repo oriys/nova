@@ -123,7 +123,6 @@ export interface HealthStatus {
   status: string;
   components?: {
     postgres: boolean;
-    redis: boolean;
     pool: {
       active_vms: number;
       total_pools: number;

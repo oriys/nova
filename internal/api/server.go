@@ -1,9 +1,9 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/oriys/nova/internal/api/controlplane"
 	"github.com/oriys/nova/internal/api/dataplane"
 	"github.com/oriys/nova/internal/auth"
@@ -60,7 +60,7 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 				BurstSize:         tier.BurstSize,
 			}
 		}
-		limiter := ratelimit.New(cfg.Store.Client(), tiers, ratelimit.TierConfig{
+		limiter := ratelimit.New(cfg.Store, tiers, ratelimit.TierConfig{
 			RequestsPerSecond: cfg.RateLimitCfg.Default.RequestsPerSecond,
 			BurstSize:         cfg.RateLimitCfg.Default.BurstSize,
 		})
@@ -74,7 +74,7 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 
 	// Add auth middleware
 	if cfg.AuthCfg != nil && cfg.AuthCfg.Enabled {
-		authenticators := buildAuthenticators(cfg.AuthCfg, cfg.Store.Client())
+		authenticators := buildAuthenticators(cfg.AuthCfg, cfg.Store)
 		if len(authenticators) > 0 {
 			handler = auth.Middleware(authenticators, cfg.AuthCfg.PublicPaths)(handler)
 			logging.Op().Info("authentication enabled", "public_paths", cfg.AuthCfg.PublicPaths)
@@ -96,7 +96,7 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 }
 
 // buildAuthenticators creates authenticators based on config.
-func buildAuthenticators(cfg *config.AuthConfig, redisClient *redis.Client) []auth.Authenticator {
+func buildAuthenticators(cfg *config.AuthConfig, s *store.Store) []auth.Authenticator {
 	var authenticators []auth.Authenticator
 
 	// Add JWT authenticator if enabled
@@ -125,11 +125,68 @@ func buildAuthenticators(cfg *config.AuthConfig, redisClient *redis.Client) []au
 			})
 		}
 		apiKeyAuth := auth.NewAPIKeyAuthenticator(auth.APIKeyAuthConfig{
-			Redis:      redisClient,
+			Store:      &apiKeyStoreAdapter{s: s},
 			StaticKeys: staticKeys,
 		})
 		authenticators = append(authenticators, apiKeyAuth)
 	}
 
 	return authenticators
+}
+
+// apiKeyStoreAdapter adapts store.Store to auth.APIKeyStore.
+type apiKeyStoreAdapter struct {
+	s *store.Store
+}
+
+func (a *apiKeyStoreAdapter) SaveAPIKey(ctx context.Context, key *auth.APIKey) error {
+	return a.s.SaveAPIKey(ctx, &store.APIKeyRecord{
+		Name: key.Name, KeyHash: key.KeyHash, Tier: key.Tier,
+		Enabled: key.Enabled, ExpiresAt: key.ExpiresAt,
+		CreatedAt: key.CreatedAt, UpdatedAt: key.UpdatedAt,
+	})
+}
+
+func (a *apiKeyStoreAdapter) GetAPIKeyByHash(ctx context.Context, keyHash string) (*auth.APIKey, error) {
+	rec, err := a.s.GetAPIKeyByHash(ctx, keyHash)
+	if err != nil {
+		return nil, err
+	}
+	return &auth.APIKey{
+		Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
+		Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
+		CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,
+	}, nil
+}
+
+func (a *apiKeyStoreAdapter) GetAPIKeyByName(ctx context.Context, name string) (*auth.APIKey, error) {
+	rec, err := a.s.GetAPIKeyByName(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return &auth.APIKey{
+		Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
+		Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
+		CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,
+	}, nil
+}
+
+func (a *apiKeyStoreAdapter) ListAPIKeys(ctx context.Context) ([]*auth.APIKey, error) {
+	recs, err := a.s.ListAPIKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]*auth.APIKey, len(recs))
+	for i, rec := range recs {
+		keys[i] = &auth.APIKey{
+			Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
+			Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
+			CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,
+		}
+	}
+	return keys, nil
+}
+
+func (a *apiKeyStoreAdapter) DeleteAPIKey(ctx context.Context, name string) error {
+	return a.s.DeleteAPIKey(ctx, name)
 }

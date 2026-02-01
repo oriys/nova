@@ -1,14 +1,8 @@
 # Nova Serverless Platform Configuration
 
-# Postgres (function metadata)
+# Postgres (all persistent storage: functions, logs, API keys, secrets, rate limiting)
 postgres:
   dsn: "postgres://nova:nova@localhost:5432/nova?sslmode=disable"
-
-# Redis
-redis:
-  addr: "localhost:6379"
-  password: ""
-  db: 0
 
 # Firecracker
 firecracker:

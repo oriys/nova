@@ -31,7 +31,6 @@ interface HealthStatus {
   status: string
   components?: {
     postgres: boolean
-    redis: boolean
     pool: {
       active_vms: number
       total_pools: number | null
@@ -162,7 +161,7 @@ export default function ConfigurationsPage() {
           <h3 className="text-lg font-semibold text-card-foreground mb-4">
             System Health
           </h3>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
               <Server className="h-8 w-8 text-primary" />
               <div>
@@ -193,23 +192,6 @@ export default function ConfigurationsPage() {
                   )}
                 >
                   {loading ? "..." : health?.components?.postgres ? "Connected" : "Disconnected"}
-                </Badge>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
-              <Database className="h-8 w-8 text-primary" />
-              <div>
-                <p className="text-sm text-muted-foreground">Redis</p>
-                <Badge
-                  variant="secondary"
-                  className={cn(
-                    health?.components?.redis
-                      ? "bg-success/10 text-success border-0"
-                      : "bg-destructive/10 text-destructive border-0"
-                  )}
-                >
-                  {loading ? "..." : health?.components?.redis ? "Connected" : "Disconnected"}
                 </Badge>
               </div>
             </div>

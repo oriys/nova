@@ -10,24 +10,11 @@ services:
       - "127.0.0.1:${NOVA_PG_PORT:-5432}:5432"
     volumes:
       - nova_pg_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nova -d nova"]
       interval: 5s
       timeout: 5s
-      retries: 10
-
-  redis:
-    image: redis:7-alpine
-    container_name: nova-redis
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "127.0.0.1:${NOVA_REDIS_PORT:-6379}:6379"
-    volumes:
-      - nova_redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
       retries: 10
 
   nova:
@@ -37,15 +24,12 @@ services:
     container_name: nova-api
     environment:
       NOVA_PG_DSN: postgres://nova:nova@postgres:5432/nova?sslmode=disable
-      NOVA_REDIS_ADDR: redis:6379
       NOVA_HTTP_ADDR: ":9000"
       NOVA_LOG_LEVEL: info
     ports:
       - "9000:9000"
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     # Full mode: uncomment for Linux hosts with KVM
     # devices:
@@ -69,4 +53,3 @@ services:
 
 volumes:
   nova_pg_data:
-  nova_redis_data:

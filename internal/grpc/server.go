@@ -160,13 +160,6 @@ func (s *Server) HealthCheck(ctx context.Context, req *novapb.HealthCheckRequest
 		components["postgres"] = "healthy"
 	}
 
-	// Check Redis
-	if err := s.store.PingRedis(ctx); err != nil {
-		components["redis"] = "unhealthy: " + err.Error()
-	} else {
-		components["redis"] = "healthy"
-	}
-
 	components["grpc"] = "healthy"
 
 	return &novapb.HealthCheckResponse{

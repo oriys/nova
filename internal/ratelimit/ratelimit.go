@@ -2,40 +2,13 @@ package ratelimit
 
 import (
 	"context"
-	"fmt"
 	"time"
-
-	"github.com/go-redis/redis/v8"
 )
 
-// TokenBucket Lua script for atomic rate limiting
-// KEYS[1] = bucket key
-// ARGV[1] = max_tokens (burst size)
-// ARGV[2] = refill_rate (tokens per second)
-// ARGV[3] = now (current timestamp in seconds)
-// ARGV[4] = requested (tokens to consume)
-// Returns: {allowed (0/1), remaining_tokens}
-var tokenBucketScript = redis.NewScript(`
-local bucket = redis.call('HMGET', KEYS[1], 'tokens', 'last_refill')
-local tokens = tonumber(bucket[1]) or tonumber(ARGV[1])
-local last = tonumber(bucket[2]) or tonumber(ARGV[3])
-
--- Refill tokens based on elapsed time
-local elapsed = tonumber(ARGV[3]) - last
-tokens = math.min(tonumber(ARGV[1]), tokens + elapsed * tonumber(ARGV[2]))
-
-local allowed = 0
-if tokens >= tonumber(ARGV[4]) then
-    tokens = tokens - tonumber(ARGV[4])
-    allowed = 1
-end
-
-redis.call('HMSET', KEYS[1], 'tokens', tokens, 'last_refill', ARGV[3])
--- Set expiry slightly longer than time to refill bucket
-redis.call('EXPIRE', KEYS[1], math.ceil(tonumber(ARGV[1]) / tonumber(ARGV[2])) + 10)
-
-return {allowed, math.floor(tokens)}
-`)
+// Backend defines the storage interface for rate limiting
+type Backend interface {
+	CheckRateLimit(ctx context.Context, key string, maxTokens int, refillRate float64, requested int) (bool, int, error)
+}
 
 // TierConfig holds rate limit configuration for a tier
 type TierConfig struct {
@@ -43,21 +16,21 @@ type TierConfig struct {
 	BurstSize         int
 }
 
-// Limiter implements Redis-based token bucket rate limiting
+// Limiter implements Postgres-backed token bucket rate limiting
 type Limiter struct {
-	redis   *redis.Client
-	tiers   map[string]TierConfig
+	backend  Backend
+	tiers    map[string]TierConfig
 	default_ TierConfig
 }
 
 // New creates a new rate limiter
-func New(redis *redis.Client, tiers map[string]TierConfig, defaultTier TierConfig) *Limiter {
+func New(backend Backend, tiers map[string]TierConfig, defaultTier TierConfig) *Limiter {
 	if tiers == nil {
 		tiers = make(map[string]TierConfig)
 	}
 	return &Limiter{
-		redis:   redis,
-		tiers:   tiers,
+		backend:  backend,
+		tiers:    tiers,
 		default_: defaultTier,
 	}
 }
@@ -78,25 +51,10 @@ func (l *Limiter) Allow(ctx context.Context, key, tier string) (Result, error) {
 func (l *Limiter) AllowN(ctx context.Context, key, tier string, n int) (Result, error) {
 	cfg := l.getTierConfig(tier)
 
-	now := float64(time.Now().Unix())
-
-	result, err := tokenBucketScript.Run(ctx, l.redis, []string{key},
-		cfg.BurstSize,          // ARGV[1] max_tokens
-		cfg.RequestsPerSecond,  // ARGV[2] refill_rate
-		now,                    // ARGV[3] now
-		n,                      // ARGV[4] requested
-	).Slice()
-
+	allowed, remaining, err := l.backend.CheckRateLimit(ctx, key, cfg.BurstSize, cfg.RequestsPerSecond, n)
 	if err != nil {
-		return Result{}, fmt.Errorf("rate limit check: %w", err)
+		return Result{}, err
 	}
-
-	if len(result) != 2 {
-		return Result{}, fmt.Errorf("unexpected result length: %d", len(result))
-	}
-
-	allowed, _ := result[0].(int64)
-	remaining, _ := result[1].(int64)
 
 	// Calculate when bucket will be full again
 	tokensNeeded := float64(cfg.BurstSize) - float64(remaining)
@@ -104,8 +62,8 @@ func (l *Limiter) AllowN(ctx context.Context, key, tier string, n int) (Result, 
 	resetAt := time.Now().Add(time.Duration(refillSeconds) * time.Second)
 
 	return Result{
-		Allowed:   allowed == 1,
-		Remaining: int(remaining),
+		Allowed:   allowed,
+		Remaining: remaining,
 		ResetAt:   resetAt,
 	}, nil
 }

@@ -10,13 +10,6 @@ import (
 	"github.com/oriys/nova/internal/firecracker"
 )
 
-// RedisConfig holds Redis connection settings
-type RedisConfig struct {
-	Addr     string `json:"addr"`
-	Password string `json:"password"`
-	DB       int    `json:"db"`
-}
-
 // PostgresConfig holds Postgres connection settings
 type PostgresConfig struct {
 	DSN string `json:"dsn"`
@@ -132,7 +125,6 @@ type SecretsConfig struct {
 type Config struct {
 	Firecracker   firecracker.Config  `json:"firecracker"`
 	Postgres      PostgresConfig      `json:"postgres"`
-	Redis         RedisConfig         `json:"redis"`
 	Pool          PoolConfig          `json:"pool"`
 	Daemon        DaemonConfig        `json:"daemon"`
 	Observability ObservabilityConfig `json:"observability"`
@@ -149,11 +141,6 @@ func DefaultConfig() *Config {
 		Firecracker: *fcCfg,
 		Postgres: PostgresConfig{
 			DSN: "postgres://nova:nova@localhost:5432/nova?sslmode=disable",
-		},
-		Redis: RedisConfig{
-			Addr:     "localhost:6379",
-			Password: "",
-			DB:       0,
 		},
 		Pool: PoolConfig{
 			IdleTTL: 60 * time.Second,
@@ -243,12 +230,6 @@ func LoadFromEnv(cfg *Config) {
 	}
 	if v := os.Getenv("NOVA_POSTGRES_DSN"); v != "" {
 		cfg.Postgres.DSN = v
-	}
-	if v := os.Getenv("NOVA_REDIS_ADDR"); v != "" {
-		cfg.Redis.Addr = v
-	}
-	if v := os.Getenv("NOVA_REDIS_PASSWORD"); v != "" {
-		cfg.Redis.Password = v
 	}
 	if v := os.Getenv("NOVA_HTTP_ADDR"); v != "" {
 		cfg.Daemon.HTTPAddr = v
