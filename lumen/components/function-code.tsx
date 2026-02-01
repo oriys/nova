@@ -40,23 +40,15 @@ const defaultCode = `export async function handler(event, context) {
 function getRuntimeId(displayName: string): string {
   const lower = displayName.toLowerCase()
   if (lower.includes("python")) return "python"
-  if (lower.includes("go ")) return "go"
-  if (lower.includes("rust")) return "rust"
   if (lower.includes("node")) return "node"
-  if (lower.includes("ruby")) return "ruby"
+  if (lower.includes("go ") || lower === "go") return "go"
+  if (lower.includes("rust")) return "rust"
   if (lower.includes("java") && !lower.includes("javascript")) return "java"
+  if (lower.includes("ruby")) return "ruby"
+  if (lower.includes("php")) return "php"
+  if (lower.includes(".net") || lower.includes("dotnet")) return "dotnet"
   if (lower.includes("deno")) return "deno"
   if (lower.includes("bun")) return "bun"
-  if (lower.includes("php")) return "php"
-  if (lower.includes(".net")) return "dotnet"
-  if (lower.includes("elixir")) return "elixir"
-  if (lower.includes("kotlin")) return "kotlin"
-  if (lower.includes("swift")) return "swift"
-  if (lower.includes("zig")) return "zig"
-  if (lower.includes("lua")) return "lua"
-  if (lower.includes("perl")) return "perl"
-  if (lower.includes("scala")) return "scala"
-  if (lower.includes("wasm") || lower.includes("webassembly")) return "wasm"
   return "javascript"
 }
 

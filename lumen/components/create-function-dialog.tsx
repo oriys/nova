@@ -39,6 +39,16 @@ if __name__ == "__main__":
     result = handler(event)
     print(json.dumps(result))
 `,
+  node: `const fs = require('fs');
+
+function handler(event) {
+  const name = event.name || 'World';
+  return { message: \`Hello, \${name}!\` };
+}
+
+const event = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+console.log(JSON.stringify(handler(event)));
+`,
   go: `package main
 
 import (
@@ -64,16 +74,6 @@ func main() {
 	fmt.Println(string(output))
 }
 `,
-  node: `const fs = require('fs');
-
-function handler(event) {
-  const name = event.name || 'World';
-  return { message: \`Hello, \${name}!\` };
-}
-
-const event = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-console.log(JSON.stringify(handler(event)));
-`,
   rust: `use std::env;
 use std::fs;
 use serde::{Deserialize, Serialize};
@@ -92,16 +92,6 @@ fn main() {
     println!("{}", serde_json::to_string(&resp).unwrap());
 }
 `,
-  ruby: `require 'json'
-
-def handler(event)
-  name = event['name'] || 'World'
-  { message: "Hello, #{name}!" }
-end
-
-event = JSON.parse(File.read(ARGV[0]))
-puts JSON.generate(handler(event))
-`,
   java: `import java.nio.file.*;
 
 public class Handler {
@@ -112,13 +102,15 @@ public class Handler {
     }
 }
 `,
-  deno: `const event = JSON.parse(await Deno.readTextFile(Deno.args[0]));
-const name = event.name || 'World';
-console.log(JSON.stringify({ message: \`Hello, \${name}!\` }));
-`,
-  bun: `const event = JSON.parse(await Bun.file(Bun.argv[2]).text());
-const name = event.name || 'World';
-console.log(JSON.stringify({ message: \`Hello, \${name}!\` }));
+  ruby: `require 'json'
+
+def handler(event)
+  name = event['name'] || 'World'
+  { message: "Hello, #{name}!" }
+end
+
+event = JSON.parse(File.read(ARGV[0]))
+puts JSON.generate(handler(event))
 `,
   php: `<?php
 $event = json_decode(file_get_contents($argv[1]), true);
@@ -132,81 +124,19 @@ var evt = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
 var name = evt?.GetValueOrDefault("name", "World") ?? "World";
 Console.WriteLine(JsonSerializer.Serialize(new { message = $"Hello, {name}!" }));
 `,
-  elixir: `event = File.read!(System.argv() |> hd()) |> Jason.decode!()
-name = Map.get(event, "name", "World")
-IO.puts(Jason.encode!(%{message: "Hello, #{name}!"}))
+  deno: `const event = JSON.parse(await Deno.readTextFile(Deno.args[0]));
+const name = event.name || 'World';
+console.log(JSON.stringify({ message: \`Hello, \${name}!\` }));
 `,
-  kotlin: `import java.io.File
-import kotlinx.serialization.json.*
-
-fun main(args: Array<String>) {
-    val json = File(args[0]).readText()
-    val event = Json.parseToJsonElement(json).jsonObject
-    val name = event["name"]?.jsonPrimitive?.content ?: "World"
-    println("""{"message": "Hello, $name!"}""")
-}
-`,
-  swift: `import Foundation
-
-let data = try! Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1]))
-let event = try! JSONSerialization.jsonObject(with: data) as! [String: Any]
-let name = event["name"] as? String ?? "World"
-print("{\\"message\\": \\"Hello, \\(name)!\\"}")
-`,
-  zig: `const std = @import("std");
-
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    const args = try std.process.argsAlloc(allocator);
-    const file = try std.fs.cwd().openFile(args[1], .{});
-    defer file.close();
-    const stdout = std.io.getStdOut().writer();
-    try stdout.print("{{\\"message\\": \\"Hello, World!\\"}}\n", .{});
-}
-`,
-  lua: `local json = require("cjson")
-local file = io.open(arg[1], "r")
-local event = json.decode(file:read("*all"))
-file:close()
-local name = event.name or "World"
-print(json.encode({message = "Hello, " .. name .. "!"}))
-`,
-  perl: `use JSON;
-open(my $fh, '<', $ARGV[0]);
-my $event = decode_json(do { local $/; <$fh> });
-my $name = $event->{name} // 'World';
-print encode_json({message => "Hello, $name!"});
-`,
-  r: `library(jsonlite)
-args <- commandArgs(trailingOnly = TRUE)
-event <- fromJSON(args[1])
-name <- ifelse(is.null(event$name), "World", event$name)
-cat(toJSON(list(message = paste0("Hello, ", name, "!")), auto_unbox = TRUE))
-`,
-  julia: `using JSON3
-event = JSON3.read(read(ARGS[1], String))
-name = get(event, :name, "World")
-println(JSON3.write(Dict(:message => "Hello, $name!")))
-`,
-  scala: `import scala.io.Source
-import spray.json._
-
-object Handler extends App {
-  val json = Source.fromFile(args(0)).mkString.parseJson.asJsObject
-  val name = json.fields.get("name").map(_.convertTo[String]).getOrElse("World")
-  println(s"""{"message": "Hello, $name!"}""")
-}
-`,
-  wasm: `// WebAssembly - compile with WASI support
-// Rust: cargo build --target wasm32-wasi --release
-// Go: GOOS=wasip1 GOARCH=wasm go build -o handler.wasm
+  bun: `const event = JSON.parse(await Bun.file(Bun.argv[2]).text());
+const name = event.name || 'World';
+console.log(JSON.stringify({ message: \`Hello, \${name}!\` }));
 `,
 }
 
 // Get base runtime from versioned ID (e.g., "python3.11" -> "python")
 function getBaseRuntime(runtimeId: string): string {
-  const prefixes = ['python', 'go', 'node', 'rust', 'ruby', 'java', 'php', 'dotnet', 'scala']
+  const prefixes = ['python', 'node', 'go', 'rust', 'java', 'ruby', 'php', 'dotnet', 'deno', 'bun']
   for (const prefix of prefixes) {
     if (runtimeId.startsWith(prefix)) return prefix
   }
@@ -286,29 +216,15 @@ export function CreateFunctionDialog({
   // Group runtimes by language for better UX
   const groupedRuntimes = runtimes.length > 0 ? runtimes : [
     { id: "python", name: "Python", version: "3.12", status: "available" as const, functionsCount: 0, icon: "python" },
-    { id: "python3.11", name: "Python", version: "3.11", status: "available" as const, functionsCount: 0, icon: "python" },
-    { id: "go", name: "Go", version: "1.22", status: "available" as const, functionsCount: 0, icon: "go" },
-    { id: "go1.21", name: "Go", version: "1.21", status: "available" as const, functionsCount: 0, icon: "go" },
     { id: "node", name: "Node.js", version: "22.x", status: "available" as const, functionsCount: 0, icon: "nodejs" },
-    { id: "node20", name: "Node.js", version: "20.x", status: "available" as const, functionsCount: 0, icon: "nodejs" },
+    { id: "go", name: "Go", version: "1.22", status: "available" as const, functionsCount: 0, icon: "go" },
     { id: "rust", name: "Rust", version: "1.76", status: "available" as const, functionsCount: 0, icon: "rust" },
-    { id: "deno", name: "Deno", version: "1.40", status: "available" as const, functionsCount: 0, icon: "deno" },
-    { id: "bun", name: "Bun", version: "1.0", status: "available" as const, functionsCount: 0, icon: "bun" },
-    { id: "ruby", name: "Ruby", version: "3.3", status: "available" as const, functionsCount: 0, icon: "ruby" },
     { id: "java", name: "Java", version: "21", status: "available" as const, functionsCount: 0, icon: "java" },
-    { id: "java17", name: "Java", version: "17", status: "available" as const, functionsCount: 0, icon: "java" },
-    { id: "kotlin", name: "Kotlin", version: "1.9", status: "available" as const, functionsCount: 0, icon: "kotlin" },
-    { id: "scala", name: "Scala", version: "3.3", status: "available" as const, functionsCount: 0, icon: "scala" },
+    { id: "ruby", name: "Ruby", version: "3.3", status: "available" as const, functionsCount: 0, icon: "ruby" },
     { id: "php", name: "PHP", version: "8.3", status: "available" as const, functionsCount: 0, icon: "php" },
     { id: "dotnet", name: ".NET", version: "8.0", status: "available" as const, functionsCount: 0, icon: "dotnet" },
-    { id: "elixir", name: "Elixir", version: "1.16", status: "available" as const, functionsCount: 0, icon: "elixir" },
-    { id: "swift", name: "Swift", version: "5.9", status: "available" as const, functionsCount: 0, icon: "swift" },
-    { id: "zig", name: "Zig", version: "0.11", status: "available" as const, functionsCount: 0, icon: "zig" },
-    { id: "lua", name: "Lua", version: "5.4", status: "available" as const, functionsCount: 0, icon: "lua" },
-    { id: "perl", name: "Perl", version: "5.38", status: "available" as const, functionsCount: 0, icon: "perl" },
-    { id: "r", name: "R", version: "4.3", status: "available" as const, functionsCount: 0, icon: "r" },
-    { id: "julia", name: "Julia", version: "1.10", status: "available" as const, functionsCount: 0, icon: "julia" },
-    { id: "wasm", name: "WebAssembly", version: "wasmtime", status: "available" as const, functionsCount: 0, icon: "wasm" },
+    { id: "deno", name: "Deno", version: "2.0", status: "available" as const, functionsCount: 0, icon: "deno" },
+    { id: "bun", name: "Bun", version: "1.1", status: "available" as const, functionsCount: 0, icon: "bun" },
   ]
 
   return (

@@ -166,49 +166,18 @@ VALUES
     )
 ON CONFLICT (id) DO NOTHING;
 
--- Insert runtimes
+-- Insert runtimes (10 most common languages, one version each)
 INSERT INTO runtimes (id, name, version, status) VALUES
-    -- Python versions
     ('python', 'Python', '3.12', 'available'),
-    ('python3.11', 'Python', '3.11', 'available'),
-    ('python3.10', 'Python', '3.10', 'available'),
-    ('python3.9', 'Python', '3.9', 'available'),
-    -- Go versions
-    ('go', 'Go', '1.22', 'available'),
-    ('go1.21', 'Go', '1.21', 'available'),
-    ('go1.20', 'Go', '1.20', 'available'),
-    -- Node.js versions
     ('node', 'Node.js', '22.x', 'available'),
-    ('node20', 'Node.js', '20.x', 'available'),
-    ('node18', 'Node.js', '18.x', 'available'),
-    -- Rust versions
+    ('go', 'Go', '1.22', 'available'),
     ('rust', 'Rust', '1.76', 'available'),
-    ('rust1.75', 'Rust', '1.75', 'available'),
-    -- Deno & Bun
-    ('deno', 'Deno', '1.40', 'available'),
-    ('bun', 'Bun', '1.0', 'available'),
-    -- Ruby versions
-    ('ruby', 'Ruby', '3.3', 'available'),
-    ('ruby3.2', 'Ruby', '3.2', 'available'),
-    -- JVM languages
     ('java', 'Java', '21', 'available'),
-    ('java17', 'Java', '17', 'available'),
-    ('java11', 'Java', '11', 'available'),
-    ('kotlin', 'Kotlin', '1.9', 'available'),
-    ('scala', 'Scala', '3.3', 'available'),
-    -- Other languages
+    ('ruby', 'Ruby', '3.3', 'available'),
     ('php', 'PHP', '8.3', 'available'),
-    ('php8.2', 'PHP', '8.2', 'available'),
     ('dotnet', '.NET', '8.0', 'available'),
-    ('dotnet7', '.NET', '7.0', 'available'),
-    ('elixir', 'Elixir', '1.16', 'available'),
-    ('swift', 'Swift', '5.9', 'available'),
-    ('zig', 'Zig', '0.11', 'available'),
-    ('lua', 'Lua', '5.4', 'available'),
-    ('perl', 'Perl', '5.38', 'available'),
-    ('r', 'R', '4.3', 'available'),
-    ('julia', 'Julia', '1.10', 'available'),
-    ('wasm', 'WebAssembly', 'wasmtime', 'available')
+    ('deno', 'Deno', '2.0', 'available'),
+    ('bun', 'Bun', '1.1', 'available')
 ON CONFLICT (id) DO NOTHING;
 
 -- Insert sample invocation logs (last 24 hours, every 15 minutes)

@@ -7,38 +7,18 @@ import { cn } from "@/lib/utils"
 // Map runtime IDs to Prism language names
 const LANGUAGE_MAP: Record<string, string> = {
   python: "python",
-  "python3.11": "python",
-  "python3.12": "python",
-  go: "go",
-  "go1.21": "go",
-  "go1.22": "go",
   node: "javascript",
-  node20: "javascript",
-  node22: "javascript",
+  go: "go",
   rust: "rust",
-  ruby: "ruby",
   java: "java",
-  java17: "java",
-  java21: "java",
+  ruby: "ruby",
+  php: "markup",
+  dotnet: "csharp",
   deno: "typescript",
   bun: "typescript",
-  php: "markup", // PHP uses markup for better highlighting
-  dotnet: "csharp",
-  elixir: "elixir",
-  kotlin: "kotlin",
-  swift: "swift",
-  zig: "c", // Close enough
-  lua: "lua",
-  perl: "perl",
-  r: "r",
-  julia: "julia",
-  scala: "scala",
-  wasm: "rust", // WASM often written in Rust
   javascript: "javascript",
   typescript: "typescript",
   csharp: "csharp",
-  c: "c",
-  cpp: "cpp",
 }
 
 interface CodeEditorProps {

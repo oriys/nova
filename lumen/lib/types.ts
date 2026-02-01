@@ -48,26 +48,28 @@ export interface RuntimeInfo {
 
 // Runtime display names
 const RUNTIME_DISPLAY_NAMES: Record<string, string> = {
-  python: "Python 3.11",
-  go: "Go 1.21",
-  rust: "Rust 1.75",
-  wasm: "WebAssembly",
-  node: "Node.js 20.x",
-  ruby: "Ruby 3.3",
+  python: "Python 3.12",
+  node: "Node.js 22.x",
+  go: "Go 1.22",
+  rust: "Rust 1.76",
   java: "Java 21",
-  deno: "Deno 1.40",
-  bun: "Bun 1.0",
+  ruby: "Ruby 3.3",
+  php: "PHP 8.3",
+  dotnet: ".NET 8.0",
+  deno: "Deno 2.0",
+  bun: "Bun 1.1",
 };
 
 // Runtime icons for display
 const RUNTIME_ICONS: Record<string, string> = {
   python: "python",
+  node: "nodejs",
   go: "go",
   rust: "rust",
-  wasm: "wasm",
-  node: "nodejs",
-  ruby: "ruby",
   java: "java",
+  ruby: "ruby",
+  php: "php",
+  dotnet: "dotnet",
   deno: "deno",
   bun: "bun",
 };
