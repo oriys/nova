@@ -12,7 +12,6 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
   SelectContent,
@@ -21,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { CodeEditor } from "@/components/code-editor"
 import { RuntimeInfo } from "@/lib/types"
 import { Loader2, FileCode, FolderOpen } from "lucide-react"
 
@@ -369,11 +369,11 @@ export function CreateFunctionDialog({
               </TabsList>
 
               <TabsContent value="code" className="mt-3">
-                <Textarea
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  className="font-mono text-sm h-64 resize-none"
-                  placeholder="Enter your function code..."
+                <CodeEditor
+                  code={code}
+                  onChange={setCode}
+                  runtime={runtime}
+                  minHeight="256px"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
                   Template loaded for {getBaseRuntime(runtime)}. Modify as needed.
