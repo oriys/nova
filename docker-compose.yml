@@ -30,6 +30,43 @@ services:
       timeout: 3s
       retries: 10
 
+  nova:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nova-api
+    environment:
+      NOVA_PG_DSN: postgres://nova:nova@postgres:5432/nova?sslmode=disable
+      NOVA_REDIS_ADDR: redis:6379
+      NOVA_HTTP_ADDR: ":9000"
+      NOVA_LOG_LEVEL: info
+    ports:
+      - "9000:9000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Full mode: uncomment for Linux hosts with KVM
+    # devices:
+    #   - /dev/kvm:/dev/kvm
+    # volumes:
+    #   - /opt/nova:/opt/nova:ro
+    #   - /tmp/nova:/tmp/nova
+
+  lumen:
+    build:
+      context: ./lumen
+      dockerfile: Dockerfile
+    container_name: nova-lumen
+    environment:
+      HOSTNAME: "0.0.0.0"
+      NEXT_PUBLIC_API_URL: http://nova:9000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - nova
+
 volumes:
   nova_pg_data:
   nova_redis_data:

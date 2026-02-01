@@ -473,6 +473,35 @@ func (p *Pool) Stats() map[string]interface{} {
 	}
 }
 
+// FunctionStats returns pool stats for a specific function
+func (p *Pool) FunctionStats(funcID string) map[string]interface{} {
+	result := map[string]interface{}{
+		"active_vms": 0,
+		"busy_vms":   0,
+		"idle_vms":   0,
+	}
+
+	if value, ok := p.pools.Load(funcID); ok {
+		fp := value.(*functionPool)
+		fp.mu.Lock()
+		busyCount := 0
+		idleCount := 0
+		for _, pvm := range fp.vms {
+			if pvm.busy {
+				busyCount++
+			} else {
+				idleCount++
+			}
+		}
+		result["active_vms"] = len(fp.vms)
+		result["busy_vms"] = busyCount
+		result["idle_vms"] = idleCount
+		fp.mu.Unlock()
+	}
+
+	return result
+}
+
 func (p *Pool) Shutdown() {
 	p.cancel()
 

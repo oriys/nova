@@ -1,0 +1,155 @@
+"use client"
+
+import { useEffect, useState, useCallback } from "react"
+import { DashboardLayout } from "@/components/dashboard-layout"
+import { Header } from "@/components/header"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { runtimesApi } from "@/lib/api"
+import { transformRuntime, RuntimeInfo } from "@/lib/types"
+import { RefreshCw, Box, CheckCircle, AlertTriangle, Wrench } from "lucide-react"
+import { RuntimeIcon, getRuntimeColor } from "@/components/runtime-logos"
+import { cn } from "@/lib/utils"
+
+export default function RuntimesPage() {
+  const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const data = await runtimesApi.list()
+      setRuntimes(data.map(transformRuntime))
+    } catch (err) {
+      console.error("Failed to fetch runtimes:", err)
+      setError(err instanceof Error ? err.message : "Failed to load runtimes")
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "available":
+        return <CheckCircle className="h-4 w-4 text-success" />
+      case "deprecated":
+        return <AlertTriangle className="h-4 w-4 text-warning" />
+      case "maintenance":
+        return <Wrench className="h-4 w-4 text-muted-foreground" />
+      default:
+        return null
+    }
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout>
+        <Header title="Runtimes" description="Available execution environments" />
+        <div className="p-6">
+          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
+            <p className="font-medium">Failed to load runtimes</p>
+            <p className="text-sm mt-1">{error}</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    )
+  }
+
+  return (
+    <DashboardLayout>
+      <Header title="Runtimes" description="Available execution environments" />
+
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-muted-foreground">
+              {loading ? "Loading..." : `${runtimes.length} runtimes available`}
+            </p>
+          </div>
+          <Button variant="outline" onClick={fetchData} disabled={loading}>
+            <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
+            Refresh
+          </Button>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {loading
+            ? Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="rounded-xl border border-border bg-card p-6 animate-pulse"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="h-12 w-12 rounded-lg bg-muted" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-5 w-24 bg-muted rounded" />
+                      <div className="h-4 w-16 bg-muted rounded" />
+                    </div>
+                  </div>
+                </div>
+              ))
+            : runtimes.map((runtime) => {
+                const bgColor = getRuntimeColor(runtime.id)
+
+                return (
+                  <div
+                    key={runtime.id}
+                    className="rounded-xl border border-border bg-card p-6 transition-shadow hover:shadow-md"
+                  >
+                    <div className="flex items-start gap-4">
+                      <div
+                        className={cn(
+                          "flex h-12 w-12 items-center justify-center rounded-lg",
+                          bgColor,
+                          runtime.id === "bun" ? "text-black" : "text-white"
+                        )}
+                      >
+                        <RuntimeIcon runtimeId={runtime.id} className="text-2xl" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-card-foreground">
+                            {runtime.name}
+                          </h3>
+                          {getStatusIcon(runtime.status)}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          v{runtime.version}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between">
+                      <Badge
+                        variant="secondary"
+                        className={cn(
+                          "text-xs",
+                          runtime.status === "available" &&
+                            "bg-success/10 text-success border-0",
+                          runtime.status === "deprecated" &&
+                            "bg-warning/10 text-warning border-0",
+                          runtime.status === "maintenance" &&
+                            "bg-muted text-muted-foreground border-0"
+                        )}
+                      >
+                        {runtime.status}
+                      </Badge>
+                      <span className="text-sm text-muted-foreground">
+                        {runtime.functionsCount} function
+                        {runtime.functionsCount !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+        </div>
+      </div>
+    </DashboardLayout>
+  )
+}

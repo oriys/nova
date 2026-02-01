@@ -37,6 +37,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /metrics", metrics.Global().JSONHandler())
 	mux.Handle("GET /metrics/prometheus", metrics.PrometheusHandler())
 	mux.HandleFunc("GET /functions/{name}/logs", h.Logs)
+	mux.HandleFunc("GET /functions/{name}/metrics", h.FunctionMetrics)
 }
 
 // InvokeFunction handles POST /functions/{name}/invoke
@@ -208,4 +209,45 @@ func (h *Handler) Logs(w http.ResponseWriter, r *http.Request) {
 	entries := store.GetByFunction(fn.ID, tail)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(entries)
+}
+
+// FunctionMetrics handles GET /functions/{name}/metrics
+func (h *Handler) FunctionMetrics(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// Get function-specific metrics
+	allStats := metrics.Global().FunctionStats()
+	funcStats, ok := allStats[fn.ID]
+	if !ok {
+		// Return zero metrics if no invocations yet
+		funcStats = map[string]interface{}{
+			"invocations": int64(0),
+			"successes":   int64(0),
+			"failures":    int64(0),
+			"cold_starts": int64(0),
+			"warm_starts": int64(0),
+			"avg_ms":      float64(0),
+			"min_ms":      int64(0),
+			"max_ms":      int64(0),
+		}
+	}
+
+	// Get pool stats for this function
+	poolStats := h.Pool.FunctionStats(fn.ID)
+
+	result := map[string]interface{}{
+		"function_id":   fn.ID,
+		"function_name": fn.Name,
+		"invocations":   funcStats,
+		"pool":          poolStats,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }

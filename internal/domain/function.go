@@ -21,6 +21,17 @@ const (
 	RuntimeJava   Runtime = "java"
 	RuntimeDeno   Runtime = "deno"
 	RuntimeBun    Runtime = "bun"
+	RuntimePHP    Runtime = "php"
+	RuntimeDotnet Runtime = "dotnet"
+	RuntimeElixir Runtime = "elixir"
+	RuntimeKotlin Runtime = "kotlin"
+	RuntimeSwift  Runtime = "swift"
+	RuntimeZig    Runtime = "zig"
+	RuntimeLua    Runtime = "lua"
+	RuntimePerl   Runtime = "perl"
+	RuntimeR      Runtime = "r"
+	RuntimeJulia  Runtime = "julia"
+	RuntimeScala  Runtime = "scala"
 )
 
 // ExecutionMode determines how functions are executed
@@ -34,10 +45,25 @@ const (
 )
 
 func (r Runtime) IsValid() bool {
-	switch r {
-	case RuntimePython, RuntimeGo, RuntimeRust, RuntimeWasm,
-		RuntimeNode, RuntimeRuby, RuntimeJava, RuntimeDeno, RuntimeBun:
+	// Base runtime IDs
+	validRuntimes := map[Runtime]bool{
+		RuntimePython: true, RuntimeGo: true, RuntimeRust: true, RuntimeWasm: true,
+		RuntimeNode: true, RuntimeRuby: true, RuntimeJava: true, RuntimeDeno: true, RuntimeBun: true,
+		RuntimePHP: true, RuntimeDotnet: true, RuntimeElixir: true, RuntimeKotlin: true, RuntimeSwift: true,
+		RuntimeZig: true, RuntimeLua: true, RuntimePerl: true, RuntimeR: true, RuntimeJulia: true, RuntimeScala: true,
+	}
+	if validRuntimes[r] {
 		return true
+	}
+	// Versioned runtime IDs (e.g., python3.11, node20, go1.21)
+	versionedPrefixes := []string{
+		"python3.", "go1.", "node", "rust1.", "ruby3.", "ruby2.",
+		"java", "php8.", "dotnet", "scala",
+	}
+	for _, prefix := range versionedPrefixes {
+		if len(r) > len(prefix) && string(r)[:len(prefix)] == prefix {
+			return true
+		}
 	}
 	return false
 }

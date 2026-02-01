@@ -33,6 +33,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /functions/{name}", h.UpdateFunction)
 	mux.HandleFunc("DELETE /functions/{name}", h.DeleteFunction)
 
+	// Runtimes
+	mux.HandleFunc("GET /runtimes", h.ListRuntimes)
+
 	// Snapshot management
 	mux.HandleFunc("GET /snapshots", h.ListSnapshots)
 	mux.HandleFunc("POST /functions/{name}/snapshot", h.CreateSnapshot)
@@ -46,6 +49,7 @@ func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 		Runtime     string                 `json:"runtime"`
 		Handler     string                 `json:"handler"`
 		CodePath    string                 `json:"code_path"`
+		Code        string                 `json:"code"`
 		MemoryMB    int                    `json:"memory_mb"`
 		TimeoutS    int                    `json:"timeout_s"`
 		MinReplicas int                    `json:"min_replicas"`
@@ -69,21 +73,66 @@ func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "runtime is required", http.StatusBadRequest)
 		return
 	}
-	if req.CodePath == "" {
-		http.Error(w, "code_path is required", http.StatusBadRequest)
+	if req.CodePath == "" && req.Code == "" {
+		http.Error(w, "code_path or code is required", http.StatusBadRequest)
 		return
 	}
 
 	rt := domain.Runtime(req.Runtime)
 	if !rt.IsValid() {
-		http.Error(w, "invalid runtime (valid: python, go, rust, wasm)", http.StatusBadRequest)
+		http.Error(w, "invalid runtime", http.StatusBadRequest)
 		return
 	}
 
-	// Check if code file exists
-	if _, err := os.Stat(req.CodePath); os.IsNotExist(err) {
-		http.Error(w, fmt.Sprintf("code path not found: %s", req.CodePath), http.StatusBadRequest)
-		return
+	// If code is provided directly, write it to a temp file
+	codePath := req.CodePath
+	if req.Code != "" {
+		// Determine file extension based on runtime
+		ext := map[string]string{
+			"python": ".py",
+			"go":     ".go",
+			"rust":   ".rs",
+			"node":   ".js",
+			"ruby":   ".rb",
+			"java":   ".java",
+			"deno":   ".ts",
+			"bun":    ".ts",
+			"wasm":   ".wasm",
+			"php":    ".php",
+			"dotnet": ".cs",
+			"elixir": ".exs",
+			"kotlin": ".kt",
+			"swift":  ".swift",
+			"zig":    ".zig",
+			"lua":    ".lua",
+			"perl":   ".pl",
+			"r":      ".R",
+			"julia":  ".jl",
+			"scala":  ".scala",
+		}[req.Runtime]
+		if ext == "" {
+			ext = ".txt"
+		}
+
+		// Create functions directory if not exists
+		funcDir := filepath.Join(os.TempDir(), "nova-functions")
+		if err := os.MkdirAll(funcDir, 0755); err != nil {
+			http.Error(w, fmt.Sprintf("failed to create functions dir: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Write code to file
+		codePath = filepath.Join(funcDir, req.Name+ext)
+		if err := os.WriteFile(codePath, []byte(req.Code), 0644); err != nil {
+			http.Error(w, fmt.Sprintf("failed to write code file: %v", err), http.StatusInternalServerError)
+			return
+		}
+	} else {
+		// Check if code file exists
+		if _, err := os.Stat(req.CodePath); os.IsNotExist(err) {
+			http.Error(w, fmt.Sprintf("code path not found: %s", req.CodePath), http.StatusBadRequest)
+			return
+		}
 	}
 
 	// Check if function name already exists
@@ -107,14 +156,14 @@ func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Calculate code hash
-	codeHash, _ := domain.HashCodeFile(req.CodePath)
+	codeHash, _ := domain.HashCodeFile(codePath)
 
 	fn := &domain.Function{
 		ID:          uuid.New().String(),
 		Name:        req.Name,
 		Runtime:     rt,
 		Handler:     req.Handler,
-		CodePath:    req.CodePath,
+		CodePath:    codePath,
 		CodeHash:    codeHash,
 		MemoryMB:    req.MemoryMB,
 		TimeoutS:    req.TimeoutS,
@@ -143,6 +192,10 @@ func (h *Handler) ListFunctions(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	// Ensure we return empty array instead of null
+	if funcs == nil {
+		funcs = []*domain.Function{}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(funcs)
@@ -233,6 +286,69 @@ func (h *Handler) DeleteFunction(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListRuntimes handles GET /runtimes
+func (h *Handler) ListRuntimes(w http.ResponseWriter, r *http.Request) {
+	runtimes := []map[string]interface{}{
+		// Python versions
+		{"id": "python", "name": "Python", "version": "3.12", "status": "available"},
+		{"id": "python3.11", "name": "Python", "version": "3.11", "status": "available"},
+		{"id": "python3.10", "name": "Python", "version": "3.10", "status": "available"},
+		{"id": "python3.9", "name": "Python", "version": "3.9", "status": "available"},
+		// Go versions
+		{"id": "go", "name": "Go", "version": "1.22", "status": "available"},
+		{"id": "go1.21", "name": "Go", "version": "1.21", "status": "available"},
+		{"id": "go1.20", "name": "Go", "version": "1.20", "status": "available"},
+		// Node.js versions
+		{"id": "node", "name": "Node.js", "version": "22.x", "status": "available"},
+		{"id": "node20", "name": "Node.js", "version": "20.x", "status": "available"},
+		{"id": "node18", "name": "Node.js", "version": "18.x", "status": "available"},
+		// Rust versions
+		{"id": "rust", "name": "Rust", "version": "1.76", "status": "available"},
+		{"id": "rust1.75", "name": "Rust", "version": "1.75", "status": "available"},
+		// Deno & Bun
+		{"id": "deno", "name": "Deno", "version": "1.40", "status": "available"},
+		{"id": "bun", "name": "Bun", "version": "1.0", "status": "available"},
+		// Ruby versions
+		{"id": "ruby", "name": "Ruby", "version": "3.3", "status": "available"},
+		{"id": "ruby3.2", "name": "Ruby", "version": "3.2", "status": "available"},
+		// JVM languages
+		{"id": "java", "name": "Java", "version": "21", "status": "available"},
+		{"id": "java17", "name": "Java", "version": "17", "status": "available"},
+		{"id": "java11", "name": "Java", "version": "11", "status": "available"},
+		{"id": "kotlin", "name": "Kotlin", "version": "1.9", "status": "available"},
+		{"id": "scala", "name": "Scala", "version": "3.3", "status": "available"},
+		// Other languages
+		{"id": "php", "name": "PHP", "version": "8.3", "status": "available"},
+		{"id": "php8.2", "name": "PHP", "version": "8.2", "status": "available"},
+		{"id": "dotnet", "name": ".NET", "version": "8.0", "status": "available"},
+		{"id": "dotnet7", "name": ".NET", "version": "7.0", "status": "available"},
+		{"id": "elixir", "name": "Elixir", "version": "1.16", "status": "available"},
+		{"id": "swift", "name": "Swift", "version": "5.9", "status": "available"},
+		{"id": "zig", "name": "Zig", "version": "0.11", "status": "available"},
+		{"id": "lua", "name": "Lua", "version": "5.4", "status": "available"},
+		{"id": "perl", "name": "Perl", "version": "5.38", "status": "available"},
+		{"id": "r", "name": "R", "version": "4.3", "status": "available"},
+		{"id": "julia", "name": "Julia", "version": "1.10", "status": "available"},
+		{"id": "wasm", "name": "WebAssembly", "version": "wasmtime", "status": "available"},
+	}
+
+	// Count functions per runtime
+	funcs, _ := h.Store.ListFunctions(r.Context())
+	runtimeCounts := make(map[string]int)
+	for _, fn := range funcs {
+		runtimeCounts[string(fn.Runtime)]++
+	}
+
+	// Add function counts to runtimes
+	for i := range runtimes {
+		id := runtimes[i]["id"].(string)
+		runtimes[i]["functions_count"] = runtimeCounts[id]
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(runtimes)
+}
+
 // ListSnapshots handles GET /snapshots
 func (h *Handler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 	funcs, err := h.Store.ListFunctions(r.Context())
@@ -278,6 +394,11 @@ func (h *Handler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 				CreatedAt:    createdAt,
 			})
 		}
+	}
+
+	// Ensure we return empty array instead of null
+	if snapshots == nil {
+		snapshots = []snapshotInfo{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
