@@ -450,30 +450,22 @@ func deleteCmd() *cobra.Command {
 
 func invokeCmd() *cobra.Command {
 	var payload string
+	var local bool
 
 	cmd := &cobra.Command{
 		Use:   "invoke <name>",
 		Short: "Invoke a function",
-		Args:  cobra.ExactArgs(1),
+		Long: `Invoke a function and display the result.
+
+Use --local to run the function directly on the host without VM isolation.
+This is useful for development and debugging.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := getStore()
 			if err != nil {
 				return err
 			}
 			defer s.Close()
-
-			cfg := firecracker.DefaultConfig()
-			mgr, err := firecracker.NewManager(cfg)
-			if err != nil {
-				return fmt.Errorf("create VM manager: %w", err)
-			}
-			defer mgr.Shutdown()
-
-			p := pool.NewPool(mgr, pool.DefaultIdleTTL)
-			defer p.Shutdown()
-
-			exec := executor.New(s, p)
-			defer exec.Shutdown(5 * time.Second)
 
 			var input json.RawMessage
 			if payload != "" {
@@ -485,11 +477,37 @@ func invokeCmd() *cobra.Command {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 
-			resp, err := exec.Invoke(ctx, args[0], input)
+			var resp *domain.InvokeResponse
+
+			if local {
+				// Local execution - no VM
+				localExec := executor.NewLocalExecutor()
+				resp, err = localExec.InvokeWithStore(ctx, s, args[0], input)
+			} else {
+				// Normal VM execution
+				cfg := firecracker.DefaultConfig()
+				mgr, err := firecracker.NewManager(cfg)
+				if err != nil {
+					return fmt.Errorf("create VM manager: %w", err)
+				}
+				defer mgr.Shutdown()
+
+				p := pool.NewPool(mgr, pool.DefaultIdleTTL)
+				defer p.Shutdown()
+
+				exec := executor.New(s, p)
+				defer exec.Shutdown(5 * time.Second)
+
+				resp, err = exec.Invoke(ctx, args[0], input)
+			}
+
 			if err != nil {
 				return err
 			}
 
+			if local {
+				fmt.Printf("Mode:       local\n")
+			}
 			fmt.Printf("Request ID: %s\n", resp.RequestID)
 			fmt.Printf("Cold Start: %v\n", resp.ColdStart)
 			fmt.Printf("Duration:   %d ms\n", resp.DurationMs)
@@ -504,6 +522,7 @@ func invokeCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&payload, "payload", "p", "", "JSON payload")
+	cmd.Flags().BoolVarP(&local, "local", "l", false, "Run locally without VM (for development)")
 	return cmd
 }
 
