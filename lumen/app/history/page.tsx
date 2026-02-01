@@ -26,6 +26,7 @@ import {
   ExternalLink,
   Zap,
   Snowflake,
+  Flame,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -326,7 +327,10 @@ export default function HistoryPage() {
                             Cold
                           </Badge>
                         ) : (
-                          <span className="text-xs text-muted-foreground">Warm</span>
+                          <Badge variant="secondary" className="text-xs bg-orange-500/10 text-orange-500 border-0">
+                            <Flame className="h-3 w-3 mr-1" />
+                            Warm
+                          </Badge>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
