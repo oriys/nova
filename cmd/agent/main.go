@@ -33,6 +33,11 @@ const (
 
 	pythonPath   = "/usr/bin/python3"
 	wasmtimePath = "/usr/local/bin/wasmtime"
+	nodePath     = "/usr/bin/node"
+	rubyPath     = "/usr/bin/ruby"
+	javaPath     = "/usr/bin/java"
+	denoPath     = "/usr/local/bin/deno"
+	bunPath      = "/usr/local/bin/bun"
 )
 
 // ExecutionMode determines how functions are executed
@@ -310,6 +315,18 @@ func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, string,
 		cmd = exec.Command(CodePath, "/tmp/input.json")
 	case "wasm":
 		cmd = exec.Command(resolveBinary(wasmtimePath, "wasmtime"), CodePath, "--", "/tmp/input.json")
+	case "node":
+		cmd = exec.Command(resolveBinary(nodePath, "node"), CodePath, "/tmp/input.json")
+	case "ruby":
+		cmd = exec.Command(resolveBinary(rubyPath, "ruby"), CodePath, "/tmp/input.json")
+	case "java":
+		// Java expects a JAR file: java -jar /code/handler.jar input.json
+		cmd = exec.Command(resolveBinary(javaPath, "java"), "-jar", CodePath, "/tmp/input.json")
+	case "deno":
+		// Deno needs --allow-read for input file
+		cmd = exec.Command(resolveBinary(denoPath, "deno"), "run", "--allow-read", CodePath, "/tmp/input.json")
+	case "bun":
+		cmd = exec.Command(resolveBinary(bunPath, "bun"), "run", CodePath, "/tmp/input.json")
 	default:
 		return nil, "", "", fmt.Errorf("unsupported runtime: %s", a.function.Runtime)
 	}

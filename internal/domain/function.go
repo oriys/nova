@@ -16,6 +16,11 @@ const (
 	RuntimeGo     Runtime = "go"
 	RuntimeRust   Runtime = "rust"
 	RuntimeWasm   Runtime = "wasm"
+	RuntimeNode   Runtime = "node"
+	RuntimeRuby   Runtime = "ruby"
+	RuntimeJava   Runtime = "java"
+	RuntimeDeno   Runtime = "deno"
+	RuntimeBun    Runtime = "bun"
 )
 
 // ExecutionMode determines how functions are executed
@@ -30,7 +35,8 @@ const (
 
 func (r Runtime) IsValid() bool {
 	switch r {
-	case RuntimePython, RuntimeGo, RuntimeRust, RuntimeWasm:
+	case RuntimePython, RuntimeGo, RuntimeRust, RuntimeWasm,
+		RuntimeNode, RuntimeRuby, RuntimeJava, RuntimeDeno, RuntimeBun:
 		return true
 	}
 	return false

@@ -1046,13 +1046,25 @@ func (m *Manager) SnapshotDir() string {
 // rootfsForRuntime maps runtime to rootfs image.
 // Go/Rust: static binaries, minimal base is enough.
 // Python: needs interpreter. WASM: needs wasmtime.
+// Node/Deno/Bun: need JS runtime. Ruby: needs interpreter. Java: needs JVM.
 func rootfsForRuntime(rt domain.Runtime) string {
 	switch rt {
 	case domain.RuntimePython:
 		return "python.ext4"
 	case domain.RuntimeWasm:
 		return "wasm.ext4"
+	case domain.RuntimeNode:
+		return "node.ext4"
+	case domain.RuntimeRuby:
+		return "ruby.ext4"
+	case domain.RuntimeJava:
+		return "java.ext4"
+	case domain.RuntimeDeno:
+		return "deno.ext4"
+	case domain.RuntimeBun:
+		return "bun.ext4"
 	default:
+		// Go, Rust use base
 		return "base.ext4"
 	}
 }
