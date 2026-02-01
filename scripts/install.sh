@@ -14,7 +14,10 @@ INSTALL_DIR="/opt/nova"
 FC_VERSION="latest"
 ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-minirootfs-3.21.3-x86_64.tar.gz"
 WASMTIME_VERSION="v29.0.1"
+DENO_VERSION="v2.1.4"
+BUN_VERSION="bun-v1.1.42"
 ROOTFS_SIZE_MB=256
+ROOTFS_SIZE_JAVA_MB=512
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -37,9 +40,9 @@ install_deps() {
     log "Installing dependencies..."
     if command -v apt-get &>/dev/null; then
         apt-get update -qq
-        apt-get install -y -qq curl e2fsprogs >/dev/null
+        apt-get install -y -qq curl e2fsprogs unzip >/dev/null
     elif command -v yum &>/dev/null; then
-        yum install -y -q curl e2fsprogs
+        yum install -y -q curl e2fsprogs unzip
     fi
 }
 
@@ -208,6 +211,142 @@ build_wasm_rootfs() {
     log "wasm.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
+build_node_rootfs() {
+    local output="${INSTALL_DIR}/rootfs/node.ext4"
+    local mnt=$(mktemp -d)
+
+    log "Building node rootfs (Alpine + nodejs)..."
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q "${output}"
+    mount -o loop "${output}" "${mnt}"
+
+    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
+    mkdir -p "${mnt}"/{code,tmp}
+    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
+
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache nodejs npm" >/dev/null 2>&1
+
+    # init = nova-agent
+    [[ -f ${INSTALL_DIR}/bin/nova-agent ]] && \
+        cp ${INSTALL_DIR}/bin/nova-agent "${mnt}/init" && \
+        chmod +x "${mnt}/init"
+
+    umount "${mnt}" && rmdir "${mnt}"
+    log "node.ext4 ready ($(du -h ${output} | cut -f1))"
+}
+
+build_ruby_rootfs() {
+    local output="${INSTALL_DIR}/rootfs/ruby.ext4"
+    local mnt=$(mktemp -d)
+
+    log "Building ruby rootfs (Alpine + ruby)..."
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q "${output}"
+    mount -o loop "${output}" "${mnt}"
+
+    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
+    mkdir -p "${mnt}"/{code,tmp}
+    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
+
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache ruby" >/dev/null 2>&1
+
+    # init = nova-agent
+    [[ -f ${INSTALL_DIR}/bin/nova-agent ]] && \
+        cp ${INSTALL_DIR}/bin/nova-agent "${mnt}/init" && \
+        chmod +x "${mnt}/init"
+
+    umount "${mnt}" && rmdir "${mnt}"
+    log "ruby.ext4 ready ($(du -h ${output} | cut -f1))"
+}
+
+build_java_rootfs() {
+    local output="${INSTALL_DIR}/rootfs/java.ext4"
+    local mnt=$(mktemp -d)
+
+    log "Building java rootfs (Alpine + OpenJDK)..."
+    # Java needs more space
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_JAVA_MB} 2>/dev/null
+    mkfs.ext4 -F -q "${output}"
+    mount -o loop "${output}" "${mnt}"
+
+    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
+    mkdir -p "${mnt}"/{code,tmp}
+    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
+
+    # Use OpenJDK 21 (LTS) headless for smaller size
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache openjdk21-jre-headless" >/dev/null 2>&1
+
+    # init = nova-agent
+    [[ -f ${INSTALL_DIR}/bin/nova-agent ]] && \
+        cp ${INSTALL_DIR}/bin/nova-agent "${mnt}/init" && \
+        chmod +x "${mnt}/init"
+
+    umount "${mnt}" && rmdir "${mnt}"
+    log "java.ext4 ready ($(du -h ${output} | cut -f1))"
+}
+
+build_deno_rootfs() {
+    local output="${INSTALL_DIR}/rootfs/deno.ext4"
+    local mnt=$(mktemp -d)
+
+    log "Building deno rootfs (Alpine + deno)..."
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q "${output}"
+    mount -o loop "${output}" "${mnt}"
+
+    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
+    mkdir -p "${mnt}"/{code,tmp,usr/local/bin}
+
+    # Download Deno binary
+    curl -fsSL \
+        "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" \
+        -o /tmp/deno.zip
+    unzip -q -o /tmp/deno.zip -d "${mnt}/usr/local/bin"
+    chmod +x "${mnt}/usr/local/bin/deno"
+    rm -f /tmp/deno.zip
+
+    # init = nova-agent
+    [[ -f ${INSTALL_DIR}/bin/nova-agent ]] && \
+        cp ${INSTALL_DIR}/bin/nova-agent "${mnt}/init" && \
+        chmod +x "${mnt}/init"
+
+    umount "${mnt}" && rmdir "${mnt}"
+    log "deno.ext4 ready ($(du -h ${output} | cut -f1))"
+}
+
+build_bun_rootfs() {
+    local output="${INSTALL_DIR}/rootfs/bun.ext4"
+    local mnt=$(mktemp -d)
+
+    log "Building bun rootfs (Alpine + bun)..."
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q "${output}"
+    mount -o loop "${output}" "${mnt}"
+
+    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
+    mkdir -p "${mnt}"/{code,tmp,usr/local/bin}
+
+    # Bun requires glibc, install compatibility layer
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache libstdc++ gcompat" >/dev/null 2>&1
+
+    # Download Bun binary
+    curl -fsSL \
+        "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/bun-linux-x64.zip" \
+        -o /tmp/bun.zip
+    unzip -q -o /tmp/bun.zip -d /tmp/bun-extract
+    cp /tmp/bun-extract/bun-linux-x64/bun "${mnt}/usr/local/bin/bun"
+    chmod +x "${mnt}/usr/local/bin/bun"
+    rm -rf /tmp/bun.zip /tmp/bun-extract
+
+    # init = nova-agent
+    [[ -f ${INSTALL_DIR}/bin/nova-agent ]] && \
+        cp ${INSTALL_DIR}/bin/nova-agent "${mnt}/init" && \
+        chmod +x "${mnt}/init"
+
+    umount "${mnt}" && rmdir "${mnt}"
+    log "bun.ext4 ready ($(du -h ${output} | cut -f1))"
+}
+
 # ─── Redis ───────────────────────────────────────────────
 install_redis() {
     if command -v redis-server &>/dev/null; then
@@ -244,6 +383,11 @@ main() {
     build_base_rootfs
     build_python_rootfs
     build_wasm_rootfs
+    build_node_rootfs
+    build_ruby_rootfs
+    build_java_rootfs
+    build_deno_rootfs
+    build_bun_rootfs
 
     install_redis
 
@@ -262,6 +406,11 @@ main() {
     echo "  ${INSTALL_DIR}/rootfs/base.ext4     (Go, Rust)"
     echo "  ${INSTALL_DIR}/rootfs/python.ext4   (Python)"
     echo "  ${INSTALL_DIR}/rootfs/wasm.ext4     (WASM)"
+    echo "  ${INSTALL_DIR}/rootfs/node.ext4     (Node.js)"
+    echo "  ${INSTALL_DIR}/rootfs/ruby.ext4     (Ruby)"
+    echo "  ${INSTALL_DIR}/rootfs/java.ext4     (Java)"
+    echo "  ${INSTALL_DIR}/rootfs/deno.ext4     (Deno)"
+    echo "  ${INSTALL_DIR}/rootfs/bun.ext4      (Bun)"
     echo "  ${INSTALL_DIR}/snapshots/     (VM snapshots)"
     echo ""
     echo "  Next: copy nova and nova-agent binaries to ${INSTALL_DIR}/bin/"
