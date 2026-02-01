@@ -46,6 +46,11 @@ func (s *RedisStore) Close() error {
 	return s.client.Close()
 }
 
+// Ping checks Redis connectivity
+func (s *RedisStore) Ping(ctx context.Context) error {
+	return s.client.Ping(ctx).Err()
+}
+
 func (s *RedisStore) SaveFunction(ctx context.Context, fn *domain.Function) error {
 	data, err := json.Marshal(fn)
 	if err != nil {

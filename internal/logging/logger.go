@@ -12,8 +12,11 @@ import (
 type RequestLog struct {
 	Timestamp   time.Time       `json:"timestamp"`
 	RequestID   string          `json:"request_id"`
+	TraceID     string          `json:"trace_id,omitempty"`
+	SpanID      string          `json:"span_id,omitempty"`
 	Function    string          `json:"function"`
 	FunctionID  string          `json:"function_id"`
+	Runtime     string          `json:"runtime,omitempty"`
 	DurationMs  int64           `json:"duration_ms"`
 	ColdStart   bool            `json:"cold_start"`
 	Success     bool            `json:"success"`

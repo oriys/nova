@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package nova.v1;
+
+option go_package = "github.com/oriys/nova/api/proto/novapb";
+
+// Nova serverless function invocation service
+service NovaService {
+  // Invoke calls a function synchronously and returns the result
+  rpc Invoke(InvokeRequest) returns (InvokeResponse);
+
+  // InvokeAsync calls a function asynchronously and returns a request ID
+  rpc InvokeAsync(InvokeRequest) returns (InvokeAsyncResponse);
+
+  // GetFunction returns function metadata
+  rpc GetFunction(GetFunctionRequest) returns (FunctionInfo);
+
+  // ListFunctions returns all registered functions
+  rpc ListFunctions(ListFunctionsRequest) returns (ListFunctionsResponse);
+
+  // HealthCheck returns service health status
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+message InvokeRequest {
+  // Function name to invoke
+  string function = 1;
+
+  // JSON payload as bytes
+  bytes payload = 2;
+
+  // Optional timeout override in seconds (0 = use function default)
+  int32 timeout_s = 3;
+
+  // Optional metadata passed as key-value pairs
+  map<string, string> metadata = 4;
+}
+
+message InvokeResponse {
+  string request_id = 1;
+  bytes output = 2;
+  string error = 3;
+  int64 duration_ms = 4;
+  bool cold_start = 5;
+}
+
+message InvokeAsyncResponse {
+  string request_id = 1;
+  string status = 2;
+}
+
+message GetFunctionRequest {
+  string name = 1;
+}
+
+message FunctionInfo {
+  string id = 1;
+  string name = 2;
+  string runtime = 3;
+  string handler = 4;
+  int32 memory_mb = 5;
+  int32 timeout_s = 6;
+  string mode = 7;
+  int32 min_replicas = 8;
+  int32 version = 9;
+}
+
+message ListFunctionsRequest {}
+
+message ListFunctionsResponse {
+  repeated FunctionInfo functions = 1;
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  string status = 1;
+  map<string, string> components = 2;
+}

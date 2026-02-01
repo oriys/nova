@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -59,8 +58,18 @@ func Global() *Metrics {
 	return global
 }
 
+// StartTime returns the time when the metrics system was initialized
+func StartTime() time.Time {
+	return global.startTime
+}
+
 // RecordInvocation records an invocation result
 func (m *Metrics) RecordInvocation(funcID string, durationMs int64, coldStart bool, success bool) {
+	m.RecordInvocationWithDetails(funcID, "", "", durationMs, coldStart, success)
+}
+
+// RecordInvocationWithDetails records an invocation with function name and runtime for Prometheus labels
+func (m *Metrics) RecordInvocationWithDetails(funcID, funcName, runtime string, durationMs int64, coldStart bool, success bool) {
 	m.TotalInvocations.Add(1)
 
 	if success {
@@ -95,26 +104,33 @@ func (m *Metrics) RecordInvocation(funcID string, durationMs int64, coldStart bo
 	fm.TotalMs.Add(durationMs)
 	updateMin(&fm.MinMs, durationMs)
 	updateMax(&fm.MaxMs, durationMs)
+
+	// Prometheus bridge
+	RecordPrometheusInvocation(funcName, runtime, durationMs, coldStart, success)
 }
 
 // RecordVMCreated records a new VM creation
 func (m *Metrics) RecordVMCreated() {
 	m.VMsCreated.Add(1)
+	RecordPrometheusVMCreated()
 }
 
 // RecordVMStopped records a VM being stopped
 func (m *Metrics) RecordVMStopped() {
 	m.VMsStopped.Add(1)
+	RecordPrometheusVMStopped()
 }
 
 // RecordVMCrashed records a VM crash
 func (m *Metrics) RecordVMCrashed() {
 	m.VMsCrashed.Add(1)
+	RecordPrometheusVMCrashed()
 }
 
 // RecordSnapshotHit records a snapshot being used instead of cold boot
 func (m *Metrics) RecordSnapshotHit() {
 	m.SnapshotsHit.Add(1)
+	RecordPrometheusSnapshotHit()
 }
 
 func (m *Metrics) getFunctionMetrics(funcID string) *FunctionMetrics {
@@ -202,76 +218,6 @@ func (m *Metrics) FunctionStats() map[string]interface{} {
 	return result
 }
 
-// PrometheusHandler returns an HTTP handler that exposes metrics in Prometheus format
-func (m *Metrics) PrometheusHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-
-		total := m.TotalInvocations.Load()
-		avgLatency := float64(0)
-		if total > 0 {
-			avgLatency = float64(m.TotalLatencyMs.Load()) / float64(total)
-		}
-
-		// Global metrics
-		lines := []string{
-			"# HELP nova_uptime_seconds Time since Nova daemon started",
-			"# TYPE nova_uptime_seconds gauge",
-			formatMetric("nova_uptime_seconds", nil, int64(time.Since(m.startTime).Seconds())),
-
-			"# HELP nova_invocations_total Total number of function invocations",
-			"# TYPE nova_invocations_total counter",
-			formatMetric("nova_invocations_total", map[string]string{"status": "success"}, m.SuccessInvocations.Load()),
-			formatMetric("nova_invocations_total", map[string]string{"status": "failed"}, m.FailedInvocations.Load()),
-
-			"# HELP nova_cold_starts_total Total number of cold starts",
-			"# TYPE nova_cold_starts_total counter",
-			formatMetric("nova_cold_starts_total", nil, m.ColdStarts.Load()),
-
-			"# HELP nova_warm_starts_total Total number of warm starts",
-			"# TYPE nova_warm_starts_total counter",
-			formatMetric("nova_warm_starts_total", nil, m.WarmStarts.Load()),
-
-			"# HELP nova_latency_ms_avg Average invocation latency in milliseconds",
-			"# TYPE nova_latency_ms_avg gauge",
-			formatMetricFloat("nova_latency_ms_avg", nil, avgLatency),
-
-			"# HELP nova_vms_created_total Total VMs created",
-			"# TYPE nova_vms_created_total counter",
-			formatMetric("nova_vms_created_total", nil, m.VMsCreated.Load()),
-
-			"# HELP nova_vms_crashed_total Total VMs that crashed unexpectedly",
-			"# TYPE nova_vms_crashed_total counter",
-			formatMetric("nova_vms_crashed_total", nil, m.VMsCrashed.Load()),
-
-			"# HELP nova_snapshots_hit_total Total snapshot restores (vs cold boots)",
-			"# TYPE nova_snapshots_hit_total counter",
-			formatMetric("nova_snapshots_hit_total", nil, m.SnapshotsHit.Load()),
-		}
-
-		for _, line := range lines {
-			w.Write([]byte(line + "\n"))
-		}
-
-		// Per-function metrics
-		w.Write([]byte("\n# HELP nova_function_invocations_total Invocations per function\n"))
-		w.Write([]byte("# TYPE nova_function_invocations_total counter\n"))
-
-		m.funcMetrics.Range(func(key, value interface{}) bool {
-			funcID := key.(string)
-			fm := value.(*FunctionMetrics)
-
-			w.Write([]byte(formatMetric("nova_function_invocations_total",
-				map[string]string{"function": funcID, "status": "success"},
-				fm.Successes.Load()) + "\n"))
-			w.Write([]byte(formatMetric("nova_function_invocations_total",
-				map[string]string{"function": funcID, "status": "failed"},
-				fm.Failures.Load()) + "\n"))
-			return true
-		})
-	})
-}
-
 // JSONHandler returns an HTTP handler that exposes metrics in JSON format
 func (m *Metrics) JSONHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -313,40 +259,4 @@ func coldStartPercentage(cold, total int64) float64 {
 		return 0
 	}
 	return float64(cold) / float64(total) * 100
-}
-
-func formatMetric(name string, labels map[string]string, value int64) string {
-	if len(labels) == 0 {
-		return name + " " + formatInt(value)
-	}
-	labelStr := ""
-	for k, v := range labels {
-		if labelStr != "" {
-			labelStr += ","
-		}
-		labelStr += k + "=\"" + v + "\""
-	}
-	return name + "{" + labelStr + "} " + formatInt(value)
-}
-
-func formatMetricFloat(name string, labels map[string]string, value float64) string {
-	if len(labels) == 0 {
-		return name + " " + formatFloat(value)
-	}
-	labelStr := ""
-	for k, v := range labels {
-		if labelStr != "" {
-			labelStr += ","
-		}
-		labelStr += k + "=\"" + v + "\""
-	}
-	return name + "{" + labelStr + "} " + formatFloat(value)
-}
-
-func formatInt(v int64) string {
-	return fmt.Sprintf("%d", v)
-}
-
-func formatFloat(v float64) string {
-	return fmt.Sprintf("%.2f", v)
 }

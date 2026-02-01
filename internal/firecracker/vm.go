@@ -1079,9 +1079,11 @@ type InitPayload struct {
 }
 
 type ExecPayload struct {
-	RequestID string          `json:"request_id"`
-	Input     json.RawMessage `json:"input"`
-	TimeoutS  int             `json:"timeout_s"`
+	RequestID   string          `json:"request_id"`
+	Input       json.RawMessage `json:"input"`
+	TimeoutS    int             `json:"timeout_s"`
+	TraceParent string          `json:"traceparent,omitempty"` // W3C TraceContext
+	TraceState  string          `json:"tracestate,omitempty"`  // W3C TraceContext
 }
 
 type RespPayload struct {
@@ -1089,6 +1091,8 @@ type RespPayload struct {
 	Output     json.RawMessage `json:"output"`
 	Error      string          `json:"error,omitempty"`
 	DurationMs int64           `json:"duration_ms"`
+	Stdout     string          `json:"stdout,omitempty"` // Captured stdout
+	Stderr     string          `json:"stderr,omitempty"` // Captured stderr
 }
 
 type VsockClient struct {
@@ -1120,10 +1124,12 @@ func (c *VsockClient) closeLocked() error {
 }
 
 func (c *VsockClient) dialLocked(timeout time.Duration) error {
+	start := time.Now()
 	conn, err := dialVsock(c.vm, timeout)
 	if err != nil {
 		return err
 	}
+	metrics.RecordVsockLatency("connect", float64(time.Since(start).Microseconds())/1000.0)
 	c.conn = conn
 	return nil
 }
@@ -1183,7 +1189,11 @@ func (c *VsockClient) sendLocked(msg *VsockMessage) error {
 	buf := make([]byte, 4+len(data))
 	binary.BigEndian.PutUint32(buf[:4], uint32(len(data)))
 	copy(buf[4:], data)
-	return writeFull(c.conn, buf)
+
+	start := time.Now()
+	err = writeFull(c.conn, buf)
+	metrics.RecordVsockLatency("send", float64(time.Since(start).Microseconds())/1000.0)
+	return err
 }
 
 func (c *VsockClient) Receive() (*VsockMessage, error) {
@@ -1196,6 +1206,9 @@ func (c *VsockClient) receiveLocked() (*VsockMessage, error) {
 	if c.conn == nil {
 		return nil, errors.New("vsock not connected")
 	}
+
+	start := time.Now()
+
 	lenBuf := make([]byte, 4)
 	if _, err := io.ReadFull(c.conn, lenBuf); err != nil {
 		return nil, err
@@ -1206,6 +1219,8 @@ func (c *VsockClient) receiveLocked() (*VsockMessage, error) {
 	if _, err := io.ReadFull(c.conn, data); err != nil {
 		return nil, err
 	}
+
+	metrics.RecordVsockLatency("receive", float64(time.Since(start).Microseconds())/1000.0)
 
 	var msg VsockMessage
 	if err := json.Unmarshal(data, &msg); err != nil {
@@ -1232,13 +1247,20 @@ func (c *VsockClient) Init(fn *domain.Function) error {
 }
 
 func (c *VsockClient) Execute(reqID string, input json.RawMessage, timeoutS int) (*RespPayload, error) {
+	return c.ExecuteWithTrace(reqID, input, timeoutS, "", "")
+}
+
+// ExecuteWithTrace executes a request with optional W3C trace context propagation
+func (c *VsockClient) ExecuteWithTrace(reqID string, input json.RawMessage, timeoutS int, traceParent, traceState string) (*RespPayload, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	payload, _ := json.Marshal(&ExecPayload{
-		RequestID: reqID,
-		Input:     input,
-		TimeoutS:  timeoutS,
+		RequestID:   reqID,
+		Input:       input,
+		TimeoutS:    timeoutS,
+		TraceParent: traceParent,
+		TraceState:  traceState,
 	})
 
 	execMsg := &VsockMessage{Type: MsgTypeExec, Payload: payload}

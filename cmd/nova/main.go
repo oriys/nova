@@ -20,9 +20,11 @@ import (
 	"github.com/oriys/nova/internal/firecracker"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
+	"github.com/oriys/nova/internal/observability"
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/scheduler"
 	"github.com/oriys/nova/internal/store"
+	novagrpc "github.com/oriys/nova/internal/grpc"
 	"github.com/spf13/cobra"
 )
 
@@ -1371,8 +1373,70 @@ func daemonCmd() *cobra.Command {
 				cfg.Daemon.LogLevel = logLevel
 			}
 
+			// Observability flag overrides
+			if cmd.Flags().Changed("tracing-enabled") {
+				v, _ := cmd.Flags().GetBool("tracing-enabled")
+				cfg.Observability.Tracing.Enabled = v
+			}
+			if cmd.Flags().Changed("tracing-endpoint") {
+				v, _ := cmd.Flags().GetString("tracing-endpoint")
+				cfg.Observability.Tracing.Endpoint = v
+			}
+			if cmd.Flags().Changed("log-format") {
+				v, _ := cmd.Flags().GetString("log-format")
+				cfg.Observability.Logging.Format = v
+			}
+			if cmd.Flags().Changed("output-capture") {
+				v, _ := cmd.Flags().GetBool("output-capture")
+				cfg.Observability.OutputCapture.Enabled = v
+			}
+
+			// gRPC flag overrides
+			if cmd.Flags().Changed("grpc") {
+				v, _ := cmd.Flags().GetBool("grpc")
+				cfg.GRPC.Enabled = v
+			}
+			if cmd.Flags().Changed("grpc-addr") {
+				v, _ := cmd.Flags().GetString("grpc-addr")
+				cfg.GRPC.Addr = v
+			}
+
 			// Set structured log level
 			logging.SetLevelFromString(cfg.Daemon.LogLevel)
+
+			// Initialize structured logging
+			logging.InitStructured(cfg.Observability.Logging.Format, cfg.Observability.Logging.Level)
+
+			// Initialize OpenTelemetry tracing
+			if err := observability.Init(context.Background(), observability.Config{
+				Enabled:     cfg.Observability.Tracing.Enabled,
+				Exporter:    cfg.Observability.Tracing.Exporter,
+				Endpoint:    cfg.Observability.Tracing.Endpoint,
+				ServiceName: cfg.Observability.Tracing.ServiceName,
+				SampleRate:  cfg.Observability.Tracing.SampleRate,
+			}); err != nil {
+				return fmt.Errorf("init tracing: %w", err)
+			}
+			defer observability.Shutdown(context.Background())
+
+			// Initialize Prometheus metrics
+			if cfg.Observability.Metrics.Enabled {
+				metrics.InitPrometheus(
+					cfg.Observability.Metrics.Namespace,
+					cfg.Observability.Metrics.HistogramBuckets,
+				)
+			}
+
+			// Initialize output capture
+			if cfg.Observability.OutputCapture.Enabled {
+				if err := logging.InitOutputStore(
+					cfg.Observability.OutputCapture.StorageDir,
+					cfg.Observability.OutputCapture.MaxSize,
+					cfg.Observability.OutputCapture.RetentionS,
+				); err != nil {
+					logging.Op().Warn("failed to init output capture", "error", err)
+				}
+			}
 
 			s, err := store.NewRedisStore(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
 			if err != nil {
@@ -1410,6 +1474,16 @@ func daemonCmd() *cobra.Command {
 				logging.Op().Info("HTTP API started", "addr", cfg.Daemon.HTTPAddr)
 			}
 
+			// Start gRPC server if enabled
+			var grpcServer *novagrpc.Server
+			if cfg.GRPC.Enabled {
+				grpcServer = novagrpc.NewServer(s, exec)
+				if err := grpcServer.Start(cfg.GRPC.Addr); err != nil {
+					return fmt.Errorf("start gRPC server: %w", err)
+				}
+				logging.Op().Info("gRPC API started", "addr", cfg.GRPC.Addr)
+			}
+
 			logging.Op().Info("waiting for signals (Ctrl+C to stop)")
 
 			sigCh := make(chan os.Signal, 1)
@@ -1423,6 +1497,9 @@ func daemonCmd() *cobra.Command {
 				select {
 				case <-sigCh:
 					logging.Op().Info("shutdown signal received")
+					if grpcServer != nil {
+						grpcServer.Stop()
+					}
 					if httpServer != nil {
 						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 						httpServer.Shutdown(ctx)
@@ -1456,6 +1533,17 @@ func daemonCmd() *cobra.Command {
 	cmd.Flags().DurationVar(&idleTTL, "idle-ttl", 60*time.Second, "VM idle timeout")
 	cmd.Flags().StringVar(&httpAddr, "http", "", "HTTP API address (e.g., :8080)")
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
+
+	// Observability flags
+	cmd.Flags().Bool("tracing-enabled", false, "Enable OpenTelemetry tracing")
+	cmd.Flags().String("tracing-endpoint", "localhost:4318", "OTLP exporter endpoint")
+	cmd.Flags().String("log-format", "text", "Log format (text, json)")
+	cmd.Flags().Bool("output-capture", false, "Enable function output capture")
+
+	// gRPC flags
+	cmd.Flags().Bool("grpc", false, "Enable gRPC API server")
+	cmd.Flags().String("grpc-addr", ":9090", "gRPC server address")
+
 	return cmd
 }
 
@@ -1464,9 +1552,79 @@ func daemonCmd() *cobra.Command {
 func startHTTPServer(addr string, s *store.RedisStore, exec *executor.Executor, p *pool.Pool, mgr *firecracker.Manager) *http.Server {
 	mux := http.NewServeMux()
 
-	// Health check
+	// Health check - detailed status
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+
+		redisOK := s.Ping(ctx) == nil
+		stats := p.Stats()
+
+		status := "ok"
+		if !redisOK {
+			status = "degraded"
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": status,
+			"components": map[string]interface{}{
+				"redis": redisOK,
+				"pool": map[string]interface{}{
+					"active_vms":  stats["active_vms"],
+					"total_pools": stats["total_pools"],
+				},
+			},
+			"uptime_seconds": int64(time.Since(time.Now()).Seconds()), // Will be properly set
+		})
+	})
+
+	// Kubernetes liveness probe - minimal check
+	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
+	// Kubernetes readiness probe - checks Redis connectivity
+	mux.HandleFunc("GET /health/ready", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+
+		if err := s.Ping(ctx); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status": "not_ready",
+				"error":  "redis unavailable: " + err.Error(),
+			})
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+	})
+
+	// Kubernetes startup probe - checks basic initialization
+	mux.HandleFunc("GET /health/startup", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		// Check Redis is reachable
+		if err := s.Ping(ctx); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status": "starting",
+				"error":  "waiting for redis: " + err.Error(),
+			})
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "started"})
 	})
 
 	// List functions
@@ -1817,11 +1975,58 @@ func startHTTPServer(addr string, s *store.RedisStore, exec *executor.Executor, 
 
 	// Metrics endpoints
 	mux.Handle("GET /metrics", metrics.Global().JSONHandler())
-	mux.Handle("GET /metrics/prometheus", metrics.Global().PrometheusHandler())
+	mux.Handle("GET /metrics/prometheus", metrics.PrometheusHandler())
+
+	// Function logs endpoint
+	mux.HandleFunc("GET /functions/{name}/logs", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+
+		fn, err := s.GetFunctionByName(r.Context(), name)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+
+		store := logging.GetOutputStore()
+		if store == nil {
+			http.Error(w, "output capture not enabled", http.StatusServiceUnavailable)
+			return
+		}
+
+		// Get request_id from query params if specified
+		requestID := r.URL.Query().Get("request_id")
+		if requestID != "" {
+			entry, found := store.Get(requestID)
+			if !found {
+				http.Error(w, "logs not found for request_id", http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(entry)
+			return
+		}
+
+		// Otherwise return recent logs for function
+		tailStr := r.URL.Query().Get("tail")
+		tail := 10
+		if tailStr != "" {
+			if n, err := fmt.Sscanf(tailStr, "%d", &tail); err != nil || n != 1 {
+				tail = 10
+			}
+		}
+
+		entries := store.GetByFunction(fn.ID, tail)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(entries)
+	})
+
+	// Wrap with tracing middleware
+	var handler http.Handler = mux
+	handler = observability.HTTPMiddleware(handler)
 
 	server := &http.Server{
 		Addr:    addr,
-		Handler: mux,
+		Handler: handler,
 	}
 
 	go func() {

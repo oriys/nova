@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -58,9 +59,11 @@ type InitPayload struct {
 }
 
 type ExecPayload struct {
-	RequestID string          `json:"request_id"`
-	Input     json.RawMessage `json:"input"`
-	TimeoutS  int             `json:"timeout_s"`
+	RequestID   string          `json:"request_id"`
+	Input       json.RawMessage `json:"input"`
+	TimeoutS    int             `json:"timeout_s"`
+	TraceParent string          `json:"traceparent,omitempty"`
+	TraceState  string          `json:"tracestate,omitempty"`
 }
 
 type RespPayload struct {
@@ -68,6 +71,8 @@ type RespPayload struct {
 	Output     json.RawMessage `json:"output"`
 	Error      string          `json:"error,omitempty"`
 	DurationMs int64           `json:"duration_ms"`
+	Stdout     string          `json:"stdout,omitempty"`
+	Stderr     string          `json:"stderr,omitempty"`
 }
 
 type Agent struct {
@@ -251,13 +256,29 @@ func (a *Agent) handleExec(payload json.RawMessage) (*Message, error) {
 		return nil, err
 	}
 
+	// Log trace context if available
+	if req.TraceParent != "" {
+		fmt.Printf("[agent] exec request_id=%s trace_parent=%s\n", req.RequestID, req.TraceParent)
+	} else {
+		fmt.Printf("[agent] exec request_id=%s\n", req.RequestID)
+	}
+
 	start := time.Now()
-	output, execErr := a.executeFunction(req.Input)
+	output, stdout, stderr, execErr := a.executeFunction(req.Input)
 	duration := time.Since(start).Milliseconds()
+
+	// Log execution result
+	if execErr != nil {
+		fmt.Printf("[agent] exec completed request_id=%s duration_ms=%d error=%s\n", req.RequestID, duration, execErr.Error())
+	} else {
+		fmt.Printf("[agent] exec completed request_id=%s duration_ms=%d\n", req.RequestID, duration)
+	}
 
 	resp := RespPayload{
 		RequestID:  req.RequestID,
 		DurationMs: duration,
+		Stdout:     stdout,
+		Stderr:     stderr,
 	}
 	if execErr != nil {
 		resp.Error = execErr.Error()
@@ -269,15 +290,16 @@ func (a *Agent) handleExec(payload json.RawMessage) (*Message, error) {
 	return &Message{Type: MsgTypeResp, Payload: respData}, nil
 }
 
-func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, error) {
+func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, string, string, error) {
 	// Use persistent mode if available
 	if a.function.Mode == ModePersistent && a.persistentProc != nil {
-		return a.executePersistent(input)
+		output, err := a.executePersistent(input)
+		return output, "", "", err
 	}
 
 	// Process mode: fork new process each time
 	if err := os.WriteFile("/tmp/input.json", input, 0644); err != nil {
-		return nil, err
+		return nil, "", "", err
 	}
 
 	var cmd *exec.Cmd
@@ -289,7 +311,7 @@ func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, error) 
 	case "wasm":
 		cmd = exec.Command(resolveBinary(wasmtimePath, "wasmtime"), CodePath, "--", "/tmp/input.json")
 	default:
-		return nil, fmt.Errorf("unsupported runtime: %s", a.function.Runtime)
+		return nil, "", "", fmt.Errorf("unsupported runtime: %s", a.function.Runtime)
 	}
 
 	cmd.Env = append(defaultEnv(), "NOVA_CODE_DIR="+CodeMountPoint)
@@ -297,19 +319,28 @@ func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, error) 
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	output, err := cmd.Output()
+	// Capture stdout and stderr separately
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	err := cmd.Run()
+	stdout := stdoutBuf.String()
+	stderr := stderrBuf.String()
+
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("exit %d: %s", exitErr.ExitCode(), string(exitErr.Stderr))
+			return nil, stdout, stderr, fmt.Errorf("exit %d: %s", exitErr.ExitCode(), stderr)
 		}
-		return nil, err
+		return nil, stdout, stderr, err
 	}
 
+	output := stdoutBuf.Bytes()
 	if json.Valid(output) {
-		return output, nil
+		return output, "", stderr, nil
 	}
 	result, _ := json.Marshal(string(output))
-	return result, nil
+	return result, "", stderr, nil
 }
 
 // executePersistent sends request to long-running process via stdin/stdout

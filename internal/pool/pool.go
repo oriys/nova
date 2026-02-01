@@ -10,6 +10,7 @@ import (
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/firecracker"
 	"github.com/oriys/nova/internal/logging"
+	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/pkg/singleflight"
 )
 
@@ -330,10 +331,12 @@ func (p *Pool) Acquire(ctx context.Context, fn *domain.Function) (*PooledVM, err
 func (p *Pool) createVM(ctx context.Context, fn *domain.Function) (*PooledVM, error) {
 	logging.Op().Info("creating VM", "function", fn.Name, "runtime", fn.Runtime)
 
+	bootStart := time.Now()
 	vm, err := p.manager.CreateVM(ctx, fn)
 	if err != nil {
 		return nil, err
 	}
+	bootDurationMs := time.Since(bootStart).Milliseconds()
 
 	client, err := firecracker.NewVsockClient(vm)
 	if err != nil {
@@ -345,6 +348,14 @@ func (p *Pool) createVM(ctx context.Context, fn *domain.Function) (*PooledVM, er
 		client.Close()
 		p.manager.StopVM(vm.ID)
 		return nil, err
+	}
+
+	// Record boot duration metric
+	// Check if this was a snapshot restore (boot time < 1000ms typically indicates snapshot)
+	fromSnapshot := bootDurationMs < 1000
+	metrics.RecordVMBootDuration(fn.Name, string(fn.Runtime), bootDurationMs, fromSnapshot)
+	if fromSnapshot {
+		metrics.RecordSnapshotRestoreTime(fn.Name, bootDurationMs)
 	}
 
 	pvm := &PooledVM{
