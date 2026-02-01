@@ -64,7 +64,7 @@ export default function HistoryPage() {
 
       // Transform logs to invocation records
       const records: InvocationRecord[] = logs.map((log) => ({
-        id: log.request_id,
+        id: log.id,
         functionId: log.function_id,
         functionName: log.function_name,
         timestamp: log.created_at,

@@ -1,9 +1,10 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
+RUN npm config set registry https://registry.npmmirror.com
 COPY package*.json ./
 RUN npm install
 COPY . .
-ARG NEXT_PUBLIC_API_URL=http://nova:9000
+ARG NEXT_PUBLIC_API_URL=http://nova-api.orb.local:9000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build
 

@@ -118,9 +118,9 @@ export function transformLog(log: ApiLogEntry): LogEntry {
   let level: "info" | "warn" | "error" | "debug" = "info";
   if (!log.success || log.stderr) {
     level = "error";
-  } else if (log.stdout.toLowerCase().includes("warn")) {
+  } else if (log.stdout?.toLowerCase().includes("warn")) {
     level = "warn";
-  } else if (log.stdout.toLowerCase().includes("debug")) {
+  } else if (log.stdout?.toLowerCase().includes("debug")) {
     level = "debug";
   }
 
@@ -128,13 +128,13 @@ export function transformLog(log: ApiLogEntry): LogEntry {
   const message = log.stderr || log.stdout || "Function executed";
 
   return {
-    id: log.request_id,
+    id: log.id,
     functionId: log.function_id,
     functionName: log.function_name,
     timestamp: log.created_at,
     level,
     message,
-    requestId: log.request_id,
+    requestId: log.id,
     duration: log.duration_ms,
   };
 }

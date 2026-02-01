@@ -45,7 +45,7 @@ services:
     container_name: nova-lumen
     environment:
       HOSTNAME: "0.0.0.0"
-      NEXT_PUBLIC_API_URL: http://nova:9000
+      NEXT_PUBLIC_API_URL: http://nova-api.orb.local:9000
     ports:
       - "3000:3000"
     depends_on:

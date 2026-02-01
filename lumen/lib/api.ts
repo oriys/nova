@@ -40,14 +40,15 @@ export interface Runtime {
 }
 
 export interface LogEntry {
-  request_id: string;
+  id: string;
+  request_id?: string;
   function_id: string;
   function_name: string;
   runtime: string;
   timestamp?: string;
   created_at: string;
-  stdout: string;
-  stderr: string;
+  stdout?: string;
+  stderr?: string;
   duration_ms: number;
   cold_start: boolean;
   success: boolean;
