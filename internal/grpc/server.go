@@ -18,13 +18,13 @@ import (
 // Server implements the Nova gRPC service
 type Server struct {
 	novapb.UnimplementedNovaServiceServer
-	store    *store.RedisStore
+	store    *store.Store
 	executor *executor.Executor
 	server   *grpc.Server
 }
 
 // NewServer creates a new gRPC server
-func NewServer(s *store.RedisStore, exec *executor.Executor) *Server {
+func NewServer(s *store.Store, exec *executor.Executor) *Server {
 	return &Server{
 		store:    s,
 		executor: exec,
@@ -153,8 +153,15 @@ func (s *Server) ListFunctions(ctx context.Context, req *novapb.ListFunctionsReq
 func (s *Server) HealthCheck(ctx context.Context, req *novapb.HealthCheckRequest) (*novapb.HealthCheckResponse, error) {
 	components := make(map[string]string)
 
+	// Check Postgres
+	if err := s.store.PingPostgres(ctx); err != nil {
+		components["postgres"] = "unhealthy: " + err.Error()
+	} else {
+		components["postgres"] = "healthy"
+	}
+
 	// Check Redis
-	if err := s.store.Ping(ctx); err != nil {
+	if err := s.store.PingRedis(ctx); err != nil {
 		components["redis"] = "unhealthy: " + err.Error()
 	} else {
 		components["redis"] = "healthy"

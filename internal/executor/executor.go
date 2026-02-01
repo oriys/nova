@@ -22,7 +22,7 @@ import (
 )
 
 type Executor struct {
-	store           *store.RedisStore
+	store           store.MetadataStore
 	pool            *pool.Pool
 	logger          *logging.Logger
 	secretsResolver *secrets.Resolver
@@ -46,7 +46,7 @@ func WithSecretsResolver(resolver *secrets.Resolver) Option {
 	}
 }
 
-func New(store *store.RedisStore, pool *pool.Pool, opts ...Option) *Executor {
+func New(store store.MetadataStore, pool *pool.Pool, opts ...Option) *Executor {
 	e := &Executor{
 		store:  store,
 		pool:   pool,

@@ -16,7 +16,7 @@ import (
 
 // Handler handles data plane HTTP requests (invocations and observability).
 type Handler struct {
-	Store *store.RedisStore
+	Store *store.Store
 	Exec  *executor.Executor
 	Pool  *pool.Pool
 }
@@ -68,11 +68,12 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 
-	redisOK := h.Store.Ping(ctx) == nil
+	pgOK := h.Store.PingPostgres(ctx) == nil
+	redisOK := h.Store.PingRedis(ctx) == nil
 	stats := h.Pool.Stats()
 
 	status := "ok"
-	if !redisOK {
+	if !pgOK || !redisOK {
 		status = "degraded"
 	}
 
@@ -80,7 +81,8 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": status,
 		"components": map[string]interface{}{
-			"redis": redisOK,
+			"postgres": pgOK,
+			"redis":    redisOK,
 			"pool": map[string]interface{}{
 				"active_vms":  stats["active_vms"],
 				"total_pools": stats["total_pools"],
@@ -102,7 +104,17 @@ func (h *Handler) HealthReady(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 
-	if err := h.Store.Ping(ctx); err != nil {
+	if err := h.Store.PingPostgres(ctx); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "not_ready",
+			"error":  "postgres unavailable: " + err.Error(),
+		})
+		return
+	}
+
+	if err := h.Store.PingRedis(ctx); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -122,8 +134,19 @@ func (h *Handler) HealthStartup(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
+	// Check Postgres is reachable
+	if err := h.Store.PingPostgres(ctx); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "starting",
+			"error":  "waiting for postgres: " + err.Error(),
+		})
+		return
+	}
+
 	// Check Redis is reachable
-	if err := h.Store.Ping(ctx); err != nil {
+	if err := h.Store.PingRedis(ctx); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		json.NewEncoder(w).Encode(map[string]interface{}{

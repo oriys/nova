@@ -365,6 +365,41 @@ install_redis() {
     fi
 }
 
+# ─── Postgres ────────────────────────────────────────────
+install_postgres() {
+    if command -v psql &>/dev/null; then
+        log "Postgres already installed"
+    else
+        log "Installing Postgres..."
+        if command -v apt-get &>/dev/null; then
+            apt-get install -y -qq postgresql postgresql-contrib >/dev/null
+            systemctl enable --now postgresql
+        elif command -v yum &>/dev/null; then
+            warn "Postgres install not implemented for yum-based distros. Install Postgres manually."
+            return
+        else
+            warn "Install Postgres manually"
+            return
+        fi
+    fi
+
+    # Bootstrap a local DB/user for nova (best-effort).
+    if command -v psql &>/dev/null; then
+        if id -u postgres &>/dev/null 2>&1; then
+            if ! su - postgres -c "psql -tAc \"SELECT 1 FROM pg_roles WHERE rolname='nova'\"" | grep -q 1; then
+                su - postgres -c "psql -c \"CREATE USER nova WITH PASSWORD 'nova';\""
+            fi
+            if ! su - postgres -c "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='nova'\"" | grep -q 1; then
+                su - postgres -c "psql -c \"CREATE DATABASE nova OWNER nova;\""
+            fi
+            log "Postgres configured (db=nova user=nova)"
+            log "DSN: postgres://nova:nova@localhost:5432/nova?sslmode=disable"
+        else
+            warn "Postgres installed, but OS user 'postgres' not found. Create db/user manually."
+        fi
+    fi
+}
+
 # ─── Main ────────────────────────────────────────────────
 main() {
     check_root
@@ -389,6 +424,7 @@ main() {
     build_deno_rootfs
     build_bun_rootfs
 
+    install_postgres
     install_redis
 
     # Permissions

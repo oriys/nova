@@ -16,9 +16,9 @@ import (
 type CronEntry struct {
 	ID         string          `json:"id"`
 	FunctionID string          `json:"function_id"`
-	Name       string          `json:"name"`        // Human-readable name
-	Schedule   string          `json:"schedule"`    // Cron expression (simplified)
-	Payload    json.RawMessage `json:"payload"`     // Payload to send
+	Name       string          `json:"name"`     // Human-readable name
+	Schedule   string          `json:"schedule"` // Cron expression (simplified)
+	Payload    json.RawMessage `json:"payload"`  // Payload to send
 	Enabled    bool            `json:"enabled"`
 	LastRun    time.Time       `json:"last_run"`
 	NextRun    time.Time       `json:"next_run"`
@@ -27,7 +27,7 @@ type CronEntry struct {
 
 // Scheduler manages cron-like scheduled function invocations
 type Scheduler struct {
-	store    *store.RedisStore
+	store    store.MetadataStore
 	executor *executor.Executor
 	entries  sync.Map // id -> *CronEntry
 	ctx      context.Context
@@ -36,7 +36,7 @@ type Scheduler struct {
 }
 
 // New creates a new scheduler
-func New(store *store.RedisStore, exec *executor.Executor) *Scheduler {
+func New(store store.MetadataStore, exec *executor.Executor) *Scheduler {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Scheduler{
 		store:    store,
@@ -238,9 +238,9 @@ func trimSpace(s string) string {
 
 // ScheduleInfo returns statistics about the scheduler
 type ScheduleInfo struct {
-	TotalEntries   int       `json:"total_entries"`
-	EnabledEntries int       `json:"enabled_entries"`
-	NextRun        time.Time `json:"next_run,omitempty"`
+	TotalEntries   int          `json:"total_entries"`
+	EnabledEntries int          `json:"enabled_entries"`
+	NextRun        time.Time    `json:"next_run,omitempty"`
 	Entries        []*CronEntry `json:"entries"`
 }
 

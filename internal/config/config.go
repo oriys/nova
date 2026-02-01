@@ -17,6 +17,11 @@ type RedisConfig struct {
 	DB       int    `json:"db"`
 }
 
+// PostgresConfig holds Postgres connection settings
+type PostgresConfig struct {
+	DSN string `json:"dsn"`
+}
+
 // PoolConfig holds VM pool settings
 type PoolConfig struct {
 	IdleTTL time.Duration `json:"idle_ttl"`
@@ -126,6 +131,7 @@ type SecretsConfig struct {
 // Config is the central configuration struct embedding all component configs
 type Config struct {
 	Firecracker   firecracker.Config  `json:"firecracker"`
+	Postgres      PostgresConfig      `json:"postgres"`
 	Redis         RedisConfig         `json:"redis"`
 	Pool          PoolConfig          `json:"pool"`
 	Daemon        DaemonConfig        `json:"daemon"`
@@ -141,6 +147,9 @@ func DefaultConfig() *Config {
 	fcCfg := firecracker.DefaultConfig()
 	return &Config{
 		Firecracker: *fcCfg,
+		Postgres: PostgresConfig{
+			DSN: "postgres://nova:nova@localhost:5432/nova?sslmode=disable",
+		},
 		Redis: RedisConfig{
 			Addr:     "localhost:6379",
 			Password: "",
@@ -229,6 +238,12 @@ func LoadFromFile(path string) (*Config, error) {
 
 // LoadFromEnv applies environment variable overrides to the config
 func LoadFromEnv(cfg *Config) {
+	if v := os.Getenv("NOVA_PG_DSN"); v != "" {
+		cfg.Postgres.DSN = v
+	}
+	if v := os.Getenv("NOVA_POSTGRES_DSN"); v != "" {
+		cfg.Postgres.DSN = v
+	}
 	if v := os.Getenv("NOVA_REDIS_ADDR"); v != "" {
 		cfg.Redis.Addr = v
 	}

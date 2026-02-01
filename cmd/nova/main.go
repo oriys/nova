@@ -37,6 +37,7 @@ import (
 )
 
 var (
+	pgDSN      string
 	redisAddr  string
 	redisPass  string
 	redisDB    int
@@ -50,6 +51,7 @@ func main() {
 		Long:  "A minimal serverless CLI that runs functions in Firecracker microVMs",
 	}
 
+	rootCmd.PersistentFlags().StringVar(&pgDSN, "pg-dsn", "", "Postgres DSN (e.g., postgres://user:pass@host:5432/db?sslmode=disable)")
 	rootCmd.PersistentFlags().StringVar(&redisAddr, "redis", "localhost:6379", "Redis address")
 	rootCmd.PersistentFlags().StringVar(&redisPass, "redis-pass", "", "Redis password")
 	rootCmd.PersistentFlags().IntVar(&redisDB, "redis-db", 0, "Redis database")
@@ -80,8 +82,30 @@ func main() {
 	}
 }
 
-func getStore() (*store.RedisStore, error) {
-	return store.NewRedisStore(redisAddr, redisPass, redisDB)
+func getStore() (*store.Store, error) {
+	cfg := config.DefaultConfig()
+	config.LoadFromEnv(cfg)
+
+	// Flags override env/defaults
+	if pgDSN != "" {
+		cfg.Postgres.DSN = pgDSN
+	}
+	cfg.Redis.Addr = redisAddr
+	cfg.Redis.Password = redisPass
+	cfg.Redis.DB = redisDB
+
+	pgStore, err := store.NewPostgresStore(context.Background(), cfg.Postgres.DSN)
+	if err != nil {
+		return nil, err
+	}
+
+	redisStore, err := store.NewRedisStore(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
+	if err != nil {
+		_ = pgStore.Close()
+		return nil, err
+	}
+
+	return store.NewStore(pgStore, redisStore), nil
 }
 
 func registerCmd() *cobra.Command {
@@ -382,10 +406,10 @@ func deleteCmd() *cobra.Command {
 	var force bool
 
 	cmd := &cobra.Command{
-		Use:   "delete <name>",
-		Short: "Delete a function",
+		Use:     "delete <name>",
+		Short:   "Delete a function",
 		Aliases: []string{"rm"},
-		Args:  cobra.ExactArgs(1),
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := getStore()
 			if err != nil {
@@ -1382,6 +1406,9 @@ func daemonCmd() *cobra.Command {
 			config.LoadFromEnv(cfg)
 
 			// Override with command-line flags
+			if cmd.Flags().Changed("pg-dsn") {
+				cfg.Postgres.DSN = pgDSN
+			}
 			if cmd.Flags().Changed("redis") {
 				cfg.Redis.Addr = redisAddr
 			}
@@ -1466,10 +1493,17 @@ func daemonCmd() *cobra.Command {
 				}
 			}
 
-			s, err := store.NewRedisStore(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
+			pgStore, err := store.NewPostgresStore(context.Background(), cfg.Postgres.DSN)
 			if err != nil {
 				return err
 			}
+			redisStore, err := store.NewRedisStore(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
+			if err != nil {
+				_ = pgStore.Close()
+				return err
+			}
+
+			s := store.NewStore(pgStore, redisStore)
 			defer s.Close()
 
 			cfg.Firecracker.LogLevel = logLevel
@@ -1515,6 +1549,7 @@ func daemonCmd() *cobra.Command {
 			exec := executor.New(s, p, execOpts...)
 
 			logging.Op().Info("nova daemon started",
+				"postgres", true,
 				"redis", cfg.Redis.Addr,
 				"idle_ttl", cfg.Pool.IdleTTL.String(),
 				"log_level", cfg.Daemon.LogLevel)
@@ -2060,9 +2095,9 @@ Example:
 
 func initCmd() *cobra.Command {
 	var (
-		name     string
-		runtime  string
-		output   string
+		name    string
+		runtime string
+		output  string
 	)
 
 	cmd := &cobra.Command{

@@ -19,7 +19,7 @@ import (
 
 // Handler handles control plane HTTP requests (function lifecycle and snapshot management).
 type Handler struct {
-	Store *store.RedisStore
+	Store *store.Store
 	Pool  *pool.Pool
 	Mgr   *firecracker.Manager
 }

@@ -1,5 +1,9 @@
 # Nova Serverless Platform Configuration
 
+# Postgres (function metadata)
+postgres:
+  dsn: "postgres://nova:nova@localhost:5432/nova?sslmode=disable"
+
 # Redis
 redis:
   addr: "localhost:6379"

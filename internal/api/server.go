@@ -19,7 +19,7 @@ import (
 
 // ServerConfig contains dependencies for the HTTP server.
 type ServerConfig struct {
-	Store        *store.RedisStore
+	Store        *store.Store
 	Exec         *executor.Executor
 	Pool         *pool.Pool
 	Mgr          *firecracker.Manager
