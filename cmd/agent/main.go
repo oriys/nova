@@ -36,8 +36,10 @@ const (
 	nodePath     = "/usr/bin/node"
 	rubyPath     = "/usr/bin/ruby"
 	javaPath     = "/usr/bin/java"
+	phpPath      = "/usr/bin/php"
 	denoPath     = "/usr/local/bin/deno"
 	bunPath      = "/usr/local/bin/bun"
+	dotnetRoot   = "/usr/share/dotnet"
 )
 
 // ExecutionMode determines how functions are executed
@@ -185,6 +187,9 @@ func (a *Agent) handleInit(payload json.RawMessage) (*Message, error) {
 		return nil, err
 	}
 
+	// Normalize versioned runtime IDs (e.g., python3.12, node24, php8.4, dotnet8)
+	init.Runtime = normalizeRuntime(init.Runtime)
+
 	// Default to process mode
 	if init.Mode == "" {
 		init.Mode = ModeProcess
@@ -322,16 +327,27 @@ func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, string,
 	case "java":
 		// Java expects a JAR file: java -jar /code/handler.jar input.json
 		cmd = exec.Command(resolveBinary(javaPath, "java"), "-jar", CodePath, "/tmp/input.json")
+	case "php":
+		cmd = exec.Command(resolveBinary(phpPath, "php"), CodePath, "/tmp/input.json")
 	case "deno":
 		// Deno needs --allow-read for input file
 		cmd = exec.Command(resolveBinary(denoPath, "deno"), "run", "--allow-read", CodePath, "/tmp/input.json")
 	case "bun":
 		cmd = exec.Command(resolveBinary(bunPath, "bun"), "run", CodePath, "/tmp/input.json")
+	case "dotnet":
+		// Expect a single-file apphost at /code/handler (PublishSingleFile=true).
+		cmd = exec.Command(CodePath, "/tmp/input.json")
 	default:
 		return nil, "", "", fmt.Errorf("unsupported runtime: %s", a.function.Runtime)
 	}
 
 	cmd.Env = append(defaultEnv(), "NOVA_CODE_DIR="+CodeMountPoint)
+	if a.function.Runtime == "dotnet" {
+		cmd.Env = append(cmd.Env,
+			"DOTNET_ROOT="+dotnetRoot,
+			"DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=true",
+		)
+	}
 	for k, v := range a.function.EnvVars {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
@@ -426,6 +442,26 @@ func resolveBinary(preferredPath, name string) string {
 		}
 	}
 	return name
+}
+
+func normalizeRuntime(rt string) string {
+	rt = strings.TrimSpace(rt)
+	switch {
+	case strings.HasPrefix(rt, "python"):
+		return "python"
+	case strings.HasPrefix(rt, "node"):
+		return "node"
+	case strings.HasPrefix(rt, "ruby"):
+		return "ruby"
+	case strings.HasPrefix(rt, "java"):
+		return "java"
+	case strings.HasPrefix(rt, "php"):
+		return "php"
+	case strings.HasPrefix(rt, "dotnet"):
+		return "dotnet"
+	default:
+		return rt
+	}
 }
 
 func (a *Agent) stopPersistentProcess() {

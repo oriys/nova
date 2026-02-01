@@ -89,6 +89,12 @@ Functions read JSON from `argv[1]` file path, write JSON result to stdout, exit 
 | Go/Rust | `base.ext4` | `/code/handler input.json` |
 | Python | `python.ext4` | `python3 /code/handler input.json` |
 | Node.js | `node.ext4` | `node /code/handler input.json` |
+| Ruby | `ruby.ext4` | `ruby /code/handler input.json` |
+| Java | `java.ext4` | `java -jar /code/handler input.json` |
+| PHP | `php.ext4` | `php /code/handler input.json` |
+| .NET | `dotnet.ext4` | `/code/handler input.json` |
+| Deno | `deno.ext4` | `deno run --allow-read /code/handler input.json` |
+| Bun | `bun.ext4` | `bun run /code/handler input.json` |
 | WASM | `wasm.ext4` | `wasmtime /code/handler -- input.json` |
 
 ### Infrastructure Requirements

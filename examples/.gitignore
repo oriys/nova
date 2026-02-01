@@ -2,6 +2,10 @@
 build/
 target/
 
+# .NET build artifacts
+**/bin/
+**/obj/
+
 # Compiled binaries
 hello-go
 hello-rust

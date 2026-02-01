@@ -1,5 +1,5 @@
 #!/bin/bash
-# test_hello.sh - Test hello functions for all runtimes
+# test_hello.sh - Quick hello test (Python + Go)
 # Run this on the Linux machine where nova daemon is running
 
 set -e

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
+import { Pagination } from "@/components/pagination"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -46,6 +47,8 @@ export default function HistoryPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [functionFilter, setFunctionFilter] = useState<string>("all")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -96,6 +99,17 @@ export default function HistoryPage() {
       functionFilter === "all" || inv.functionName === functionFilter
     return matchesSearch && matchesStatus && matchesFunction
   })
+
+  useEffect(() => {
+    setPage(1)
+  }, [searchQuery, statusFilter, functionFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filteredInvocations.length / pageSize))
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  const pagedInvocations = filteredInvocations.slice((page - 1) * pageSize, page * pageSize)
 
   const formatTimestamp = (ts: string) => {
     const date = new Date(ts)
@@ -229,7 +243,7 @@ export default function HistoryPage() {
         </div>
 
         {/* Invocations Table */}
-        <div className="rounded-xl border border-border bg-card">
+        <div className="rounded-xl border border-border bg-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -276,7 +290,7 @@ export default function HistoryPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredInvocations.slice(0, 50).map((inv) => (
+                  pagedInvocations.map((inv) => (
                     <tr
                       key={inv.id}
                       className="border-b border-border hover:bg-muted/50"
@@ -346,6 +360,22 @@ export default function HistoryPage() {
               </tbody>
             </table>
           </div>
+
+          {!loading && filteredInvocations.length > 0 && (
+            <div className="border-t border-border p-4">
+              <Pagination
+                totalItems={filteredInvocations.length}
+                page={page}
+                pageSize={pageSize}
+                onPageChange={setPage}
+                onPageSizeChange={(size) => {
+                  setPageSize(size)
+                  setPage(1)
+                }}
+                itemLabel="invocations"
+              />
+            </div>
+          )}
         </div>
       </div>
     </DashboardLayout>

@@ -1,11 +1,17 @@
 # Nova Examples
 
-测试用例覆盖 CPU 计算、超时、网络、磁盘 I/O 四种场景，每种场景提供 Python、Go、Rust 三种语言实现。
+测试用例覆盖 CPU 计算、超时、网络、磁盘 I/O 四种场景（目前提供 Python / Go / Rust 三种语言实现）。
+
+同时提供 **Hello** 用例覆盖 Nova 当前支持的全部 VM runtime：
+`python, go, rust, wasm, node, ruby, java, php, dotnet, deno, bun`。
 
 ## 快速测试
 
 ```bash
-# 测试所有运行时 (Python, Go, Rust)
+# 构建所有 runtime 的 hello 产物（输出到 examples/build/<runtime>/handler）
+./build_runtime_fixtures.sh
+
+# 测试所有运行时 (python, go, rust, wasm, node, ruby, java, php, dotnet, deno, bun)
 ./test_all_runtimes.sh
 
 # 仅测试 Python 和 Go
@@ -21,6 +27,22 @@
 | 网络请求 | `network_test.py` | `network_test.go` | `network_test.rs` |
 | 磁盘 I/O | `disk_test.py` | `disk_test.go` | `disk_test.rs` |
 | Hello World | `hello.py` | `hello.go` | `hello.rs` |
+
+## Hello（全运行时）
+
+| Runtime | 代码 |
+|--------|------|
+| python | `hello.py` |
+| go | `hello.go` |
+| rust | `hello.rs` |
+| wasm | `hello_wasm.rs` |
+| node | `hello_node.js` |
+| ruby | `hello_ruby.rb` |
+| java | `hello_java/Main.java` |
+| php | `hello_php.php` |
+| dotnet | `hello_dotnet/Program.cs` |
+| deno | `hello_deno.js` |
+| bun | `hello_bun.js` |
 
 ## 编译 Go 示例
 
@@ -40,6 +62,33 @@ rustup target add x86_64-unknown-linux-musl
 
 # 编译（需要 Cargo.toml 配置依赖）
 cargo build --release --target x86_64-unknown-linux-musl
+```
+
+## 编译 WASM 示例
+
+WASM runtime 使用 WASI（配合 rootfs 里的 `wasmtime`）。
+
+```bash
+# 新版 Rust（推荐）
+rustup target add wasm32-wasip1
+
+# 或旧版 target
+rustup target add wasm32-wasi
+
+# 编译
+cargo build --release --target wasm32-wasip1 --bin hello-wasm
+```
+
+生成的 `.wasm` 文件可直接用于 `nova register --runtime wasm --code ...`（平台会注入到 VM 的 `/code/handler`）。
+
+## 编译 Java 示例
+
+```bash
+# 生成可运行 JAR（Main-Class: Main）
+mkdir -p build/java-tmp/classes
+javac -d build/java-tmp/classes hello_java/Main.java
+echo "Main-Class: Main" > build/java-tmp/manifest.mf
+jar cfm build/java/handler build/java-tmp/manifest.mf -C build/java-tmp/classes .
 ```
 
 Rust 依赖 (Cargo.toml):

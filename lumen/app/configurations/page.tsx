@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
+import { Pagination } from "@/components/pagination"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -61,6 +62,8 @@ export default function ConfigurationsPage() {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [snapshotsPage, setSnapshotsPage] = useState(1)
+  const [snapshotsPageSize, setSnapshotsPageSize] = useState(10)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -98,6 +101,16 @@ export default function ConfigurationsPage() {
     const interval = setInterval(fetchData, 30000)
     return () => clearInterval(interval)
   }, [fetchData])
+
+  const snapshotsTotalPages = Math.max(1, Math.ceil(snapshots.length / snapshotsPageSize))
+  useEffect(() => {
+    if (snapshotsPage > snapshotsTotalPages) setSnapshotsPage(snapshotsTotalPages)
+  }, [snapshotsPage, snapshotsTotalPages])
+
+  const pagedSnapshots = snapshots.slice(
+    (snapshotsPage - 1) * snapshotsPageSize,
+    snapshotsPage * snapshotsPageSize
+  )
 
   const handleSave = async () => {
     try {
@@ -285,7 +298,7 @@ export default function ConfigurationsPage() {
             </p>
           ) : (
             <div className="space-y-3">
-              {snapshots.map((snap) => (
+              {pagedSnapshots.map((snap) => (
                 <div
                   key={snap.function_id}
                   className="flex items-center justify-between p-4 rounded-lg bg-muted/50"
@@ -309,6 +322,21 @@ export default function ConfigurationsPage() {
                   </Button>
                 </div>
               ))}
+
+              <div className="pt-2">
+                <Pagination
+                  totalItems={snapshots.length}
+                  page={snapshotsPage}
+                  pageSize={snapshotsPageSize}
+                  onPageChange={setSnapshotsPage}
+                  onPageSizeChange={(size) => {
+                    setSnapshotsPageSize(size)
+                    setSnapshotsPage(1)
+                  }}
+                  pageSizeOptions={[5, 10, 20, 50]}
+                  itemLabel="snapshots"
+                />
+              </div>
             </div>
           )}
         </div>

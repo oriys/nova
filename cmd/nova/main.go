@@ -119,7 +119,7 @@ func registerCmd() *cobra.Command {
 
 			rt := domain.Runtime(runtime)
 			if !rt.IsValid() {
-				return fmt.Errorf("invalid runtime: %s (valid: python, go, rust, wasm)", runtime)
+				return fmt.Errorf("invalid runtime: %s (valid: python, go, rust, wasm, node, ruby, java, php, dotnet, deno, bun)", runtime)
 			}
 
 			if _, err := os.Stat(codePath); os.IsNotExist(err) {
@@ -206,7 +206,7 @@ func registerCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&runtime, "runtime", "r", "", "Runtime (python, go, rust, wasm)")
+	cmd.Flags().StringVarP(&runtime, "runtime", "r", "", "Runtime (python, go, rust, wasm, node, ruby, java, php, dotnet, deno, bun)")
 	cmd.Flags().StringVarP(&handler, "handler", "H", "main.handler", "Handler function")
 	cmd.Flags().StringVarP(&codePath, "code", "c", "", "Path to code file/directory")
 	cmd.Flags().IntVarP(&memoryMB, "memory", "m", 128, "Memory in MB")
@@ -2153,27 +2153,31 @@ Example:
 			// Validate runtime
 			rt := domain.Runtime(runtime)
 			if !rt.IsValid() {
-				return fmt.Errorf("invalid runtime: %s (valid: python, go, rust, wasm, node, ruby, java, deno, bun)", runtime)
+				return fmt.Errorf("invalid runtime: %s (valid: python, go, rust, wasm, node, ruby, java, php, dotnet, deno, bun)", runtime)
 			}
 
 			// Determine code file extension
 			ext := ".py"
-			switch rt {
-			case domain.RuntimeGo:
+			switch {
+			case rt == domain.RuntimeGo || strings.HasPrefix(string(rt), "go"):
 				ext = ""
-			case domain.RuntimeRust:
+			case rt == domain.RuntimeRust || strings.HasPrefix(string(rt), "rust"):
 				ext = ""
-			case domain.RuntimeWasm:
+			case rt == domain.RuntimeWasm || strings.HasPrefix(string(rt), "wasm"):
 				ext = ".wasm"
-			case domain.RuntimeNode:
+			case rt == domain.RuntimeNode || strings.HasPrefix(string(rt), "node"):
 				ext = ".js"
-			case domain.RuntimeRuby:
+			case rt == domain.RuntimeRuby || strings.HasPrefix(string(rt), "ruby"):
 				ext = ".rb"
-			case domain.RuntimeJava:
+			case rt == domain.RuntimeJava || strings.HasPrefix(string(rt), "java"):
 				ext = ".jar"
-			case domain.RuntimeDeno:
+			case rt == domain.RuntimePHP || strings.HasPrefix(string(rt), "php"):
+				ext = ".php"
+			case rt == domain.RuntimeDotnet || strings.HasPrefix(string(rt), "dotnet"):
+				ext = ""
+			case rt == domain.RuntimeDeno || strings.HasPrefix(string(rt), "deno"):
 				ext = ".ts"
-			case domain.RuntimeBun:
+			case rt == domain.RuntimeBun || strings.HasPrefix(string(rt), "bun"):
 				ext = ".ts"
 			}
 
@@ -2187,8 +2191,8 @@ name: %s
 # Optional description
 description: A serverless function
 
-# Runtime: python, go, rust, wasm, node, ruby, java, deno, bun
-runtime: %s
+	# Runtime: python, go, rust, wasm, node, ruby, java, php, dotnet, deno, bun
+	runtime: %s
 
 # Handler function (format depends on runtime)
 handler: main.handler
@@ -2246,7 +2250,7 @@ env:
 	}
 
 	cmd.Flags().StringVarP(&name, "name", "n", "", "Function name")
-	cmd.Flags().StringVarP(&runtime, "runtime", "r", "", "Runtime (python, go, rust, wasm, node, ruby, java, deno, bun)")
+	cmd.Flags().StringVarP(&runtime, "runtime", "r", "", "Runtime (python, go, rust, wasm, node, ruby, java, php, dotnet, deno, bun)")
 	cmd.Flags().StringVarP(&output, "output", "o", "", "Output file path (default: <name>.yaml)")
 
 	return cmd

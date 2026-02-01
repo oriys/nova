@@ -168,16 +168,16 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Insert runtimes (10 most common languages, one version each)
 INSERT INTO runtimes (id, name, version, status) VALUES
-    ('python', 'Python', '3.12', 'available'),
-    ('node', 'Node.js', '22.x', 'available'),
-    ('go', 'Go', '1.22', 'available'),
-    ('rust', 'Rust', '1.76', 'available'),
-    ('java', 'Java', '21', 'available'),
-    ('ruby', 'Ruby', '3.3', 'available'),
-    ('php', 'PHP', '8.3', 'available'),
-    ('dotnet', '.NET', '8.0', 'available'),
-    ('deno', 'Deno', '2.0', 'available'),
-    ('bun', 'Bun', '1.1', 'available')
+    ('python', 'Python', '3.12.12', 'available'),
+    ('node', 'Node.js', '24.13.0', 'available'),
+    ('go', 'Go', '1.25.6', 'available'),
+    ('rust', 'Rust', '1.93.0', 'available'),
+    ('java', 'Java', '21.0.10', 'available'),
+    ('ruby', 'Ruby', '3.4.8', 'available'),
+    ('php', 'PHP', '8.4.17', 'available'),
+    ('dotnet', '.NET', '8.0.23', 'available'),
+    ('deno', 'Deno', '2.6.7', 'available'),
+    ('bun', 'Bun', '1.3.8', 'available')
 ON CONFLICT (id) DO NOTHING;
 
 -- Insert sample invocation logs (last 24 hours, every 15 minutes)

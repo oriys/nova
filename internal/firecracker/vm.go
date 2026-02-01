@@ -1048,20 +1048,25 @@ func (m *Manager) SnapshotDir() string {
 // Python: needs interpreter. WASM: needs wasmtime.
 // Node/Deno/Bun: need JS runtime. Ruby: needs interpreter. Java: needs JVM.
 func rootfsForRuntime(rt domain.Runtime) string {
-	switch rt {
-	case domain.RuntimePython:
+	r := string(rt)
+	switch {
+	case r == string(domain.RuntimePython) || strings.HasPrefix(r, "python"):
 		return "python.ext4"
-	case domain.RuntimeWasm:
+	case r == string(domain.RuntimeWasm) || strings.HasPrefix(r, "wasm"):
 		return "wasm.ext4"
-	case domain.RuntimeNode:
+	case r == string(domain.RuntimeNode) || strings.HasPrefix(r, "node"):
 		return "node.ext4"
-	case domain.RuntimeRuby:
+	case r == string(domain.RuntimeRuby) || strings.HasPrefix(r, "ruby"):
 		return "ruby.ext4"
-	case domain.RuntimeJava:
+	case r == string(domain.RuntimeJava) || strings.HasPrefix(r, "java"):
 		return "java.ext4"
-	case domain.RuntimeDeno:
+	case r == string(domain.RuntimePHP) || strings.HasPrefix(r, "php"):
+		return "php.ext4"
+	case r == string(domain.RuntimeDotnet) || strings.HasPrefix(r, "dotnet"):
+		return "dotnet.ext4"
+	case r == string(domain.RuntimeDeno) || strings.HasPrefix(r, "deno"):
 		return "deno.ext4"
-	case domain.RuntimeBun:
+	case r == string(domain.RuntimeBun) || strings.HasPrefix(r, "bun"):
 		return "bun.ext4"
 	default:
 		// Go, Rust use base

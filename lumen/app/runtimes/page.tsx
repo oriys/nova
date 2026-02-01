@@ -3,11 +3,12 @@
 import { useEffect, useState, useCallback } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
+import { Pagination } from "@/components/pagination"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { runtimesApi, CreateRuntimeRequest } from "@/lib/api"
 import { transformRuntime, RuntimeInfo } from "@/lib/types"
-import { RefreshCw, Box, CheckCircle, AlertTriangle, Wrench, Plus, Trash2, X } from "lucide-react"
+import { RefreshCw, CheckCircle, AlertTriangle, Wrench, Plus, Trash2, X } from "lucide-react"
 import { RuntimeIcon, getRuntimeColor } from "@/components/runtime-logos"
 import { cn } from "@/lib/utils"
 
@@ -15,6 +16,8 @@ export default function RuntimesPage() {
   const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(12)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -43,6 +46,13 @@ export default function RuntimesPage() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  const totalPages = Math.max(1, Math.ceil(runtimes.length / pageSize))
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  const pagedRuntimes = runtimes.slice((page - 1) * pageSize, page * pageSize)
 
   const handleCreate = async () => {
     if (!formData.id || !formData.name || !formData.version) return
@@ -196,7 +206,7 @@ export default function RuntimesPage() {
                   </div>
                 </div>
               ))
-            : runtimes.map((runtime) => {
+            : pagedRuntimes.map((runtime) => {
                 const bgColor = getRuntimeColor(runtime.id)
 
                 return (
@@ -284,6 +294,23 @@ export default function RuntimesPage() {
                 )
               })}
         </div>
+
+        {!loading && runtimes.length > 0 && (
+          <div className="rounded-xl border border-border bg-card p-4">
+            <Pagination
+              totalItems={runtimes.length}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={(size) => {
+                setPageSize(size)
+                setPage(1)
+              }}
+              pageSizeOptions={[6, 12, 24, 48]}
+              itemLabel="runtimes"
+            />
+          </div>
+        )}
       </div>
     </DashboardLayout>
   )

@@ -12,10 +12,11 @@ export PATH
 
 INSTALL_DIR="/opt/nova"
 FC_VERSION="latest"
-ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-minirootfs-3.21.3-x86_64.tar.gz"
-WASMTIME_VERSION="v29.0.1"
-DENO_VERSION="v2.1.4"
-BUN_VERSION="bun-v1.1.42"
+ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.3-x86_64.tar.gz"
+WASMTIME_VERSION="v41.0.1"
+DENO_VERSION="v2.6.7"
+BUN_VERSION="bun-v1.3.8"
+DOTNET_VERSION="8.0.23"
 ROOTFS_SIZE_MB=256
 ROOTFS_SIZE_JAVA_MB=512
 
@@ -40,9 +41,9 @@ install_deps() {
     log "Installing dependencies..."
     if command -v apt-get &>/dev/null; then
         apt-get update -qq
-        apt-get install -y -qq curl e2fsprogs unzip >/dev/null
+        apt-get install -y -qq curl e2fsprogs unzip iproute2 >/dev/null
     elif command -v yum &>/dev/null; then
-        yum install -y -q curl e2fsprogs unzip
+        yum install -y -q curl e2fsprogs unzip iproute
     fi
 }
 
@@ -53,34 +54,50 @@ latest_firecracker_version() {
 
 # ─── Firecracker ─────────────────────────────────────────
 install_firecracker() {
-    local fc_bin="${INSTALL_DIR}/bin/firecracker-v1.14.1-x86_64"
-    local jailer_bin="${INSTALL_DIR}/bin/jailer-v1.14.1-x86_64"
-
-    if [[ -x "${fc_bin}" ]]; then
-        warn "Existing Firecracker detected: $(${fc_bin} --version) - overwriting"
-    fi
     if [[ "${FC_VERSION}" == "latest" || -z "${FC_VERSION}" ]]; then
         FC_VERSION="$(latest_firecracker_version)"
     fi
+    local arch="$(uname -m)"
+    local fc_bin="${INSTALL_DIR}/bin/firecracker-${FC_VERSION}-${arch}"
+    local jailer_bin="${INSTALL_DIR}/bin/jailer-${FC_VERSION}-${arch}"
+
+    if [[ -x "${INSTALL_DIR}/bin/firecracker" ]]; then
+        warn "Existing Firecracker detected: $(${INSTALL_DIR}/bin/firecracker --version) - overwriting"
+    fi
     log "Installing Firecracker ${FC_VERSION}..."
     local tmp=$(mktemp -d)
-    local arch="$(uname -m)"
     local fc_url="https://github.com/firecracker-microvm/firecracker/releases/download/${FC_VERSION}/firecracker-${FC_VERSION}-${arch}.tgz"
     curl -fsSL -o "${tmp}/fc.tgz" "${fc_url}"
     tar -xzf "${tmp}/fc.tgz" -C "${tmp}"
+    local installed_fc=""
+    local installed_jailer=""
     # Handle both old (release-*/) and new (flat) archive structures
     if ls ${tmp}/release-*/firecracker-* &>/dev/null 2>&1; then
-        install -m 0755 ${tmp}/release-*/firecracker-* /opt/nova/bin
-        install -m 0755 ${tmp}/release-*/jailer-*      /opt/nova/bin
+        local fc_src
+        local jailer_src
+        fc_src="$(ls -1 ${tmp}/release-*/firecracker-* | head -n 1)"
+        jailer_src="$(ls -1 ${tmp}/release-*/jailer-* | head -n 1)"
+        install -m 0755 "${fc_src}" "${INSTALL_DIR}/bin"
+        install -m 0755 "${jailer_src}" "${INSTALL_DIR}/bin"
+        installed_fc="${INSTALL_DIR}/bin/$(basename "${fc_src}")"
+        installed_jailer="${INSTALL_DIR}/bin/$(basename "${jailer_src}")"
     else
-        install -m 0755 ${tmp}/firecracker-${FC_VERSION}-${arch} /opt/nova/bin
-        install -m 0755 ${tmp}/jailer-${FC_VERSION}-${arch}      /opt/nova/bin
+        install -m 0755 "${tmp}/firecracker-${FC_VERSION}-${arch}" "${INSTALL_DIR}/bin"
+        install -m 0755 "${tmp}/jailer-${FC_VERSION}-${arch}" "${INSTALL_DIR}/bin"
+        installed_fc="${fc_bin}"
+        installed_jailer="${jailer_bin}"
     fi
     rm -rf "${tmp}"
-    # Symlink to /usr/local/bin for convenience
-    ln -sf "${fc_bin}" /usr/local/bin/firecracker
-    ln -sf "${jailer_bin}" /usr/local/bin/jailer
-    log "Firecracker $(${fc_bin} --version)"
+
+    # Stable symlinks used by Nova defaults/configs.
+    ln -sf "${installed_fc}" "${INSTALL_DIR}/bin/firecracker"
+    ln -sf "${installed_jailer}" "${INSTALL_DIR}/bin/jailer"
+
+    # Also expose in /usr/local/bin for convenience.
+    ln -sf "${INSTALL_DIR}/bin/firecracker" /usr/local/bin/firecracker
+    ln -sf "${INSTALL_DIR}/bin/jailer" /usr/local/bin/jailer
+
+    log "Firecracker $(${INSTALL_DIR}/bin/firecracker --version)"
 }
 
 # ─── Kernel ──────────────────────────────────────────────
@@ -124,10 +141,17 @@ download_kernel() {
 
 # ─── Rootfs builder ─────────────────────────────────────
 #
-# Only 3 images:
-#   base.ext4   - Alpine + init + nova-agent (for Go/Rust)
-#   python.ext4 - base + python3
-#   wasm.ext4   - base + wasmtime
+# Images produced (shared read-only rootfs per runtime):
+#   base.ext4   - minimal rootfs (init + /code) for static binaries (Go/Rust)
+#   python.ext4 - Alpine + python3
+#   wasm.ext4   - Alpine + wasmtime (+ glibc compat)
+#   node.ext4   - Alpine + nodejs
+#   ruby.ext4   - Alpine + ruby
+#   java.ext4   - Alpine + OpenJDK
+#   php.ext4    - Alpine + php
+#   dotnet.ext4 - Alpine + .NET runtime (musl)
+#   deno.ext4   - Alpine + deno (+ glibc compat)
+#   bun.ext4    - Alpine + bun (musl)
 #
 build_base_rootfs() {
     local output="${INSTALL_DIR}/rootfs/base.ext4"
@@ -196,7 +220,11 @@ build_wasm_rootfs() {
     mount -o loop "${output}" "${mnt}"
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
-    mkdir -p "${mnt}"/{code,tmp}
+    mkdir -p "${mnt}"/{code,tmp,usr/local/bin}
+    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
+
+    # wasmtime release is glibc-linked; add compatibility layer.
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache libstdc++ gcompat" >/dev/null 2>&1
 
     curl -fsSL \
         "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
@@ -285,6 +313,63 @@ build_java_rootfs() {
     log "java.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
+build_php_rootfs() {
+    local output="${INSTALL_DIR}/rootfs/php.ext4"
+    local mnt=$(mktemp -d)
+
+    log "Building php rootfs (Alpine + php)..."
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q "${output}"
+    mount -o loop "${output}" "${mnt}"
+
+    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
+    mkdir -p "${mnt}"/{code,tmp}
+    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
+
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache php" >/dev/null 2>&1
+
+    # init = nova-agent
+    [[ -f ${INSTALL_DIR}/bin/nova-agent ]] && \
+        cp ${INSTALL_DIR}/bin/nova-agent "${mnt}/init" && \
+        chmod +x "${mnt}/init"
+
+    umount "${mnt}" && rmdir "${mnt}"
+    log "php.ext4 ready ($(du -h ${output} | cut -f1))"
+}
+
+build_dotnet_rootfs() {
+    local output="${INSTALL_DIR}/rootfs/dotnet.ext4"
+    local mnt=$(mktemp -d)
+
+    log "Building dotnet rootfs (Alpine + .NET runtime)..."
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q "${output}"
+    mount -o loop "${output}" "${mnt}"
+
+    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
+    mkdir -p "${mnt}"/{code,tmp,usr/share/dotnet}
+    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
+
+    # Match dotnet runtime-deps for Alpine (https://github.com/dotnet/dotnet-docker)
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache ca-certificates-bundle libgcc libssl3 libstdc++ zlib" >/dev/null 2>&1
+
+    # Download and install .NET Runtime (musl)
+    curl -fsSL \
+        "https://builds.dotnet.microsoft.com/dotnet/Runtime/${DOTNET_VERSION}/dotnet-runtime-${DOTNET_VERSION}-linux-musl-x64.tar.gz" \
+        -o /tmp/dotnet-runtime.tar.gz
+    tar -xzf /tmp/dotnet-runtime.tar.gz -C "${mnt}/usr/share/dotnet"
+    ln -sf /usr/share/dotnet/dotnet "${mnt}/usr/bin/dotnet"
+    rm -f /tmp/dotnet-runtime.tar.gz
+
+    # init = nova-agent
+    [[ -f ${INSTALL_DIR}/bin/nova-agent ]] && \
+        cp ${INSTALL_DIR}/bin/nova-agent "${mnt}/init" && \
+        chmod +x "${mnt}/init"
+
+    umount "${mnt}" && rmdir "${mnt}"
+    log "dotnet.ext4 ready ($(du -h ${output} | cut -f1))"
+}
+
 build_deno_rootfs() {
     local output="${INSTALL_DIR}/rootfs/deno.ext4"
     local mnt=$(mktemp -d)
@@ -296,6 +381,10 @@ build_deno_rootfs() {
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp,usr/local/bin}
+    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
+
+    # deno release is glibc-linked; add compatibility layer.
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache libstdc++ gcompat" >/dev/null 2>&1
 
     # Download Deno binary
     curl -fsSL \
@@ -325,16 +414,17 @@ build_bun_rootfs() {
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp,usr/local/bin}
+    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
-    # Bun requires glibc, install compatibility layer
-    chroot "${mnt}" /bin/sh -c "apk add --no-cache libstdc++ gcompat" >/dev/null 2>&1
+    # Bun provides musl builds; install runtime deps.
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache libgcc libstdc++" >/dev/null 2>&1
 
     # Download Bun binary
     curl -fsSL \
-        "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/bun-linux-x64.zip" \
+        "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/bun-linux-x64-musl.zip" \
         -o /tmp/bun.zip
     unzip -q -o /tmp/bun.zip -d /tmp/bun-extract
-    cp /tmp/bun-extract/bun-linux-x64/bun "${mnt}/usr/local/bin/bun"
+    cp /tmp/bun-extract/bun-linux-x64-musl/bun "${mnt}/usr/local/bin/bun"
     chmod +x "${mnt}/usr/local/bin/bun"
     rm -rf /tmp/bun.zip /tmp/bun-extract
 
@@ -421,6 +511,8 @@ main() {
     build_node_rootfs
     build_ruby_rootfs
     build_java_rootfs
+    build_php_rootfs
+    build_dotnet_rootfs
     build_deno_rootfs
     build_bun_rootfs
 
@@ -445,6 +537,8 @@ main() {
     echo "  ${INSTALL_DIR}/rootfs/node.ext4     (Node.js)"
     echo "  ${INSTALL_DIR}/rootfs/ruby.ext4     (Ruby)"
     echo "  ${INSTALL_DIR}/rootfs/java.ext4     (Java)"
+    echo "  ${INSTALL_DIR}/rootfs/php.ext4      (PHP)"
+    echo "  ${INSTALL_DIR}/rootfs/dotnet.ext4   (.NET)"
     echo "  ${INSTALL_DIR}/rootfs/deno.ext4     (Deno)"
     echo "  ${INSTALL_DIR}/rootfs/bun.ext4      (Bun)"
     echo "  ${INSTALL_DIR}/snapshots/     (VM snapshots)"

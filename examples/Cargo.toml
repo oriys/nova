@@ -8,6 +8,10 @@ name = "hello-rust"
 path = "hello.rs"
 
 [[bin]]
+name = "hello-wasm"
+path = "hello_wasm.rs"
+
+[[bin]]
 name = "cpu-intensive-rust"
 path = "cpu_intensive.rs"
 

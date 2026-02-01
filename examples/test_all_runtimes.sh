@@ -1,140 +1,122 @@
 #!/bin/bash
-# test_all_runtimes.sh - Test hello functions for Python, Go, and Rust
+# test_all_runtimes.sh - Build and test hello functions for all supported runtimes.
+#
+# Supported (VM): python, go, rust, wasm, node, ruby, java, php, dotnet, deno, bun
 #
 # Prerequisites:
-#   - Go installed
-#   - Rust installed with musl target: rustup target add x86_64-unknown-linux-musl
-#   - nova daemon running
+#   - nova daemon running (VM mode)
+#   - Toolchains (optional, auto-skip if missing):
+#       - Go (for go)
+#       - Rust + musl target (for rust):  rustup target add x86_64-unknown-linux-musl
+#       - Rust + WASI target (for wasm):  rustup target add wasm32-wasip1 (or wasm32-wasi)
+#       - JDK (for java): javac + jar
+#       - .NET SDK (for dotnet): dotnet
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build"
 
-mkdir -p "${BUILD_DIR}"
-
 echo "=========================================="
-echo "  Building binaries"
+echo "  Building runtime fixtures"
 echo "=========================================="
 
-echo ""
-echo "--- Building Go ---"
-cd "${SCRIPT_DIR}"
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o "${BUILD_DIR}/hello-go" hello.go
-ls -lh "${BUILD_DIR}/hello-go"
+"${SCRIPT_DIR}/build_runtime_fixtures.sh"
 
-echo ""
-echo "--- Building Rust ---"
-cd "${SCRIPT_DIR}"
-if command -v cargo &> /dev/null; then
-    cargo build --release --target x86_64-unknown-linux-musl --bin hello-rust 2>/dev/null || {
-        echo "Rust build failed. Make sure you have:"
-        echo "  rustup target add x86_64-unknown-linux-musl"
-        echo "Skipping Rust tests."
-        SKIP_RUST=1
-    }
-    if [ -z "$SKIP_RUST" ]; then
-        cp target/x86_64-unknown-linux-musl/release/hello-rust "${BUILD_DIR}/"
-        ls -lh "${BUILD_DIR}/hello-rust"
-    fi
-else
-    echo "Rust not installed, skipping Rust tests"
-    SKIP_RUST=1
-fi
+register_or_update() {
+  local name="$1"
+  local runtime="$2"
+  local code="$3"
+
+  echo ""
+  echo "--- Registering ${name} (${runtime}) ---"
+  nova register "${name}" --runtime "${runtime}" --code "${code}" 2>/dev/null || \
+    nova update "${name}" --code "${code}"
+}
 
 echo ""
 echo "=========================================="
 echo "  Registering functions"
 echo "=========================================="
 
-echo ""
-echo "--- Registering Python ---"
-nova register hello-python --runtime python --code "${SCRIPT_DIR}/hello.py" 2>/dev/null || \
-    nova update hello-python --code "${SCRIPT_DIR}/hello.py"
+register_or_update "hello-python" "python" "${BUILD_DIR}/python/handler"
+register_or_update "hello-go" "go" "${BUILD_DIR}/go/handler"
+register_or_update "hello-node" "node" "${BUILD_DIR}/node/handler"
+register_or_update "hello-ruby" "ruby" "${BUILD_DIR}/ruby/handler"
+register_or_update "hello-php" "php" "${BUILD_DIR}/php/handler"
+register_or_update "hello-deno" "deno" "${BUILD_DIR}/deno/handler"
+register_or_update "hello-bun" "bun" "${BUILD_DIR}/bun/handler"
 
-echo ""
-echo "--- Registering Go ---"
-nova register hello-go --runtime go --code "${BUILD_DIR}/hello-go" 2>/dev/null || \
-    nova update hello-go --code "${BUILD_DIR}/hello-go"
+if [[ -f "${BUILD_DIR}/rust/handler" ]]; then
+  register_or_update "hello-rust" "rust" "${BUILD_DIR}/rust/handler"
+else
+  echo ""
+  echo "--- Skipping hello-rust (artifact missing) ---"
+fi
 
-if [ -z "$SKIP_RUST" ]; then
-    echo ""
-    echo "--- Registering Rust ---"
-    nova register hello-rust --runtime rust --code "${BUILD_DIR}/hello-rust" 2>/dev/null || \
-        nova update hello-rust --code "${BUILD_DIR}/hello-rust"
+if [[ -f "${BUILD_DIR}/wasm/handler" ]]; then
+  register_or_update "hello-wasm" "wasm" "${BUILD_DIR}/wasm/handler"
+else
+  echo ""
+  echo "--- Skipping hello-wasm (artifact missing) ---"
+fi
+
+if [[ -f "${BUILD_DIR}/java/handler" ]]; then
+  register_or_update "hello-java" "java" "${BUILD_DIR}/java/handler"
+else
+  echo ""
+  echo "--- Skipping hello-java (artifact missing) ---"
+fi
+
+if [[ -f "${BUILD_DIR}/dotnet/handler" ]]; then
+  register_or_update "hello-dotnet" "dotnet" "${BUILD_DIR}/dotnet/handler"
+else
+  echo ""
+  echo "--- Skipping hello-dotnet (artifact missing) ---"
 fi
 
 echo ""
 echo "=========================================="
-echo "  Testing cold starts"
+echo "  Testing (cold start)"
 echo "=========================================="
 
-echo ""
-echo "--- Python cold start ---"
 nova invoke hello-python --payload '{"name": "Python"}'
-
-echo ""
-echo "--- Go cold start ---"
 nova invoke hello-go --payload '{"name": "Gopher"}'
+nova invoke hello-node --payload '{"name": "Node"}'
+nova invoke hello-ruby --payload '{"name": "Ruby"}'
+nova invoke hello-php --payload '{"name": "PHP"}'
+nova invoke hello-deno --payload '{"name": "Deno"}'
+nova invoke hello-bun --payload '{"name": "Bun"}'
 
-if [ -z "$SKIP_RUST" ]; then
-    echo ""
-    echo "--- Rust cold start ---"
-    nova invoke hello-rust --payload '{"name": "Rustacean"}'
+if nova get hello-rust &>/dev/null; then
+  nova invoke hello-rust --payload '{"name": "Rustacean"}'
+fi
+if nova get hello-wasm &>/dev/null; then
+  nova invoke hello-wasm --payload '{"name": "Wasm"}'
+fi
+if nova get hello-java &>/dev/null; then
+  nova invoke hello-java --payload '{"name": "Java"}'
+fi
+if nova get hello-dotnet &>/dev/null; then
+  nova invoke hello-dotnet --payload '{"name": ".NET"}'
 fi
 
 echo ""
 echo "=========================================="
-echo "  Testing warm reuse (5 rapid requests)"
+echo "  Warm reuse (3 rapid requests each)"
 echo "=========================================="
 
-echo ""
-echo "--- Python warm test ---"
-for i in {1..5}; do
-    result=$(nova invoke hello-python --payload "{\"name\": \"Py${i}\"}" 2>&1)
-    echo "$result" | grep -o '"cold_start":[^,}]*' || echo "$result"
+for fn in hello-python hello-go hello-node hello-ruby hello-php hello-dotnet hello-deno hello-bun hello-rust hello-wasm hello-java; do
+  if ! nova get "${fn}" &>/dev/null; then
+    continue
+  fi
+  echo ""
+  echo "--- ${fn} ---"
+  for i in 1 2 3; do
+    nova invoke "${fn}" --payload "{\"name\": \"${fn}-${i}\"}" >/dev/null
+    echo "ok ${i}"
+  done
 done
-
-echo ""
-echo "--- Go warm test ---"
-for i in {1..5}; do
-    result=$(nova invoke hello-go --payload "{\"name\": \"Go${i}\"}" 2>&1)
-    echo "$result" | grep -o '"cold_start":[^,}]*' || echo "$result"
-done
-
-if [ -z "$SKIP_RUST" ]; then
-    echo ""
-    echo "--- Rust warm test ---"
-    for i in {1..5}; do
-        result=$(nova invoke hello-rust --payload "{\"name\": \"Rs${i}\"}" 2>&1)
-        echo "$result" | grep -o '"cold_start":[^,}]*' || echo "$result"
-    done
-fi
-
-echo ""
-echo "=========================================="
-echo "  Performance comparison"
-echo "=========================================="
-
-echo ""
-echo "--- Python (5 invocations) ---"
-for i in {1..5}; do
-    nova invoke hello-python --payload '{"name": "Benchmark"}' 2>&1 | grep -o '"duration_ms":[0-9]*'
-done
-
-echo ""
-echo "--- Go (5 invocations) ---"
-for i in {1..5}; do
-    nova invoke hello-go --payload '{"name": "Benchmark"}' 2>&1 | grep -o '"duration_ms":[0-9]*'
-done
-
-if [ -z "$SKIP_RUST" ]; then
-    echo ""
-    echo "--- Rust (5 invocations) ---"
-    for i in {1..5}; do
-        nova invoke hello-rust --payload '{"name": "Benchmark"}' 2>&1 | grep -o '"duration_ms":[0-9]*'
-    done
-fi
 
 echo ""
 echo "=========================================="

@@ -215,16 +215,16 @@ export function CreateFunctionDialog({
 
   // Group runtimes by language for better UX
   const groupedRuntimes = runtimes.length > 0 ? runtimes : [
-    { id: "python", name: "Python", version: "3.12", status: "available" as const, functionsCount: 0, icon: "python" },
-    { id: "node", name: "Node.js", version: "22.x", status: "available" as const, functionsCount: 0, icon: "nodejs" },
-    { id: "go", name: "Go", version: "1.22", status: "available" as const, functionsCount: 0, icon: "go" },
-    { id: "rust", name: "Rust", version: "1.76", status: "available" as const, functionsCount: 0, icon: "rust" },
-    { id: "java", name: "Java", version: "21", status: "available" as const, functionsCount: 0, icon: "java" },
-    { id: "ruby", name: "Ruby", version: "3.3", status: "available" as const, functionsCount: 0, icon: "ruby" },
-    { id: "php", name: "PHP", version: "8.3", status: "available" as const, functionsCount: 0, icon: "php" },
-    { id: "dotnet", name: ".NET", version: "8.0", status: "available" as const, functionsCount: 0, icon: "dotnet" },
-    { id: "deno", name: "Deno", version: "2.0", status: "available" as const, functionsCount: 0, icon: "deno" },
-    { id: "bun", name: "Bun", version: "1.1", status: "available" as const, functionsCount: 0, icon: "bun" },
+    { id: "python", name: "Python", version: "3.12.12", status: "available" as const, functionsCount: 0, icon: "python" },
+    { id: "node", name: "Node.js", version: "24.13.0", status: "available" as const, functionsCount: 0, icon: "nodejs" },
+    { id: "go", name: "Go", version: "1.25.6", status: "available" as const, functionsCount: 0, icon: "go" },
+    { id: "rust", name: "Rust", version: "1.93.0", status: "available" as const, functionsCount: 0, icon: "rust" },
+    { id: "java", name: "Java", version: "21.0.10", status: "available" as const, functionsCount: 0, icon: "java" },
+    { id: "ruby", name: "Ruby", version: "3.4.8", status: "available" as const, functionsCount: 0, icon: "ruby" },
+    { id: "php", name: "PHP", version: "8.4.17", status: "available" as const, functionsCount: 0, icon: "php" },
+    { id: "dotnet", name: ".NET", version: "8.0.23", status: "available" as const, functionsCount: 0, icon: "dotnet" },
+    { id: "deno", name: "Deno", version: "2.6.7", status: "available" as const, functionsCount: 0, icon: "deno" },
+    { id: "bun", name: "Bun", version: "1.3.8", status: "available" as const, functionsCount: 0, icon: "bun" },
   ]
 
   return (

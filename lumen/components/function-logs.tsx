@@ -1,9 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Pagination } from "@/components/pagination"
 import {
   Select,
   SelectContent,
@@ -31,12 +32,25 @@ export function FunctionLogs({ logs, onRefresh, loading }: FunctionLogsProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [levelFilter, setLevelFilter] = useState("all")
   const [isLive, setIsLive] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
 
   const filteredLogs = logs.filter((log) => {
     const matchesSearch = log.message.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesLevel = levelFilter === "all" || log.level === levelFilter
     return matchesSearch && matchesLevel
   })
+
+  useEffect(() => {
+    setPage(1)
+  }, [searchQuery, levelFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / pageSize))
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  const pagedLogs = filteredLogs.slice((page - 1) * pageSize, page * pageSize)
 
   return (
     <div className="space-y-4">
@@ -104,7 +118,7 @@ export function FunctionLogs({ logs, onRefresh, loading }: FunctionLogsProps) {
               </p>
             </div>
           ) : (
-            filteredLogs.map((log) => {
+            pagedLogs.map((log) => {
               const config = levelConfig[log.level]
               const timestamp = new Date(log.timestamp)
               const formattedTime = timestamp.toLocaleTimeString("en-US", {
@@ -149,6 +163,22 @@ export function FunctionLogs({ logs, onRefresh, loading }: FunctionLogsProps) {
             })
           )}
         </div>
+
+        {filteredLogs.length > 0 && (
+          <div className="border-t border-border p-4">
+            <Pagination
+              totalItems={filteredLogs.length}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={(size) => {
+                setPageSize(size)
+                setPage(1)
+              }}
+              itemLabel="logs"
+            />
+          </div>
+        )}
       </div>
     </div>
   )

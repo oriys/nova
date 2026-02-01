@@ -96,6 +96,8 @@ nova/
 
 ## 快速开始
 
+Linux（KVM + Firecracker microVM 模式）：见 `docs/quickstart-linux.md`。
+
 ### 本地开发：docker-compose 启动 Postgres/Redis
 
 ```bash

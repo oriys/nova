@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
+import { Pagination } from "@/components/pagination"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -34,6 +35,8 @@ export default function LogsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [levelFilter, setLevelFilter] = useState<string>("all")
   const [functionFilter, setFunctionFilter] = useState<string>("all")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -85,6 +88,17 @@ export default function LogsPage() {
       functionFilter === "all" || log.functionName === functionFilter
     return matchesSearch && matchesLevel && matchesFunction
   })
+
+  useEffect(() => {
+    setPage(1)
+  }, [searchQuery, levelFilter, functionFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / pageSize))
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  const pagedLogs = filteredLogs.slice((page - 1) * pageSize, page * pageSize)
 
   const getLevelIcon = (level: string) => {
     switch (level) {
@@ -203,7 +217,7 @@ export default function LogsPage() {
         </div>
 
         {/* Logs Table */}
-        <div className="rounded-xl border border-border bg-card">
+        <div className="rounded-xl border border-border bg-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -247,7 +261,7 @@ export default function LogsPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredLogs.slice(0, 50).map((log) => (
+                  pagedLogs.map((log) => (
                     <tr
                       key={log.id}
                       className="border-b border-border hover:bg-muted/50"
@@ -305,6 +319,22 @@ export default function LogsPage() {
               </tbody>
             </table>
           </div>
+
+          {!loading && filteredLogs.length > 0 && (
+            <div className="border-t border-border p-4">
+              <Pagination
+                totalItems={filteredLogs.length}
+                page={page}
+                pageSize={pageSize}
+                onPageChange={setPage}
+                onPageSizeChange={(size) => {
+                  setPageSize(size)
+                  setPage(1)
+                }}
+                itemLabel="logs"
+              />
+            </div>
+          )}
         </div>
       </div>
     </DashboardLayout>

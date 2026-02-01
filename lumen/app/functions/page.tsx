@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { FunctionsTable } from "@/components/functions-table"
+import { Pagination } from "@/components/pagination"
 import { CreateFunctionDialog } from "@/components/create-function-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,6 +25,8 @@ export default function FunctionsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [runtimeFilter, setRuntimeFilter] = useState<string>("all")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -72,6 +75,17 @@ export default function FunctionsPage() {
   })
 
   const uniqueRuntimes = [...new Set(functions.map((fn) => fn.runtime.split(" ")[0]))]
+
+  useEffect(() => {
+    setPage(1)
+  }, [searchQuery, statusFilter, runtimeFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filteredFunctions.length / pageSize))
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  const pagedFunctions = filteredFunctions.slice((page - 1) * pageSize, page * pageSize)
 
   const handleCreate = async (name: string, runtime: string, handler: string, memory: number, timeout: number, codeOrPath: string, isCode: boolean) => {
     try {
@@ -209,10 +223,25 @@ export default function FunctionsPage() {
 
         {/* Functions Table */}
         <FunctionsTable
-          functions={filteredFunctions}
+          functions={pagedFunctions}
           onDelete={handleDelete}
           loading={loading}
         />
+
+        {!loading && filteredFunctions.length > 0 && (
+          <Pagination
+            totalItems={filteredFunctions.length}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size)
+              setPage(1)
+            }}
+            itemLabel="functions"
+            className="rounded-xl border border-border bg-card p-4"
+          />
+        )}
 
         {/* Create Dialog */}
         <CreateFunctionDialog
