@@ -1,6 +1,6 @@
 # Nova
 
-Nova 是一个极简的 Serverless 平台，基于 [Firecracker](https://github.com/firecracker-microvm/firecracker) microVM 实现函数级别的隔离执行。每次函数调用都运行在独立的轻量虚拟机中，支持 Python、Go、Rust、WASM 四种运行时。
+Nova 是一个极简的 Serverless 平台，基于 [Firecracker](https://github.com/firecracker-microvm/firecracker) microVM 实现函数级别的隔离执行。每次函数调用都运行在独立的轻量虚拟机中，支持 Python、Go、Rust、WASM、Node.js、Ruby、Java、PHP、.NET、Deno、Bun 等运行时。
 
 ## 它是怎么工作的
 
@@ -23,7 +23,7 @@ Nova 是一个极简的 Serverless 平台，基于 [Firecracker](https://github.
 
 **核心流程：**
 
-1. `nova register` 注册函数（名称、运行时、代码路径）到 Postgres（元数据），并使用 Redis 做缓存/限流/日志等
+1. `nova register` 注册函数（名称、运行时、代码路径）到 Postgres（元数据/日志/限流/API Keys/Secrets 等）
 2. `nova invoke` 触发执行：从 VM 池获取或创建 microVM
 3. 宿主机通过 vsock 向 VM 内的 agent 发送执行指令
 4. agent 运行用户代码，返回 JSON 结果
@@ -38,9 +38,8 @@ nova/
 │   └── agent/main.go         # VM 内的 guest agent（编译为 /init）
 ├── internal/
 │   ├── domain/function.go    # 数据模型：Function, Runtime, InvokeRequest/Response
-│   ├── store/postgres.go     # Postgres 存储：函数元数据/版本/别名
-│   ├── store/redis.go        # Redis：日志/限流/API Keys/Secrets 等
-│   ├── store/store.go        # 组合存储（Postgres + Redis）
+│   ├── store/postgres.go     # Postgres 存储：函数元数据/版本/别名/日志/运行时/配置/密钥/限流等
+│   ├── store/store.go        # 存储封装（当前仅 Postgres）
 │   ├── firecracker/vm.go     # VM 生命周期：创建、API配置、快照、停止
 │   ├── pool/pool.go          # VM 池：复用、TTL清理、预热、singleflight
 │   └── executor/executor.go  # 调用编排：查函数 → 获取VM → 执行 → 释放
@@ -59,13 +58,20 @@ nova/
 | Go | `base.ext4` (32MB) | `/code/handler input.json` | 静态编译二进制，直接执行 |
 | Rust | `base.ext4` (32MB) | `/code/handler input.json` | 同 Go |
 | Python | `python.ext4` (256MB) | `python3 /code/handler input.json` | 需要解释器 |
+| Node.js | `node.ext4` (256MB) | `node /code/handler input.json` | 需要 node |
+| Ruby | `ruby.ext4` (256MB) | `ruby /code/handler input.json` | 需要 ruby |
+| Java | `java.ext4` (512MB) | `java -jar /code/handler input.json` | 需要 JVM |
+| PHP | `php.ext4` (256MB) | `php /code/handler input.json` | 需要 php |
+| .NET | `dotnet.ext4` (256MB) | `/code/handler input.json` | 单文件可执行（PublishSingleFile） |
+| Deno | `deno.ext4` (256MB) | `deno run --allow-read /code/handler input.json` | 需要 deno |
+| Bun | `bun.ext4` (256MB) | `bun run /code/handler input.json` | 需要 bun |
 | WASM | `wasm.ext4` (256MB) | `wasmtime /code/handler -- input.json` | 需要 wasmtime |
 
 ### 双磁盘架构
 
 每个 VM 挂载两个磁盘：
 
-- **Drive 0 (rootfs)**: 只读，按运行时共享（`base.ext4` / `python.ext4` / `wasm.ext4`）
+- **Drive 0 (rootfs)**: 只读，按运行时共享（`base.ext4` / `python.ext4` / `node.ext4` / `ruby.ext4` / `java.ext4` / `php.ext4` / `dotnet.ext4` / `deno.ext4` / `bun.ext4` / `wasm.ext4`）
 - **Drive 1 (code)**: 只读，16MB ext4，每个 VM 独立，包含用户函数代码
 
 代码注入通过 `debugfs` 完成，不需要 root 权限或 mount 操作。
@@ -92,30 +98,25 @@ nova/
 
 - **开发机**: macOS 或 Linux（编写代码、交叉编译）
 - **运行服务器**: Linux x86_64，需要 KVM 支持（`/dev/kvm`）
-- **依赖**: Postgres、Redis、Firecracker、e2fsprogs（`mkfs.ext4`、`debugfs`）
+- **依赖**: Postgres、Firecracker、e2fsprogs（`mkfs.ext4`、`debugfs`）
 
 ## 快速开始
 
 Linux（KVM + Firecracker microVM 模式）：见 `docs/quickstart-linux.md`。
 
-### 本地开发：docker-compose 启动 Postgres/Redis
+### 本地开发：docker-compose 启动 Postgres + Dashboard
 
 ```bash
-docker compose up -d postgres redis
+docker compose up -d --build
 
-# Nova 默认读取环境变量（也可用 CLI flag --pg-dsn / --redis 覆盖）
-export NOVA_PG_DSN="postgres://nova:nova@localhost:5432/nova?sslmode=disable"
-export NOVA_REDIS_ADDR="localhost:6379"
-
-# 如果本机端口已被占用，可自定义映射端口：
-# NOVA_PG_PORT=5433 NOVA_REDIS_PORT=6380 docker compose up -d postgres redis
-# export NOVA_PG_DSN="postgres://nova:nova@localhost:5433/nova?sslmode=disable"
-# export NOVA_REDIS_ADDR="localhost:6380"
+# 说明：
+# - macOS/无 KVM 环境下主要用于跑 API + Lumen Dashboard（展示/管理），不适合跑 Firecracker VM 执行。
+# - Linux + KVM 可在 docker-compose.yml 中解开 /dev/kvm 与 /opt/nova 挂载，启用 full mode。
 ```
 
 ### 1. 准备 Linux 服务器
 
-在 Linux 服务器上执行一键安装（安装 Firecracker、内核、rootfs、Postgres、Redis）：
+在 Linux 服务器上执行一键安装（安装 Firecracker、内核、rootfs、Postgres）：
 
 ```bash
 # 在服务器上执行
@@ -130,6 +131,13 @@ sudo bash scripts/install.sh
 ├── rootfs/
 │   ├── base.ext4               # Go/Rust 运行时 (32MB)
 │   ├── python.ext4             # Python 运行时 (256MB)
+│   ├── node.ext4               # Node.js 运行时 (256MB)
+│   ├── ruby.ext4               # Ruby 运行时 (256MB)
+│   ├── java.ext4               # Java 运行时 (512MB)
+│   ├── php.ext4                # PHP 运行时 (256MB)
+│   ├── dotnet.ext4             # .NET 运行时 (256MB)
+│   ├── deno.ext4               # Deno 运行时 (256MB)
+│   ├── bun.ext4                # Bun 运行时 (256MB)
 │   └── wasm.ext4               # WASM 运行时 (256MB)
 └── bin/                        # 放编译好的二进制
 ```
@@ -182,7 +190,7 @@ nova register hello-python \
 
 | 参数 | 缩写 | 默认值 | 说明 |
 |------|------|--------|------|
-| `--runtime` | `-r` | (必填) | 运行时：`python`、`go`、`rust`、`wasm` |
+| `--runtime` | `-r` | (必填) | 运行时：`python`、`go`、`rust`、`wasm`、`node`、`ruby`、`java`、`php`、`dotnet`、`deno`、`bun` |
 | `--code` | `-c` | (必填) | 代码文件路径 |
 | `--handler` | `-H` | `main.handler` | Handler 名称 |
 | `--memory` | `-m` | `128` | 内存 (MB) |
@@ -325,38 +333,24 @@ cargo build --release --target x86_64-unknown-linux-musl
 
 ```bash
 nova --pg-dsn "postgres://nova:nova@localhost:5432/nova?sslmode=disable"  # Postgres DSN
-nova --redis localhost:6379      # Redis 地址（默认 localhost:6379）
-nova --redis-pass secret         # Redis 密码
-nova --redis-db 0                # Redis 数据库编号
+nova --config /path/to/config.json                                    # 配置文件（JSON，可选）
 ```
 
 ## 配置文件
 
-参考 `configs/nova.yaml`：
+`nova --config` 读取 **JSON**（`internal/config/config.go`），你也可以用环境变量覆盖（例如 `NOVA_PG_DSN` / `NOVA_HTTP_ADDR` / `NOVA_FIRECRACKER_BIN` 等）。
 
-```yaml
-postgres:
-  dsn: "postgres://nova:nova@localhost:5432/nova?sslmode=disable"
+最小示例：
 
-redis:
-  addr: "localhost:6379"
-  password: ""
-  db: 0
-
-firecracker:
-  binary: "/usr/local/bin/firecracker"
-  kernel: "/opt/nova/kernel/vmlinux"
-  rootfs_dir: "/opt/nova/rootfs"
-  socket_dir: "/tmp/nova/sockets"
-  vsock_dir: "/tmp/nova/vsock"
-  log_dir: "/tmp/nova/logs"
-  boot_timeout: "10s"
-  bridge_name: "novabr0"           # Network bridge
-  subnet: "172.30.0.0/24"          # VM subnet
-
-pool:
-  idle_ttl: "60s"
+```json
+{
+  "postgres": { "dsn": "postgres://nova:nova@localhost:5432/nova?sslmode=disable" },
+  "daemon": { "http_addr": ":9000", "log_level": "info" },
+  "pool": { "idle_ttl": "60s" }
+}
 ```
+
+另外：`configs/nova.yaml` 仅作为路径/目录结构参考。
 
 ## 资源限制
 

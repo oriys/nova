@@ -16,9 +16,9 @@ make clean          # Remove bin/ directory
 make deploy SERVER=root@your-server  # Build linux + deploy via SCP
 
 # Docker development (recommended for local dev without KVM)
-docker-compose up -d              # Start all services (postgres, redis, nova, lumen)
-docker-compose up -d --build      # Rebuild and start
-docker-compose logs -f lumen      # View lumen logs
+docker compose up -d              # Start all services (postgres, nova, lumen)
+docker compose up -d --build      # Rebuild and start
+docker compose logs -f lumen      # View lumen logs
 
 # Lumen frontend (standalone)
 cd lumen && npm install && npm run dev  # Dev server on localhost:3000
@@ -42,7 +42,7 @@ There are no tests or linting configured in this project.
 ### Backend Internal Packages
 
 - **`domain/`** - Data models: `Function`, `Runtime`, `ExecutionMode`, `ResourceLimits`, `InvokeResponse`, `FunctionVersion`, `FunctionAlias`
-- **`store/`** - Postgres-backed metadata (functions/versions/aliases) with Redis for rate limiting, logs, API keys, and secrets.
+- **`store/`** - Postgres-backed metadata (functions/versions/aliases/logs/runtimes/config/api keys/secrets/rate limit).
 - **`api/controlplane/`** - HTTP handlers for function CRUD, runtimes, snapshots
 - **`api/dataplane/`** - HTTP handlers for invoke, logs, metrics, health
 - **`firecracker/`** - VM lifecycle: Firecracker process management, boot/snapshot/stop, network setup (TAP devices, bridge `novabr0`, IP allocation in 172.30.0.0/24), code drive creation via `debugfs`, vsock client
@@ -101,4 +101,4 @@ Functions read JSON from `argv[1]` file path, write JSON result to stdout, exit 
 
 Full mode (with Firecracker): Linux x86_64 with KVM (`/dev/kvm`), Firecracker binary, e2fsprogs (`mkfs.ext4`, `debugfs`).
 
-API-only mode (Docker): Just needs Postgres and Redis. Use `docker-compose up -d` for local development.
+Docker mode: Useful for running the API + Lumen dashboard; microVM execution requires KVM + Firecracker + rootfs available on the host.
