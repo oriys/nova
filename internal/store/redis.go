@@ -46,6 +46,11 @@ func (s *RedisStore) Close() error {
 	return s.client.Close()
 }
 
+// Client returns the underlying Redis client for direct access
+func (s *RedisStore) Client() *redis.Client {
+	return s.client
+}
+
 // Ping checks Redis connectivity
 func (s *RedisStore) Ping(ctx context.Context) error {
 	return s.client.Ping(ctx).Err()

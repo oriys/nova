@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,18 +15,25 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
+	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/config"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/firecracker"
+	novagrpc "github.com/oriys/nova/internal/grpc"
 	"github.com/oriys/nova/internal/logging"
+	"github.com/oriys/nova/internal/logs"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/observability"
+	"github.com/oriys/nova/internal/output"
 	"github.com/oriys/nova/internal/pool"
+	"github.com/oriys/nova/internal/ratelimit"
 	"github.com/oriys/nova/internal/scheduler"
+	"github.com/oriys/nova/internal/secrets"
+	"github.com/oriys/nova/internal/spec"
 	"github.com/oriys/nova/internal/store"
-	novagrpc "github.com/oriys/nova/internal/grpc"
 	"github.com/spf13/cobra"
 )
 
@@ -58,6 +67,12 @@ func main() {
 		versionCmd(),
 		scheduleCmd(),
 		daemonCmd(),
+		secretCmd(),
+		apikeyCmd(),
+		applyCmd(),
+		initCmd(),
+		logsCmd(),
+		testCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
@@ -206,9 +221,11 @@ func registerCmd() *cobra.Command {
 }
 
 func listCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "list",
-		Short: "List all functions",
+	var outputFormat string
+
+	cmd := &cobra.Command{
+		Use:     "list",
+		Short:   "List all functions",
 		Aliases: []string{"ls"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := getStore()
@@ -222,31 +239,36 @@ func listCmd() *cobra.Command {
 				return err
 			}
 
-			if len(funcs) == 0 {
-				fmt.Println("No functions registered")
-				return nil
+			printer := output.NewPrinter(output.ParseFormat(outputFormat))
+
+			// Convert to output rows
+			rows := make([]output.FunctionRow, 0, len(funcs))
+			for _, fn := range funcs {
+				rows = append(rows, output.FunctionRow{
+					Name:        fn.Name,
+					Runtime:     string(fn.Runtime),
+					Handler:     fn.Handler,
+					Memory:      fn.MemoryMB,
+					Timeout:     fn.TimeoutS,
+					MinReplicas: fn.MinReplicas,
+					Mode:        string(fn.Mode),
+					Version:     fn.Version,
+					Created:     fn.CreatedAt.Format("2006-01-02 15:04:05"),
+					Updated:     fn.UpdatedAt.Format("2006-01-02 15:04:05"),
+				})
 			}
 
-			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "NAME\tRUNTIME\tHANDLER\tMEMORY\tTIMEOUT\tCREATED")
-			for _, fn := range funcs {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%dMB\t%ds\t%s\n",
-					fn.Name,
-					fn.Runtime,
-					fn.Handler,
-					fn.MemoryMB,
-					fn.TimeoutS,
-					fn.CreatedAt.Format("2006-01-02 15:04:05"),
-				)
-			}
-			w.Flush()
-			return nil
+			return printer.PrintFunctions(rows)
 		},
 	}
+
+	cmd.Flags().StringVarP(&outputFormat, "output", "o", "table", "Output format (table, wide, json, yaml)")
+	return cmd
 }
 
 func getCmd() *cobra.Command {
 	var showVersions bool
+	var outputFormat string
 
 	cmd := &cobra.Command{
 		Use:   "get <name>",
@@ -264,82 +286,69 @@ func getCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("Function: %s\n", fn.Name)
-			fmt.Printf("  ID:          %s\n", fn.ID)
-			fmt.Printf("  Runtime:     %s\n", fn.Runtime)
-			fmt.Printf("  Handler:     %s\n", fn.Handler)
-			fmt.Printf("  Code Path:   %s\n", fn.CodePath)
-			if fn.CodeHash != "" {
-				fmt.Printf("  Code Hash:   %s\n", fn.CodeHash)
-			}
-			fmt.Printf("  Memory:      %d MB\n", fn.MemoryMB)
-			fmt.Printf("  Timeout:     %d s\n", fn.TimeoutS)
-			fmt.Printf("  Mode:        %s\n", fn.Mode)
-			fmt.Printf("  Min Replicas: %d\n", fn.MinReplicas)
-			if fn.MaxReplicas > 0 {
-				fmt.Printf("  Max Replicas: %d\n", fn.MaxReplicas)
-			}
-			if fn.Version > 0 {
-				fmt.Printf("  Version:     v%d\n", fn.Version)
-			}
-			fmt.Printf("  Created:     %s\n", fn.CreatedAt.Format(time.RFC3339))
-			fmt.Printf("  Updated:     %s\n", fn.UpdatedAt.Format(time.RFC3339))
-
-			// Resource limits
-			if fn.Limits != nil {
-				fmt.Printf("  Limits:\n")
-				if fn.Limits.VCPUs > 1 {
-					fmt.Printf("    vCPUs:         %d\n", fn.Limits.VCPUs)
-				}
-				if fn.Limits.DiskIOPS > 0 {
-					fmt.Printf("    Disk IOPS:     %d\n", fn.Limits.DiskIOPS)
-				}
-				if fn.Limits.DiskBandwidth > 0 {
-					fmt.Printf("    Disk BW:       %s/s\n", formatBytes(fn.Limits.DiskBandwidth))
-				}
-				if fn.Limits.NetRxBandwidth > 0 {
-					fmt.Printf("    Net RX BW:     %s/s\n", formatBytes(fn.Limits.NetRxBandwidth))
-				}
-				if fn.Limits.NetTxBandwidth > 0 {
-					fmt.Printf("    Net TX BW:     %s/s\n", formatBytes(fn.Limits.NetTxBandwidth))
-				}
-			}
-
-			// Environment variables
-			if len(fn.EnvVars) > 0 {
-				fmt.Printf("  Env Vars:\n")
-				for k, v := range fn.EnvVars {
-					fmt.Printf("    %s=%s\n", k, v)
-				}
-			}
-
 			// Check snapshot
 			cfg := firecracker.DefaultConfig()
-			if executor.HasSnapshot(cfg.SnapshotDir, fn.ID) {
-				snapPath := filepath.Join(cfg.SnapshotDir, fn.ID+".snap")
-				if info, err := os.Stat(snapPath); err == nil {
-					fmt.Printf("  Snapshot:    Yes (%s, %s)\n",
-						formatBytes(info.Size()),
-						info.ModTime().Format("2006-01-02 15:04"))
-				}
-			} else {
-				fmt.Printf("  Snapshot:    No\n")
-			}
+			hasSnapshot := executor.HasSnapshot(cfg.SnapshotDir, fn.ID)
 
 			// Versions and aliases
 			versions, _ := s.ListVersions(context.Background(), fn.ID)
 			aliases, _ := s.ListAliases(context.Background(), fn.ID)
 
-			if len(versions) > 0 {
-				fmt.Printf("  Versions:    %d\n", len(versions))
+			aliasNames := make([]string, 0, len(aliases))
+			for _, a := range aliases {
+				aliasNames = append(aliasNames, fmt.Sprintf("%s->v%d", a.Name, a.Version))
 			}
-			if len(aliases) > 0 {
-				aliasNames := make([]string, 0, len(aliases))
-				for _, a := range aliases {
-					aliasNames = append(aliasNames, fmt.Sprintf("%s->v%d", a.Name, a.Version))
+
+			printer := output.NewPrinter(output.ParseFormat(outputFormat))
+
+			// For JSON/YAML, output the function directly
+			if outputFormat == "json" || outputFormat == "yaml" {
+				detail := output.FunctionDetail{
+					ID:          fn.ID,
+					Name:        fn.Name,
+					Runtime:     string(fn.Runtime),
+					Handler:     fn.Handler,
+					CodePath:    fn.CodePath,
+					CodeHash:    fn.CodeHash,
+					MemoryMB:    fn.MemoryMB,
+					TimeoutS:    fn.TimeoutS,
+					MinReplicas: fn.MinReplicas,
+					MaxReplicas: fn.MaxReplicas,
+					Mode:        string(fn.Mode),
+					Version:     fn.Version,
+					EnvVars:     fn.EnvVars,
+					Limits:      fn.Limits,
+					HasSnapshot: hasSnapshot,
+					Versions:    len(versions),
+					Aliases:     aliasNames,
+					Created:     fn.CreatedAt.Format(time.RFC3339),
+					Updated:     fn.UpdatedAt.Format(time.RFC3339),
 				}
-				fmt.Printf("  Aliases:     %s\n", strings.Join(aliasNames, ", "))
+				return printer.PrintFunctionDetail(detail)
 			}
+
+			// Table format - human readable
+			detail := output.FunctionDetail{
+				ID:          fn.ID,
+				Name:        fn.Name,
+				Runtime:     string(fn.Runtime),
+				Handler:     fn.Handler,
+				CodePath:    fn.CodePath,
+				CodeHash:    fn.CodeHash,
+				MemoryMB:    fn.MemoryMB,
+				TimeoutS:    fn.TimeoutS,
+				MinReplicas: fn.MinReplicas,
+				MaxReplicas: fn.MaxReplicas,
+				Mode:        string(fn.Mode),
+				Version:     fn.Version,
+				EnvVars:     fn.EnvVars,
+				HasSnapshot: hasSnapshot,
+				Versions:    len(versions),
+				Aliases:     aliasNames,
+				Created:     fn.CreatedAt.Format(time.RFC3339),
+				Updated:     fn.UpdatedAt.Format(time.RFC3339),
+			}
+			printer.PrintFunctionDetail(detail)
 
 			// Show version history if requested
 			if showVersions && len(versions) > 0 {
@@ -366,6 +375,7 @@ func getCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVarP(&showVersions, "versions", "v", false, "Show version history")
+	cmd.Flags().StringVarP(&outputFormat, "output", "o", "table", "Output format (table, json, yaml)")
 	return cmd
 }
 
@@ -1479,7 +1489,31 @@ func daemonCmd() *cobra.Command {
 				return mgr.ResumeVM(ctx, vmID)
 			})
 
-			exec := executor.New(s, p)
+			// Set up secrets resolver if configured
+			var secretsResolver *secrets.Resolver
+			if cfg.Secrets.Enabled || cfg.Secrets.MasterKey != "" || cfg.Secrets.MasterKeyFile != "" {
+				var cipher *secrets.Cipher
+				var err error
+				if cfg.Secrets.MasterKey != "" {
+					cipher, err = secrets.NewCipher(cfg.Secrets.MasterKey)
+				} else if cfg.Secrets.MasterKeyFile != "" {
+					cipher, err = secrets.NewCipherFromFile(cfg.Secrets.MasterKeyFile)
+				}
+				if err != nil {
+					logging.Op().Warn("failed to initialize secrets", "error", err)
+				} else if cipher != nil {
+					secretsStore := secrets.NewStore(s.Client(), cipher)
+					secretsResolver = secrets.NewResolver(secretsStore)
+					logging.Op().Info("secrets management enabled")
+				}
+			}
+
+			// Create executor with options
+			execOpts := []executor.Option{}
+			if secretsResolver != nil {
+				execOpts = append(execOpts, executor.WithSecretsResolver(secretsResolver))
+			}
+			exec := executor.New(s, p, execOpts...)
 
 			logging.Op().Info("nova daemon started",
 				"redis", cfg.Redis.Addr,
@@ -1489,7 +1523,14 @@ func daemonCmd() *cobra.Command {
 			// Start HTTP server if address is provided
 			var httpServer *http.Server
 			if cfg.Daemon.HTTPAddr != "" {
-				httpServer = startHTTPServer(cfg.Daemon.HTTPAddr, s, exec, p, mgr)
+				httpServer = startHTTPServer(cfg.Daemon.HTTPAddr, httpServerConfig{
+					store:        s,
+					exec:         exec,
+					pool:         p,
+					mgr:          mgr,
+					authCfg:      &cfg.Auth,
+					rateLimitCfg: &cfg.RateLimit,
+				})
 				logging.Op().Info("HTTP API started", "addr", cfg.Daemon.HTTPAddr)
 			}
 
@@ -1568,7 +1609,20 @@ func daemonCmd() *cobra.Command {
 
 // HTTP API Server
 
-func startHTTPServer(addr string, s *store.RedisStore, exec *executor.Executor, p *pool.Pool, mgr *firecracker.Manager) *http.Server {
+type httpServerConfig struct {
+	store       *store.RedisStore
+	exec        *executor.Executor
+	pool        *pool.Pool
+	mgr         *firecracker.Manager
+	authCfg     *config.AuthConfig
+	rateLimitCfg *config.RateLimitConfig
+}
+
+func startHTTPServer(addr string, cfg httpServerConfig) *http.Server {
+	s := cfg.store
+	exec := cfg.exec
+	p := cfg.pool
+	mgr := cfg.mgr
 	mux := http.NewServeMux()
 
 	// Health check - detailed status
@@ -2043,6 +2097,36 @@ func startHTTPServer(addr string, s *store.RedisStore, exec *executor.Executor, 
 	var handler http.Handler = mux
 	handler = observability.HTTPMiddleware(handler)
 
+	// Add rate limiting middleware
+	if cfg.rateLimitCfg != nil && cfg.rateLimitCfg.Enabled {
+		tiers := make(map[string]ratelimit.TierConfig)
+		for name, tier := range cfg.rateLimitCfg.Tiers {
+			tiers[name] = ratelimit.TierConfig{
+				RequestsPerSecond: tier.RequestsPerSecond,
+				BurstSize:         tier.BurstSize,
+			}
+		}
+		limiter := ratelimit.New(s.Client(), tiers, ratelimit.TierConfig{
+			RequestsPerSecond: cfg.rateLimitCfg.Default.RequestsPerSecond,
+			BurstSize:         cfg.rateLimitCfg.Default.BurstSize,
+		})
+		publicPaths := []string{"/health", "/health/live", "/health/ready", "/health/startup"}
+		if cfg.authCfg != nil {
+			publicPaths = cfg.authCfg.PublicPaths
+		}
+		handler = ratelimit.Middleware(limiter, publicPaths)(handler)
+		logging.Op().Info("rate limiting enabled", "default_rps", cfg.rateLimitCfg.Default.RequestsPerSecond)
+	}
+
+	// Add auth middleware
+	if cfg.authCfg != nil && cfg.authCfg.Enabled {
+		authenticators := buildAuthenticators(cfg.authCfg, s.Client())
+		if len(authenticators) > 0 {
+			handler = auth.Middleware(authenticators, cfg.authCfg.PublicPaths)(handler)
+			logging.Op().Info("authentication enabled", "public_paths", cfg.authCfg.PublicPaths)
+		}
+	}
+
 	server := &http.Server{
 		Addr:    addr,
 		Handler: handler,
@@ -2055,4 +2139,861 @@ func startHTTPServer(addr string, s *store.RedisStore, exec *executor.Executor, 
 	}()
 
 	return server
+}
+
+// buildAuthenticators creates authenticators based on config
+func buildAuthenticators(cfg *config.AuthConfig, redisClient *redis.Client) []auth.Authenticator {
+	var authenticators []auth.Authenticator
+
+	// Add JWT authenticator if enabled
+	if cfg.JWT.Enabled {
+		jwtAuth, err := auth.NewJWTAuthenticator(auth.JWTAuthConfig{
+			Algorithm:     cfg.JWT.Algorithm,
+			Secret:        cfg.JWT.Secret,
+			PublicKeyFile: cfg.JWT.PublicKeyFile,
+			Issuer:        cfg.JWT.Issuer,
+		})
+		if err != nil {
+			logging.Op().Warn("failed to create JWT authenticator", "error", err)
+		} else {
+			authenticators = append(authenticators, jwtAuth)
+		}
+	}
+
+	// Add API Key authenticator if enabled
+	if cfg.APIKeys.Enabled {
+		var staticKeys []auth.StaticKeyConfig
+		for _, k := range cfg.APIKeys.StaticKeys {
+			staticKeys = append(staticKeys, auth.StaticKeyConfig{
+				Name: k.Name,
+				Key:  k.Key,
+				Tier: k.Tier,
+			})
+		}
+		apiKeyAuth := auth.NewAPIKeyAuthenticator(auth.APIKeyAuthConfig{
+			Redis:      redisClient,
+			StaticKeys: staticKeys,
+		})
+		authenticators = append(authenticators, apiKeyAuth)
+	}
+
+	return authenticators
+}
+
+// ─── Secret Management CLI ─────────────────────────────────────────────────
+
+func secretCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "secret",
+		Short: "Manage secrets",
+	}
+
+	cmd.AddCommand(secretSetCmd())
+	cmd.AddCommand(secretGetCmd())
+	cmd.AddCommand(secretListCmd())
+	cmd.AddCommand(secretDeleteCmd())
+
+	return cmd
+}
+
+func getSecretsStore() (*secrets.Store, error) {
+	cfg := config.DefaultConfig()
+	config.LoadFromEnv(cfg)
+
+	if !cfg.Secrets.Enabled && cfg.Secrets.MasterKey == "" && cfg.Secrets.MasterKeyFile == "" {
+		return nil, fmt.Errorf("secrets not configured: set NOVA_MASTER_KEY or NOVA_MASTER_KEY_FILE")
+	}
+
+	s, err := store.NewRedisStore(redisAddr, redisPass, redisDB)
+	if err != nil {
+		return nil, fmt.Errorf("connect to redis: %w", err)
+	}
+
+	var cipher *secrets.Cipher
+	if cfg.Secrets.MasterKey != "" {
+		cipher, err = secrets.NewCipher(cfg.Secrets.MasterKey)
+	} else if cfg.Secrets.MasterKeyFile != "" {
+		cipher, err = secrets.NewCipherFromFile(cfg.Secrets.MasterKeyFile)
+	} else {
+		return nil, fmt.Errorf("master key not configured")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("create cipher: %w", err)
+	}
+
+	return secrets.NewStore(s.Client(), cipher), nil
+}
+
+func secretSetCmd() *cobra.Command {
+	var value string
+
+	cmd := &cobra.Command{
+		Use:   "set <name>",
+		Short: "Set a secret value",
+		Long:  "Set a secret value. If --value is not provided, reads from stdin.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+
+			secretStore, err := getSecretsStore()
+			if err != nil {
+				return err
+			}
+
+			var secretValue []byte
+			if value != "" {
+				secretValue = []byte(value)
+			} else {
+				// Read from stdin
+				reader := bufio.NewReader(os.Stdin)
+				data, err := io.ReadAll(reader)
+				if err != nil {
+					return fmt.Errorf("read stdin: %w", err)
+				}
+				secretValue = data
+				// Trim trailing newline
+				if len(secretValue) > 0 && secretValue[len(secretValue)-1] == '\n' {
+					secretValue = secretValue[:len(secretValue)-1]
+				}
+			}
+
+			if err := secretStore.Set(context.Background(), name, secretValue); err != nil {
+				return err
+			}
+
+			fmt.Printf("Secret '%s' set successfully\n", name)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&value, "value", "", "Secret value (reads from stdin if not provided)")
+	return cmd
+}
+
+func secretGetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "get <name>",
+		Short: "Get a secret value",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+
+			secretStore, err := getSecretsStore()
+			if err != nil {
+				return err
+			}
+
+			value, err := secretStore.Get(context.Background(), name)
+			if err != nil {
+				return err
+			}
+
+			fmt.Println(string(value))
+			return nil
+		},
+	}
+}
+
+func secretListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all secrets",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			secretStore, err := getSecretsStore()
+			if err != nil {
+				return err
+			}
+
+			secrets, err := secretStore.List(context.Background())
+			if err != nil {
+				return err
+			}
+
+			if len(secrets) == 0 {
+				fmt.Println("No secrets found")
+				return nil
+			}
+
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "NAME\tCREATED")
+			for name, created := range secrets {
+				fmt.Fprintf(w, "%s\t%s\n", name, created)
+			}
+			w.Flush()
+			return nil
+		},
+	}
+}
+
+func secretDeleteCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "delete <name>",
+		Aliases: []string{"rm"},
+		Short:   "Delete a secret",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+
+			secretStore, err := getSecretsStore()
+			if err != nil {
+				return err
+			}
+
+			if err := secretStore.Delete(context.Background(), name); err != nil {
+				return err
+			}
+
+			fmt.Printf("Secret '%s' deleted\n", name)
+			return nil
+		},
+	}
+}
+
+// ─── API Key Management CLI ────────────────────────────────────────────────
+
+func apikeyCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "apikey",
+		Short: "Manage API keys",
+	}
+
+	cmd.AddCommand(apikeyCreateCmd())
+	cmd.AddCommand(apikeyListCmd())
+	cmd.AddCommand(apikeyRevokeCmd())
+	cmd.AddCommand(apikeyDeleteCmd())
+
+	return cmd
+}
+
+func getAPIKeyStore() (*auth.APIKeyStore, error) {
+	s, err := store.NewRedisStore(redisAddr, redisPass, redisDB)
+	if err != nil {
+		return nil, fmt.Errorf("connect to redis: %w", err)
+	}
+
+	return auth.NewAPIKeyStore(s.Client()), nil
+}
+
+func apikeyCreateCmd() *cobra.Command {
+	var tier string
+
+	cmd := &cobra.Command{
+		Use:   "create <name>",
+		Short: "Create a new API key",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+
+			keyStore, err := getAPIKeyStore()
+			if err != nil {
+				return err
+			}
+
+			key, err := keyStore.Create(context.Background(), name, tier)
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("API Key created:\n")
+			fmt.Printf("  Name: %s\n", name)
+			fmt.Printf("  Tier: %s\n", tier)
+			fmt.Printf("  Key:  %s\n", key)
+			fmt.Printf("\nStore this key securely - it cannot be retrieved later.\n")
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&tier, "tier", "default", "Rate limit tier")
+	return cmd
+}
+
+func apikeyListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all API keys",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			keyStore, err := getAPIKeyStore()
+			if err != nil {
+				return err
+			}
+
+			keys, err := keyStore.List(context.Background())
+			if err != nil {
+				return err
+			}
+
+			if len(keys) == 0 {
+				fmt.Println("No API keys found")
+				return nil
+			}
+
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "NAME\tTIER\tENABLED\tCREATED")
+			for _, k := range keys {
+				fmt.Fprintf(w, "%s\t%s\t%v\t%s\n",
+					k.Name,
+					k.Tier,
+					k.Enabled,
+					k.CreatedAt.Format("2006-01-02 15:04"),
+				)
+			}
+			w.Flush()
+			return nil
+		},
+	}
+}
+
+func apikeyRevokeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "revoke <name>",
+		Short: "Revoke an API key (disable without deleting)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+
+			keyStore, err := getAPIKeyStore()
+			if err != nil {
+				return err
+			}
+
+			if err := keyStore.Revoke(context.Background(), name); err != nil {
+				return err
+			}
+
+			fmt.Printf("API key '%s' revoked\n", name)
+			return nil
+		},
+	}
+}
+
+func apikeyDeleteCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "delete <name>",
+		Aliases: []string{"rm"},
+		Short:   "Delete an API key",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+
+			keyStore, err := getAPIKeyStore()
+			if err != nil {
+				return err
+			}
+
+			if err := keyStore.Delete(context.Background(), name); err != nil {
+				return err
+			}
+
+			fmt.Printf("API key '%s' deleted\n", name)
+			return nil
+		},
+	}
+}
+
+// ─── YAML Apply Command ────────────────────────────────────────────────────
+
+func applyCmd() *cobra.Command {
+	var (
+		filePath string
+		dryRun   bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "apply",
+		Short: "Apply function configuration from a YAML file",
+		Long: `Apply function configuration from a YAML file.
+
+Creates new functions or updates existing ones based on the YAML specification.
+Supports multiple functions in a single file using YAML document separators (---).
+
+Example:
+  nova apply -f function.yaml
+  nova apply -f functions/ --dry-run`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if filePath == "" {
+				return fmt.Errorf("file path required: use -f or --file")
+			}
+
+			// Check if path is a directory
+			info, err := os.Stat(filePath)
+			if err != nil {
+				return fmt.Errorf("stat path: %w", err)
+			}
+
+			var files []string
+			if info.IsDir() {
+				// Find all YAML files in directory
+				entries, err := os.ReadDir(filePath)
+				if err != nil {
+					return fmt.Errorf("read directory: %w", err)
+				}
+				for _, entry := range entries {
+					if entry.IsDir() {
+						continue
+					}
+					name := entry.Name()
+					if strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml") {
+						files = append(files, filepath.Join(filePath, name))
+					}
+				}
+				if len(files) == 0 {
+					return fmt.Errorf("no YAML files found in directory: %s", filePath)
+				}
+			} else {
+				files = []string{filePath}
+			}
+
+			s, err := getStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+
+			var created, updated int
+
+			for _, file := range files {
+				specs, err := spec.ParseFile(file)
+				if err != nil {
+					return fmt.Errorf("parse %s: %w", file, err)
+				}
+
+				for _, fnSpec := range specs.Functions {
+					if err := fnSpec.Validate(); err != nil {
+						return fmt.Errorf("validate %s: %w", fnSpec.Name, err)
+					}
+
+					// Check if function exists
+					existing, _ := s.GetFunctionByName(context.Background(), fnSpec.Name)
+
+					if dryRun {
+						if existing != nil {
+							fmt.Printf("[dry-run] Would update function '%s'\n", fnSpec.Name)
+						} else {
+							fmt.Printf("[dry-run] Would create function '%s'\n", fnSpec.Name)
+						}
+						continue
+					}
+
+					var fn *domain.Function
+					if existing != nil {
+						// Update existing function
+						fn, err = fnSpec.ToFunction(existing.ID)
+						if err != nil {
+							return fmt.Errorf("convert spec %s: %w", fnSpec.Name, err)
+						}
+						fn.CreatedAt = existing.CreatedAt
+						fn.UpdatedAt = time.Now()
+						fn.Version = existing.Version
+						updated++
+					} else {
+						// Create new function
+						fn, err = fnSpec.ToFunction(uuid.New().String())
+						if err != nil {
+							return fmt.Errorf("convert spec %s: %w", fnSpec.Name, err)
+						}
+						fn.CreatedAt = time.Now()
+						fn.UpdatedAt = time.Now()
+						created++
+					}
+
+					if err := s.SaveFunction(context.Background(), fn); err != nil {
+						return fmt.Errorf("save function %s: %w", fn.Name, err)
+					}
+
+					action := "created"
+					if existing != nil {
+						action = "updated"
+					}
+					fmt.Printf("Function '%s' %s\n", fn.Name, action)
+					fmt.Printf("  Runtime:  %s\n", fn.Runtime)
+					fmt.Printf("  Handler:  %s\n", fn.Handler)
+					fmt.Printf("  Code:     %s\n", fn.CodePath)
+					fmt.Printf("  Memory:   %d MB\n", fn.MemoryMB)
+					fmt.Printf("  Timeout:  %d s\n", fn.TimeoutS)
+					if len(fn.EnvVars) > 0 {
+						fmt.Printf("  Env Vars: %d\n", len(fn.EnvVars))
+					}
+				}
+			}
+
+			if !dryRun && (created > 0 || updated > 0) {
+				fmt.Printf("\nSummary: %d created, %d updated\n", created, updated)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to YAML file or directory")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview changes without applying")
+
+	return cmd
+}
+
+func initCmd() *cobra.Command {
+	var (
+		name     string
+		runtime  string
+		output   string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "init",
+		Short: "Generate a function YAML template",
+		Long: `Generate a function YAML template file.
+
+Creates a template YAML file that you can customize for your function.
+
+Example:
+  nova init -n my-function -r python -o function.yaml
+  nova init --name hello --runtime go`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Use defaults if not specified
+			if name == "" {
+				name = "my-function"
+			}
+			if runtime == "" {
+				runtime = "python"
+			}
+
+			// Validate runtime
+			rt := domain.Runtime(runtime)
+			if !rt.IsValid() {
+				return fmt.Errorf("invalid runtime: %s (valid: python, go, rust, wasm, node, ruby, java, deno, bun)", runtime)
+			}
+
+			// Determine code file extension
+			ext := ".py"
+			switch rt {
+			case domain.RuntimeGo:
+				ext = ""
+			case domain.RuntimeRust:
+				ext = ""
+			case domain.RuntimeWasm:
+				ext = ".wasm"
+			case domain.RuntimeNode:
+				ext = ".js"
+			case domain.RuntimeRuby:
+				ext = ".rb"
+			case domain.RuntimeJava:
+				ext = ".jar"
+			case domain.RuntimeDeno:
+				ext = ".ts"
+			case domain.RuntimeBun:
+				ext = ".ts"
+			}
+
+			template := fmt.Sprintf(`# Nova Function Specification
+apiVersion: nova/v1
+kind: Function
+
+# Function name (must be unique)
+name: %s
+
+# Optional description
+description: A serverless function
+
+# Runtime: python, go, rust, wasm, node, ruby, java, deno, bun
+runtime: %s
+
+# Handler function (format depends on runtime)
+handler: main.handler
+
+# Path to code file or directory
+code: ./handler%s
+
+# Resources
+memory: 128      # Memory in MB (default: 128)
+timeout: 30      # Timeout in seconds (default: 30)
+
+# Scaling
+minReplicas: 0   # Minimum warm replicas (default: 0)
+maxReplicas: 0   # Maximum concurrent VMs (0 = unlimited)
+
+# Execution mode: process (default) or persistent
+mode: process
+
+# Environment variables
+# Use $SECRET:name to reference secrets
+env:
+  LOG_LEVEL: info
+  # DATABASE_URL: $SECRET:database_url
+
+# Resource limits (optional)
+# limits:
+#   vcpus: 1
+#   diskIOPS: 0
+#   diskBandwidth: 0
+#   netRxBandwidth: 0
+#   netTxBandwidth: 0
+`, name, runtime, ext)
+
+			if output == "" {
+				output = name + ".yaml"
+			}
+
+			// Check if file exists
+			if _, err := os.Stat(output); err == nil {
+				return fmt.Errorf("file already exists: %s", output)
+			}
+
+			if err := os.WriteFile(output, []byte(template), 0644); err != nil {
+				return fmt.Errorf("write file: %w", err)
+			}
+
+			fmt.Printf("Created function template: %s\n", output)
+			fmt.Printf("\nNext steps:\n")
+			fmt.Printf("  1. Edit %s to configure your function\n", output)
+			fmt.Printf("  2. Create your handler file (handler%s)\n", ext)
+			fmt.Printf("  3. Deploy with: nova apply -f %s\n", output)
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&name, "name", "n", "", "Function name")
+	cmd.Flags().StringVarP(&runtime, "runtime", "r", "", "Runtime (python, go, rust, wasm, node, ruby, java, deno, bun)")
+	cmd.Flags().StringVarP(&output, "output", "o", "", "Output file path (default: <name>.yaml)")
+
+	return cmd
+}
+
+// ─── Logs Command ──────────────────────────────────────────────────────────
+
+func logsCmd() *cobra.Command {
+	var (
+		follow       bool
+		tail         int64
+		since        string
+		outputFormat string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "logs <function-name>",
+		Short: "View function logs",
+		Long: `View function invocation logs.
+
+Examples:
+  nova logs my-func              # Show recent logs
+  nova logs my-func -f           # Follow logs in real-time
+  nova logs my-func --tail 100   # Show last 100 entries
+  nova logs my-func --since 1h   # Show logs from last hour
+  nova logs my-func -o json      # Output as JSON`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			funcName := args[0]
+
+			s, err := getStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+
+			fn, err := s.GetFunctionByName(context.Background(), funcName)
+			if err != nil {
+				return err
+			}
+
+			logStore := logs.NewStore(s.Client())
+			printer := output.NewPrinter(output.ParseFormat(outputFormat))
+
+			if follow {
+				// Real-time log streaming
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+
+				// Handle Ctrl+C
+				sigCh := make(chan os.Signal, 1)
+				signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+				go func() {
+					<-sigCh
+					cancel()
+				}()
+
+				ch, err := logStore.Tail(ctx, fn.ID)
+				if err != nil {
+					return fmt.Errorf("tail logs: %w", err)
+				}
+
+				printer.Info("Following logs for %s (Ctrl+C to stop)...", funcName)
+				for entry := range ch {
+					printer.PrintLogEntry(output.LogEntry{
+						Timestamp:  entry.Timestamp.Format("2006-01-02 15:04:05"),
+						RequestID:  entry.RequestID,
+						Function:   entry.Function,
+						Level:      entry.Level,
+						Message:    entry.Message,
+						DurationMs: entry.DurationMs,
+					})
+				}
+				return nil
+			}
+
+			// Query historical logs
+			opts := logs.QueryOptions{
+				FunctionID: fn.ID,
+				Limit:      tail,
+			}
+
+			if since != "" {
+				duration, err := time.ParseDuration(since)
+				if err != nil {
+					return fmt.Errorf("invalid duration: %s", since)
+				}
+				opts.Since = time.Now().Add(-duration)
+			}
+
+			entries, err := logStore.Query(context.Background(), opts)
+			if err != nil {
+				return fmt.Errorf("query logs: %w", err)
+			}
+
+			if len(entries) == 0 {
+				printer.Info("No logs found for %s", funcName)
+				return nil
+			}
+
+			for _, entry := range entries {
+				printer.PrintLogEntry(output.LogEntry{
+					Timestamp:  entry.Timestamp.Format("2006-01-02 15:04:05"),
+					RequestID:  entry.RequestID,
+					Function:   entry.Function,
+					Level:      entry.Level,
+					Message:    entry.Message,
+					DurationMs: entry.DurationMs,
+				})
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow log output in real-time")
+	cmd.Flags().Int64Var(&tail, "tail", 50, "Number of recent log entries to show")
+	cmd.Flags().StringVar(&since, "since", "", "Show logs since duration (e.g., 1h, 30m, 24h)")
+	cmd.Flags().StringVarP(&outputFormat, "output", "o", "table", "Output format (table, json)")
+
+	return cmd
+}
+
+// ─── Test Command ──────────────────────────────────────────────────────────
+
+func testCmd() *cobra.Command {
+	var (
+		payload      string
+		payloadFile  string
+		envOverrides []string
+		verbose      bool
+		outputFormat string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "test <function-name>",
+		Short: "Test a function locally without VM",
+		Long: `Test a function locally without requiring Firecracker VM.
+
+This command runs the function directly on the host for quick testing
+during development. It does not require Firecracker to be running.
+
+Examples:
+  nova test my-func                        # Test with empty payload
+  nova test my-func -p '{"key":"value"}'   # Test with JSON payload
+  nova test my-func -f payload.json        # Test with payload from file
+  nova test my-func -e API_KEY=test        # Override environment variable`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			funcName := args[0]
+
+			s, err := getStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+
+			fn, err := s.GetFunctionByName(context.Background(), funcName)
+			if err != nil {
+				return err
+			}
+
+			// Determine payload
+			var input json.RawMessage
+			if payloadFile != "" {
+				data, err := os.ReadFile(payloadFile)
+				if err != nil {
+					return fmt.Errorf("read payload file: %w", err)
+				}
+				input = json.RawMessage(data)
+			} else if payload != "" {
+				input = json.RawMessage(payload)
+			} else {
+				input = json.RawMessage("{}")
+			}
+
+			// Validate JSON
+			var jsonTest interface{}
+			if err := json.Unmarshal(input, &jsonTest); err != nil {
+				return fmt.Errorf("invalid JSON payload: %w", err)
+			}
+
+			// Apply environment overrides
+			if len(envOverrides) > 0 {
+				if fn.EnvVars == nil {
+					fn.EnvVars = make(map[string]string)
+				}
+				for _, e := range envOverrides {
+					parts := strings.SplitN(e, "=", 2)
+					if len(parts) == 2 {
+						fn.EnvVars[parts[0]] = parts[1]
+					}
+				}
+			}
+
+			printer := output.NewPrinter(output.ParseFormat(outputFormat))
+
+			if verbose {
+				printer.Info("Testing function: %s", fn.Name)
+				printer.Info("Runtime: %s", fn.Runtime)
+				printer.Info("Handler: %s", fn.Handler)
+				printer.Info("Code: %s", fn.CodePath)
+				if len(fn.EnvVars) > 0 {
+					printer.Info("Environment: %d variables", len(fn.EnvVars))
+				}
+				fmt.Println()
+			}
+
+			// Execute locally
+			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(fn.TimeoutS)*time.Second)
+			defer cancel()
+
+			localExec := executor.NewLocalExecutor()
+			resp, err := localExec.Invoke(ctx, fn, input)
+
+			if err != nil {
+				printer.Error("Execution failed: %v", err)
+				return err
+			}
+
+			result := output.InvokeResult{
+				RequestID:  resp.RequestID,
+				Success:    resp.Error == "",
+				Output:     resp.Output,
+				Error:      resp.Error,
+				DurationMs: resp.DurationMs,
+				ColdStart:  false,
+				Mode:       "local",
+			}
+
+			return printer.PrintInvokeResult(result)
+		},
+	}
+
+	cmd.Flags().StringVarP(&payload, "payload", "p", "", "JSON payload")
+	cmd.Flags().StringVarP(&payloadFile, "file", "f", "", "Read payload from file")
+	cmd.Flags().StringArrayVarP(&envOverrides, "env", "e", nil, "Override environment variables (KEY=VALUE)")
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show verbose output")
+	cmd.Flags().StringVarP(&outputFormat, "output", "o", "table", "Output format (table, json, yaml)")
+
+	return cmd
 }

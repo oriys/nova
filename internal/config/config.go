@@ -73,6 +73,56 @@ type GRPCConfig struct {
 	Addr    string `json:"addr"`    // :9090
 }
 
+// AuthConfig holds authentication settings
+type AuthConfig struct {
+	Enabled     bool         `json:"enabled"`      // Default: false
+	JWT         JWTConfig    `json:"jwt"`          // JWT authentication settings
+	APIKeys     APIKeyConfig `json:"api_keys"`     // API Key authentication settings
+	PublicPaths []string     `json:"public_paths"` // Paths that skip authentication
+}
+
+// JWTConfig holds JWT authentication settings
+type JWTConfig struct {
+	Enabled       bool   `json:"enabled"`         // Enable JWT authentication
+	Algorithm     string `json:"algorithm"`       // HS256, RS256
+	Secret        string `json:"secret"`          // HMAC secret key
+	PublicKeyFile string `json:"public_key_file"` // RSA public key file path
+	Issuer        string `json:"issuer"`          // Optional issuer claim validation
+}
+
+// APIKeyConfig holds API key authentication settings
+type APIKeyConfig struct {
+	Enabled    bool           `json:"enabled"`     // Enable API key authentication
+	StaticKeys []StaticAPIKey `json:"static_keys"` // Static keys from config file
+}
+
+// StaticAPIKey represents an API key defined in config
+type StaticAPIKey struct {
+	Name string `json:"name"` // Key name/identifier
+	Key  string `json:"key"`  // The API key value
+	Tier string `json:"tier"` // Rate limit tier
+}
+
+// RateLimitConfig holds rate limiting settings
+type RateLimitConfig struct {
+	Enabled bool                       `json:"enabled"` // Default: false
+	Tiers   map[string]TierLimitConfig `json:"tiers"`   // Named rate limit tiers
+	Default TierLimitConfig            `json:"default"` // Default tier for unauthenticated/unmatched
+}
+
+// TierLimitConfig holds rate limit settings for a tier
+type TierLimitConfig struct {
+	RequestsPerSecond float64 `json:"requests_per_second"` // Token refill rate
+	BurstSize         int     `json:"burst_size"`          // Maximum tokens (burst capacity)
+}
+
+// SecretsConfig holds secrets management settings
+type SecretsConfig struct {
+	Enabled       bool   `json:"enabled"`         // Default: false
+	MasterKey     string `json:"master_key"`      // Hex-encoded 256-bit key
+	MasterKeyFile string `json:"master_key_file"` // Path to file containing master key
+}
+
 // Config is the central configuration struct embedding all component configs
 type Config struct {
 	Firecracker   firecracker.Config  `json:"firecracker"`
@@ -81,6 +131,9 @@ type Config struct {
 	Daemon        DaemonConfig        `json:"daemon"`
 	Observability ObservabilityConfig `json:"observability"`
 	GRPC          GRPCConfig          `json:"grpc"`
+	Auth          AuthConfig          `json:"auth"`
+	RateLimit     RateLimitConfig     `json:"rate_limit"`
+	Secrets       SecretsConfig       `json:"secrets"`
 }
 
 // DefaultConfig returns a Config with sensible defaults
@@ -128,6 +181,33 @@ func DefaultConfig() *Config {
 		GRPC: GRPCConfig{
 			Enabled: false,
 			Addr:    ":9090",
+		},
+		Auth: AuthConfig{
+			Enabled: false,
+			JWT: JWTConfig{
+				Enabled:   false,
+				Algorithm: "HS256",
+			},
+			APIKeys: APIKeyConfig{
+				Enabled: false,
+			},
+			PublicPaths: []string{
+				"/health",
+				"/health/live",
+				"/health/ready",
+				"/health/startup",
+			},
+		},
+		RateLimit: RateLimitConfig{
+			Enabled: false,
+			Tiers:   make(map[string]TierLimitConfig),
+			Default: TierLimitConfig{
+				RequestsPerSecond: 100,
+				BurstSize:         200,
+			},
+		},
+		Secrets: SecretsConfig{
+			Enabled: false,
 		},
 	}
 }
@@ -227,6 +307,57 @@ func LoadFromEnv(cfg *Config) {
 	}
 	if v := os.Getenv("NOVA_GRPC_ADDR"); v != "" {
 		cfg.GRPC.Addr = v
+	}
+
+	// Auth overrides
+	if v := os.Getenv("NOVA_AUTH_ENABLED"); v != "" {
+		cfg.Auth.Enabled = parseBool(v)
+	}
+	if v := os.Getenv("NOVA_AUTH_JWT_ENABLED"); v != "" {
+		cfg.Auth.JWT.Enabled = parseBool(v)
+	}
+	if v := os.Getenv("NOVA_AUTH_JWT_SECRET"); v != "" {
+		cfg.Auth.JWT.Secret = v
+		cfg.Auth.JWT.Enabled = true
+	}
+	if v := os.Getenv("NOVA_AUTH_JWT_ALGORITHM"); v != "" {
+		cfg.Auth.JWT.Algorithm = v
+	}
+	if v := os.Getenv("NOVA_AUTH_JWT_PUBLIC_KEY_FILE"); v != "" {
+		cfg.Auth.JWT.PublicKeyFile = v
+	}
+	if v := os.Getenv("NOVA_AUTH_JWT_ISSUER"); v != "" {
+		cfg.Auth.JWT.Issuer = v
+	}
+	if v := os.Getenv("NOVA_AUTH_APIKEYS_ENABLED"); v != "" {
+		cfg.Auth.APIKeys.Enabled = parseBool(v)
+	}
+
+	// Rate limit overrides
+	if v := os.Getenv("NOVA_RATELIMIT_ENABLED"); v != "" {
+		cfg.RateLimit.Enabled = parseBool(v)
+	}
+	if v := os.Getenv("NOVA_RATELIMIT_DEFAULT_RPS"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			cfg.RateLimit.Default.RequestsPerSecond = f
+		}
+	}
+	if v := os.Getenv("NOVA_RATELIMIT_DEFAULT_BURST"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.RateLimit.Default.BurstSize = n
+		}
+	}
+
+	// Secrets overrides
+	if v := os.Getenv("NOVA_SECRETS_ENABLED"); v != "" {
+		cfg.Secrets.Enabled = parseBool(v)
+	}
+	if v := os.Getenv("NOVA_MASTER_KEY"); v != "" {
+		cfg.Secrets.MasterKey = v
+		cfg.Secrets.Enabled = true
+	}
+	if v := os.Getenv("NOVA_MASTER_KEY_FILE"); v != "" {
+		cfg.Secrets.MasterKeyFile = v
 	}
 }
 

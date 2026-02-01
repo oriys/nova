@@ -16,16 +16,18 @@ import (
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/observability"
 	"github.com/oriys/nova/internal/pool"
+	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/store"
 	"go.opentelemetry.io/otel/attribute"
 )
 
 type Executor struct {
-	store    *store.RedisStore
-	pool     *pool.Pool
-	logger   *logging.Logger
-	inflight sync.WaitGroup
-	closing  atomic.Bool
+	store           *store.RedisStore
+	pool            *pool.Pool
+	logger          *logging.Logger
+	secretsResolver *secrets.Resolver
+	inflight        sync.WaitGroup
+	closing         atomic.Bool
 }
 
 type Option func(*Executor)
@@ -34,6 +36,13 @@ type Option func(*Executor)
 func WithLogger(logger *logging.Logger) Option {
 	return func(e *Executor) {
 		e.logger = logger
+	}
+}
+
+// WithSecretsResolver sets the secrets resolver for $SECRET: reference resolution
+func WithSecretsResolver(resolver *secrets.Resolver) Option {
+	return func(e *Executor) {
+		e.secretsResolver = resolver
 	}
 }
 
@@ -61,6 +70,15 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	fn, err := e.store.GetFunctionByName(ctx, funcName)
 	if err != nil {
 		return nil, fmt.Errorf("get function: %w", err)
+	}
+
+	// Resolve $SECRET: references in env vars
+	if e.secretsResolver != nil && len(fn.EnvVars) > 0 {
+		resolved, err := e.secretsResolver.ResolveEnvVars(ctx, fn.EnvVars)
+		if err != nil {
+			return nil, fmt.Errorf("resolve secrets: %w", err)
+		}
+		fn.EnvVars = resolved
 	}
 
 	// Refresh code hash for change detection
