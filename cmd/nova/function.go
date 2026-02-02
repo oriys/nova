@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/oriys/nova/internal/backend"
+	"github.com/oriys/nova/internal/config"
+	"github.com/oriys/nova/internal/docker"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/firecracker"
@@ -196,19 +199,37 @@ func invokeCmd() *cobra.Command {
 
 			var resp *domain.InvokeResponse
 			if local {
+				// Local execution - no VM
 				localExec := executor.NewLocalExecutor()
 				resp, err = localExec.InvokeWithStore(ctx, s, args[0], input)
 			} else {
-				cfg := firecracker.DefaultConfig()
-				adapter, err := firecracker.NewAdapter(cfg)
-				if err != nil {
-					return err
+				// Standalone execution with backend selection
+				cfg := config.DefaultConfig()
+				config.LoadFromEnv(cfg)
+
+				var be backend.Backend
+				switch cfg.Firecracker.Backend {
+				case "docker":
+					dockerMgr, err := docker.NewManager(&cfg.Docker)
+					if err != nil {
+						return err
+					}
+					be = dockerMgr
+				default:
+					adapter, err := firecracker.NewAdapter(&cfg.Firecracker)
+					if err != nil {
+						return err
+					}
+					be = adapter
 				}
-				defer adapter.Shutdown()
-				p := pool.NewPool(adapter, pool.DefaultIdleTTL)
+				defer be.Shutdown()
+
+				p := pool.NewPool(be, pool.DefaultIdleTTL)
 				defer p.Shutdown()
+
 				exec := executor.New(s, p)
 				defer exec.Shutdown(5 * time.Second)
+
 				resp, err = exec.Invoke(ctx, args[0], input)
 			}
 

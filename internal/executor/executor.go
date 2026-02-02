@@ -228,6 +228,9 @@ func (e *Executor) refreshCodeHash(ctx context.Context, fn *domain.Function) {
 
 // InvalidateSnapshot removes the snapshot for a function (e.g., after code update)
 func InvalidateSnapshot(snapshotDir, funcID string) error {
+	if snapshotDir == "" {
+		return nil
+	}
 	paths := []string{
 		filepath.Join(snapshotDir, funcID+".snap"),
 		filepath.Join(snapshotDir, funcID+".mem"),
@@ -245,6 +248,9 @@ func InvalidateSnapshot(snapshotDir, funcID string) error {
 
 // HasSnapshot checks if a function has a valid snapshot
 func HasSnapshot(snapshotDir, funcID string) bool {
+	if snapshotDir == "" {
+		return false
+	}
 	snapPath := filepath.Join(snapshotDir, funcID+".snap")
 	memPath := filepath.Join(snapshotDir, funcID+".mem")
 
