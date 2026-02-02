@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/oriys/nova/internal/backend"
+	"github.com/oriys/nova/internal/compiler"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/firecracker"
@@ -19,9 +21,11 @@ import (
 
 // Handler handles control plane HTTP requests (function lifecycle and snapshot management).
 type Handler struct {
-	Store *store.Store
-	Pool  *pool.Pool
-	Mgr   *firecracker.Manager
+	Store     *store.Store
+	Pool      *pool.Pool
+	Backend   backend.Backend
+	FCAdapter *firecracker.Adapter // Optional: for Firecracker-specific features
+	Compiler  *compiler.Compiler
 }
 
 // RegisterRoutes registers all control plane routes on the given mux.
@@ -32,6 +36,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /functions/{name}", h.GetFunction)
 	mux.HandleFunc("PATCH /functions/{name}", h.UpdateFunction)
 	mux.HandleFunc("DELETE /functions/{name}", h.DeleteFunction)
+
+	// Function code
+	mux.HandleFunc("GET /functions/{name}/code", h.GetFunctionCode)
+	mux.HandleFunc("PUT /functions/{name}/code", h.UpdateFunctionCode)
 
 	// Runtimes
 	mux.HandleFunc("GET /runtimes", h.ListRuntimes)
@@ -90,57 +98,6 @@ func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If code is provided directly, write it to a temp file
-	codePath := req.CodePath
-	if req.Code != "" {
-		// Determine file extension based on runtime
-		ext := map[string]string{
-			"python": ".py",
-			"go":     ".go",
-			"rust":   ".rs",
-			"node":   ".js",
-			"ruby":   ".rb",
-			"java":   ".java",
-			"deno":   ".ts",
-			"bun":    ".ts",
-			"wasm":   ".wasm",
-			"php":    ".php",
-			"dotnet": ".cs",
-			"elixir": ".exs",
-			"kotlin": ".kt",
-			"swift":  ".swift",
-			"zig":    ".zig",
-			"lua":    ".lua",
-			"perl":   ".pl",
-			"r":      ".R",
-			"julia":  ".jl",
-			"scala":  ".scala",
-		}[req.Runtime]
-		if ext == "" {
-			ext = ".txt"
-		}
-
-		// Create functions directory if not exists
-		funcDir := filepath.Join(os.TempDir(), "nova-functions")
-		if err := os.MkdirAll(funcDir, 0755); err != nil {
-			http.Error(w, fmt.Sprintf("failed to create functions dir: %v", err), http.StatusInternalServerError)
-			return
-		}
-
-		// Write code to file
-		codePath = filepath.Join(funcDir, req.Name+ext)
-		if err := os.WriteFile(codePath, []byte(req.Code), 0644); err != nil {
-			http.Error(w, fmt.Sprintf("failed to write code file: %v", err), http.StatusInternalServerError)
-			return
-		}
-	} else {
-		// Check if code file exists
-		if _, err := os.Stat(req.CodePath); os.IsNotExist(err) {
-			http.Error(w, fmt.Sprintf("code path not found: %s", req.CodePath), http.StatusBadRequest)
-			return
-		}
-	}
-
 	// Check if function name already exists
 	if existing, _ := h.Store.GetFunctionByName(r.Context(), req.Name); existing != nil {
 		http.Error(w, fmt.Sprintf("function '%s' already exists", req.Name), http.StatusConflict)
@@ -161,8 +118,26 @@ func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 		req.Mode = "process"
 	}
 
-	// Calculate code hash
-	codeHash, _ := domain.HashCodeFile(codePath)
+	// Determine code path - either from code_path or write inline code
+	codePath := req.CodePath
+	var codeHash string
+
+	if req.Code != "" {
+		// Inline code provided - will be handled by compiler
+		codeHash = domain.HashSourceCode(req.Code)
+		// Temp path until compiler writes it
+		funcDir := filepath.Join(os.TempDir(), "nova-functions")
+		os.MkdirAll(funcDir, 0755)
+		ext := runtimeExtension(rt)
+		codePath = filepath.Join(funcDir, req.Name+ext)
+	} else {
+		// Check if code file exists
+		if _, err := os.Stat(req.CodePath); os.IsNotExist(err) {
+			http.Error(w, fmt.Sprintf("code path not found: %s", req.CodePath), http.StatusBadRequest)
+			return
+		}
+		codeHash, _ = domain.HashCodeFile(codePath)
+	}
 
 	fn := &domain.Function{
 		ID:          uuid.New().String(),
@@ -187,9 +162,50 @@ func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If inline code was provided, save it and trigger compilation
+	if req.Code != "" {
+		sourceHash := domain.HashSourceCode(req.Code)
+		if err := h.Store.SaveFunctionCode(r.Context(), fn.ID, req.Code, sourceHash); err != nil {
+			http.Error(w, fmt.Sprintf("save code: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Trigger compilation (async for compiled languages, sync for interpreted)
+		if h.Compiler != nil {
+			h.Compiler.CompileAsync(r.Context(), fn, req.Code)
+		}
+	}
+
+	// Build response with compile status if code was provided
+	response := map[string]interface{}{
+		"id":           fn.ID,
+		"name":         fn.Name,
+		"runtime":      fn.Runtime,
+		"handler":      fn.Handler,
+		"code_path":    fn.CodePath,
+		"code_hash":    fn.CodeHash,
+		"memory_mb":    fn.MemoryMB,
+		"timeout_s":    fn.TimeoutS,
+		"min_replicas": fn.MinReplicas,
+		"max_replicas": fn.MaxReplicas,
+		"mode":         fn.Mode,
+		"env_vars":     fn.EnvVars,
+		"limits":       fn.Limits,
+		"created_at":   fn.CreatedAt,
+		"updated_at":   fn.UpdatedAt,
+	}
+
+	if req.Code != "" {
+		if domain.NeedsCompilation(rt) {
+			response["compile_status"] = domain.CompileStatusCompiling
+		} else {
+			response["compile_status"] = domain.CompileStatusNotRequired
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(fn)
+	json.NewEncoder(w).Encode(response)
 }
 
 // ListFunctions handles GET /functions
@@ -241,7 +257,7 @@ func (h *Handler) UpdateFunction(w http.ResponseWriter, r *http.Request) {
 	// Evict VMs and invalidate snapshot if code changed
 	if codeChanged {
 		h.Pool.Evict(fn.ID)
-		executor.InvalidateSnapshot(h.Mgr.SnapshotDir(), fn.ID)
+		executor.InvalidateSnapshot(h.Backend.SnapshotDir(), fn.ID)
 		h.Pool.InvalidateSnapshotCache(fn.ID)
 		logging.Op().Info("invalidated snapshot", "function", fn.Name, "reason", "code_changed")
 	}
@@ -263,7 +279,7 @@ func (h *Handler) DeleteFunction(w http.ResponseWriter, r *http.Request) {
 	h.Pool.Evict(fn.ID)
 
 	// Delete snapshot if exists
-	_ = executor.InvalidateSnapshot(h.Mgr.SnapshotDir(), fn.ID)
+	_ = executor.InvalidateSnapshot(h.Backend.SnapshotDir(), fn.ID)
 
 	// Delete all versions
 	versions, _ := h.Store.ListVersions(r.Context(), fn.ID)
@@ -276,6 +292,9 @@ func (h *Handler) DeleteFunction(w http.ResponseWriter, r *http.Request) {
 	for _, a := range aliases {
 		_ = h.Store.DeleteAlias(r.Context(), fn.ID, a.Name)
 	}
+
+	// Delete function code
+	_ = h.Store.DeleteFunctionCode(r.Context(), fn.ID)
 
 	// Finally delete the function
 	if err := h.Store.DeleteFunction(r.Context(), fn.ID); err != nil {
@@ -290,6 +309,153 @@ func (h *Handler) DeleteFunction(w http.ResponseWriter, r *http.Request) {
 		"versions_deleted": len(versions),
 		"aliases_deleted":  len(aliases),
 	})
+}
+
+// GetFunctionCode handles GET /functions/{name}/code
+func (h *Handler) GetFunctionCode(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	code, err := h.Store.GetFunctionCode(r.Context(), fn.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"function_id": fn.ID,
+	}
+
+	if code != nil {
+		response["source_code"] = code.SourceCode
+		response["source_hash"] = code.SourceHash
+		response["compile_status"] = code.CompileStatus
+		if code.CompileError != "" {
+			response["compile_error"] = code.CompileError
+		}
+		if code.BinaryHash != "" {
+			response["binary_hash"] = code.BinaryHash
+		}
+	} else {
+		// No code record - try to read from file path
+		if fn.CodePath != "" {
+			if data, err := os.ReadFile(fn.CodePath); err == nil {
+				response["source_code"] = string(data)
+				response["compile_status"] = domain.CompileStatusNotRequired
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// UpdateFunctionCode handles PUT /functions/{name}/code
+func (h *Handler) UpdateFunctionCode(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+
+	var req struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	if req.Code == "" {
+		http.Error(w, "code is required", http.StatusBadRequest)
+		return
+	}
+
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	sourceHash := domain.HashSourceCode(req.Code)
+
+	// Update code in database
+	if err := h.Store.UpdateFunctionCode(r.Context(), fn.ID, req.Code, sourceHash); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Evict VMs and invalidate snapshot
+	h.Pool.Evict(fn.ID)
+	executor.InvalidateSnapshot(h.Backend.SnapshotDir(), fn.ID)
+	h.Pool.InvalidateSnapshotCache(fn.ID)
+	logging.Op().Info("invalidated snapshot", "function", fn.Name, "reason", "code_updated")
+
+	// Trigger compilation
+	var compileStatus domain.CompileStatus
+	if h.Compiler != nil {
+		h.Compiler.CompileAsync(r.Context(), fn, req.Code)
+		if domain.NeedsCompilation(fn.Runtime) {
+			compileStatus = domain.CompileStatusCompiling
+		} else {
+			compileStatus = domain.CompileStatusNotRequired
+		}
+	} else {
+		// No compiler - just write to file directly for interpreted languages
+		if !domain.NeedsCompilation(fn.Runtime) {
+			funcDir := filepath.Join(os.TempDir(), "nova-functions")
+			os.MkdirAll(funcDir, 0755)
+			ext := runtimeExtension(fn.Runtime)
+			codePath := filepath.Join(funcDir, fn.Name+ext)
+			if err := os.WriteFile(codePath, []byte(req.Code), 0644); err != nil {
+				http.Error(w, fmt.Sprintf("write code: %v", err), http.StatusInternalServerError)
+				return
+			}
+			fn.CodePath = codePath
+			fn.CodeHash = sourceHash
+			h.Store.SaveFunction(r.Context(), fn)
+			h.Store.UpdateCompileResult(r.Context(), fn.ID, []byte(req.Code), sourceHash, domain.CompileStatusNotRequired, "")
+			compileStatus = domain.CompileStatusNotRequired
+		} else {
+			compileStatus = domain.CompileStatusPending
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"compile_status": compileStatus,
+		"source_hash":    sourceHash,
+	})
+}
+
+// runtimeExtension returns the file extension for a runtime
+func runtimeExtension(runtime domain.Runtime) string {
+	exts := map[domain.Runtime]string{
+		domain.RuntimePython: ".py",
+		domain.RuntimeGo:     ".go",
+		domain.RuntimeRust:   ".rs",
+		domain.RuntimeNode:   ".js",
+		domain.RuntimeRuby:   ".rb",
+		domain.RuntimeJava:   ".java",
+		domain.RuntimeDeno:   ".ts",
+		domain.RuntimeBun:    ".ts",
+		domain.RuntimeWasm:   ".wasm",
+		domain.RuntimePHP:    ".php",
+		domain.RuntimeDotnet: ".cs",
+		domain.RuntimeElixir: ".exs",
+		domain.RuntimeKotlin: ".kt",
+		domain.RuntimeSwift:  ".swift",
+		domain.RuntimeZig:    ".zig",
+		domain.RuntimeLua:    ".lua",
+		domain.RuntimePerl:   ".pl",
+		domain.RuntimeR:      ".R",
+		domain.RuntimeJulia:  ".jl",
+		domain.RuntimeScala:  ".scala",
+	}
+	if ext, ok := exts[runtime]; ok {
+		return ext
+	}
+	return ".txt"
 }
 
 // ListRuntimes handles GET /runtimes
@@ -438,9 +604,9 @@ func (h *Handler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 
 	var snapshots []snapshotInfo
 	for _, fn := range funcs {
-		if executor.HasSnapshot(h.Mgr.SnapshotDir(), fn.ID) {
-			snapPath := filepath.Join(h.Mgr.SnapshotDir(), fn.ID+".snap")
-			memPath := filepath.Join(h.Mgr.SnapshotDir(), fn.ID+".mem")
+		if executor.HasSnapshot(h.Backend.SnapshotDir(), fn.ID) {
+			snapPath := filepath.Join(h.Backend.SnapshotDir(), fn.ID+".snap")
+			memPath := filepath.Join(h.Backend.SnapshotDir(), fn.ID+".mem")
 
 			snapInfo, _ := os.Stat(snapPath)
 			memInfo, _ := os.Stat(memPath)
@@ -477,6 +643,12 @@ func (h *Handler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 
 // CreateSnapshot handles POST /functions/{name}/snapshot
 func (h *Handler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
+	// Snapshots only supported with Firecracker backend
+	if h.FCAdapter == nil {
+		http.Error(w, "Snapshots are only supported with Firecracker backend", http.StatusNotImplemented)
+		return
+	}
+
 	name := r.PathValue("name")
 
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
@@ -486,7 +658,7 @@ func (h *Handler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if snapshot already exists
-	if executor.HasSnapshot(h.Mgr.SnapshotDir(), fn.ID) {
+	if executor.HasSnapshot(h.Backend.SnapshotDir(), fn.ID) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":  "exists",
@@ -502,7 +674,8 @@ func (h *Handler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Mgr.CreateSnapshot(r.Context(), pvm.VM.ID, fn.ID); err != nil {
+	mgr := h.FCAdapter.Manager()
+	if err := mgr.CreateSnapshot(r.Context(), pvm.VM.ID, fn.ID); err != nil {
 		h.Pool.Release(pvm)
 		http.Error(w, fmt.Sprintf("create snapshot: %v", err), http.StatusInternalServerError)
 		return
@@ -510,7 +683,7 @@ func (h *Handler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 
 	// Stop the VM after snapshotting (it's paused)
 	pvm.Client.Close()
-	h.Mgr.StopVM(pvm.VM.ID)
+	h.Backend.StopVM(pvm.VM.ID)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -529,12 +702,12 @@ func (h *Handler) DeleteSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !executor.HasSnapshot(h.Mgr.SnapshotDir(), fn.ID) {
+	if !executor.HasSnapshot(h.Backend.SnapshotDir(), fn.ID) {
 		http.Error(w, "No snapshot exists for this function", http.StatusNotFound)
 		return
 	}
 
-	if err := executor.InvalidateSnapshot(h.Mgr.SnapshotDir(), fn.ID); err != nil {
+	if err := executor.InvalidateSnapshot(h.Backend.SnapshotDir(), fn.ID); err != nil {
 		http.Error(w, fmt.Sprintf("delete snapshot: %v", err), http.StatusInternalServerError)
 		return
 	}

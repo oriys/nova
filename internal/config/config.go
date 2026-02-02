@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/oriys/nova/internal/docker"
 	"github.com/oriys/nova/internal/firecracker"
 )
 
@@ -124,6 +125,7 @@ type SecretsConfig struct {
 // Config is the central configuration struct embedding all component configs
 type Config struct {
 	Firecracker   firecracker.Config  `json:"firecracker"`
+	Docker        docker.Config       `json:"docker"`
 	Postgres      PostgresConfig      `json:"postgres"`
 	Pool          PoolConfig          `json:"pool"`
 	Daemon        DaemonConfig        `json:"daemon"`
@@ -137,8 +139,10 @@ type Config struct {
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() *Config {
 	fcCfg := firecracker.DefaultConfig()
+	dockerCfg := docker.DefaultConfig()
 	return &Config{
 		Firecracker: *fcCfg,
+		Docker:      *dockerCfg,
 		Postgres: PostgresConfig{
 			DSN: "postgres://nova:nova@localhost:5432/nova?sslmode=disable",
 		},

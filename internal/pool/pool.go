@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/oriys/nova/internal/backend"
 	"github.com/oriys/nova/internal/domain"
-	"github.com/oriys/nova/internal/firecracker"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/pkg/singleflight"
@@ -25,8 +25,8 @@ const (
 )
 
 type PooledVM struct {
-	VM        *firecracker.VM
-	Client    *firecracker.VsockClient
+	VM        *backend.VM
+	Client    backend.Client
 	Function  *domain.Function
 	LastUsed  time.Time
 	ColdStart bool
@@ -47,7 +47,7 @@ type functionPool struct {
 type SnapshotCallback func(ctx context.Context, vmID, funcID string) error
 
 type Pool struct {
-	manager          *firecracker.Manager
+	backend          backend.Backend
 	pools            sync.Map // map[string]*functionPool - per-function pools
 	group            singleflight.Group
 	idleTTL          time.Duration
@@ -57,14 +57,14 @@ type Pool struct {
 	snapshotCache    sync.Map // funcID -> bool (true if snapshot exists)
 }
 
-func NewPool(manager *firecracker.Manager, idleTTL time.Duration) *Pool {
+func NewPool(b backend.Backend, idleTTL time.Duration) *Pool {
 	if idleTTL == 0 {
 		idleTTL = DefaultIdleTTL
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &Pool{
-		manager: manager,
+		backend: b,
 		idleTTL: idleTTL,
 		ctx:     ctx,
 		cancel:  cancel,
@@ -112,7 +112,7 @@ func (p *Pool) cleanupLoop() {
 
 func (p *Pool) cleanupExpired() {
 	type expiredVM struct {
-		client *firecracker.VsockClient
+		client backend.Client
 		vmID   string
 	}
 	var toStop []expiredVM
@@ -158,10 +158,10 @@ func (p *Pool) cleanupExpired() {
 		var wg sync.WaitGroup
 		for _, e := range toStop {
 			wg.Add(1)
-			go func(client *firecracker.VsockClient, vmID string) {
+			go func(client backend.Client, vmID string) {
 				defer wg.Done()
 				client.Close()
-				p.manager.StopVM(vmID)
+				p.backend.StopVM(vmID)
 			}(e.client, e.vmID)
 		}
 		wg.Wait()
@@ -231,7 +231,7 @@ func (p *Pool) Acquire(ctx context.Context, fn *domain.Function) (*PooledVM, err
 				go func() {
 					for _, pvm := range vmsToStop {
 						pvm.Client.Close()
-						p.manager.StopVM(pvm.VM.ID)
+						p.backend.StopVM(pvm.VM.ID)
 					}
 				}()
 			} else {
@@ -332,21 +332,21 @@ func (p *Pool) createVM(ctx context.Context, fn *domain.Function) (*PooledVM, er
 	logging.Op().Info("creating VM", "function", fn.Name, "runtime", fn.Runtime)
 
 	bootStart := time.Now()
-	vm, err := p.manager.CreateVM(ctx, fn)
+	vm, err := p.backend.CreateVM(ctx, fn)
 	if err != nil {
 		return nil, err
 	}
 	bootDurationMs := time.Since(bootStart).Milliseconds()
 
-	client, err := firecracker.NewVsockClient(vm)
+	client, err := p.backend.NewClient(vm)
 	if err != nil {
-		p.manager.StopVM(vm.ID)
+		p.backend.StopVM(vm.ID)
 		return nil, err
 	}
 
 	if err := client.Init(fn); err != nil {
 		client.Close()
-		p.manager.StopVM(vm.ID)
+		p.backend.StopVM(vm.ID)
 		return nil, err
 	}
 
@@ -416,7 +416,7 @@ func (p *Pool) Evict(funcID string) {
 		go func(pvm *PooledVM) {
 			defer wg.Done()
 			pvm.Client.Close()
-			p.manager.StopVM(pvm.VM.ID)
+			p.backend.StopVM(pvm.VM.ID)
 		}(pvm)
 	}
 	wg.Wait()
@@ -440,7 +440,7 @@ func (p *Pool) EvictVM(funcID string, target *PooledVM) {
 	fp.mu.Unlock()
 
 	target.Client.Close()
-	p.manager.StopVM(target.VM.ID)
+	p.backend.StopVM(target.VM.ID)
 }
 
 func (p *Pool) Stats() map[string]interface{} {
@@ -506,7 +506,7 @@ func (p *Pool) Shutdown() {
 	p.cancel()
 
 	type vmToStop struct {
-		client *firecracker.VsockClient
+		client backend.Client
 		vmID   string
 	}
 	var toStop []vmToStop
@@ -528,10 +528,10 @@ func (p *Pool) Shutdown() {
 		var wg sync.WaitGroup
 		for _, e := range toStop {
 			wg.Add(1)
-			go func(client *firecracker.VsockClient, vmID string) {
+			go func(client backend.Client, vmID string) {
 				defer wg.Done()
 				client.Close()
-				p.manager.StopVM(vmID)
+				p.backend.StopVM(vmID)
 			}(e.client, e.vmID)
 		}
 		wg.Wait()

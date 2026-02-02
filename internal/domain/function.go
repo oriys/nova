@@ -177,3 +177,49 @@ func (f *Function) CodeHashChanged() bool {
 
 	return currentHash != f.CodeHash
 }
+
+// CompileStatus represents the compilation status of function code
+type CompileStatus string
+
+const (
+	CompileStatusPending     CompileStatus = "pending"
+	CompileStatusCompiling   CompileStatus = "compiling"
+	CompileStatusSuccess     CompileStatus = "success"
+	CompileStatusFailed      CompileStatus = "failed"
+	CompileStatusNotRequired CompileStatus = "not_required"
+)
+
+// FunctionCode represents source code and compiled binary for a function
+type FunctionCode struct {
+	FunctionID     string        `json:"function_id"`
+	SourceCode     string        `json:"source_code"`
+	CompiledBinary []byte        `json:"-"` // Not exposed in JSON
+	SourceHash     string        `json:"source_hash"`
+	BinaryHash     string        `json:"binary_hash,omitempty"`
+	CompileStatus  CompileStatus `json:"compile_status"`
+	CompileError   string        `json:"compile_error,omitempty"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
+}
+
+// NeedsCompilation returns true if the runtime requires compilation
+func NeedsCompilation(runtime Runtime) bool {
+	compiledRuntimes := map[Runtime]bool{
+		RuntimeGo:     true,
+		RuntimeRust:   true,
+		RuntimeJava:   true,
+		RuntimeKotlin: true,
+		RuntimeSwift:  true,
+		RuntimeZig:    true,
+		RuntimeDotnet: true,
+		RuntimeScala:  true,
+	}
+	return compiledRuntimes[runtime]
+}
+
+// HashSourceCode calculates SHA256 hash of source code string
+func HashSourceCode(code string) string {
+	h := sha256.New()
+	h.Write([]byte(code))
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}

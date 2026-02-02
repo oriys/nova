@@ -1,13 +1,14 @@
 // Frontend types and transformers
 // Converts between Nova backend types and frontend display types
 
-import type { NovaFunction, LogEntry as ApiLogEntry, FunctionMetrics, Runtime } from "./api";
+import type { NovaFunction, LogEntry as ApiLogEntry, FunctionMetrics, Runtime, CompileStatus } from "./api";
 
 // Frontend display types
 export interface FunctionData {
   id: string;
   name: string;
   runtime: string;
+  runtimeId: string; // Base runtime ID (e.g., "python", "go")
   status: "active" | "inactive" | "error";
   memory: number;
   timeout: number;
@@ -24,6 +25,8 @@ export interface FunctionData {
   maxReplicas?: number;
   mode?: string;
   envVars?: Record<string, string>;
+  compileStatus?: CompileStatus;
+  compileError?: string;
 }
 
 export interface LogEntry {
@@ -95,6 +98,7 @@ export function transformFunction(
     id: fn.id,
     name: fn.name,
     runtime: RUNTIME_DISPLAY_NAMES[fn.runtime] || fn.runtime,
+    runtimeId: fn.runtime,
     status,
     memory: fn.memory_mb,
     timeout: fn.timeout_s,
@@ -109,6 +113,8 @@ export function transformFunction(
     maxReplicas: fn.max_replicas,
     mode: fn.mode,
     envVars: fn.env_vars,
+    compileStatus: fn.compile_status,
+    compileError: fn.compile_error,
   };
 }
 

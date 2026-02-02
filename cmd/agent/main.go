@@ -115,8 +115,20 @@ func main() {
 	}
 }
 
-// listen creates a vsock listener in a VM, or falls back to Unix socket for dev.
+// listen creates a listener based on environment and runtime:
+// - NOVA_AGENT_MODE=tcp: TCP socket (for Docker containers)
+// - Linux with vsock: AF_VSOCK (for Firecracker VMs)
+// - Otherwise: Unix socket (for local dev)
 func listen(port int) (net.Listener, error) {
+	mode := os.Getenv("NOVA_AGENT_MODE")
+
+	// TCP mode for Docker containers
+	if mode == "tcp" {
+		addr := fmt.Sprintf("0.0.0.0:%d", port)
+		fmt.Printf("[agent] Using TCP: %s\n", addr)
+		return net.Listen("tcp", addr)
+	}
+
 	if runtime.GOOS == "linux" {
 		// Try vsock first (works inside Firecracker VM)
 		l, err := vsock.Listen(uint32(port), nil)

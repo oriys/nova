@@ -1,4 +1,4 @@
-.PHONY: build build-linux clean deploy
+.PHONY: build build-linux clean deploy docker-runtimes
 
 BINARY_DIR := bin
 NOVA_BIN := $(BINARY_DIR)/nova
@@ -64,3 +64,14 @@ demo-invoke:
 
 demo-delete:
 	./$(NOVA_BIN) delete hello-python
+
+# Build Docker runtime images for Docker backend mode
+# Usage: make docker-runtimes [PREFIX=nova-runtime]
+PREFIX ?= nova-runtime
+docker-runtimes: $(AGENT_BIN)
+	./docker/runtimes/build.sh $(PREFIX)
+
+# Build a single runtime image
+# Usage: make docker-runtime-python
+docker-runtime-%: $(AGENT_BIN)
+	docker build -f docker/runtimes/Dockerfile.$* -t $(PREFIX)-$* .

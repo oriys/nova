@@ -18,7 +18,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/oriys/nova/internal/api"
 	"github.com/oriys/nova/internal/auth"
+	"github.com/oriys/nova/internal/backend"
 	"github.com/oriys/nova/internal/config"
+	"github.com/oriys/nova/internal/docker"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/firecracker"
@@ -503,13 +505,13 @@ This is useful for development and debugging.`,
 			} else {
 				// Normal VM execution
 				cfg := firecracker.DefaultConfig()
-				mgr, err := firecracker.NewManager(cfg)
+				adapter, err := firecracker.NewAdapter(cfg)
 				if err != nil {
 					return fmt.Errorf("create VM manager: %w", err)
 				}
-				defer mgr.Shutdown()
+				defer adapter.Shutdown()
 
-				p := pool.NewPool(mgr, pool.DefaultIdleTTL)
+				p := pool.NewPool(adapter, pool.DefaultIdleTTL)
 				defer p.Shutdown()
 
 				exec := executor.New(s, p)
@@ -690,13 +692,13 @@ func snapshotCreateCmd() *cobra.Command {
 			}
 
 			cfg := firecracker.DefaultConfig()
-			mgr, err := firecracker.NewManager(cfg)
+			adapter, err := firecracker.NewAdapter(cfg)
 			if err != nil {
 				return fmt.Errorf("create VM manager: %w", err)
 			}
-			defer mgr.Shutdown()
+			defer adapter.Shutdown()
 
-			p := pool.NewPool(mgr, pool.DefaultIdleTTL)
+			p := pool.NewPool(adapter, pool.DefaultIdleTTL)
 			defer p.Shutdown()
 
 			// Create a VM specifically for snapshotting
@@ -710,6 +712,7 @@ func snapshotCreateCmd() *cobra.Command {
 
 			// Create snapshot
 			fmt.Printf("Creating snapshot...\n")
+			mgr := adapter.Manager()
 			if err := mgr.CreateSnapshot(ctx, pvm.VM.ID, fn.ID); err != nil {
 				p.Release(pvm)
 				return fmt.Errorf("create snapshot: %w", err)
@@ -717,7 +720,7 @@ func snapshotCreateCmd() *cobra.Command {
 
 			// Stop the VM after snapshotting (it's paused by CreateSnapshot)
 			pvm.Client.Close()
-			mgr.StopVM(pvm.VM.ID)
+			adapter.StopVM(pvm.VM.ID)
 
 			fmt.Printf("Snapshot created for function '%s'\n", fn.Name)
 			fmt.Printf("  Location: %s/%s.snap\n", cfg.SnapshotDir, fn.ID)
@@ -1476,21 +1479,41 @@ func daemonCmd() *cobra.Command {
 			s := store.NewStore(pgStore)
 			defer s.Close()
 
+			// Create backend based on configuration
+			var be backend.Backend
+			var fcAdapter *firecracker.Adapter
 			cfg.Firecracker.LogLevel = logLevel
-			mgr, err := firecracker.NewManager(&cfg.Firecracker)
-			if err != nil {
-				return fmt.Errorf("create VM manager: %w", err)
+
+			switch cfg.Firecracker.Backend {
+			case "docker":
+				logging.Op().Info("using Docker backend")
+				dockerMgr, err := docker.NewManager(&cfg.Docker)
+				if err != nil {
+					return fmt.Errorf("create Docker manager: %w", err)
+				}
+				be = dockerMgr
+			default:
+				logging.Op().Info("using Firecracker backend")
+				adapter, err := firecracker.NewAdapter(&cfg.Firecracker)
+				if err != nil {
+					return fmt.Errorf("create Firecracker adapter: %w", err)
+				}
+				fcAdapter = adapter
+				be = adapter
 			}
 
-			p := pool.NewPool(mgr, cfg.Pool.IdleTTL)
+			p := pool.NewPool(be, cfg.Pool.IdleTTL)
 
-			// Wire snapshot callback: create snapshot after cold start, then resume VM
-			p.SetSnapshotCallback(func(ctx context.Context, vmID, funcID string) error {
-				if err := mgr.CreateSnapshot(ctx, vmID, funcID); err != nil {
-					return err
-				}
-				return mgr.ResumeVM(ctx, vmID)
-			})
+			// Wire snapshot callback for Firecracker only
+			if fcAdapter != nil {
+				mgr := fcAdapter.Manager()
+				p.SetSnapshotCallback(func(ctx context.Context, vmID, funcID string) error {
+					if err := mgr.CreateSnapshot(ctx, vmID, funcID); err != nil {
+						return err
+					}
+					return mgr.ResumeVM(ctx, vmID)
+				})
+			}
 
 			// Set up secrets resolver if configured
 			var secretsResolver *secrets.Resolver
@@ -1530,7 +1553,8 @@ func daemonCmd() *cobra.Command {
 					Store:        s,
 					Exec:         exec,
 					Pool:         p,
-					Mgr:          mgr,
+					Backend:      be,
+					FCAdapter:    fcAdapter,
 					AuthCfg:      &cfg.Auth,
 					RateLimitCfg: &cfg.RateLimit,
 				})
@@ -1570,7 +1594,7 @@ func daemonCmd() *cobra.Command {
 					}
 					// Graceful shutdown: wait for in-flight requests
 					exec.Shutdown(10 * time.Second)
-					mgr.Shutdown()
+					be.Shutdown()
 					return nil
 				case <-ticker.C:
 					// Maintenance: Ensure minimum replicas

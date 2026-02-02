@@ -1,0 +1,16 @@
+# PHP runtime image
+FROM php:8.3-cli
+
+# Install nova-agent
+COPY bin/nova-agent /usr/local/bin/nova-agent
+
+# Create directories
+RUN mkdir -p /code /tmp && chmod 1777 /tmp
+
+# Set environment for Docker mode
+ENV NOVA_AGENT_MODE=tcp
+ENV NOVA_SKIP_MOUNT=true
+
+EXPOSE 9999
+
+CMD ["/usr/local/bin/nova-agent"]

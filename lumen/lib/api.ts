@@ -21,6 +21,26 @@ export interface NovaFunction {
   created_at: string;
   updated_at: string;
   version?: number;
+  // Code-related fields from create response
+  source_code?: string;
+  compile_status?: CompileStatus;
+  compile_error?: string;
+}
+
+export type CompileStatus = 'pending' | 'compiling' | 'success' | 'failed' | 'not_required';
+
+export interface FunctionCodeResponse {
+  function_id: string;
+  source_code?: string;
+  source_hash?: string;
+  compile_status?: CompileStatus;
+  compile_error?: string;
+  binary_hash?: string;
+}
+
+export interface UpdateCodeResponse {
+  compile_status: CompileStatus;
+  source_hash: string;
 }
 
 export interface ResourceLimits {
@@ -227,6 +247,15 @@ export const functionsApi = {
 
   metrics: (name: string) =>
     request<FunctionMetrics>(`/functions/${encodeURIComponent(name)}/metrics`),
+
+  getCode: (name: string) =>
+    request<FunctionCodeResponse>(`/functions/${encodeURIComponent(name)}/code`),
+
+  updateCode: (name: string, code: string) =>
+    request<UpdateCodeResponse>(`/functions/${encodeURIComponent(name)}/code`, {
+      method: "PUT",
+      body: JSON.stringify({ code }),
+    }),
 };
 
 // Runtimes API

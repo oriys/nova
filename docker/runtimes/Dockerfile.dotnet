@@ -1,0 +1,17 @@
+# .NET runtime image
+FROM mcr.microsoft.com/dotnet/runtime:8.0
+
+# Install nova-agent
+COPY bin/nova-agent /usr/local/bin/nova-agent
+
+# Create directories
+RUN mkdir -p /code /tmp && chmod 1777 /tmp
+
+# Set environment for Docker mode
+ENV NOVA_AGENT_MODE=tcp
+ENV NOVA_SKIP_MOUNT=true
+ENV DOTNET_ROOT=/usr/share/dotnet
+
+EXPOSE 9999
+
+CMD ["/usr/local/bin/nova-agent"]

@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
 import {
   Select,
   SelectContent,
@@ -22,7 +23,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CodeEditor } from "@/components/code-editor"
 import { RuntimeInfo } from "@/lib/types"
-import { Loader2, FileCode, FolderOpen } from "lucide-react"
+import { functionsApi, CompileStatus } from "@/lib/api"
+import { Loader2, FileCode, FolderOpen, Check, AlertCircle } from "lucide-react"
 
 // Code templates for each runtime (base language)
 const CODE_TEMPLATES: Record<string, string> = {
@@ -134,6 +136,9 @@ console.log(JSON.stringify({ message: \`Hello, \${name}!\` }));
 `,
 }
 
+// Runtimes that require compilation
+const COMPILED_RUNTIMES = ['go', 'rust', 'java', 'kotlin', 'swift', 'zig', 'dotnet', 'scala']
+
 // Get base runtime from versioned ID (e.g., "python3.11" -> "python")
 function getBaseRuntime(runtimeId: string): string {
   const prefixes = ['python', 'node', 'go', 'rust', 'java', 'ruby', 'php', 'dotnet', 'deno', 'bun']
@@ -141,6 +146,11 @@ function getBaseRuntime(runtimeId: string): string {
     if (runtimeId.startsWith(prefix)) return prefix
   }
   return runtimeId
+}
+
+function needsCompilation(runtimeId: string): boolean {
+  const base = getBaseRuntime(runtimeId)
+  return COMPILED_RUNTIMES.includes(base)
 }
 
 interface CreateFunctionDialogProps {
@@ -175,6 +185,11 @@ export function CreateFunctionDialog({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Compile status tracking after creation
+  const [createdFunctionName, setCreatedFunctionName] = useState<string | null>(null)
+  const [compileStatus, setCompileStatus] = useState<CompileStatus | undefined>()
+  const [compileError, setCompileError] = useState<string | undefined>()
+
   // Update code template when runtime changes
   useEffect(() => {
     if (codeMode === "code") {
@@ -183,9 +198,29 @@ export function CreateFunctionDialog({
     }
   }, [runtime, codeMode])
 
+  // Poll for compile status after creation
+  useEffect(() => {
+    if (!createdFunctionName || compileStatus !== 'compiling') return
+
+    const interval = setInterval(async () => {
+      try {
+        const response = await functionsApi.getCode(createdFunctionName)
+        setCompileStatus(response.compile_status)
+        setCompileError(response.compile_error)
+      } catch {
+        // Ignore polling errors
+      }
+    }, 2000)
+
+    return () => clearInterval(interval)
+  }, [createdFunctionName, compileStatus])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+    setCreatedFunctionName(null)
+    setCompileStatus(undefined)
+    setCompileError(undefined)
 
     const codeOrPath = codeMode === "code" ? code : codePath
     if (!codeOrPath.trim()) {
@@ -197,20 +232,39 @@ export function CreateFunctionDialog({
       setSubmitting(true)
       await onCreate(name, runtime, handler, parseInt(memory), parseInt(timeout), codeOrPath, codeMode === "code")
 
-      // Reset form
-      setName("")
-      setRuntime("python")
-      setMemory("128")
-      setTimeout("30")
-      setHandler("main.handler")
-      setCode(CODE_TEMPLATES.python)
-      setCodePath("")
-      setCodeMode("code")
+      // If it's a compiled language with inline code, track compile status
+      if (codeMode === "code" && needsCompilation(runtime)) {
+        setCreatedFunctionName(name)
+        setCompileStatus('compiling')
+      } else {
+        // Reset form and close dialog for interpreted languages
+        resetForm()
+        onOpenChange(false)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create function")
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const resetForm = () => {
+    setName("")
+    setRuntime("python")
+    setMemory("128")
+    setTimeout("30")
+    setHandler("main.handler")
+    setCode(CODE_TEMPLATES.python)
+    setCodePath("")
+    setCodeMode("code")
+    setCreatedFunctionName(null)
+    setCompileStatus(undefined)
+    setCompileError(undefined)
+  }
+
+  const handleClose = () => {
+    resetForm()
+    onOpenChange(false)
   }
 
   // Group runtimes by language for better UX
@@ -227,8 +281,70 @@ export function CreateFunctionDialog({
     { id: "bun", name: "Bun", version: "1.3.8", status: "available" as const, functionsCount: 0, icon: "bun" },
   ]
 
+  // Render compile status view after creation
+  if (createdFunctionName && compileStatus) {
+    return (
+      <Dialog open={open} onOpenChange={handleClose}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Function Created</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">{createdFunctionName}</span>
+              {compileStatus === 'compiling' && (
+                <Badge variant="outline" className="text-yellow-600 border-yellow-600">
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  Compiling
+                </Badge>
+              )}
+              {compileStatus === 'success' && (
+                <Badge variant="outline" className="text-green-600 border-green-600">
+                  <Check className="mr-1 h-3 w-3" />
+                  Compiled
+                </Badge>
+              )}
+              {compileStatus === 'failed' && (
+                <Badge variant="destructive">
+                  <AlertCircle className="mr-1 h-3 w-3" />
+                  Failed
+                </Badge>
+              )}
+            </div>
+
+            {compileStatus === 'compiling' && (
+              <div className="text-sm text-muted-foreground">
+                Your function is being compiled. This may take a moment...
+              </div>
+            )}
+
+            {compileStatus === 'success' && (
+              <div className="rounded-md bg-green-50 dark:bg-green-950 p-3 text-sm text-green-700 dark:text-green-300">
+                Compilation successful! Your function is ready to use.
+              </div>
+            )}
+
+            {compileStatus === 'failed' && compileError && (
+              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                <div className="font-medium mb-1">Compilation Failed</div>
+                <pre className="whitespace-pre-wrap text-xs font-mono">{compileError}</pre>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button onClick={handleClose}>
+              {compileStatus === 'compiling' ? 'Close (Compiling in Background)' : 'Done'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create New Function</DialogTitle>
@@ -263,6 +379,9 @@ export function CreateFunctionDialog({
                   {groupedRuntimes.map((rt) => (
                     <SelectItem key={rt.id} value={rt.id}>
                       {rt.name} {rt.version}
+                      {needsCompilation(rt.id) && (
+                        <span className="ml-2 text-xs text-muted-foreground">(compiled)</span>
+                      )}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -292,7 +411,8 @@ export function CreateFunctionDialog({
                   minHeight="256px"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Template loaded for {getBaseRuntime(runtime)}. Modify as needed.
+                  Template loaded for {getBaseRuntime(runtime)}.
+                  {needsCompilation(runtime) && " This runtime requires compilation."}
                 </p>
               </TabsContent>
 
@@ -350,7 +470,7 @@ export function CreateFunctionDialog({
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" onClick={handleClose}>
               Cancel
             </Button>
             <Button

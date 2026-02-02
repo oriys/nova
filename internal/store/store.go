@@ -11,6 +11,7 @@ import (
 type FunctionUpdate struct {
 	Handler      *string
 	CodePath     *string
+	Code         *string // New: inline code update
 	MemoryMB     *int
 	TimeoutS     *int
 	MinReplicas  *int
@@ -76,6 +77,13 @@ type MetadataStore interface {
 
 	// Rate limiting
 	CheckRateLimit(ctx context.Context, key string, maxTokens int, refillRate float64, requested int) (bool, int, error)
+
+	// Function code
+	SaveFunctionCode(ctx context.Context, funcID, sourceCode, sourceHash string) error
+	GetFunctionCode(ctx context.Context, funcID string) (*domain.FunctionCode, error)
+	UpdateFunctionCode(ctx context.Context, funcID, sourceCode, sourceHash string) error
+	UpdateCompileResult(ctx context.Context, funcID string, binary []byte, binaryHash string, status domain.CompileStatus, compileError string) error
+	DeleteFunctionCode(ctx context.Context, funcID string) error
 }
 
 // Store wraps the MetadataStore (Postgres) for all persistence.

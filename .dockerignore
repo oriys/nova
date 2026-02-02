@@ -3,7 +3,8 @@
 .gitignore
 
 # Build artifacts
-bin/
+bin/nova
+bin/nova-linux
 *.exe
 *.dll
 *.so

@@ -129,6 +129,18 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			tokens DOUBLE PRECISION NOT NULL,
 			last_refill TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
+		`CREATE TABLE IF NOT EXISTS function_code (
+			function_id TEXT NOT NULL REFERENCES functions(id) ON DELETE CASCADE,
+			source_code TEXT NOT NULL,
+			compiled_binary BYTEA,
+			source_hash TEXT NOT NULL,
+			binary_hash TEXT,
+			compile_status TEXT NOT NULL DEFAULT 'pending',
+			compile_error TEXT,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (function_id)
+		)`,
 	}
 
 	for _, stmt := range stmts {
@@ -1068,6 +1080,97 @@ func (s *PostgresStore) CleanupRateLimitBuckets(ctx context.Context, olderThan t
 	`, time.Now().Add(-olderThan))
 	if err != nil {
 		return fmt.Errorf("cleanup rate limit buckets: %w", err)
+	}
+	return nil
+}
+
+// ─── Function Code ──────────────────────────────────────────────────────────
+
+// SaveFunctionCode creates a new function code record
+func (s *PostgresStore) SaveFunctionCode(ctx context.Context, funcID, sourceCode, sourceHash string) error {
+	now := time.Now()
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO function_code (function_id, source_code, source_hash, compile_status, created_at, updated_at)
+		VALUES ($1, $2, $3, 'pending', $4, $5)
+		ON CONFLICT (function_id) DO UPDATE SET
+			source_code = EXCLUDED.source_code,
+			source_hash = EXCLUDED.source_hash,
+			compile_status = 'pending',
+			compile_error = NULL,
+			compiled_binary = NULL,
+			binary_hash = NULL,
+			updated_at = EXCLUDED.updated_at
+	`, funcID, sourceCode, sourceHash, now, now)
+	if err != nil {
+		return fmt.Errorf("save function code: %w", err)
+	}
+	return nil
+}
+
+// GetFunctionCode retrieves the function code record
+func (s *PostgresStore) GetFunctionCode(ctx context.Context, funcID string) (*domain.FunctionCode, error) {
+	var fc domain.FunctionCode
+	var compiledBinary []byte
+	var binaryHash, compileError *string
+	err := s.pool.QueryRow(ctx, `
+		SELECT function_id, source_code, compiled_binary, source_hash, binary_hash, compile_status, compile_error, created_at, updated_at
+		FROM function_code
+		WHERE function_id = $1
+	`, funcID).Scan(&fc.FunctionID, &fc.SourceCode, &compiledBinary, &fc.SourceHash, &binaryHash, &fc.CompileStatus, &compileError, &fc.CreatedAt, &fc.UpdatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get function code: %w", err)
+	}
+	fc.CompiledBinary = compiledBinary
+	if binaryHash != nil {
+		fc.BinaryHash = *binaryHash
+	}
+	if compileError != nil {
+		fc.CompileError = *compileError
+	}
+	return &fc, nil
+}
+
+// UpdateFunctionCode updates source code and resets compile state
+func (s *PostgresStore) UpdateFunctionCode(ctx context.Context, funcID, sourceCode, sourceHash string) error {
+	now := time.Now()
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE function_code
+		SET source_code = $2, source_hash = $3, compile_status = 'pending',
+		    compile_error = NULL, compiled_binary = NULL, binary_hash = NULL, updated_at = $4
+		WHERE function_id = $1
+	`, funcID, sourceCode, sourceHash, now)
+	if err != nil {
+		return fmt.Errorf("update function code: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		// No existing row, insert instead
+		return s.SaveFunctionCode(ctx, funcID, sourceCode, sourceHash)
+	}
+	return nil
+}
+
+// UpdateCompileResult updates the compiled binary and status
+func (s *PostgresStore) UpdateCompileResult(ctx context.Context, funcID string, binary []byte, binaryHash string, status domain.CompileStatus, compileError string) error {
+	now := time.Now()
+	_, err := s.pool.Exec(ctx, `
+		UPDATE function_code
+		SET compiled_binary = $2, binary_hash = $3, compile_status = $4, compile_error = $5, updated_at = $6
+		WHERE function_id = $1
+	`, funcID, binary, binaryHash, string(status), compileError, now)
+	if err != nil {
+		return fmt.Errorf("update compile result: %w", err)
+	}
+	return nil
+}
+
+// DeleteFunctionCode removes the function code record
+func (s *PostgresStore) DeleteFunctionCode(ctx context.Context, funcID string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM function_code WHERE function_id = $1`, funcID)
+	if err != nil {
+		return fmt.Errorf("delete function code: %w", err)
 	}
 	return nil
 }

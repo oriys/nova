@@ -7,6 +7,8 @@ import (
 	"github.com/oriys/nova/internal/api/controlplane"
 	"github.com/oriys/nova/internal/api/dataplane"
 	"github.com/oriys/nova/internal/auth"
+	"github.com/oriys/nova/internal/backend"
+	"github.com/oriys/nova/internal/compiler"
 	"github.com/oriys/nova/internal/config"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/firecracker"
@@ -22,7 +24,8 @@ type ServerConfig struct {
 	Store        *store.Store
 	Exec         *executor.Executor
 	Pool         *pool.Pool
-	Mgr          *firecracker.Manager
+	Backend      backend.Backend
+	FCAdapter    *firecracker.Adapter // Optional: for Firecracker-specific features (snapshots)
 	AuthCfg      *config.AuthConfig
 	RateLimitCfg *config.RateLimitConfig
 }
@@ -31,11 +34,16 @@ type ServerConfig struct {
 func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 	mux := http.NewServeMux()
 
+	// Create compiler
+	comp := compiler.New(cfg.Store)
+
 	// Register control plane routes
 	cpHandler := &controlplane.Handler{
-		Store: cfg.Store,
-		Pool:  cfg.Pool,
-		Mgr:   cfg.Mgr,
+		Store:     cfg.Store,
+		Pool:      cfg.Pool,
+		Backend:   cfg.Backend,
+		FCAdapter: cfg.FCAdapter,
+		Compiler:  comp,
 	}
 	cpHandler.RegisterRoutes(mux)
 

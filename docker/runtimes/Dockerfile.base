@@ -1,0 +1,21 @@
+# Base runtime image for compiled languages (Go, Rust)
+# This image contains only the nova-agent - user code is mounted at /code
+
+FROM alpine:3.19
+
+# Install basic utilities
+RUN apk add --no-cache ca-certificates tzdata
+
+# Copy nova-agent binary (built during docker build)
+COPY bin/nova-agent /usr/local/bin/nova-agent
+
+# Create code directory
+RUN mkdir -p /code /tmp && chmod 1777 /tmp
+
+# Set environment for Docker mode
+ENV NOVA_AGENT_MODE=tcp
+ENV NOVA_SKIP_MOUNT=true
+
+EXPOSE 9999
+
+CMD ["/usr/local/bin/nova-agent"]
