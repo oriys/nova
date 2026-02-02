@@ -14,7 +14,7 @@ import {
 } from "lucide-react"
 
 const navigation = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
+  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Functions", href: "/functions", icon: Code2 },
   { name: "Runtimes", href: "/runtimes", icon: Play },
   { name: "Configurations", href: "/configurations", icon: Settings },
@@ -83,7 +83,7 @@ export function Sidebar() {
         {navigation.map((item) => {
           const isActive =
             pathname === item.href ||
-            (item.href !== "/" && pathname.startsWith(item.href))
+            (item.href !== "/dashboard" && pathname.startsWith(item.href))
 
           return (
             <Link
