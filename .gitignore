@@ -30,8 +30,9 @@ Thumbs.db
 lumen/test-results/
 
 # External repos
-firecracker/
+# firecracker/
 
 # Assets (large binary files - download via make setup-kernel/setup-rootfs)
 assets/kernel/
 assets/rootfs/*.ext4
+assets/downloads/
