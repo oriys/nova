@@ -50,12 +50,24 @@ interface FunctionCard {
   exploding: boolean
 }
 
+interface Particle {
+  id: number
+  x: number
+  y: number
+  vx: number
+  vy: number
+  size: number
+  alpha: number
+  life: number
+}
+
 export default function LandingPage() {
   const router = useRouter()
   const [mousePos, setMousePos] = useState({ x: -1000, y: -1000 })
   const [mounted, setMounted] = useState(false)
   const [cards, setCards] = useState<FunctionCard[]>([])
   const [dragging, setDragging] = useState<string | null>(null)
+  const [particles, setParticles] = useState<Particle[]>([])
   const dragOffset = useRef({ x: 0, y: 0 })
   const lastDragPos = useRef({ x: 0, y: 0 })
 
@@ -116,6 +128,21 @@ export default function LandingPage() {
 
         return { ...card, x: newX, y: newY, velocity: { x: newVelX, y: newVelY } }
       }))
+
+      // Update particles - gentle drift and fade
+      setParticles(prev => prev
+        .map(p => ({
+          ...p,
+          x: p.x + p.vx,
+          y: p.y + p.vy,
+          vx: p.vx * 0.98,
+          vy: p.vy * 0.98,
+          life: p.life - 1,
+          alpha: p.alpha * 0.97,
+          size: p.size * 0.995,
+        }))
+        .filter(p => p.life > 0 && p.alpha > 0.01)
+      )
     }, 16)
     return () => clearInterval(interval)
   }, [mounted])
@@ -187,17 +214,34 @@ export default function LandingPage() {
     setCards(prev => prev.map(card => card.id === cardId ? { ...card, flipped: !card.flipped } : card))
   }
 
-  // Triple click to delete card
+  // Triple click to delete card with dust dissolve
   const handleTripleClick = (cardId: string) => {
-    setCards(prev => prev.map(card => {
-      if (card.id === cardId) {
-        return { ...card, exploding: true }
+    const card = cards.find(c => c.id === cardId)
+    if (!card) return
+
+    // Spawn dust particles spread across card area
+    const cx = (card.x / 100) * window.innerWidth
+    const cy = (card.y / 100) * window.innerHeight
+    const newParticles: Particle[] = Array.from({ length: 100 }, (_, i) => {
+      return {
+        id: Date.now() + i,
+        x: cx + (Math.random() - 0.5) * 80,
+        y: cy + (Math.random() - 0.5) * 60,
+        vx: (Math.random() - 0.5) * 1.5,
+        vy: -Math.random() * 1.5 - 0.3,
+        size: Math.random() * 3 + 1,
+        alpha: Math.random() * 0.6 + 0.4,
+        life: 50 + Math.random() * 40,
       }
-      return card
-    }))
+    })
+    setParticles(prev => [...prev, ...newParticles])
+
+    setCards(prev => prev.map(c =>
+      c.id === cardId ? { ...c, exploding: true } : c
+    ))
     setTimeout(() => {
-      setCards(prev => prev.filter(card => card.id !== cardId))
-    }, 500)
+      setCards(prev => prev.filter(c => c.id !== cardId))
+    }, 300)
   }
 
   const handleClick = (card: FunctionCard, e: React.MouseEvent) => {
@@ -271,6 +315,27 @@ export default function LandingPage() {
           )
         })}
       </div>
+
+      {/* Explosion particles */}
+      {particles.length > 0 && (
+        <div className="absolute inset-0 z-20 pointer-events-none">
+          {particles.map(p => (
+            <div
+              key={p.id}
+              className="absolute rounded-full bg-white"
+              style={{
+                left: p.x,
+                top: p.y,
+                width: p.size,
+                height: p.size,
+                opacity: p.alpha,
+                boxShadow: `0 0 ${p.size * 2}px rgba(255,255,255,${p.alpha * 0.5})`,
+                transform: 'translate(-50%, -50%)',
+              }}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Cursor */}
       <div
