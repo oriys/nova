@@ -12,6 +12,11 @@ import (
 )
 
 func mountCodeDrive() {
+	if os.Getenv("NOVA_SKIP_MOUNT") == "true" {
+		fmt.Println("[agent] NOVA_SKIP_MOUNT=true, skipping code drive mount")
+		return
+	}
+
 	_ = os.MkdirAll(CodeMountPoint, 0755)
 
 	// Minimal rootfs images may not include /bin/mount or udev. Mount devtmpfs

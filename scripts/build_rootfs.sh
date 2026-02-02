@@ -31,14 +31,16 @@ ROOTFS_SIZE_JAVA_MB="${ROOTFS_SIZE_JAVA_MB:-512}"
 BASE_ROOTFS_SIZE_MB="${BASE_ROOTFS_SIZE_MB:-32}"
 
 OUT_DIR="${OUT_DIR:-/opt/nova/rootfs}"
+ASSETS_DIR="${ASSETS_DIR:-}"
 AGENT_BIN="${AGENT_BIN:-}"
 
 usage() {
   cat <<EOF
-Usage: $0 [--out-dir DIR] [--agent PATH]
+Usage: $0 [--out-dir DIR] [--assets-dir DIR] [--agent PATH]
 
 Env vars:
   OUT_DIR                Default: /opt/nova/rootfs
+  ASSETS_DIR             Directory containing pre-downloaded assets (optional)
   AGENT_BIN              Path to nova-agent binary (linux/amd64)
   ALPINE_URL             Alpine minirootfs tarball URL
   WASMTIME_VERSION       Default: v41.0.1
@@ -59,6 +61,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --out-dir)
       OUT_DIR="$2"
+      shift 2
+      ;;
+    --assets-dir)
+      ASSETS_DIR="$2"
       shift 2
       ;;
     --agent)
@@ -103,6 +109,20 @@ resolve_agent() {
   die "nova-agent not found. Build it with: make build-linux (produces bin/nova-agent), or pass --agent PATH"
 }
 
+fetch_asset() {
+  local url="$1"
+  local local_name="$2"
+  local output_path="$3"
+
+  if [[ -n "${ASSETS_DIR}" && -f "${ASSETS_DIR}/${local_name}" ]]; then
+    log "Using local asset: ${ASSETS_DIR}/${local_name}"
+    cp "${ASSETS_DIR}/${local_name}" "${output_path}"
+  else
+    log "Downloading ${url}..."
+    curl -fsSL "${url}" -o "${output_path}"
+  fi
+}
+
 make_dev_nodes() {
   local root="$1"
   mkdir -p "${root}/dev"
@@ -126,7 +146,12 @@ build_image_from_dir() {
 
 stage_alpine_root() {
   local root="$1"
-  curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${root}"
+  # Fetch to a temporary file then untar
+  local tmp_tar="${root}/alpine.tar.gz"
+  fetch_asset "${ALPINE_URL}" "alpine-minirootfs.tar.gz" "${tmp_tar}"
+  tar -xzf "${tmp_tar}" -C "${root}"
+  rm "${tmp_tar}"
+
   mkdir -p "${root}"/{code,tmp,usr/local/bin,proc,sys}
   make_dev_nodes "${root}"
   echo "nameserver 8.8.8.8" > "${root}/etc/resolv.conf"
@@ -209,9 +234,12 @@ build_wasm_rootfs() {
 
   local wasmtime_tmp
   wasmtime_tmp="$(mktemp -d)"
-  curl -fsSL \
+  
+  fetch_asset \
     "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
-    -o "${wasmtime_tmp}/wasmtime.tar.xz"
+    "wasmtime.tar.xz" \
+    "${wasmtime_tmp}/wasmtime.tar.xz"
+
   tar -xJf "${wasmtime_tmp}/wasmtime.tar.xz" -C "${wasmtime_tmp}"
   cp "${wasmtime_tmp}/wasmtime-${WASMTIME_VERSION}-x86_64-linux/wasmtime" "${tmp}/usr/local/bin/wasmtime"
   chmod +x "${tmp}/usr/local/bin/wasmtime"
@@ -244,9 +272,12 @@ build_dotnet_rootfs() {
 
   local dotnet_tmp
   dotnet_tmp="$(mktemp -d)"
-  curl -fsSL \
+  
+  fetch_asset \
     "https://builds.dotnet.microsoft.com/dotnet/Runtime/${DOTNET_VERSION}/dotnet-runtime-${DOTNET_VERSION}-linux-musl-x64.tar.gz" \
-    -o "${dotnet_tmp}/dotnet-runtime.tar.gz"
+    "dotnet-runtime.tar.gz" \
+    "${dotnet_tmp}/dotnet-runtime.tar.gz"
+
   mkdir -p "${tmp}/usr/share/dotnet"
   tar -xzf "${dotnet_tmp}/dotnet-runtime.tar.gz" -C "${tmp}/usr/share/dotnet"
   mkdir -p "${tmp}/usr/bin"
@@ -269,9 +300,12 @@ build_deno_rootfs() {
 
   local deno_tmp
   deno_tmp="$(mktemp -d)"
-  curl -fsSL \
+  
+  fetch_asset \
     "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" \
-    -o "${deno_tmp}/deno.zip"
+    "deno.zip" \
+    "${deno_tmp}/deno.zip"
+
   unzip -q -o "${deno_tmp}/deno.zip" -d "${deno_tmp}"
   cp "${deno_tmp}/deno" "${tmp}/usr/local/bin/deno"
   chmod +x "${tmp}/usr/local/bin/deno"
@@ -293,9 +327,12 @@ build_bun_rootfs() {
 
   local bun_tmp
   bun_tmp="$(mktemp -d)"
-  curl -fsSL \
+  
+  fetch_asset \
     "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/bun-linux-x64-musl.zip" \
-    -o "${bun_tmp}/bun.zip"
+    "bun.zip" \
+    "${bun_tmp}/bun.zip"
+    
   unzip -q -o "${bun_tmp}/bun.zip" -d "${bun_tmp}"
   cp "${bun_tmp}/bun-linux-x64-musl/bun" "${tmp}/usr/local/bin/bun"
   chmod +x "${tmp}/usr/local/bin/bun"

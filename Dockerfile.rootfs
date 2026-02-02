@@ -3,8 +3,13 @@ RUN apk add --no-cache git
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN GOPROXY=https://goproxy.cn,direct go mod download
-COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bin/nova-agent ./cmd/agent
+
+# Copy source for agent build (including api for possible dependencies)
+COPY api/ api/
+COPY internal/ internal/
+COPY cmd/ cmd/
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/nova-agent ./cmd/agent
 
 FROM alpine:3.19
 RUN apk add --no-cache \
@@ -16,10 +21,23 @@ RUN apk add --no-cache \
     tar \
     unzip \
     util-linux
+
 WORKDIR /opt/nova
-COPY --from=builder /app/bin/nova-agent /opt/nova/bin/nova-agent
+
+# 1. Copy scripts (rarely change)
 COPY scripts /opt/nova/scripts
 RUN chmod +x /opt/nova/scripts/build_rootfs.sh
+
+# 2. Copy large assets (change infrequently, ~500MB+)
+# This layer will be cached as long as the download assets don't change
+COPY assets/downloads /opt/nova/assets/downloads
+
+# 3. Copy the agent binary (changes most frequently)
+# Placing this last ensures code changes don't force re-copying large assets
+COPY --from=builder /app/bin/nova-agent /opt/nova/bin/nova-agent
+
 ENV OUT_DIR=/opt/nova/rootfs
 ENV AGENT_BIN=/opt/nova/bin/nova-agent
+ENV ASSETS_DIR=/opt/nova/assets/downloads
+
 ENTRYPOINT ["/opt/nova/scripts/build_rootfs.sh"]

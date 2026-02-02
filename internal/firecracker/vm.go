@@ -52,6 +52,7 @@ const (
 )
 
 type Config struct {
+	Backend        string // "firecracker" or "docker"
 	FirecrackerBin string
 	KernelPath     string
 	RootfsDir      string
@@ -69,7 +70,12 @@ type Config struct {
 const NovaDir = "/opt/nova"
 
 func DefaultConfig() *Config {
+	backend := "firecracker"
+	if v := os.Getenv("NOVA_BACKEND"); v != "" {
+		backend = v
+	}
 	return &Config{
+		Backend:        backend,
 		FirecrackerBin: NovaDir + "/bin/firecracker",
 		KernelPath:     NovaDir + "/kernel/vmlinux",
 		RootfsDir:      NovaDir + "/rootfs",
@@ -85,20 +91,22 @@ func DefaultConfig() *Config {
 }
 
 type VM struct {
-	ID         string
-	Runtime    domain.Runtime
-	State      VMState
-	CID        uint32
-	SocketPath string
-	VsockPath  string
-	CodeDrive  string // path to per-VM code drive
-	TapDevice  string // TAP device name (e.g., "nova-abc123")
-	GuestIP    string // IP assigned to guest (e.g., "172.30.0.2")
-	GuestMAC   string // MAC address for guest
-	Cmd        *exec.Cmd
-	CreatedAt  time.Time
-	LastUsed   time.Time
-	mu         sync.RWMutex
+	ID                string
+	Runtime           domain.Runtime
+	State             VMState
+	CID               uint32
+	SocketPath        string
+	VsockPath         string
+	CodeDrive         string // path to per-VM code drive
+	TapDevice         string // TAP device name (e.g., "nova-abc123")
+	GuestIP           string // IP assigned to guest (e.g., "172.30.0.2")
+	GuestMAC          string // MAC address for guest
+	Cmd               *exec.Cmd
+	DockerContainerID string // For Docker backend
+	AssignedPort      int    // For Docker backend (host port mapped to agent)
+	CreatedAt         time.Time
+	LastUsed          time.Time
+	mu                sync.RWMutex
 }
 
 type Manager struct {

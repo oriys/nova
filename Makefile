@@ -30,6 +30,22 @@ clean:
 deploy: build-linux
 	./scripts/deploy.sh $(SERVER)
 
+download-assets:
+	./scripts/download_assets.sh
+
+# Build rootfs images using Docker (avoids local dependencies)
+rootfs-docker: download-assets
+	docker build -f Dockerfile.rootfs -t nova-rootfs-builder .
+	@mkdir -p assets/rootfs
+	docker run --rm \
+		-v $(PWD)/assets/rootfs:/opt/nova/rootfs \
+		nova-rootfs-builder
+
+# Run full stack (Postgres + Nova + Dashboard)
+# Note: Requires Linux with KVM enabled. On macOS, Nova will start but fail to launch VMs.
+dev: download-assets
+	docker-compose up --build
+
 # Helper targets for demo
 demo-register:
 	./$(NOVA_BIN) register hello-python \

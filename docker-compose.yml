@@ -27,6 +27,8 @@ services:
       NOVA_HTTP_ADDR: ":9000"
       NOVA_LOG_LEVEL: info
       NOVA_ROOTFS_DIR: /opt/nova/rootfs
+      # Ensure Nova knows where to put FC sockets/logs
+      NOVA_RUN_DIR: /var/lib/nova/run
     ports:
       - "9000:9000"
     depends_on:
@@ -34,13 +36,20 @@ services:
         condition: service_healthy
       rootfs-builder:
         condition: service_completed_successfully
+    # Firecracker requirements:
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
+    security_opt:
+      - seccomp:unconfined
     devices:
       - /dev/kvm:/dev/kvm
+      - /dev/net/tun:/dev/net/tun
     volumes:
       - nova_rootfs:/opt/nova/rootfs
-    # volumes:
-    #   - /opt/nova:/opt/nova:ro
-    #   - /tmp/nova:/tmp/nova
+      # Persist VM logs and sockets if needed for debugging
+      - nova_run:/var/lib/nova/run
 
   lumen:
     build:
@@ -68,3 +77,4 @@ services:
 volumes:
   nova_pg_data:
   nova_rootfs:
+  nova_run:
