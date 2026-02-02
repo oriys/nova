@@ -26,13 +26,18 @@ services:
       NOVA_PG_DSN: postgres://nova:nova@postgres:5432/nova?sslmode=disable
       NOVA_HTTP_ADDR: ":9000"
       NOVA_LOG_LEVEL: info
+      NOVA_ROOTFS_DIR: /opt/nova/rootfs
     ports:
       - "9000:9000"
     depends_on:
       postgres:
         condition: service_healthy
+      rootfs-builder:
+        condition: service_completed_successfully
     devices:
       - /dev/kvm:/dev/kvm
+    volumes:
+      - nova_rootfs:/opt/nova/rootfs
     # volumes:
     #   - /opt/nova:/opt/nova:ro
     #   - /tmp/nova:/tmp/nova
@@ -50,5 +55,16 @@ services:
     depends_on:
       - nova
 
+  rootfs-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile.rootfs
+    container_name: nova-rootfs-builder
+    privileged: true
+    restart: "no"
+    volumes:
+      - nova_rootfs:/opt/nova/rootfs
+
 volumes:
   nova_pg_data:
+  nova_rootfs:
