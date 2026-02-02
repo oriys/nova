@@ -15,6 +15,7 @@ import (
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/observability"
+	"github.com/oriys/nova/internal/pkg/fsutil"
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/store"
@@ -209,7 +210,7 @@ func (e *Executor) persistInvocationLog(reqID string, fn *domain.Function, durat
 
 // refreshCodeHash checks if code file has changed and updates the function's hash.
 func (e *Executor) refreshCodeHash(ctx context.Context, fn *domain.Function) {
-	currentHash, err := domain.HashCodeFile(fn.CodePath)
+	currentHash, err := fsutil.HashFile(fn.CodePath)
 	if err != nil {
 		return // Can't read file, skip check
 	}

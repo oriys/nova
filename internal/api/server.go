@@ -16,6 +16,7 @@ import (
 	"github.com/oriys/nova/internal/observability"
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/ratelimit"
+	"github.com/oriys/nova/internal/service"
 	"github.com/oriys/nova/internal/store"
 )
 
@@ -37,13 +38,17 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 	// Create compiler
 	comp := compiler.New(cfg.Store)
 
+	// Create services
+	funcService := service.NewFunctionService(cfg.Store, comp)
+
 	// Register control plane routes
 	cpHandler := &controlplane.Handler{
-		Store:     cfg.Store,
-		Pool:      cfg.Pool,
-		Backend:   cfg.Backend,
-		FCAdapter: cfg.FCAdapter,
-		Compiler:  comp,
+		Store:           cfg.Store,
+		Pool:            cfg.Pool,
+		Backend:         cfg.Backend,
+		FCAdapter:       cfg.FCAdapter,
+		Compiler:        comp,
+		FunctionService: funcService,
 	}
 	cpHandler.RegisterRoutes(mux)
 

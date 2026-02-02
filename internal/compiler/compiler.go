@@ -12,6 +12,7 @@ import (
 
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/logging"
+	"github.com/oriys/nova/internal/pkg/crypto"
 	"github.com/oriys/nova/internal/store"
 )
 
@@ -94,11 +95,11 @@ func (c *Compiler) handleInterpreted(ctx context.Context, fn *domain.Function, s
 
 	// Update function CodePath and CodeHash
 	fn.CodePath = codePath
-	fn.CodeHash = domain.HashSourceCode(sourceCode)
+	fn.CodeHash = crypto.HashString(sourceCode)
 	c.store.SaveFunction(ctx, fn)
 
 	// Store source as "binary" (it's the deployable artifact for interpreted langs)
-	c.store.UpdateCompileResult(ctx, fn.ID, []byte(sourceCode), domain.HashSourceCode(sourceCode), domain.CompileStatusNotRequired, "")
+	c.store.UpdateCompileResult(ctx, fn.ID, []byte(sourceCode), crypto.HashString(sourceCode), domain.CompileStatusNotRequired, "")
 }
 
 func (c *Compiler) compile(ctx context.Context, fn *domain.Function, sourceCode string) ([]byte, error) {

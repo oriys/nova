@@ -1,11 +1,7 @@
 package domain
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"io"
-	"os"
 	"time"
 )
 
@@ -148,36 +144,6 @@ type InvokeResponse struct {
 	Version    int             `json:"version,omitempty"` // Which version handled this request
 }
 
-// HashCodeFile calculates SHA256 hash of a code file for change detection.
-func HashCodeFile(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-
-	return hex.EncodeToString(h.Sum(nil))[:16], nil // Use first 16 chars for brevity
-}
-
-// CodeHashChanged checks if the code file has changed since the function was registered.
-func (f *Function) CodeHashChanged() bool {
-	if f.CodeHash == "" {
-		return false // No hash stored, can't detect change
-	}
-
-	currentHash, err := HashCodeFile(f.CodePath)
-	if err != nil {
-		return false // Can't read file, assume unchanged
-	}
-
-	return currentHash != f.CodeHash
-}
-
 // CompileStatus represents the compilation status of function code
 type CompileStatus string
 
@@ -215,11 +181,4 @@ func NeedsCompilation(runtime Runtime) bool {
 		RuntimeScala:  true,
 	}
 	return compiledRuntimes[runtime]
-}
-
-// HashSourceCode calculates SHA256 hash of source code string
-func HashSourceCode(code string) string {
-	h := sha256.New()
-	h.Write([]byte(code))
-	return hex.EncodeToString(h.Sum(nil))[:16]
 }
