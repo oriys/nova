@@ -20,7 +20,7 @@ async function testFunctionDetail() {
 
   try {
     console.log('Navigating to function detail...');
-    await page.goto('http://nova-lumen.orb.local:3000/functions/hello-python', {
+    await page.goto('http://localhost:3000/functions/hello-python', {
       waitUntil: 'domcontentloaded',
       timeout: 30000
     });

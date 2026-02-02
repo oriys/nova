@@ -1,6 +1,6 @@
 import { chromium } from '@playwright/test';
 
-const BASE_URL = 'http://nova-lumen.orb.local:3000';
+const BASE_URL = 'http://localhost:3000';
 
 const pages = [
   { name: 'Dashboard', path: '/' },

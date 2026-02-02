@@ -17,7 +17,7 @@ async function testDashboard() {
   });
 
   try {
-    await page.goto('http://nova-lumen.orb.local:3000', { waitUntil: 'networkidle' });
+    await page.goto('http://localhost:3000', { waitUntil: 'networkidle' });
 
     console.log('Page title:', await page.title());
 
