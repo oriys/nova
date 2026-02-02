@@ -755,7 +755,7 @@ export default function LandingPage() {
       <div className="absolute inset-0 pointer-events-none z-40" style={{ background: "radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.6) 100%)" }} />
 
       {/* HUD */}
-      <div className="fixed bottom-4 left-4 z-50 text-white/30 text-xs font-mono space-y-1">
+      <div className="fixed bottom-4 left-4 z-50 text-white/60 text-xs font-mono space-y-1">
         {konamiProgress > 0 && <div>Konami: {konamiProgress}/{konamiCode.length}</div>}
         {gravityMode && <div>GRAVITY MODE</div>}
         {matrixMode && <div className="text-green-500">MATRIX MODE</div>}
@@ -764,8 +764,8 @@ export default function LandingPage() {
         {fruitNinjaMode && <div className="text-red-400">FRUIT NINJA MODE</div>}
       </div>
 
-      {/* Help hint */}
-      <div className="fixed bottom-4 right-4 z-50 text-white/20 text-[10px] font-mono text-right">
+      {/* Help hint - above vignette */}
+      <div className="fixed bottom-4 right-4 z-50 text-white/50 text-[10px] font-mono text-right bg-black/30 p-2 rounded">
         <div>Try: gravity, matrix, freeze, boom, sort</div>
         <div>Hold right-click: charge & explode | Space: slow-mo</div>
         <div>Circle mouse: tornado | 3x click: delete</div>
