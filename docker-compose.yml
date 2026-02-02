@@ -31,9 +31,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # Full mode: uncomment for Linux hosts with KVM
-    # devices:
-    #   - /dev/kvm:/dev/kvm
+    devices:
+      - /dev/kvm:/dev/kvm
     # volumes:
     #   - /opt/nova:/opt/nova:ro
     #   - /tmp/nova:/tmp/nova
