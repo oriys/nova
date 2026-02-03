@@ -45,6 +45,7 @@ type MetadataStore interface {
 
 	// Invocation logs
 	SaveInvocationLog(ctx context.Context, log *InvocationLog) error
+	SaveInvocationLogs(ctx context.Context, logs []*InvocationLog) error
 	ListInvocationLogs(ctx context.Context, functionID string, limit int) ([]*InvocationLog, error)
 	ListAllInvocationLogs(ctx context.Context, limit int) ([]*InvocationLog, error)
 	GetInvocationLog(ctx context.Context, requestID string) (*InvocationLog, error)
