@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/oriys/nova/internal/domain"
+	"github.com/oriys/nova/internal/pkg/crypto"
 	"gopkg.in/yaml.v3"
 )
 
@@ -137,10 +138,16 @@ func (s *FunctionSpec) Validate() error {
 	return nil
 }
 
-// ToFunction converts a FunctionSpec to a domain.Function
-func (s *FunctionSpec) ToFunction(id string) (*domain.Function, error) {
+// ToFunction converts a FunctionSpec to a domain.Function and returns the code content.
+func (s *FunctionSpec) ToFunction(id string) (*domain.Function, []byte, error) {
 	if err := s.Validate(); err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	// Read code content from file
+	codeContent, err := os.ReadFile(s.Code)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read code file: %w", err)
 	}
 
 	fn := &domain.Function{
@@ -148,7 +155,6 @@ func (s *FunctionSpec) ToFunction(id string) (*domain.Function, error) {
 		Name:        s.Name,
 		Runtime:     domain.Runtime(s.Runtime),
 		Handler:     s.Handler,
-		CodePath:    s.Code,
 		MemoryMB:    s.Memory,
 		TimeoutS:    s.Timeout,
 		MinReplicas: s.MinReplicas,
@@ -183,11 +189,9 @@ func (s *FunctionSpec) ToFunction(id string) (*domain.Function, error) {
 	}
 
 	// Calculate code hash
-	if hash, err := domain.HashCodeFile(fn.CodePath); err == nil {
-		fn.CodeHash = hash
-	}
+	fn.CodeHash = crypto.HashBytes(codeContent)
 
-	return fn, nil
+	return fn, codeContent, nil
 }
 
 // parseBandwidth parses bandwidth strings like "100MB/s", "1GB/s" to bytes/s

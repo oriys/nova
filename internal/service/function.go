@@ -3,15 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/oriys/nova/internal/compiler"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/pkg/crypto"
-	"github.com/oriys/nova/internal/pkg/fsutil"
 	"github.com/oriys/nova/internal/store"
 )
 
@@ -31,8 +28,7 @@ type CreateFunctionRequest struct {
 	Name        string
 	Runtime     string
 	Handler     string
-	CodePath    string
-	Code        string
+	Code        string // Source code (required)
 	MemoryMB    int
 	TimeoutS    int
 	MinReplicas int
@@ -46,6 +42,10 @@ func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunction
 	rt := domain.Runtime(req.Runtime)
 	if !rt.IsValid() {
 		return nil, "", fmt.Errorf("invalid runtime: %s", req.Runtime)
+	}
+
+	if req.Code == "" {
+		return nil, "", fmt.Errorf("code is required")
 	}
 
 	// Check if function name already exists
@@ -67,32 +67,13 @@ func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunction
 		req.Mode = string(domain.ModeProcess)
 	}
 
-	codePath := req.CodePath
-	var codeHash string
-
-	if req.Code != "" {
-		codeHash = crypto.HashString(req.Code)
-		funcDir := filepath.Join(os.TempDir(), "nova-functions")
-		os.MkdirAll(funcDir, 0755)
-		ext := runtimeExtension(rt)
-		codePath = filepath.Join(funcDir, req.Name+ext)
-	} else {
-		if _, err := os.Stat(req.CodePath); os.IsNotExist(err) {
-			return nil, "", fmt.Errorf("code path not found: %s", req.CodePath)
-		}
-		var err error
-		codeHash, err = fsutil.HashFile(codePath)
-		if err != nil {
-			return nil, "", fmt.Errorf("hash code file: %w", err)
-		}
-	}
+	codeHash := crypto.HashString(req.Code)
 
 	fn := &domain.Function{
 		ID:          uuid.New().String(),
 		Name:        req.Name,
 		Runtime:     rt,
 		Handler:     req.Handler,
-		CodePath:    codePath,
 		CodeHash:    codeHash,
 		MemoryMB:    req.MemoryMB,
 		TimeoutS:    req.TimeoutS,
@@ -109,57 +90,25 @@ func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunction
 		return nil, "", err
 	}
 
+	// Save source code to function_code table
+	sourceHash := crypto.HashString(req.Code)
+	if err := s.store.SaveFunctionCode(ctx, fn.ID, req.Code, sourceHash); err != nil {
+		return nil, "", fmt.Errorf("save code: %w", err)
+	}
+
 	var compileStatus domain.CompileStatus = domain.CompileStatusNotRequired
 
-	if req.Code != "" {
-		sourceHash := crypto.HashString(req.Code)
-		if err := s.store.SaveFunctionCode(ctx, fn.ID, req.Code, sourceHash); err != nil {
-			return nil, "", fmt.Errorf("save code: %w", err)
+	if s.compiler != nil {
+		s.compiler.CompileAsync(ctx, fn, req.Code)
+		if domain.NeedsCompilation(rt) {
+			compileStatus = domain.CompileStatusCompiling
 		}
-
-		if s.compiler != nil {
-			s.compiler.CompileAsync(ctx, fn, req.Code)
-			if domain.NeedsCompilation(rt) {
-				compileStatus = domain.CompileStatusCompiling
-			}
-		} else if !domain.NeedsCompilation(rt) {
-			if err := os.WriteFile(codePath, []byte(req.Code), 0644); err != nil {
-				return nil, "", fmt.Errorf("write code: %w", err)
-			}
-			s.store.UpdateCompileResult(ctx, fn.ID, []byte(req.Code), sourceHash, domain.CompileStatusNotRequired, "")
-		} else {
-			compileStatus = domain.CompileStatusPending
-		}
+	} else if domain.NeedsCompilation(rt) {
+		compileStatus = domain.CompileStatusPending
+	} else {
+		// Interpreted language - store source as compiled artifact
+		s.store.UpdateCompileResult(ctx, fn.ID, []byte(req.Code), sourceHash, domain.CompileStatusNotRequired, "")
 	}
 
 	return fn, string(compileStatus), nil
-}
-
-func runtimeExtension(runtime domain.Runtime) string {
-	exts := map[domain.Runtime]string{
-		domain.RuntimePython: ".py",
-		domain.RuntimeGo:     ".go",
-		domain.RuntimeRust:   ".rs",
-		domain.RuntimeNode:   ".js",
-		domain.RuntimeRuby:   ".rb",
-		domain.RuntimeJava:   ".java",
-		domain.RuntimeDeno:   ".ts",
-		domain.RuntimeBun:    ".ts",
-		domain.RuntimeWasm:   ".wasm",
-		domain.RuntimePHP:    ".php",
-		domain.RuntimeDotnet: ".cs",
-		domain.RuntimeElixir: ".exs",
-		domain.RuntimeKotlin: ".kt",
-		domain.RuntimeSwift:  ".swift",
-		domain.RuntimeZig:    ".zig",
-		domain.RuntimeLua:    ".lua",
-		domain.RuntimePerl:   ".pl",
-		domain.RuntimeR:      ".R",
-		domain.RuntimeJulia:  ".jl",
-		domain.RuntimeScala:  ".scala",
-	}
-	if ext, ok := exts[runtime]; ok {
-		return ext
-	}
-	return ".txt"
 }

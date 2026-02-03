@@ -122,9 +122,6 @@ func (s *PostgresStore) UpdateFunction(ctx context.Context, name string, update 
 	if update.Handler != nil {
 		fn.Handler = *update.Handler
 	}
-	if update.CodePath != nil {
-		fn.CodePath = *update.CodePath
-	}
 	if update.MemoryMB != nil {
 		fn.MemoryMB = *update.MemoryMB
 	}

@@ -9,7 +9,6 @@ export interface NovaFunction {
   name: string;
   runtime: string;
   handler: string;
-  code_path: string;
   code_hash?: string;
   memory_mb: number;
   timeout_s: number;
@@ -156,8 +155,7 @@ export interface CreateFunctionRequest {
   name: string;
   runtime: string;
   handler?: string;
-  code_path?: string;
-  code?: string;
+  code: string; // Source code (required)
   memory_mb?: number;
   timeout_s?: number;
   min_replicas?: number;
@@ -169,7 +167,7 @@ export interface CreateFunctionRequest {
 
 export interface UpdateFunctionRequest {
   handler?: string;
-  code_path?: string;
+  code?: string; // Source code (optional for updates)
   memory_mb?: number;
   timeout_s?: number;
   min_replicas?: number;

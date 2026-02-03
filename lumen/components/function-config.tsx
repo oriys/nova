@@ -114,10 +114,10 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label>Code Path</Label>
-            <Input value={func.codePath || ""} readOnly className="bg-muted/50" />
+            <Label>Code Hash</Label>
+            <Input value={func.codeHash || ""} readOnly className="bg-muted/50 font-mono text-sm" />
             <p className="text-xs text-muted-foreground">
-              Path to the handler file on the server
+              SHA256 hash of the function source code
             </p>
           </div>
 

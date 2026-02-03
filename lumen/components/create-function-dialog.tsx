@@ -20,11 +20,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CodeEditor } from "@/components/code-editor"
 import { RuntimeInfo } from "@/lib/types"
 import { functionsApi, CompileStatus } from "@/lib/api"
-import { Loader2, FileCode, FolderOpen, Check, AlertCircle } from "lucide-react"
+import { Loader2, Check, AlertCircle } from "lucide-react"
 
 // Code templates for each runtime (base language)
 const CODE_TEMPLATES: Record<string, string> = {
@@ -162,8 +161,7 @@ interface CreateFunctionDialogProps {
     handler: string,
     memory: number,
     timeout: number,
-    codeOrPath: string,
-    isCode: boolean
+    code: string
   ) => Promise<void>
   runtimes?: RuntimeInfo[]
 }
@@ -179,9 +177,7 @@ export function CreateFunctionDialog({
   const [memory, setMemory] = useState("128")
   const [timeout, setTimeout] = useState("30")
   const [handler, setHandler] = useState("main.handler")
-  const [codeMode, setCodeMode] = useState<"code" | "path">("code")
   const [code, setCode] = useState(CODE_TEMPLATES.python)
-  const [codePath, setCodePath] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -192,11 +188,9 @@ export function CreateFunctionDialog({
 
   // Update code template when runtime changes
   useEffect(() => {
-    if (codeMode === "code") {
-      const baseRuntime = getBaseRuntime(runtime)
-      setCode(CODE_TEMPLATES[baseRuntime] || CODE_TEMPLATES.python)
-    }
-  }, [runtime, codeMode])
+    const baseRuntime = getBaseRuntime(runtime)
+    setCode(CODE_TEMPLATES[baseRuntime] || CODE_TEMPLATES.python)
+  }, [runtime])
 
   // Poll for compile status after creation
   useEffect(() => {
@@ -222,18 +216,18 @@ export function CreateFunctionDialog({
     setCompileStatus(undefined)
     setCompileError(undefined)
 
-    const codeOrPath = codeMode === "code" ? code : codePath
-    if (!codeOrPath.trim()) {
-      setError(codeMode === "code" ? "Code is required" : "Code path is required")
+    const codeValue = code
+    if (!codeValue.trim()) {
+      setError("Code is required")
       return
     }
 
     try {
       setSubmitting(true)
-      await onCreate(name, runtime, handler, parseInt(memory), parseInt(timeout), codeOrPath, codeMode === "code")
+      await onCreate(name, runtime, handler, parseInt(memory), parseInt(timeout), codeValue)
 
-      // If it's a compiled language with inline code, track compile status
-      if (codeMode === "code" && needsCompilation(runtime)) {
+      // If it's a compiled language, track compile status
+      if (needsCompilation(runtime)) {
         setCreatedFunctionName(name)
         setCompileStatus('compiling')
       } else {
@@ -255,8 +249,6 @@ export function CreateFunctionDialog({
     setTimeout("30")
     setHandler("main.handler")
     setCode(CODE_TEMPLATES.python)
-    setCodePath("")
-    setCodeMode("code")
     setCreatedFunctionName(null)
     setCompileStatus(undefined)
     setCompileError(undefined)
@@ -390,43 +382,17 @@ export function CreateFunctionDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Code Source</Label>
-            <Tabs value={codeMode} onValueChange={(v) => setCodeMode(v as "code" | "path")}>
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="code" className="flex items-center gap-2">
-                  <FileCode className="h-4 w-4" />
-                  Write Code
-                </TabsTrigger>
-                <TabsTrigger value="path" className="flex items-center gap-2">
-                  <FolderOpen className="h-4 w-4" />
-                  File Path
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="code" className="mt-3">
-                <CodeEditor
-                  code={code}
-                  onChange={setCode}
-                  runtime={runtime}
-                  minHeight="256px"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Template loaded for {getBaseRuntime(runtime)}.
-                  {needsCompilation(runtime) && " This runtime requires compilation."}
-                </p>
-              </TabsContent>
-
-              <TabsContent value="path" className="mt-3">
-                <Input
-                  placeholder="/path/to/handler.py"
-                  value={codePath}
-                  onChange={(e) => setCodePath(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Absolute path to the handler file on the server
-                </p>
-              </TabsContent>
-            </Tabs>
+            <Label>Code</Label>
+            <CodeEditor
+              code={code}
+              onChange={setCode}
+              runtime={runtime}
+              minHeight="256px"
+            />
+            <p className="text-xs text-muted-foreground">
+              Template loaded for {getBaseRuntime(runtime)}.
+              {needsCompilation(runtime) && " This runtime requires compilation."}
+            </p>
           </div>
 
           <div className="grid grid-cols-3 gap-4">
@@ -475,7 +441,7 @@ export function CreateFunctionDialog({
             </Button>
             <Button
               type="submit"
-              disabled={!name.trim() || (codeMode === "code" ? !code.trim() : !codePath.trim()) || submitting}
+              disabled={!name.trim() || !code.trim() || submitting}
             >
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Create Function

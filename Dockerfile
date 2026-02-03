@@ -13,7 +13,7 @@ COPY cmd/ cmd/
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o nova ./cmd/nova
 
 FROM alpine:3.19
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates docker-cli
 WORKDIR /app
 
 # Copy binary

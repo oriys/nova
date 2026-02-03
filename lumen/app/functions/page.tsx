@@ -87,13 +87,13 @@ export default function FunctionsPage() {
 
   const pagedFunctions = filteredFunctions.slice((page - 1) * pageSize, page * pageSize)
 
-  const handleCreate = async (name: string, runtime: string, handler: string, memory: number, timeout: number, codeOrPath: string, isCode: boolean) => {
+  const handleCreate = async (name: string, runtime: string, handler: string, memory: number, timeout: number, code: string) => {
     try {
       await functionsApi.create({
         name,
         runtime,
         handler,
-        ...(isCode ? { code: codeOrPath } : { code_path: codeOrPath }),
+        code,
         memory_mb: memory,
         timeout_s: timeout,
       })

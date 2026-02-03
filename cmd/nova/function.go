@@ -25,7 +25,7 @@ func registerCmd() *cobra.Command {
 	var (
 		runtime        string
 		handler        string
-		codePath       string
+		codeFile       string
 		memoryMB       int
 		timeoutS       int
 		minReplicas    int
@@ -51,8 +51,14 @@ func registerCmd() *cobra.Command {
 				return fmt.Errorf("invalid runtime: %s", runtime)
 			}
 
-			if _, err := os.Stat(codePath); os.IsNotExist(err) {
-				return fmt.Errorf("code path not found: %s", codePath)
+			if _, err := os.Stat(codeFile); os.IsNotExist(err) {
+				return fmt.Errorf("code file not found: %s", codeFile)
+			}
+
+			// Read code content from file
+			codeContent, err := os.ReadFile(codeFile)
+			if err != nil {
+				return fmt.Errorf("read code file: %w", err)
 			}
 
 			s, err := getStore()
@@ -69,17 +75,13 @@ func registerCmd() *cobra.Command {
 				}
 			}
 
-			codeHash, err := fsutil.HashFile(codePath)
-			if err != nil {
-				fmt.Printf("Warning: could not hash code file: %v\n", err)
-			}
+			codeHash := fsutil.HashBytes(codeContent)
 
 			fn := &domain.Function{
 				ID:          uuid.New().String(),
 				Name:        name,
 				Runtime:     rt,
 				Handler:     handler,
-				CodePath:    codePath,
 				CodeHash:    codeHash,
 				MemoryMB:    memoryMB,
 				TimeoutS:    timeoutS,
@@ -101,8 +103,14 @@ func registerCmd() *cobra.Command {
 				}
 			}
 
-			if err := s.SaveFunction(context.Background(), fn); err != nil {
+			ctx := context.Background()
+			if err := s.SaveFunction(ctx, fn); err != nil {
 				return err
+			}
+
+			// Save code to store
+			if err := s.SaveFunctionCode(ctx, fn.ID, string(codeContent), codeHash); err != nil {
+				return fmt.Errorf("save function code: %w", err)
 			}
 
 			fmt.Printf("Function registered: %s\n", fn.Name)
@@ -112,7 +120,7 @@ func registerCmd() *cobra.Command {
 
 	cmd.Flags().StringVarP(&runtime, "runtime", "r", "", "Runtime")
 	cmd.Flags().StringVarP(&handler, "handler", "H", "main.handler", "Handler")
-	cmd.Flags().StringVarP(&codePath, "code", "c", "", "Code path")
+	cmd.Flags().StringVarP(&codeFile, "code", "c", "", "Code file path")
 	cmd.Flags().IntVarP(&memoryMB, "memory", "m", 128, "Memory MB")
 	cmd.Flags().IntVarP(&timeoutS, "timeout", "t", 30, "Timeout s")
 	cmd.Flags().IntVar(&minReplicas, "min-replicas", 0, "Min replicas")
@@ -200,8 +208,8 @@ func invokeCmd() *cobra.Command {
 			var resp *domain.InvokeResponse
 			if local {
 				// Local execution - no VM
-				localExec := executor.NewLocalExecutor()
-				resp, err = localExec.InvokeWithStore(ctx, s, args[0], input)
+				localExec := executor.NewLocalExecutor(s)
+				resp, err = localExec.InvokeWithStore(ctx, args[0], input)
 			} else {
 				// Standalone execution with backend selection
 				cfg := config.DefaultConfig()
@@ -280,7 +288,7 @@ func updateCmd() *cobra.Command {
 	// Truncated for brevity, just moving enough to show the pattern
 	var (
 		handler  string
-		codePath string
+		codeFile string
 	)
 	cmd := &cobra.Command{
 		Use:   "update <name>",
@@ -298,7 +306,23 @@ func updateCmd() *cobra.Command {
 				update.Handler = &handler
 			}
 			if cmd.Flags().Changed("code") {
-				update.CodePath = &codePath
+				// Read code from file and update in store
+				codeContent, err := os.ReadFile(codeFile)
+				if err != nil {
+					return fmt.Errorf("read code file: %w", err)
+				}
+				codeHash := fsutil.HashBytes(codeContent)
+				code := string(codeContent)
+				update.Code = &code
+
+				// Get function to update code in store
+				fn, err := s.GetFunctionByName(context.Background(), args[0])
+				if err != nil {
+					return err
+				}
+				if err := s.UpdateFunctionCode(context.Background(), fn.ID, code, codeHash); err != nil {
+					return fmt.Errorf("update function code: %w", err)
+				}
 			}
 
 			_, err = s.UpdateFunction(context.Background(), args[0], update)
@@ -306,7 +330,7 @@ func updateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&handler, "handler", "H", "", "Handler")
-	cmd.Flags().StringVarP(&codePath, "code", "c", "", "Code path")
+	cmd.Flags().StringVarP(&codeFile, "code", "c", "", "Code file path")
 	return cmd
 }
 
@@ -334,7 +358,7 @@ func getCmd() *cobra.Command {
 				Name:     fn.Name,
 				Runtime:  string(fn.Runtime),
 				Handler:  fn.Handler,
-				CodePath: fn.CodePath,
+				CodeHash: fn.CodeHash,
 				MemoryMB: fn.MemoryMB,
 				TimeoutS: fn.TimeoutS,
 				Created:  fn.CreatedAt.Format(time.RFC3339),

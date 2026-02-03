@@ -101,7 +101,7 @@ func (m *Manager) allocatePort() int {
 }
 
 // CreateVM creates a new Docker container for the function.
-func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*backend.VM, error) {
+func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent []byte) (*backend.VM, error) {
 	vmID := uuid.New().String()[:12]
 	port := m.allocatePort()
 
@@ -111,15 +111,10 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*backend.V
 		return nil, fmt.Errorf("create code dir: %w", err)
 	}
 
-	// Copy code file to container code directory
-	if fn.CodePath != "" {
-		codeData, err := os.ReadFile(fn.CodePath)
-		if err != nil {
-			os.RemoveAll(codeDir)
-			return nil, fmt.Errorf("read code file: %w", err)
-		}
+	// Write code to container code directory
+	if len(codeContent) > 0 {
 		handlerPath := filepath.Join(codeDir, "handler")
-		if err := os.WriteFile(handlerPath, codeData, 0755); err != nil {
+		if err := os.WriteFile(handlerPath, codeContent, 0755); err != nil {
 			os.RemoveAll(codeDir)
 			return nil, fmt.Errorf("write code file: %w", err)
 		}

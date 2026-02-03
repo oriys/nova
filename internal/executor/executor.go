@@ -15,7 +15,6 @@ import (
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/observability"
-	"github.com/oriys/nova/internal/pkg/fsutil"
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/store"
@@ -30,13 +29,6 @@ type Executor struct {
 	logBatcher      *invocationLogBatcher
 	inflight        sync.WaitGroup
 	closing         atomic.Bool
-	codeHashCache   sync.Map // codePath -> codeHashCacheEntry
-}
-
-type codeHashCacheEntry struct {
-	modTime time.Time
-	size    int64
-	hash    string
 }
 
 type Option func(*Executor)
@@ -91,8 +83,22 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		fn.EnvVars = resolved
 	}
 
-	// Refresh code hash for change detection
-	e.refreshCodeHash(ctx, fn)
+	// Fetch code content from store
+	codeRecord, err := e.store.GetFunctionCode(ctx, fn.ID)
+	if err != nil {
+		return nil, fmt.Errorf("get function code: %w", err)
+	}
+	if codeRecord == nil {
+		return nil, fmt.Errorf("function code not found: %s", fn.Name)
+	}
+
+	// Use compiled binary if available, otherwise use source code
+	var codeContent []byte
+	if len(codeRecord.CompiledBinary) > 0 {
+		codeContent = codeRecord.CompiledBinary
+	} else {
+		codeContent = []byte(codeRecord.SourceCode)
+	}
 
 	reqID := uuid.New().String()[:8]
 
@@ -114,7 +120,7 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 
 	start := time.Now()
 
-	pvm, err := e.pool.Acquire(ctx, fn)
+	pvm, err := e.pool.Acquire(ctx, fn, codeContent)
 	if err != nil {
 		observability.SetSpanError(span, err)
 		return nil, fmt.Errorf("acquire VM: %w", err)
@@ -211,47 +217,6 @@ func (e *Executor) persistInvocationLog(reqID string, fn *domain.Function, durat
 		Stderr:       stderr,
 		CreatedAt:    time.Now(),
 	})
-}
-
-// refreshCodeHash checks if code file has changed and updates the function's hash.
-func (e *Executor) refreshCodeHash(ctx context.Context, fn *domain.Function) {
-	fi, err := os.Stat(fn.CodePath)
-	if err != nil {
-		return // Can't read file, skip check
-	}
-	if cached, ok := e.codeHashCache.Load(fn.CodePath); ok {
-		entry := cached.(codeHashCacheEntry)
-		if entry.modTime.Equal(fi.ModTime()) && entry.size == fi.Size() {
-			e.applyCodeHash(ctx, fn, entry.hash)
-			return
-		}
-	}
-
-	currentHash, err := fsutil.HashFile(fn.CodePath)
-	if err != nil {
-		return // Can't read file, skip check
-	}
-	e.codeHashCache.Store(fn.CodePath, codeHashCacheEntry{
-		modTime: fi.ModTime(),
-		size:    fi.Size(),
-		hash:    currentHash,
-	})
-
-	e.applyCodeHash(ctx, fn, currentHash)
-}
-
-func (e *Executor) applyCodeHash(ctx context.Context, fn *domain.Function, currentHash string) {
-	if fn.CodeHash != "" && fn.CodeHash != currentHash {
-		logging.Op().Info("code change detected", "function", fn.Name)
-		fn.CodeHash = currentHash
-		fn.UpdatedAt = time.Now()
-		_ = e.store.SaveFunction(ctx, fn)
-		return
-	}
-	if fn.CodeHash == "" {
-		fn.CodeHash = currentHash
-		_ = e.store.SaveFunction(ctx, fn)
-	}
 }
 
 // InvalidateSnapshot removes the snapshot for a function (e.g., after code update)

@@ -223,7 +223,6 @@ type FunctionDetail struct {
 	Name        string            `json:"name" yaml:"name"`
 	Runtime     string            `json:"runtime" yaml:"runtime"`
 	Handler     string            `json:"handler" yaml:"handler"`
-	CodePath    string            `json:"code_path" yaml:"code_path"`
 	CodeHash    string            `json:"code_hash,omitempty" yaml:"code_hash,omitempty"`
 	MemoryMB    int               `json:"memory_mb" yaml:"memory_mb"`
 	TimeoutS    int               `json:"timeout_s" yaml:"timeout_s"`
@@ -251,7 +250,6 @@ func (p *Printer) PrintFunctionDetail(detail FunctionDetail) error {
 	fmt.Fprintf(p.writer, "  %s %s\n", p.Colorize(Gray, "ID:"), detail.ID)
 	fmt.Fprintf(p.writer, "  %s %s\n", p.Colorize(Gray, "Runtime:"), detail.Runtime)
 	fmt.Fprintf(p.writer, "  %s %s\n", p.Colorize(Gray, "Handler:"), detail.Handler)
-	fmt.Fprintf(p.writer, "  %s %s\n", p.Colorize(Gray, "Code Path:"), detail.CodePath)
 	if detail.CodeHash != "" {
 		fmt.Fprintf(p.writer, "  %s %s\n", p.Colorize(Gray, "Code Hash:"), detail.CodeHash)
 	}

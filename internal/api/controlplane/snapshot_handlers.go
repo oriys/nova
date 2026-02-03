@@ -90,7 +90,26 @@ func (h *Handler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pvm, err := h.Pool.Acquire(r.Context(), fn)
+	// Fetch code content from store
+	codeRecord, err := h.Store.GetFunctionCode(r.Context(), fn.ID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("get function code: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if codeRecord == nil {
+		http.Error(w, "function code not found", http.StatusNotFound)
+		return
+	}
+
+	// Use compiled binary if available, otherwise use source code
+	var codeContent []byte
+	if len(codeRecord.CompiledBinary) > 0 {
+		codeContent = codeRecord.CompiledBinary
+	} else {
+		codeContent = []byte(codeRecord.SourceCode)
+	}
+
+	pvm, err := h.Pool.Acquire(r.Context(), fn, codeContent)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("acquire VM: %v", err), http.StatusInternalServerError)
 		return

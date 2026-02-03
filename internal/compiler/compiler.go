@@ -57,13 +57,6 @@ func (c *Compiler) CompileAsync(ctx context.Context, fn *domain.Function, source
 
 		binaryHash := hashBytes(binary)
 
-		// Write binary to CodePath
-		if err := c.writeBinary(fn, binary); err != nil {
-			logging.Op().Error("failed to write compiled binary", "function", fn.Name, "error", err)
-			c.store.UpdateCompileResult(bgCtx, fn.ID, nil, "", domain.CompileStatusFailed, fmt.Sprintf("write binary: %v", err))
-			return
-		}
-
 		// Update code hash on function
 		fn.CodeHash = binaryHash
 
@@ -81,20 +74,7 @@ func (c *Compiler) CompileAsync(ctx context.Context, fn *domain.Function, source
 }
 
 func (c *Compiler) handleInterpreted(ctx context.Context, fn *domain.Function, sourceCode string) {
-	// Write source code to CodePath
-	funcDir := filepath.Join(os.TempDir(), "nova-functions")
-	os.MkdirAll(funcDir, 0755)
-
-	ext := runtimeExtension(fn.Runtime)
-	codePath := filepath.Join(funcDir, fn.Name+ext)
-	if err := os.WriteFile(codePath, []byte(sourceCode), 0644); err != nil {
-		logging.Op().Error("failed to write source code", "function", fn.Name, "error", err)
-		c.store.UpdateCompileResult(ctx, fn.ID, nil, "", domain.CompileStatusFailed, fmt.Sprintf("write source: %v", err))
-		return
-	}
-
-	// Update function CodePath and CodeHash
-	fn.CodePath = codePath
+	// Update function CodeHash
 	fn.CodeHash = crypto.HashString(sourceCode)
 	c.store.SaveFunction(ctx, fn)
 
@@ -225,19 +205,6 @@ serde_json = "1"
 			return err
 		}
 	}
-	return nil
-}
-
-func (c *Compiler) writeBinary(fn *domain.Function, binary []byte) error {
-	funcDir := filepath.Join(os.TempDir(), "nova-functions")
-	os.MkdirAll(funcDir, 0755)
-
-	codePath := filepath.Join(funcDir, fn.Name)
-	if err := os.WriteFile(codePath, binary, 0755); err != nil {
-		return err
-	}
-
-	fn.CodePath = codePath
 	return nil
 }
 

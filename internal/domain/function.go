@@ -78,8 +78,7 @@ type Function struct {
 	Name        string            `json:"name"`
 	Runtime     Runtime           `json:"runtime"`
 	Handler     string            `json:"handler"`
-	CodePath    string            `json:"code_path"`
-	CodeHash    string            `json:"code_hash,omitempty"` // SHA256 hash of code file for change detection
+	CodeHash    string            `json:"code_hash,omitempty"` // SHA256 hash of code for change detection
 	MemoryMB    int               `json:"memory_mb"`
 	TimeoutS    int               `json:"timeout_s"`
 	MinReplicas int               `json:"min_replicas"`
@@ -101,7 +100,7 @@ type Function struct {
 type FunctionVersion struct {
 	FunctionID  string            `json:"function_id"`
 	Version     int               `json:"version"`
-	CodePath    string            `json:"code_path"`
+	CodeHash    string            `json:"code_hash"`
 	Handler     string            `json:"handler"`
 	MemoryMB    int               `json:"memory_mb"`
 	TimeoutS    int               `json:"timeout_s"`

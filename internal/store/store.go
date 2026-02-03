@@ -10,8 +10,7 @@ import (
 // FunctionUpdate contains optional fields for updating a function.
 type FunctionUpdate struct {
 	Handler      *string
-	CodePath     *string
-	Code         *string // New: inline code update
+	Code         *string // inline code update
 	MemoryMB     *int
 	TimeoutS     *int
 	MinReplicas  *int

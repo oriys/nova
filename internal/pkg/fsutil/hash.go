@@ -22,3 +22,10 @@ func HashFile(path string) (string, error) {
 
 	return hex.EncodeToString(h.Sum(nil))[:16], nil // Use first 16 chars for brevity
 }
+
+// HashBytes calculates SHA256 hash of a byte slice.
+func HashBytes(b []byte) string {
+	h := sha256.New()
+	h.Write(b)
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}

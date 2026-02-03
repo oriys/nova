@@ -12,20 +12,58 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/oriys/nova/internal/domain"
+	"github.com/oriys/nova/internal/store"
 )
 
 // LocalExecutor runs functions directly on the host without VMs
-type LocalExecutor struct{}
+type LocalExecutor struct {
+	store *store.Store
+}
 
 // NewLocalExecutor creates a new local executor
-func NewLocalExecutor() *LocalExecutor {
-	return &LocalExecutor{}
+func NewLocalExecutor(s *store.Store) *LocalExecutor {
+	return &LocalExecutor{store: s}
 }
 
 // Invoke executes a function locally without VM isolation
 func (e *LocalExecutor) Invoke(ctx context.Context, fn *domain.Function, payload json.RawMessage) (*domain.InvokeResponse, error) {
 	reqID := uuid.New().String()[:8]
 	start := time.Now()
+
+	// Fetch code content from store
+	codeRecord, err := e.store.GetFunctionCode(ctx, fn.ID)
+	if err != nil {
+		return nil, fmt.Errorf("get function code: %w", err)
+	}
+	if codeRecord == nil {
+		return nil, fmt.Errorf("function code not found: %s", fn.Name)
+	}
+
+	// Use compiled binary if available, otherwise use source code
+	var codeContent []byte
+	if len(codeRecord.CompiledBinary) > 0 {
+		codeContent = codeRecord.CompiledBinary
+	} else {
+		codeContent = []byte(codeRecord.SourceCode)
+	}
+
+	// Write code to temp file
+	codeFile, err := os.CreateTemp("", "nova-code-*")
+	if err != nil {
+		return nil, fmt.Errorf("create code file: %w", err)
+	}
+	codePath := codeFile.Name()
+	defer os.Remove(codePath)
+
+	if _, err := codeFile.Write(codeContent); err != nil {
+		codeFile.Close()
+		return nil, fmt.Errorf("write code: %w", err)
+	}
+	if err := codeFile.Chmod(0755); err != nil {
+		codeFile.Close()
+		return nil, fmt.Errorf("chmod code: %w", err)
+	}
+	codeFile.Close()
 
 	// Write input to temp file
 	inputFile, err := os.CreateTemp("", "nova-input-*.json")
@@ -42,7 +80,6 @@ func (e *LocalExecutor) Invoke(ctx context.Context, fn *domain.Function, payload
 
 	// Build command based on runtime
 	var cmd *exec.Cmd
-	codePath := fn.CodePath
 
 	switch fn.Runtime {
 	case domain.RuntimePython:
@@ -121,10 +158,8 @@ func (e *LocalExecutor) Invoke(ctx context.Context, fn *domain.Function, payload
 }
 
 // InvokeWithStore looks up function by name and invokes it locally
-func (e *LocalExecutor) InvokeWithStore(ctx context.Context, store interface {
-	GetFunctionByName(ctx context.Context, name string) (*domain.Function, error)
-}, funcName string, payload json.RawMessage) (*domain.InvokeResponse, error) {
-	fn, err := store.GetFunctionByName(ctx, funcName)
+func (e *LocalExecutor) InvokeWithStore(ctx context.Context, funcName string, payload json.RawMessage) (*domain.InvokeResponse, error) {
+	fn, err := e.store.GetFunctionByName(ctx, funcName)
 	if err != nil {
 		return nil, fmt.Errorf("get function: %w", err)
 	}

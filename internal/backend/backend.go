@@ -12,7 +12,8 @@ import (
 // Backend manages the lifecycle of VMs or containers for function execution.
 type Backend interface {
 	// CreateVM creates a new VM/container for the given function.
-	CreateVM(ctx context.Context, fn *domain.Function) (*VM, error)
+	// codeContent is the source code or binary to execute.
+	CreateVM(ctx context.Context, fn *domain.Function, codeContent []byte) (*VM, error)
 
 	// StopVM stops and cleans up a VM/container.
 	StopVM(vmID string) error

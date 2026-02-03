@@ -342,7 +342,7 @@ func deleteTAP(tap string) {
 
 // CreateVM boots a microVM for the given function.
 // Checks for existing snapshot first.
-func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error) {
+func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent []byte) (*VM, error) {
 	vmID := uuid.New().String()[:8]
 	cid, err := m.allocateCID()
 	if err != nil {
@@ -381,7 +381,7 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error
 	}
 
 	codeDrive := filepath.Join(m.config.SocketDir, vmID+"-code.ext4")
-	if err := m.buildCodeDrive(codeDrive, fn.CodePath); err != nil {
+	if err := m.buildCodeDrive(codeDrive, codeContent); err != nil {
 		vm.State = VMStateStopped
 		return nil, fmt.Errorf("build code drive: %w", err)
 	}
@@ -849,13 +849,9 @@ func netmaskFromCIDR(subnet string) (string, error) {
 // buildCodeDrive creates an ext4 image and injects the function code at /handler.
 // Uses a cached template image for small functions to avoid repeated mkfs calls.
 // For larger functions, creates a custom-sized drive.
-func (m *Manager) buildCodeDrive(drivePath, codePath string) error {
-	// Get code file size
-	fi, err := os.Stat(codePath)
-	if err != nil {
-		return fmt.Errorf("stat code file: %w", err)
-	}
-	codeSizeMB := float64(fi.Size()) / (1024 * 1024)
+func (m *Manager) buildCodeDrive(drivePath string, codeContent []byte) error {
+	// Get code size
+	codeSizeMB := float64(len(codeContent)) / (1024 * 1024)
 
 	// Calculate required drive size (code + ext4 overhead + buffer)
 	requiredSizeMB := int(codeSizeMB/ext4OverheadFactor) + 2 // +2MB buffer for ext4 metadata
@@ -900,8 +896,22 @@ func (m *Manager) buildCodeDrive(drivePath, codePath string) error {
 		}
 	}
 
+	// Write code content to a temp file for debugfs
+	tmpFile, err := os.CreateTemp("", "nova-code-*")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmpFile.Write(codeContent); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	tmpFile.Close()
+
 	// Inject function code using debugfs (no mount needed)
-	debugfsCmd := fmt.Sprintf("write %s handler\nsif handler mode 0100755\n", codePath)
+	debugfsCmd := fmt.Sprintf("write %s handler\nsif handler mode 0100755\n", tmpPath)
 	cmd := exec.Command("debugfs", "-w", drivePath)
 	cmd.Stdin = strings.NewReader(debugfsCmd)
 	if out, err := cmd.CombinedOutput(); err != nil {

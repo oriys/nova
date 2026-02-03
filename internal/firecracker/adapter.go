@@ -24,8 +24,8 @@ func NewAdapter(cfg *Config) (*Adapter, error) {
 }
 
 // CreateVM creates a new Firecracker microVM.
-func (a *Adapter) CreateVM(ctx context.Context, fn *domain.Function) (*backend.VM, error) {
-	vm, err := a.manager.CreateVM(ctx, fn)
+func (a *Adapter) CreateVM(ctx context.Context, fn *domain.Function, codeContent []byte) (*backend.VM, error) {
+	vm, err := a.manager.CreateVM(ctx, fn, codeContent)
 	if err != nil {
 		return nil, err
 	}

@@ -169,7 +169,7 @@ func (p *Pool) cleanupExpired() {
 	}
 }
 
-func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function) error {
+func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function, codeContent []byte) error {
 	fp := p.getOrCreatePool(fn.ID)
 
 	fp.mu.Lock()
@@ -192,7 +192,7 @@ func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function) error {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			pvm, err := p.createVM(context.Background(), fn)
+			pvm, err := p.createVM(context.Background(), fn, codeContent)
 			if err != nil {
 				logging.Op().Error("pre-warm failed", "error", err)
 				return
@@ -208,7 +208,7 @@ func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function) error {
 	return nil
 }
 
-func (p *Pool) Acquire(ctx context.Context, fn *domain.Function) (*PooledVM, error) {
+func (p *Pool) Acquire(ctx context.Context, fn *domain.Function, codeContent []byte) (*PooledVM, error) {
 	fp := p.getOrCreatePool(fn.ID)
 
 	// Check if code has changed using atomic load first
@@ -307,7 +307,7 @@ func (p *Pool) Acquire(ctx context.Context, fn *domain.Function) (*PooledVM, err
 
 	// Cold start with singleflight to avoid thundering herd
 	val, err, shared := p.group.Do(fn.ID, func() (interface{}, error) {
-		return p.createVM(ctx, fn)
+		return p.createVM(ctx, fn, codeContent)
 	})
 	if err != nil {
 		return nil, err
@@ -316,7 +316,7 @@ func (p *Pool) Acquire(ctx context.Context, fn *domain.Function) (*PooledVM, err
 	pvm := val.(*PooledVM)
 	if shared {
 		// Another goroutine created this VM and got it. We need our own.
-		pvm, err = p.createVM(ctx, fn)
+		pvm, err = p.createVM(ctx, fn, codeContent)
 		if err != nil {
 			return nil, err
 		}
@@ -329,11 +329,11 @@ func (p *Pool) Acquire(ctx context.Context, fn *domain.Function) (*PooledVM, err
 	return pvm, nil
 }
 
-func (p *Pool) createVM(ctx context.Context, fn *domain.Function) (*PooledVM, error) {
+func (p *Pool) createVM(ctx context.Context, fn *domain.Function, codeContent []byte) (*PooledVM, error) {
 	logging.Op().Info("creating VM", "function", fn.Name, "runtime", fn.Runtime)
 
 	bootStart := time.Now()
-	vm, err := p.backend.CreateVM(ctx, fn)
+	vm, err := p.backend.CreateVM(ctx, fn, codeContent)
 	if err != nil {
 		return nil, err
 	}

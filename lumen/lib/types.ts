@@ -20,7 +20,7 @@ export interface FunctionData {
   handler: string;
   description?: string;
   code?: string;
-  codePath?: string;
+  codeHash?: string;
   minReplicas?: number;
   maxReplicas?: number;
   mode?: string;
@@ -108,7 +108,7 @@ export function transformFunction(
     lastModified: fn.updated_at,
     region: "local", // Nova runs locally
     handler: fn.handler,
-    codePath: fn.code_path,
+    codeHash: fn.code_hash,
     minReplicas: fn.min_replicas,
     maxReplicas: fn.max_replicas,
     mode: fn.mode,

@@ -205,7 +205,19 @@ func daemonCmd() *cobra.Command {
 						logging.Op().Error("error listing functions", "error", err)
 					} else {
 						for _, fn := range funcs {
-							if err := p.EnsureReady(ctx, fn); err != nil {
+							// Fetch code content for pre-warming
+							codeRecord, err := s.GetFunctionCode(ctx, fn.ID)
+							if err != nil || codeRecord == nil {
+								logging.Op().Debug("skipping function with no code", "function", fn.Name)
+								continue
+							}
+							var codeContent []byte
+							if len(codeRecord.CompiledBinary) > 0 {
+								codeContent = codeRecord.CompiledBinary
+							} else {
+								codeContent = []byte(codeRecord.SourceCode)
+							}
+							if err := p.EnsureReady(ctx, fn, codeContent); err != nil {
 								logging.Op().Error("error ensuring ready", "function", fn.Name, "error", err)
 							}
 						}

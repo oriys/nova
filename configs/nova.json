@@ -3,6 +3,7 @@
     "dsn": "postgres://nova:nova@localhost:5432/nova?sslmode=disable"
   },
   "firecracker": {
+    "backend": "docker",
     "binary": "/opt/nova/bin/firecracker",
     "kernel": "/opt/nova/kernel/vmlinux",
     "rootfs_dir": "/opt/nova/rootfs",
@@ -10,6 +11,10 @@
     "socket_dir": "/tmp/nova/sockets",
     "vsock_dir": "/tmp/nova/vsock",
     "log_dir": "/tmp/nova/logs"
+  },
+  "docker": {
+    "code_dir": "/tmp/nova/code",
+    "image_prefix": "nova-runtime"
   },
   "pool": {
     "idle_ttl": 60000000000

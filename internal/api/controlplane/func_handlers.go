@@ -2,10 +2,7 @@ package controlplane
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
@@ -32,8 +29,8 @@ func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "runtime is required", http.StatusBadRequest)
 		return
 	}
-	if req.CodePath == "" && req.Code == "" {
-		http.Error(w, "code_path or code is required", http.StatusBadRequest)
+	if req.Code == "" {
+		http.Error(w, "code is required", http.StatusBadRequest)
 		return
 	}
 
@@ -49,7 +46,6 @@ func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 		"name":           fn.Name,
 		"runtime":        fn.Runtime,
 		"handler":        fn.Handler,
-		"code_path":      fn.CodePath,
 		"code_hash":      fn.CodeHash,
 		"memory_mb":      fn.MemoryMB,
 		"timeout_s":      fn.TimeoutS,
@@ -104,7 +100,7 @@ func (h *Handler) UpdateFunction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	codeChanged := update.CodePath != nil
+	codeChanged := update.Code != nil
 
 	fn, err := h.Store.UpdateFunction(r.Context(), name, &update)
 	if err != nil {
@@ -113,10 +109,22 @@ func (h *Handler) UpdateFunction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if codeChanged {
+		// Update code in store
+		sourceHash := crypto.HashString(*update.Code)
+		if err := h.Store.UpdateFunctionCode(r.Context(), fn.ID, *update.Code, sourceHash); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 		h.Pool.Evict(fn.ID)
 		executor.InvalidateSnapshot(h.Backend.SnapshotDir(), fn.ID)
 		h.Pool.InvalidateSnapshotCache(fn.ID)
 		logging.Op().Info("invalidated snapshot", "function", fn.Name, "reason", "code_changed")
+
+		// Trigger recompilation if compiler is available
+		if h.Compiler != nil {
+			h.Compiler.CompileAsync(r.Context(), fn, *update.Code)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -191,12 +199,8 @@ func (h *Handler) GetFunctionCode(w http.ResponseWriter, r *http.Request) {
 			response["binary_hash"] = code.BinaryHash
 		}
 	} else {
-		if fn.CodePath != "" {
-			if data, err := os.ReadFile(fn.CodePath); err == nil {
-				response["source_code"] = string(data)
-				response["compile_status"] = domain.CompileStatusNotRequired
-			}
-		}
+		response["source_code"] = ""
+		response["compile_status"] = domain.CompileStatusPending
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -248,17 +252,7 @@ func (h *Handler) UpdateFunctionCode(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		if !domain.NeedsCompilation(fn.Runtime) {
-			funcDir := filepath.Join(os.TempDir(), "nova-functions")
-			os.MkdirAll(funcDir, 0755)
-			ext := runtimeExtension(fn.Runtime)
-			codePath := filepath.Join(funcDir, fn.Name+ext)
-			if err := os.WriteFile(codePath, []byte(req.Code), 0644); err != nil {
-				http.Error(w, fmt.Sprintf("write code: %v", err), http.StatusInternalServerError)
-				return
-			}
-			fn.CodePath = codePath
-			fn.CodeHash = sourceHash
-			h.Store.SaveFunction(r.Context(), fn)
+			// Store source as compiled artifact for interpreted languages
 			h.Store.UpdateCompileResult(r.Context(), fn.ID, []byte(req.Code), sourceHash, domain.CompileStatusNotRequired, "")
 			compileStatus = domain.CompileStatusNotRequired
 		} else {
@@ -266,38 +260,13 @@ func (h *Handler) UpdateFunctionCode(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Update function's code hash
+	fn.CodeHash = sourceHash
+	h.Store.SaveFunction(r.Context(), fn)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"compile_status": compileStatus,
 		"source_hash":    sourceHash,
 	})
-}
-
-func runtimeExtension(runtime domain.Runtime) string {
-	exts := map[domain.Runtime]string{
-		domain.RuntimePython: ".py",
-		domain.RuntimeGo:     ".go",
-		domain.RuntimeRust:   ".rs",
-		domain.RuntimeNode:   ".js",
-		domain.RuntimeRuby:   ".rb",
-		domain.RuntimeJava:   ".java",
-		domain.RuntimeDeno:   ".ts",
-		domain.RuntimeBun:    ".ts",
-		domain.RuntimeWasm:   ".wasm",
-		domain.RuntimePHP:    ".php",
-		domain.RuntimeDotnet: ".cs",
-		domain.RuntimeElixir: ".exs",
-		domain.RuntimeKotlin: ".kt",
-		domain.RuntimeSwift:  ".swift",
-		domain.RuntimeZig:    ".zig",
-		domain.RuntimeLua:    ".lua",
-		domain.RuntimePerl:   ".pl",
-		domain.RuntimeR:      ".R",
-		domain.RuntimeJulia:  ".jl",
-		domain.RuntimeScala:  ".scala",
-	}
-	if ext, ok := exts[runtime]; ok {
-		return ext
-	}
-	return ".txt"
 }
