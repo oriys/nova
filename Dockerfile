@@ -24,4 +24,4 @@ COPY configs/ /app/configs/
 
 EXPOSE 9000
 # Ensure it uses the config file in the container
-CMD ["nova", "daemon", "--config", "configs/nova.yaml", "--http", ":9000"]
+CMD ["nova", "daemon", "--config", "configs/nova.json", "--http", ":9000"]

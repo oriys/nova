@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/oriys/nova/internal/logging"
@@ -17,17 +18,17 @@ const (
 
 type invocationLogBatcher struct {
 	store         *store.Store
-	logger        *logging.Logger
+	logger        *slog.Logger
 	logs          chan *store.InvocationLog
 	flushInterval time.Duration
 	batchSize     int
 	done          chan struct{}
 }
 
-func newInvocationLogBatcher(store *store.Store, logger *logging.Logger) *invocationLogBatcher {
+func newInvocationLogBatcher(s *store.Store) *invocationLogBatcher {
 	b := &invocationLogBatcher{
-		store:         store,
-		logger:        logger,
+		store:         s,
+		logger:        logging.Op(),
 		logs:          make(chan *store.InvocationLog, defaultInvocationLogBufferSize),
 		flushInterval: defaultInvocationLogFlushInterval,
 		batchSize:     defaultInvocationLogBatchSize,

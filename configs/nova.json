@@ -1,0 +1,17 @@
+{
+  "postgres": {
+    "dsn": "postgres://nova:nova@localhost:5432/nova?sslmode=disable"
+  },
+  "firecracker": {
+    "binary": "/opt/nova/bin/firecracker",
+    "kernel": "/opt/nova/kernel/vmlinux",
+    "rootfs_dir": "/opt/nova/rootfs",
+    "snapshot_dir": "/opt/nova/snapshots",
+    "socket_dir": "/tmp/nova/sockets",
+    "vsock_dir": "/tmp/nova/vsock",
+    "log_dir": "/tmp/nova/logs"
+  },
+  "pool": {
+    "idle_ttl": 60000000000
+  }
+}

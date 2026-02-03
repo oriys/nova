@@ -86,8 +86,14 @@ require_cmd() {
 }
 
 check_platform() {
-  [[ "$(uname)" == "Linux" ]] || die "Linux only"
-  [[ "$(uname -m)" == "x86_64" ]] || die "x86_64 only"
+  if [[ "$(uname)" != "Linux" ]]; then
+    warn "Skipping rootfs build: Linux required (current: $(uname))"
+    exit 0
+  fi
+  if [[ "$(uname -m)" != "x86_64" ]]; then
+    warn "Skipping rootfs build: x86_64 required (current: $(uname -m))"
+    exit 0
+  fi
 }
 
 resolve_agent() {

@@ -64,7 +64,7 @@ func New(store *store.Store, pool *pool.Pool, opts ...Option) *Executor {
 	for _, opt := range opts {
 		opt(e)
 	}
-	e.logBatcher = newInvocationLogBatcher(store, e.logger)
+	e.logBatcher = newInvocationLogBatcher(store)
 	return e
 }
 
