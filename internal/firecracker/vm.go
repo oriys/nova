@@ -117,6 +117,8 @@ type Manager struct {
 	nextIP        uint32 // last octet for IP allocation
 	cidMu         sync.Mutex
 	ipMu          sync.Mutex
+	usedCIDs      map[uint32]struct{}
+	usedIPs       map[string]struct{}
 	templateReady atomic.Bool
 	templateMu    sync.Mutex
 	bridgeReady   atomic.Bool
@@ -132,10 +134,12 @@ func NewManager(cfg *Config) (*Manager, error) {
 	}
 
 	return &Manager{
-		config:  cfg,
-		vms:     make(map[string]*VM),
-		nextCID: 100,
-		nextIP:  2, // Start from .2 (.1 is bridge)
+		config:   cfg,
+		vms:      make(map[string]*VM),
+		nextCID:  100,
+		nextIP:   2, // Start from .2 (.1 is bridge)
+		usedCIDs: make(map[uint32]struct{}),
+		usedIPs:  make(map[string]struct{}),
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(_ context.Context, _, addr string) (net.Conn, error) {
@@ -146,27 +150,91 @@ func NewManager(cfg *Config) (*Manager, error) {
 	}, nil
 }
 
-func (m *Manager) allocateCID() uint32 {
+func (m *Manager) allocateCID() (uint32, error) {
 	m.cidMu.Lock()
 	defer m.cidMu.Unlock()
-	cid := m.nextCID
-	m.nextCID++
-	return cid
+	for i := 0; i < 1<<16; i++ {
+		cid := m.nextCID
+		m.nextCID++
+		if m.nextCID == 0 {
+			m.nextCID = 100
+		}
+		if _, ok := m.usedCIDs[cid]; ok {
+			continue
+		}
+		m.usedCIDs[cid] = struct{}{}
+		return cid, nil
+	}
+	return 0, fmt.Errorf("no available vsock CIDs")
 }
 
 // allocateIP returns next available IP in subnet (e.g., "172.30.0.2")
-func (m *Manager) allocateIP() string {
+func (m *Manager) allocateIP() (string, error) {
 	m.ipMu.Lock()
 	defer m.ipMu.Unlock()
-	// Parse base from config (e.g., "172.30.0.0/24" -> "172.30.0")
-	parts := strings.Split(m.config.Subnet, "/")
-	base := strings.TrimSuffix(parts[0], ".0")
-	ip := fmt.Sprintf("%s.%d", base, m.nextIP)
-	m.nextIP++
-	if m.nextIP > 254 {
-		m.nextIP = 2 // wrap around, skip .0 and .1
+	baseIP, ipNet, err := net.ParseCIDR(m.config.Subnet)
+	if err != nil {
+		return "", fmt.Errorf("parse subnet: %w", err)
 	}
-	return ip
+	ones, bits := ipNet.Mask.Size()
+	if bits != 32 {
+		return "", fmt.Errorf("unsupported subnet mask: %d", bits)
+	}
+	hostCount := uint32(1) << uint32(32-ones)
+	if hostCount <= 3 {
+		return "", fmt.Errorf("subnet too small for VM allocation")
+	}
+	startOffset := uint32(2)
+	maxOffset := hostCount - 2
+
+	base := ipToUint32(baseIP)
+	for i := uint32(0); i < maxOffset-startOffset+1; i++ {
+		offset := m.nextIP
+		if offset < startOffset || offset > maxOffset {
+			offset = startOffset
+		}
+		candidate := uint32ToIP(base + offset)
+		m.nextIP = offset + 1
+		if m.nextIP > maxOffset {
+			m.nextIP = startOffset
+		}
+		if _, ok := m.usedIPs[candidate]; ok {
+			continue
+		}
+		m.usedIPs[candidate] = struct{}{}
+		return candidate, nil
+	}
+	return "", fmt.Errorf("no available IPs in subnet")
+}
+
+func (m *Manager) releaseCID(cid uint32) {
+	if cid == 0 {
+		return
+	}
+	m.cidMu.Lock()
+	delete(m.usedCIDs, cid)
+	m.cidMu.Unlock()
+}
+
+func (m *Manager) releaseIP(ip string) {
+	if ip == "" {
+		return
+	}
+	m.ipMu.Lock()
+	delete(m.usedIPs, ip)
+	m.ipMu.Unlock()
+}
+
+func ipToUint32(ip net.IP) uint32 {
+	ip = ip.To4()
+	if ip == nil {
+		return 0
+	}
+	return uint32(ip[0])<<24 | uint32(ip[1])<<16 | uint32(ip[2])<<8 | uint32(ip[3])
+}
+
+func uint32ToIP(value uint32) string {
+	return fmt.Sprintf("%d.%d.%d.%d", byte(value>>24), byte(value>>16), byte(value>>8), byte(value))
 }
 
 // generateMAC creates a locally-administered MAC address from VM ID
@@ -228,9 +296,10 @@ func (m *Manager) ensureBridge() error {
 	}
 
 	// Setup NAT (masquerade) for outbound traffic
-	exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-s", m.config.Subnet, "-j", "MASQUERADE").Run()
-	if out, err := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-s", m.config.Subnet, "-j", "MASQUERADE").CombinedOutput(); err != nil {
-		return fmt.Errorf("setup NAT: %s: %w", out, err)
+	if err := exec.Command("iptables", "-t", "nat", "-C", "POSTROUTING", "-s", m.config.Subnet, "-j", "MASQUERADE").Run(); err != nil {
+		if out, err := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-s", m.config.Subnet, "-j", "MASQUERADE").CombinedOutput(); err != nil {
+			return fmt.Errorf("setup NAT: %s: %w", out, err)
+		}
 	}
 
 	m.bridgeReady.Store(true)
@@ -272,7 +341,11 @@ func deleteTAP(tap string) {
 // Checks for existing snapshot first.
 func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error) {
 	vmID := uuid.New().String()[:8]
-	cid := m.allocateCID()
+	cid, err := m.allocateCID()
+	if err != nil {
+		return nil, err
+	}
+	cidAllocated := true
 
 	vm := &VM{
 		ID:         vmID,
@@ -284,6 +357,14 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error
 		CreatedAt:  time.Now(),
 		LastUsed:   time.Now(),
 	}
+	defer func() {
+		if vm.State == VMStateStopped {
+			if cidAllocated {
+				m.releaseCID(cid)
+			}
+			m.releaseIP(vm.GuestIP)
+		}
+	}()
 
 	// Clean up any stale sockets before starting Firecracker.
 	_ = os.Remove(vm.SocketPath)
@@ -292,25 +373,35 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error
 	// Prepare resources
 	rootfsPath := filepath.Join(m.config.RootfsDir, rootfsForRuntime(fn.Runtime))
 	if _, err := os.Stat(rootfsPath); os.IsNotExist(err) {
+		vm.State = VMStateStopped
 		return nil, fmt.Errorf("rootfs not found: %s", rootfsPath)
 	}
 
 	codeDrive := filepath.Join(m.config.SocketDir, vmID+"-code.ext4")
 	if err := m.buildCodeDrive(codeDrive, fn.CodePath); err != nil {
+		vm.State = VMStateStopped
 		return nil, fmt.Errorf("build code drive: %w", err)
 	}
 	vm.CodeDrive = codeDrive
 
 	// Setup network
 	if err := m.ensureBridge(); err != nil {
+		vm.State = VMStateStopped
 		return nil, fmt.Errorf("ensure bridge: %w", err)
 	}
 	tap, err := m.createTAP(vmID)
 	if err != nil {
+		vm.State = VMStateStopped
 		return nil, fmt.Errorf("create tap: %w", err)
 	}
 	vm.TapDevice = tap
-	vm.GuestIP = m.allocateIP()
+	ip, err := m.allocateIP()
+	if err != nil {
+		vm.State = VMStateStopped
+		deleteTAP(vm.TapDevice)
+		return nil, err
+	}
+	vm.GuestIP = ip
 	vm.GuestMAC = generateMAC(vmID)
 
 	// Check for snapshot
@@ -343,6 +434,8 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function) (*VM, error
 
 	if err := cmd.Start(); err != nil {
 		logFile.Close()
+		deleteTAP(vm.TapDevice)
+		vm.State = VMStateStopped
 		return nil, fmt.Errorf("start firecracker: %w", err)
 	}
 	if err := logFile.Close(); err != nil {
@@ -948,6 +1041,8 @@ func (m *Manager) monitorProcess(vm *VM) {
 		os.Remove(vm.VsockPath)
 		os.Remove(vm.CodeDrive)
 		os.Remove(filepath.Join(m.config.SocketDir, vm.ID+".json"))
+		m.releaseCID(vm.CID)
+		m.releaseIP(vm.GuestIP)
 
 		vm.State = VMStateStopped
 	}
@@ -1004,6 +1099,8 @@ func (m *Manager) StopVM(vmID string) error {
 	os.Remove(vm.VsockPath)
 	os.Remove(vm.CodeDrive)
 	os.Remove(filepath.Join(m.config.SocketDir, vm.ID+".json"))
+	m.releaseCID(vm.CID)
+	m.releaseIP(vm.GuestIP)
 
 	vm.State = VMStateStopped
 	return nil
