@@ -49,6 +49,9 @@ const (
 
 	// Default vsock port used by the guest agent (must match cmd/agent)
 	defaultVsockPort = 9999
+
+	// Maximum vsock message size to protect against oversized responses.
+	maxVsockMessageBytes = 8 * 1024 * 1024 // 8MB
 )
 
 type Config struct {
@@ -809,6 +812,11 @@ func (m *Manager) waitForSocket(ctx context.Context, path string, proc *os.Proce
 		deadline = time.Now().Add(timeout)
 	}
 	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if proc != nil {
 			if err := proc.Signal(syscall.Signal(0)); err != nil {
 				return fmt.Errorf("firecracker exited before socket ready: %w", err)
@@ -1337,6 +1345,9 @@ func (c *VsockClient) receiveLocked() (*VsockMessage, error) {
 	}
 
 	msgLen := binary.BigEndian.Uint32(lenBuf)
+	if msgLen > maxVsockMessageBytes {
+		return nil, fmt.Errorf("vsock message too large: %d bytes", msgLen)
+	}
 	data := make([]byte, msgLen)
 	if _, err := io.ReadFull(c.conn, data); err != nil {
 		return nil, err

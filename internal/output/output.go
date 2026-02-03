@@ -37,8 +37,8 @@ func ParseFormat(s string) Format {
 
 // Printer handles formatted output
 type Printer struct {
-	format Format
-	writer io.Writer
+	format  Format
+	writer  io.Writer
 	noColor bool
 }
 
@@ -83,15 +83,15 @@ func (p *Printer) printYAML(data interface{}) error {
 
 // Color codes
 const (
-	Reset     = "\033[0m"
-	Bold      = "\033[1m"
-	Red       = "\033[31m"
-	Green     = "\033[32m"
-	Yellow    = "\033[33m"
-	Blue      = "\033[34m"
-	Magenta   = "\033[35m"
-	Cyan      = "\033[36m"
-	Gray      = "\033[90m"
+	Reset   = "\033[0m"
+	Bold    = "\033[1m"
+	Red     = "\033[31m"
+	Green   = "\033[32m"
+	Yellow  = "\033[33m"
+	Blue    = "\033[34m"
+	Magenta = "\033[35m"
+	Cyan    = "\033[36m"
+	Gray    = "\033[90m"
 )
 
 // Colorize adds color to text
@@ -275,11 +275,7 @@ func (p *Printer) PrintFunctionDetail(detail FunctionDetail) error {
 	if len(detail.EnvVars) > 0 {
 		fmt.Fprintf(p.writer, "  %s\n", p.Colorize(Gray, "Env Vars:"))
 		for k, v := range detail.EnvVars {
-			// Mask secret references
-			displayV := v
-			if strings.HasPrefix(v, "$SECRET:") {
-				displayV = p.Colorize(Yellow, v)
-			}
+			displayV := maskEnvValue(k, v)
 			fmt.Fprintf(p.writer, "    %s=%s\n", k, displayV)
 		}
 	}
@@ -295,6 +291,20 @@ func (p *Printer) PrintFunctionDetail(detail FunctionDetail) error {
 	fmt.Fprintf(p.writer, "  %s %s\n", p.Colorize(Gray, "Updated:"), detail.Updated)
 
 	return nil
+}
+
+func maskEnvValue(key, value string) string {
+	if strings.HasPrefix(value, "$SECRET:") {
+		return value
+	}
+	upperKey := strings.ToUpper(key)
+	sensitiveKeys := []string{"SECRET", "TOKEN", "KEY", "PASSWORD"}
+	for _, marker := range sensitiveKeys {
+		if strings.Contains(upperKey, marker) {
+			return "****"
+		}
+	}
+	return value
 }
 
 // LogEntry represents a log entry

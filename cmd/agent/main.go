@@ -3,8 +3,10 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -40,6 +42,8 @@ const (
 	denoPath     = "/usr/local/bin/deno"
 	bunPath      = "/usr/local/bin/bun"
 	dotnetRoot   = "/usr/share/dotnet"
+
+	maxPersistentResponseBytes = 4 * 1024 * 1024 // 4MB
 )
 
 // ExecutionMode determines how functions are executed
@@ -286,7 +290,7 @@ func (a *Agent) handleExec(payload json.RawMessage) (*Message, error) {
 	}
 
 	start := time.Now()
-	output, stdout, stderr, execErr := a.executeFunction(req.Input)
+	output, stdout, stderr, execErr := a.executeFunction(req.Input, req.TimeoutS)
 	duration := time.Since(start).Milliseconds()
 
 	// Log execution result
@@ -312,10 +316,10 @@ func (a *Agent) handleExec(payload json.RawMessage) (*Message, error) {
 	return &Message{Type: MsgTypeResp, Payload: respData}, nil
 }
 
-func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, string, string, error) {
+func (a *Agent) executeFunction(input json.RawMessage, timeoutS int) (json.RawMessage, string, string, error) {
 	// Use persistent mode if available
 	if a.function.Mode == ModePersistent && a.persistentProc != nil {
-		output, err := a.executePersistent(input)
+		output, err := a.executePersistent(input, timeoutS)
 		return output, "", "", err
 	}
 
@@ -325,30 +329,36 @@ func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, string,
 	}
 
 	var cmd *exec.Cmd
+	var cancel context.CancelFunc
+	ctx := context.Background()
+	if timeoutS > 0 {
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutS)*time.Second)
+		defer cancel()
+	}
 	switch a.function.Runtime {
 	case "python":
-		cmd = exec.Command(resolveBinary(pythonPath, "python3"), CodePath, "/tmp/input.json")
+		cmd = exec.CommandContext(ctx, resolveBinary(pythonPath, "python3"), CodePath, "/tmp/input.json")
 	case "go", "rust":
-		cmd = exec.Command(CodePath, "/tmp/input.json")
+		cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
 	case "wasm":
-		cmd = exec.Command(resolveBinary(wasmtimePath, "wasmtime"), CodePath, "--", "/tmp/input.json")
+		cmd = exec.CommandContext(ctx, resolveBinary(wasmtimePath, "wasmtime"), CodePath, "--", "/tmp/input.json")
 	case "node":
-		cmd = exec.Command(resolveBinary(nodePath, "node"), CodePath, "/tmp/input.json")
+		cmd = exec.CommandContext(ctx, resolveBinary(nodePath, "node"), CodePath, "/tmp/input.json")
 	case "ruby":
-		cmd = exec.Command(resolveBinary(rubyPath, "ruby"), CodePath, "/tmp/input.json")
+		cmd = exec.CommandContext(ctx, resolveBinary(rubyPath, "ruby"), CodePath, "/tmp/input.json")
 	case "java":
 		// Java expects a JAR file: java -jar /code/handler.jar input.json
-		cmd = exec.Command(resolveBinary(javaPath, "java"), "-jar", CodePath, "/tmp/input.json")
+		cmd = exec.CommandContext(ctx, resolveBinary(javaPath, "java"), "-jar", CodePath, "/tmp/input.json")
 	case "php":
-		cmd = exec.Command(resolveBinary(phpPath, "php"), CodePath, "/tmp/input.json")
+		cmd = exec.CommandContext(ctx, resolveBinary(phpPath, "php"), CodePath, "/tmp/input.json")
 	case "deno":
 		// Deno needs --allow-read for input file
-		cmd = exec.Command(resolveBinary(denoPath, "deno"), "run", "--allow-read", CodePath, "/tmp/input.json")
+		cmd = exec.CommandContext(ctx, resolveBinary(denoPath, "deno"), "run", "--allow-read", CodePath, "/tmp/input.json")
 	case "bun":
-		cmd = exec.Command(resolveBinary(bunPath, "bun"), "run", CodePath, "/tmp/input.json")
+		cmd = exec.CommandContext(ctx, resolveBinary(bunPath, "bun"), "run", CodePath, "/tmp/input.json")
 	case "dotnet":
 		// Expect a single-file apphost at /code/handler (PublishSingleFile=true).
-		cmd = exec.Command(CodePath, "/tmp/input.json")
+		cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
 	default:
 		return nil, "", "", fmt.Errorf("unsupported runtime: %s", a.function.Runtime)
 	}
@@ -374,6 +384,9 @@ func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, string,
 	stderr := stderrBuf.String()
 
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, stdout, stderr, fmt.Errorf("timeout after %ds", timeoutS)
+		}
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return nil, stdout, stderr, fmt.Errorf("exit %d: %s", exitErr.ExitCode(), stderr)
 		}
@@ -389,7 +402,7 @@ func (a *Agent) executeFunction(input json.RawMessage) (json.RawMessage, string,
 }
 
 // executePersistent sends request to long-running process via stdin/stdout
-func (a *Agent) executePersistent(input json.RawMessage) (json.RawMessage, error) {
+func (a *Agent) executePersistent(input json.RawMessage, timeoutS int) (json.RawMessage, error) {
 	// Protocol: write JSON line to stdin, read JSON line from stdout
 	// Format: {"input": ...}\n -> {"output": ...}\n
 
@@ -408,12 +421,40 @@ func (a *Agent) executePersistent(input json.RawMessage) (json.RawMessage, error
 		}
 	}
 
-	// Read response line
-	line, err := a.persistentOut.ReadBytes('\n')
-	if err != nil {
+	// Read response line with timeout/size enforcement
+	lineCh := make(chan []byte, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		line, err := readLineWithLimit(a.persistentOut, maxPersistentResponseBytes)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		lineCh <- line
+	}()
+
+	if timeoutS > 0 {
+		select {
+		case line := <-lineCh:
+			return parsePersistentResponse(line)
+		case err := <-errCh:
+			return nil, fmt.Errorf("read from persistent process: %w", err)
+		case <-time.After(time.Duration(timeoutS) * time.Second):
+			a.stopPersistentProcess()
+			return nil, fmt.Errorf("timeout after %ds", timeoutS)
+		}
+	}
+
+	select {
+	case line := <-lineCh:
+		return parsePersistentResponse(line)
+	case err := <-errCh:
 		return nil, fmt.Errorf("read from persistent process: %w", err)
 	}
 
+}
+
+func parsePersistentResponse(line []byte) (json.RawMessage, error) {
 	var resp struct {
 		Output json.RawMessage `json:"output"`
 		Error  string          `json:"error,omitempty"`
@@ -425,6 +466,24 @@ func (a *Agent) executePersistent(input json.RawMessage) (json.RawMessage, error
 		return nil, fmt.Errorf("%s", resp.Error)
 	}
 	return resp.Output, nil
+}
+
+func readLineWithLimit(r *bufio.Reader, limit int) ([]byte, error) {
+	var out []byte
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if len(out)+len(chunk) > limit {
+			return nil, fmt.Errorf("response too large (limit %d bytes)", limit)
+		}
+		out = append(out, chunk...)
+		if err == nil {
+			return out, nil
+		}
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		return nil, err
+	}
 }
 
 func defaultEnv() []string {
