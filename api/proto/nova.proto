@@ -9,9 +9,6 @@ service NovaService {
   // Invoke calls a function synchronously and returns the result
   rpc Invoke(InvokeRequest) returns (InvokeResponse);
 
-  // InvokeAsync calls a function asynchronously and returns a request ID
-  rpc InvokeAsync(InvokeRequest) returns (InvokeAsyncResponse);
-
   // GetFunction returns function metadata
   rpc GetFunction(GetFunctionRequest) returns (FunctionInfo);
 
@@ -42,11 +39,6 @@ message InvokeResponse {
   string error = 3;
   int64 duration_ms = 4;
   bool cold_start = 5;
-}
-
-message InvokeAsyncResponse {
-  string request_id = 1;
-  string status = 2;
 }
 
 message GetFunctionRequest {

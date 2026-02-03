@@ -91,12 +91,6 @@ func (s *Server) Invoke(ctx context.Context, req *novapb.InvokeRequest) (*novapb
 	}, nil
 }
 
-// InvokeAsync handles asynchronous function invocation (placeholder)
-func (s *Server) InvokeAsync(ctx context.Context, req *novapb.InvokeRequest) (*novapb.InvokeAsyncResponse, error) {
-	// TODO: Implement async invocation with background execution
-	return nil, status.Error(codes.Unimplemented, "async invocation not implemented")
-}
-
 // GetFunction returns function metadata
 func (s *Server) GetFunction(ctx context.Context, req *novapb.GetFunctionRequest) (*novapb.FunctionInfo, error) {
 	if req.Name == "" {

@@ -15,7 +15,7 @@ import (
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/firecracker"
 	"github.com/oriys/nova/internal/output"
-	"github.com/oriys/nova/internal/pkg/fsutil"
+	"github.com/oriys/nova/internal/pkg/crypto"
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/store"
 	"github.com/spf13/cobra"
@@ -75,7 +75,7 @@ func registerCmd() *cobra.Command {
 				}
 			}
 
-			codeHash := fsutil.HashBytes(codeContent)
+			codeHash := crypto.HashBytes(codeContent)
 
 			fn := &domain.Function{
 				ID:          uuid.New().String(),
@@ -182,7 +182,6 @@ rows := make([]output.FunctionRow, 0, len(funcs))
 
 func invokeCmd() *cobra.Command {
 	var payload string
-	var local bool
 
 	cmd := &cobra.Command{
 		Use:   "invoke <name>",
@@ -205,42 +204,34 @@ func invokeCmd() *cobra.Command {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 
-			var resp *domain.InvokeResponse
-			if local {
-				// Local execution - no VM
-				localExec := executor.NewLocalExecutor(s)
-				resp, err = localExec.InvokeWithStore(ctx, args[0], input)
-			} else {
-				// Standalone execution with backend selection
-				cfg := config.DefaultConfig()
-				config.LoadFromEnv(cfg)
+			// Standalone execution with backend selection
+			cfg := config.DefaultConfig()
+			config.LoadFromEnv(cfg)
 
-				var be backend.Backend
-				switch cfg.Firecracker.Backend {
-				case "docker":
-					dockerMgr, err := docker.NewManager(&cfg.Docker)
-					if err != nil {
-						return err
-					}
-					be = dockerMgr
-				default:
-					adapter, err := firecracker.NewAdapter(&cfg.Firecracker)
-					if err != nil {
-						return err
-					}
-					be = adapter
+			var be backend.Backend
+			switch cfg.Firecracker.Backend {
+			case "docker":
+				dockerMgr, err := docker.NewManager(&cfg.Docker)
+				if err != nil {
+					return err
 				}
-				defer be.Shutdown()
-
-				p := pool.NewPool(be, pool.DefaultIdleTTL)
-				defer p.Shutdown()
-
-				exec := executor.New(s, p)
-				defer exec.Shutdown(5 * time.Second)
-
-				resp, err = exec.Invoke(ctx, args[0], input)
+				be = dockerMgr
+			default:
+				adapter, err := firecracker.NewAdapter(&cfg.Firecracker)
+				if err != nil {
+					return err
+				}
+				be = adapter
 			}
+			defer be.Shutdown()
 
+			p := pool.NewPool(be, pool.DefaultIdleTTL)
+			defer p.Shutdown()
+
+			exec := executor.New(s, p)
+			defer exec.Shutdown(5 * time.Second)
+
+			resp, err := exec.Invoke(ctx, args[0], input)
 			if err != nil {
 				return err
 			}
@@ -251,7 +242,6 @@ func invokeCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&payload, "payload", "p", "", "JSON payload")
-	cmd.Flags().BoolVarP(&local, "local", "l", false, "Run locally")
 	return cmd
 }
 
@@ -311,7 +301,7 @@ func updateCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("read code file: %w", err)
 				}
-				codeHash := fsutil.HashBytes(codeContent)
+				codeHash := crypto.HashBytes(codeContent)
 				code := string(codeContent)
 				update.Code = &code
 

@@ -30,11 +30,6 @@ func main() {
 		updateCmd(),
 		invokeCmd(),
 		daemonCmd(),
-		// snapshotCmd(),
-		// versionCmd(),
-		// scheduleCmd(),
-		// secretCmd(),
-		// apikeyCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
