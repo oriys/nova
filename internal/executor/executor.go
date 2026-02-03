@@ -30,6 +30,13 @@ type Executor struct {
 	logBatcher      *invocationLogBatcher
 	inflight        sync.WaitGroup
 	closing         atomic.Bool
+	codeHashCache   sync.Map // codePath -> codeHashCacheEntry
+}
+
+type codeHashCacheEntry struct {
+	modTime time.Time
+	size    int64
+	hash    string
 }
 
 type Option func(*Executor)
@@ -208,17 +215,40 @@ func (e *Executor) persistInvocationLog(reqID string, fn *domain.Function, durat
 
 // refreshCodeHash checks if code file has changed and updates the function's hash.
 func (e *Executor) refreshCodeHash(ctx context.Context, fn *domain.Function) {
+	fi, err := os.Stat(fn.CodePath)
+	if err != nil {
+		return // Can't read file, skip check
+	}
+	if cached, ok := e.codeHashCache.Load(fn.CodePath); ok {
+		entry := cached.(codeHashCacheEntry)
+		if entry.modTime.Equal(fi.ModTime()) && entry.size == fi.Size() {
+			e.applyCodeHash(ctx, fn, entry.hash)
+			return
+		}
+	}
+
 	currentHash, err := fsutil.HashFile(fn.CodePath)
 	if err != nil {
 		return // Can't read file, skip check
 	}
+	e.codeHashCache.Store(fn.CodePath, codeHashCacheEntry{
+		modTime: fi.ModTime(),
+		size:    fi.Size(),
+		hash:    currentHash,
+	})
 
+	e.applyCodeHash(ctx, fn, currentHash)
+}
+
+func (e *Executor) applyCodeHash(ctx context.Context, fn *domain.Function, currentHash string) {
 	if fn.CodeHash != "" && fn.CodeHash != currentHash {
 		logging.Op().Info("code change detected", "function", fn.Name)
 		fn.CodeHash = currentHash
 		fn.UpdatedAt = time.Now()
 		_ = e.store.SaveFunction(ctx, fn)
-	} else if fn.CodeHash == "" {
+		return
+	}
+	if fn.CodeHash == "" {
 		fn.CodeHash = currentHash
 		_ = e.store.SaveFunction(ctx, fn)
 	}

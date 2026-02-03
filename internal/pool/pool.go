@@ -37,10 +37,10 @@ type PooledVM struct {
 type functionPool struct {
 	vms         []*PooledVM
 	mu          sync.Mutex
-	maxReplicas atomic.Int32  // max concurrent VMs (0 = unlimited)
-	waiters     int           // number of goroutines waiting for a VM
-	cond        *sync.Cond    // condition variable for waiting
-	codeHash    atomic.Value  // string: hash of code when VMs were created
+	maxReplicas atomic.Int32 // max concurrent VMs (0 = unlimited)
+	waiters     int          // number of goroutines waiting for a VM
+	cond        *sync.Cond   // condition variable for waiting
+	codeHash    atomic.Value // string: hash of code when VMs were created
 }
 
 // SnapshotCallback is called after a cold start to create a snapshot
@@ -55,6 +55,7 @@ type Pool struct {
 	cancel           context.CancelFunc
 	snapshotCallback SnapshotCallback
 	snapshotCache    sync.Map // funcID -> bool (true if snapshot exists)
+	snapshotLocks    sync.Map // funcID -> *sync.Mutex
 }
 
 func NewPool(b backend.Backend, idleTTL time.Duration) *Pool {
@@ -370,17 +371,31 @@ func (p *Pool) createVM(ctx context.Context, fn *domain.Function) (*PooledVM, er
 	// Create snapshot if callback is set and no snapshot exists for this function
 	if p.snapshotCallback != nil {
 		if _, hasSnapshot := p.snapshotCache.Load(fn.ID); !hasSnapshot {
-			logging.Op().Info("creating snapshot after cold start", "function", fn.Name, "vm_id", vm.ID)
-			if err := p.snapshotCallback(ctx, vm.ID, fn.ID); err != nil {
-				logging.Op().Error("snapshot creation failed", "function", fn.Name, "error", err)
-			} else {
-				p.snapshotCache.Store(fn.ID, true)
+			lock := p.getSnapshotLock(fn.ID)
+			lock.Lock()
+			if _, hasSnapshot := p.snapshotCache.Load(fn.ID); !hasSnapshot {
+				logging.Op().Info("creating snapshot after cold start", "function", fn.Name, "vm_id", vm.ID)
+				if err := p.snapshotCallback(ctx, vm.ID, fn.ID); err != nil {
+					logging.Op().Error("snapshot creation failed", "function", fn.Name, "error", err)
+				} else {
+					p.snapshotCache.Store(fn.ID, true)
+				}
 			}
+			lock.Unlock()
 		}
 	}
 
 	logging.Op().Info("VM ready", "vm_id", vm.ID, "function", fn.Name)
 	return pvm, nil
+}
+
+func (p *Pool) getSnapshotLock(funcID string) *sync.Mutex {
+	if lock, ok := p.snapshotLocks.Load(funcID); ok {
+		return lock.(*sync.Mutex)
+	}
+	lock := &sync.Mutex{}
+	actual, _ := p.snapshotLocks.LoadOrStore(funcID, lock)
+	return actual.(*sync.Mutex)
 }
 
 func (p *Pool) Release(pvm *PooledVM) {
