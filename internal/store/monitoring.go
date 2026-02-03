@@ -52,6 +52,38 @@ func (s *PostgresStore) SaveInvocationLog(ctx context.Context, log *InvocationLo
 	return nil
 }
 
+func (s *PostgresStore) SaveInvocationLogs(ctx context.Context, logs []*InvocationLog) error {
+	if len(logs) == 0 {
+		return nil
+	}
+
+	batch := &pgx.Batch{}
+	for _, log := range logs {
+		if log.ID == "" {
+			return fmt.Errorf("invocation log id is required")
+		}
+		if log.CreatedAt.IsZero() {
+			log.CreatedAt = time.Now()
+		}
+		batch.Queue(`
+			INSERT INTO invocation_logs (id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, stdout, stderr, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			ON CONFLICT (id) DO NOTHING
+		`, log.ID, log.FunctionID, log.FunctionName, log.Runtime, log.DurationMs, log.ColdStart, log.Success, log.ErrorMessage, log.InputSize, log.OutputSize, log.Stdout, log.Stderr, log.CreatedAt)
+	}
+
+	results := s.pool.SendBatch(ctx, batch)
+	defer results.Close()
+
+	for range logs {
+		if _, err := results.Exec(); err != nil {
+			return fmt.Errorf("save invocation logs: %w", err)
+		}
+	}
+
+	return nil
+}
+
 func (s *PostgresStore) ListInvocationLogs(ctx context.Context, functionID string, limit int) ([]*InvocationLog, error) {
 	if limit <= 0 {
 		limit = 10

@@ -27,6 +27,7 @@ type Executor struct {
 	pool            *pool.Pool
 	logger          *logging.Logger
 	secretsResolver *secrets.Resolver
+	logBatcher      *invocationLogBatcher
 	inflight        sync.WaitGroup
 	closing         atomic.Bool
 }
@@ -56,6 +57,7 @@ func New(store *store.Store, pool *pool.Pool, opts ...Option) *Executor {
 	for _, opt := range opts {
 		opt(e)
 	}
+	e.logBatcher = newInvocationLogBatcher(store, e.logger)
 	return e
 }
 
@@ -187,25 +189,21 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 
 // persistInvocationLog asynchronously saves an invocation log to Postgres
 func (e *Executor) persistInvocationLog(reqID string, fn *domain.Function, durationMs int64, coldStart, success bool, errMsg string, inputSize, outputSize int, stdout, stderr string) {
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = e.store.SaveInvocationLog(ctx, &store.InvocationLog{
-			ID:           reqID,
-			FunctionID:   fn.ID,
-			FunctionName: fn.Name,
-			Runtime:      string(fn.Runtime),
-			DurationMs:   durationMs,
-			ColdStart:    coldStart,
-			Success:      success,
-			ErrorMessage: errMsg,
-			InputSize:    inputSize,
-			OutputSize:   outputSize,
-			Stdout:       stdout,
-			Stderr:       stderr,
-			CreatedAt:    time.Now(),
-		})
-	}()
+	e.logBatcher.Enqueue(&store.InvocationLog{
+		ID:           reqID,
+		FunctionID:   fn.ID,
+		FunctionName: fn.Name,
+		Runtime:      string(fn.Runtime),
+		DurationMs:   durationMs,
+		ColdStart:    coldStart,
+		Success:      success,
+		ErrorMessage: errMsg,
+		InputSize:    inputSize,
+		OutputSize:   outputSize,
+		Stdout:       stdout,
+		Stderr:       stderr,
+		CreatedAt:    time.Now(),
+	})
 }
 
 // refreshCodeHash checks if code file has changed and updates the function's hash.
@@ -281,5 +279,6 @@ func (e *Executor) Shutdown(timeout time.Duration) {
 		logging.Op().Warn("shutdown timeout waiting for in-flight requests", "timeout", timeout)
 	}
 
+	e.logBatcher.Shutdown(timeout)
 	e.pool.Shutdown()
 }
