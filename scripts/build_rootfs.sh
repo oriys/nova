@@ -177,6 +177,7 @@ inject_agent_init() {
 }
 
 build_base_rootfs() {
+  log "Building base rootfs (minimal, no distro)..."
   local tmp
   tmp="$(mktemp -d)"
   mkdir -p "${tmp}"/{dev,proc,sys,tmp,code,usr/local/bin}
@@ -187,6 +188,7 @@ build_base_rootfs() {
 }
 
 build_python_rootfs() {
+  log "Building python rootfs (Alpine + python3)..."
   local tmp
   tmp="$(mktemp -d)"
   stage_alpine_root "${tmp}"
@@ -198,6 +200,7 @@ build_python_rootfs() {
 }
 
 build_node_rootfs() {
+  log "Building node rootfs (Alpine + nodejs)..."
   local tmp
   tmp="$(mktemp -d)"
   stage_alpine_root "${tmp}"
@@ -209,6 +212,7 @@ build_node_rootfs() {
 }
 
 build_ruby_rootfs() {
+  log "Building ruby rootfs (Alpine + ruby)..."
   local tmp
   tmp="$(mktemp -d)"
   stage_alpine_root "${tmp}"
@@ -220,6 +224,7 @@ build_ruby_rootfs() {
 }
 
 build_java_rootfs() {
+  log "Building java rootfs (Alpine + OpenJDK)..."
   local tmp
   tmp="$(mktemp -d)"
   stage_alpine_root "${tmp}"
@@ -231,6 +236,7 @@ build_java_rootfs() {
 }
 
 build_wasm_rootfs() {
+  log "Building wasm rootfs (Alpine + wasmtime)..."
   local tmp
   tmp="$(mktemp -d)"
   stage_alpine_root "${tmp}"
@@ -258,6 +264,7 @@ build_wasm_rootfs() {
 }
 
 build_php_rootfs() {
+  log "Building php rootfs (Alpine + php)..."
   local tmp
   tmp="$(mktemp -d)"
   stage_alpine_root "${tmp}"
@@ -269,6 +276,7 @@ build_php_rootfs() {
 }
 
 build_dotnet_rootfs() {
+  log "Building dotnet rootfs (Alpine + .NET runtime)..."
   local tmp
   tmp="$(mktemp -d)"
   stage_alpine_root "${tmp}"
@@ -297,6 +305,7 @@ build_dotnet_rootfs() {
 }
 
 build_deno_rootfs() {
+  log "Building deno rootfs (Alpine + deno)..."
   local tmp
   tmp="$(mktemp -d)"
   stage_alpine_root "${tmp}"
@@ -324,6 +333,7 @@ build_deno_rootfs() {
 }
 
 build_bun_rootfs() {
+  log "Building bun rootfs (Alpine + bun)..."
   local tmp
   tmp="$(mktemp -d)"
   stage_alpine_root "${tmp}"
