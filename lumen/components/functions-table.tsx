@@ -17,9 +17,6 @@ import {
   Eye,
   Edit,
   Trash2,
-  Play,
-  Pause,
-  Copy,
   Loader2,
 } from "lucide-react"
 
@@ -168,22 +165,6 @@ export function FunctionsTable({ functions, onDelete, loading }: FunctionsTableP
                           Edit Function
                         </Link>
                       </DropdownMenuItem>
-                      <DropdownMenuItem disabled>
-                        <Copy className="mr-2 h-4 w-4" />
-                        Duplicate
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      {fn.status === "active" ? (
-                        <DropdownMenuItem disabled>
-                          <Pause className="mr-2 h-4 w-4" />
-                          Deactivate
-                        </DropdownMenuItem>
-                      ) : (
-                        <DropdownMenuItem disabled>
-                          <Play className="mr-2 h-4 w-4" />
-                          Activate
-                        </DropdownMenuItem>
-                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         className="text-destructive focus:text-destructive"

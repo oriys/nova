@@ -687,6 +687,83 @@ start_services() {
     done
 }
 
+# ─── Create Sample Functions ─────────────────────────────
+create_sample_functions() {
+    log "Creating sample functions for all runtimes..."
+
+    local api="http://localhost:9000"
+
+    # Wait for API to be ready
+    local retries=10
+    while ! curl -sf "${api}/health" >/dev/null 2>&1; do
+        retries=$((retries - 1))
+        if [[ ${retries} -eq 0 ]]; then
+            warn "API not ready, skipping sample functions"
+            return
+        fi
+        sleep 2
+    done
+
+    # Python functions
+    info "  Creating Python functions..."
+    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
+        -d '{"name":"hello-python","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import json\nimport sys\n\ndef handler(event):\n    name = event.get(\"name\", \"World\")\n    return {\"message\": f\"Hello, {name}!\", \"runtime\": \"python\"}\n\nif __name__ == \"__main__\":\n    with open(sys.argv[1]) as f:\n        event = json.load(f)\n    result = handler(event)\n    print(json.dumps(result))"}' >/dev/null 2>&1 && log "    hello-python" || true
+
+    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
+        -d '{"name":"fibonacci","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import json\nimport sys\n\ndef fib(n):\n    if n <= 1:\n        return n\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b\n\ndef main():\n    with open(sys.argv[1]) as f:\n        event = json.load(f)\n    n = event.get(\"n\", 10)\n    print(json.dumps({\"n\": n, \"fibonacci\": fib(n)}))\n\nif __name__ == \"__main__\":\n    main()"}' >/dev/null 2>&1 && log "    fibonacci" || true
+
+    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
+        -d '{"name":"prime-checker","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import json\nimport sys\nimport math\n\ndef is_prime(n):\n    if n < 2:\n        return False\n    if n == 2:\n        return True\n    if n % 2 == 0:\n        return False\n    for i in range(3, int(math.sqrt(n)) + 1, 2):\n        if n % i == 0:\n            return False\n    return True\n\ndef main():\n    with open(sys.argv[1]) as f:\n        event = json.load(f)\n    n = event.get(\"n\", 17)\n    print(json.dumps({\"n\": n, \"is_prime\": is_prime(n)}))\n\nif __name__ == \"__main__\":\n    main()"}' >/dev/null 2>&1 && log "    prime-checker" || true
+
+    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
+        -d '{"name":"echo","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import json\nimport sys\nimport time\n\ndef main():\n    with open(sys.argv[1]) as f:\n        event = json.load(f)\n    print(json.dumps({\"echo\": event, \"timestamp\": time.time()}))\n\nif __name__ == \"__main__\":\n    main()"}' >/dev/null 2>&1 && log "    echo" || true
+
+    # Node.js functions
+    info "  Creating Node.js functions..."
+    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
+        -d '{"name":"hello-node","runtime":"node","handler":"handler","memory_mb":256,"timeout_s":30,"code":"const fs = require(\"fs\");\n\nfunction handler(event) {\n  const name = event.name || \"World\";\n  return { message: `Hello, ${name}!`, runtime: \"node\" };\n}\n\nconst event = JSON.parse(fs.readFileSync(process.argv[2], \"utf8\"));\nconsole.log(JSON.stringify(handler(event)));"}' >/dev/null 2>&1 && log "    hello-node" || true
+
+    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
+        -d '{"name":"uuid-generator","runtime":"node","handler":"handler","memory_mb":256,"timeout_s":30,"code":"const fs = require(\"fs\");\nconst crypto = require(\"crypto\");\nconst event = JSON.parse(fs.readFileSync(process.argv[2], \"utf8\"));\nconst count = event.count || 1;\nconst uuids = [];\nfor (let i = 0; i < count; i++) {\n  uuids.push(crypto.randomUUID());\n}\nconsole.log(JSON.stringify({ uuids }));"}' >/dev/null 2>&1 && log "    uuid-generator" || true
+
+    # Ruby functions
+    info "  Creating Ruby functions..."
+    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
+        -d '{"name":"hello-ruby","runtime":"ruby","handler":"handler","memory_mb":128,"timeout_s":30,"code":"require \"json\"\n\ndef handler(event)\n  name = event[\"name\"] || \"World\"\n  { message: \"Hello, #{name}!\", runtime: \"ruby\" }\nend\n\nevent = JSON.parse(File.read(ARGV[0]))\nputs JSON.generate(handler(event))"}' >/dev/null 2>&1 && log "    hello-ruby" || true
+
+    # PHP functions
+    info "  Creating PHP functions..."
+    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
+        -d '{"name":"hello-php","runtime":"php","handler":"handler","memory_mb":128,"timeout_s":30,"code":"<?php\n$event = json_decode(file_get_contents($argv[1]), true);\n$name = $event[\"name\"] ?? \"World\";\necho json_encode([\"message\" => \"Hello, $name!\", \"runtime\" => \"php\"]);"}' >/dev/null 2>&1 && log "    hello-php" || true
+
+    # Deno functions
+    info "  Creating Deno functions..."
+    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
+        -d '{"name":"hello-deno","runtime":"deno","handler":"handler","memory_mb":128,"timeout_s":30,"code":"const event = JSON.parse(await Deno.readTextFile(Deno.args[0]));\nconst name = event.name || \"World\";\nconsole.log(JSON.stringify({ message: `Hello, ${name}!`, runtime: \"deno\" }));"}' >/dev/null 2>&1 && log "    hello-deno" || true
+
+    # Bun functions
+    info "  Creating Bun functions..."
+    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
+        -d '{"name":"hello-bun","runtime":"bun","handler":"handler","memory_mb":128,"timeout_s":30,"code":"const event = JSON.parse(await Bun.file(Bun.argv[2]).text());\nconst name = event.name || \"World\";\nconsole.log(JSON.stringify({ message: `Hello, ${name}!`, runtime: \"bun\" }));"}' >/dev/null 2>&1 && log "    hello-bun" || true
+
+    # Go functions (compiled)
+    info "  Creating Go functions (will be compiled)..."
+    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
+        -d '{"name":"hello-go","runtime":"go","handler":"handler","memory_mb":128,"timeout_s":30,"code":"package main\n\nimport (\n\t\"encoding/json\"\n\t\"fmt\"\n\t\"os\"\n)\n\ntype Event struct {\n\tName string `json:\"name\"`\n}\n\ntype Response struct {\n\tMessage string `json:\"message\"`\n\tRuntime string `json:\"runtime\"`\n}\n\nfunc main() {\n\tdata, _ := os.ReadFile(os.Args[1])\n\tvar event Event\n\tjson.Unmarshal(data, &event)\n\tif event.Name == \"\" {\n\t\tevent.Name = \"World\"\n\t}\n\tresp := Response{Message: fmt.Sprintf(\"Hello, %s!\", event.Name), Runtime: \"go\"}\n\tout, _ := json.Marshal(resp)\n\tfmt.Println(string(out))\n}"}' >/dev/null 2>&1 && log "    hello-go" || true
+
+    # Java functions (compiled)
+    info "  Creating Java functions (will be compiled)..."
+    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
+        -d '{"name":"hello-java","runtime":"java","handler":"handler","memory_mb":256,"timeout_s":60,"code":"import java.nio.file.*;\nimport java.util.regex.*;\n\npublic class Handler {\n    public static void main(String[] args) throws Exception {\n        String content = Files.readString(Path.of(args[0]));\n        Pattern p = Pattern.compile(\"\\\"name\\\"\\\\s*:\\\\s*\\\"([^\\\"]+)\\\"\");\n        Matcher m = p.matcher(content);\n        String name = m.find() ? m.group(1) : \"World\";\n        System.out.println(\"{\\\"message\\\": \\\"Hello, \" + name + \"!\\\", \\\"runtime\\\": \\\"java\\\"}\");\n    }\n}"}' >/dev/null 2>&1 && log "    hello-java" || true
+
+    # .NET functions (compiled)
+    info "  Creating .NET functions (will be compiled)..."
+    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
+        -d '{"name":"hello-dotnet","runtime":"dotnet","handler":"handler","memory_mb":256,"timeout_s":60,"code":"using System.Text.Json;\n\nvar json = File.ReadAllText(args[0]);\nvar doc = JsonDocument.Parse(json);\nvar name = doc.RootElement.TryGetProperty(\"name\", out var n) ? n.GetString() : \"World\";\nConsole.WriteLine(JsonSerializer.Serialize(new { message = $\"Hello, {name}!\", runtime = \"dotnet\" }));"}' >/dev/null 2>&1 && log "    hello-dotnet" || true
+
+    log "Sample functions created (compiled languages may take a moment to build)"
+}
+
 # ─── Print Summary ───────────────────────────────────────
 print_summary() {
     local server_ip
@@ -800,6 +877,9 @@ main() {
 
     # Start all services
     start_services
+
+    # Create sample functions via API
+    create_sample_functions
 
     # Print summary
     print_summary

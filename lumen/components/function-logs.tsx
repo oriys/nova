@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -52,6 +52,35 @@ export function FunctionLogs({ logs, onRefresh, loading }: FunctionLogsProps) {
 
   const pagedLogs = filteredLogs.slice((page - 1) * pageSize, page * pageSize)
 
+  // Auto-refresh when live mode is enabled
+  useEffect(() => {
+    if (!isLive || !onRefresh) return
+    const interval = setInterval(onRefresh, 3000)
+    return () => clearInterval(interval)
+  }, [isLive, onRefresh])
+
+  const handleExport = useCallback(() => {
+    const exportData = filteredLogs.map(log => ({
+      id: log.id,
+      timestamp: log.timestamp,
+      level: log.level,
+      message: log.message,
+      requestId: log.requestId,
+      functionName: log.functionName,
+      duration: log.duration,
+    }))
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `logs-${new Date().toISOString().split('T')[0]}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }, [filteredLogs])
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -101,7 +130,7 @@ export function FunctionLogs({ logs, onRefresh, loading }: FunctionLogsProps) {
             )}
             Refresh
           </Button>
-          <Button variant="outline" size="sm" disabled>
+          <Button variant="outline" size="sm" onClick={handleExport} disabled={filteredLogs.length === 0}>
             <Download className="mr-2 h-4 w-4" />
             Export
           </Button>

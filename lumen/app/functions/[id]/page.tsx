@@ -17,9 +17,7 @@ import type { FunctionMetrics as FunctionMetricsType } from "@/lib/api"
 import {
   ArrowLeft,
   Play,
-  MoreHorizontal,
   RefreshCw,
-  ExternalLink,
   Loader2,
 } from "lucide-react"
 
@@ -144,7 +142,6 @@ export default function FunctionDetailPage({
               Refresh
             </Button>
             <Button
-              variant="outline"
               size="sm"
               onClick={handleInvoke}
               disabled={invoking}
@@ -152,18 +149,9 @@ export default function FunctionDetailPage({
               {invoking ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <ExternalLink className="mr-2 h-4 w-4" />
+                <Play className="mr-2 h-4 w-4" />
               )}
               Invoke
-            </Button>
-            <Button size="sm" asChild>
-              <Link href={`/functions/${id}/deploy`}>
-                <Play className="mr-2 h-4 w-4" />
-                Deploy
-              </Link>
-            </Button>
-            <Button variant="ghost" size="icon">
-              <MoreHorizontal className="h-4 w-4" />
             </Button>
           </div>
         </div>
