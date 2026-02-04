@@ -20,7 +20,8 @@ RUN apk add --no-cache \
     e2fsprogs \
     tar \
     unzip \
-    util-linux
+    util-linux \
+    xz
 
 WORKDIR /opt/nova
 
