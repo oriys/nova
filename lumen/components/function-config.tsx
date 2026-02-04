@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -11,9 +12,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { FunctionData } from "@/lib/types"
-import { functionsApi } from "@/lib/api"
-import { Save, Plus, Trash2, Eye, EyeOff, Key, Loader2 } from "lucide-react"
+import { functionsApi, snapshotsApi } from "@/lib/api"
+import { Save, Plus, Trash2, Eye, EyeOff, Key, Loader2, Camera, AlertTriangle } from "lucide-react"
 
 interface FunctionConfigProps {
   func: FunctionData
@@ -21,14 +30,31 @@ interface FunctionConfigProps {
 }
 
 export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
+  const router = useRouter()
   const [memory, setMemory] = useState(func.memory.toString())
   const [timeout, setTimeout] = useState(func.timeout.toString())
   const [handler, setHandler] = useState(func.handler)
   const [saving, setSaving] = useState(false)
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({})
 
+  // Environment variables state
+  const [envVarsState, setEnvVarsState] = useState<Record<string, string>>(func.envVars || {})
+  const [newEnvKey, setNewEnvKey] = useState("")
+  const [newEnvValue, setNewEnvValue] = useState("")
+  const [showAddEnvDialog, setShowAddEnvDialog] = useState(false)
+  const [savingEnv, setSavingEnv] = useState(false)
+
+  // Delete state
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteConfirmName, setDeleteConfirmName] = useState("")
+
+  // Snapshot state
+  const [creatingSnapshot, setCreatingSnapshot] = useState(false)
+  const [snapshotMessage, setSnapshotMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+
   // Use function's env vars
-  const envVars = Object.entries(func.envVars || {}).map(([key, value], idx) => ({
+  const envVars = Object.entries(envVarsState).map(([key, value], idx) => ({
     id: `env-${idx}`,
     key,
     value,
@@ -54,6 +80,64 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
       console.error("Failed to save configuration:", err)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleAddEnvVar = async () => {
+    if (!newEnvKey.trim()) return
+
+    try {
+      setSavingEnv(true)
+      const updatedEnvVars = { ...envVarsState, [newEnvKey]: newEnvValue }
+      await functionsApi.update(func.name, { env_vars: updatedEnvVars })
+      setEnvVarsState(updatedEnvVars)
+      setNewEnvKey("")
+      setNewEnvValue("")
+      setShowAddEnvDialog(false)
+      onUpdate?.()
+    } catch (err) {
+      console.error("Failed to add environment variable:", err)
+    } finally {
+      setSavingEnv(false)
+    }
+  }
+
+  const handleDeleteEnvVar = async (key: string) => {
+    try {
+      const updatedEnvVars = { ...envVarsState }
+      delete updatedEnvVars[key]
+      await functionsApi.update(func.name, { env_vars: updatedEnvVars })
+      setEnvVarsState(updatedEnvVars)
+      onUpdate?.()
+    } catch (err) {
+      console.error("Failed to delete environment variable:", err)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (deleteConfirmName !== func.name) return
+
+    try {
+      setDeleting(true)
+      await functionsApi.delete(func.name)
+      router.push("/functions")
+    } catch (err) {
+      console.error("Failed to delete function:", err)
+      setDeleting(false)
+    }
+  }
+
+  const handleCreateSnapshot = async () => {
+    try {
+      setCreatingSnapshot(true)
+      setSnapshotMessage(null)
+      await snapshotsApi.create(func.name)
+      setSnapshotMessage({ type: 'success', text: 'Snapshot created successfully' })
+    } catch (err) {
+      console.error("Failed to create snapshot:", err)
+      setSnapshotMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to create snapshot' })
+    } finally {
+      setCreatingSnapshot(false)
     }
   }
 
@@ -153,7 +237,7 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
               Manage secrets and configuration values
             </p>
           </div>
-          <Button variant="outline" size="sm" disabled>
+          <Button variant="outline" size="sm" onClick={() => setShowAddEnvDialog(true)}>
             <Plus className="mr-2 h-4 w-4" />
             Add Variable
           </Button>
@@ -206,7 +290,12 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
                       className="w-40 font-mono text-sm"
                     />
                   )}
-                  <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" disabled>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => handleDeleteEnvVar(config.key)}
+                  >
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -214,6 +303,42 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
             ))
           )}
         </div>
+      </div>
+
+      {/* Snapshots */}
+      <div className="rounded-xl border border-border bg-card p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-card-foreground">
+              VM Snapshot
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Create a snapshot for faster cold starts
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCreateSnapshot}
+            disabled={creatingSnapshot}
+          >
+            {creatingSnapshot ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Camera className="mr-2 h-4 w-4" />
+            )}
+            Create Snapshot
+          </Button>
+        </div>
+        {snapshotMessage && (
+          <div className={`text-sm p-3 rounded-lg ${
+            snapshotMessage.type === 'success'
+              ? 'bg-success/10 text-success'
+              : 'bg-destructive/10 text-destructive'
+          }`}>
+            {snapshotMessage.text}
+          </div>
+        )}
       </div>
 
       {/* Danger Zone */}
@@ -225,11 +350,104 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
           These actions are irreversible. Please proceed with caution.
         </p>
         <div className="flex gap-3">
-          <Button variant="outline" className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground bg-transparent" disabled>
+          <Button
+            variant="outline"
+            className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground bg-transparent"
+            onClick={() => setShowDeleteDialog(true)}
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
             Delete Function
           </Button>
         </div>
       </div>
+
+      {/* Add Environment Variable Dialog */}
+      <Dialog open={showAddEnvDialog} onOpenChange={setShowAddEnvDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Environment Variable</DialogTitle>
+            <DialogDescription>
+              Add a new environment variable to this function.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="envKey">Key</Label>
+              <Input
+                id="envKey"
+                placeholder="MY_VARIABLE"
+                value={newEnvKey}
+                onChange={(e) => setNewEnvKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_'))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="envValue">Value</Label>
+              <Input
+                id="envValue"
+                placeholder="value"
+                value={newEnvValue}
+                onChange={(e) => setNewEnvValue(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddEnvDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddEnvVar} disabled={!newEnvKey.trim() || savingEnv}>
+              {savingEnv ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="mr-2 h-4 w-4" />
+              )}
+              Add Variable
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Delete Function
+            </DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. This will permanently delete the function
+              and all its versions and aliases.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">
+              Please type <span className="font-mono font-semibold text-foreground">{func.name}</span> to confirm.
+            </p>
+            <Input
+              placeholder="Enter function name"
+              value={deleteConfirmName}
+              onChange={(e) => setDeleteConfirmName(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowDeleteDialog(false); setDeleteConfirmName(""); }}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteConfirmName !== func.name || deleting}
+            >
+              {deleting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-2 h-4 w-4" />
+              )}
+              Delete Function
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
