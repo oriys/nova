@@ -34,6 +34,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Function code
 	mux.HandleFunc("GET /functions/{name}/code", h.GetFunctionCode)
 	mux.HandleFunc("PUT /functions/{name}/code", h.UpdateFunctionCode)
+	mux.HandleFunc("GET /functions/{name}/files", h.ListFunctionFiles)
 
 	// Runtimes
 	mux.HandleFunc("GET /runtimes", h.ListRuntimes)

@@ -119,6 +119,12 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		return nil, fmt.Errorf("function code not found: %s", fn.Name)
 	}
 
+	// Check for multi-file function
+	hasMultiFiles, err := e.store.HasFunctionFiles(ctx, fn.ID)
+	if err != nil {
+		return nil, fmt.Errorf("check function files: %w", err)
+	}
+
 	// For compiled languages, check compilation status before proceeding
 	if domain.NeedsCompilation(fn.Runtime) {
 		switch codeRecord.CompileStatus {
@@ -134,12 +140,29 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		}
 	}
 
-	// Use compiled binary if available, otherwise use source code
+	// Determine code content
 	var codeContent []byte
-	if len(codeRecord.CompiledBinary) > 0 {
-		codeContent = codeRecord.CompiledBinary
+	var files map[string][]byte
+
+	if hasMultiFiles {
+		// Fetch all files for multi-file function
+		files, err = e.store.GetFunctionFiles(ctx, fn.ID)
+		if err != nil {
+			return nil, fmt.Errorf("get function files: %w", err)
+		}
+
+		// For compiled languages with multi-file, use the compiled binary
+		if len(codeRecord.CompiledBinary) > 0 {
+			// Replace the entry point file with compiled binary
+			files[fn.Handler] = codeRecord.CompiledBinary
+		}
 	} else {
-		codeContent = []byte(codeRecord.SourceCode)
+		// Single file function
+		if len(codeRecord.CompiledBinary) > 0 {
+			codeContent = codeRecord.CompiledBinary
+		} else {
+			codeContent = []byte(codeRecord.SourceCode)
+		}
 	}
 
 	reqID := uuid.New().String()[:8]
@@ -162,7 +185,12 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 
 	start := time.Now()
 
-	pvm, err := e.pool.Acquire(ctx, fn, codeContent)
+	var pvm *pool.PooledVM
+	if files != nil && len(files) > 0 {
+		pvm, err = e.pool.AcquireWithFiles(ctx, fn, files)
+	} else {
+		pvm, err = e.pool.Acquire(ctx, fn, codeContent)
+	}
 	if err != nil {
 		observability.SetSpanError(span, err)
 		return nil, fmt.Errorf("acquire VM: %w", err)

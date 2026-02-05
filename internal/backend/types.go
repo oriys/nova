@@ -72,11 +72,12 @@ type RespPayload struct {
 
 // Protocol message types (shared with agent).
 const (
-	MsgTypeInit = 1
-	MsgTypeExec = 2
-	MsgTypeResp = 3
-	MsgTypePing = 4
-	MsgTypeStop = 5
+	MsgTypeInit   = 1
+	MsgTypeExec   = 2
+	MsgTypeResp   = 3
+	MsgTypePing   = 4
+	MsgTypeStop   = 5
+	MsgTypeReload = 6 // Hot reload code files
 )
 
 // VsockMessage is the wire format for agent communication.
@@ -101,4 +102,9 @@ type ExecPayload struct {
 	TimeoutS    int             `json:"timeout_s"`
 	TraceParent string          `json:"traceparent,omitempty"`
 	TraceState  string          `json:"tracestate,omitempty"`
+}
+
+// ReloadPayload is sent to hot-reload function code.
+type ReloadPayload struct {
+	Files map[string][]byte `json:"files"` // relative path -> content
 }

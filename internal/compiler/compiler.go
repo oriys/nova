@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync"
 
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/logging"
@@ -18,8 +20,9 @@ import (
 
 // Compiler handles compilation of function source code using Docker containers.
 type Compiler struct {
-	store  store.MetadataStore
-	tmpDir string
+	store    store.MetadataStore
+	tmpDir   string
+	depsCache sync.Map // hash -> map[string][]byte (cached dependencies)
 }
 
 // New creates a new Compiler instance.
@@ -80,6 +83,180 @@ func (c *Compiler) handleInterpreted(ctx context.Context, fn *domain.Function, s
 
 	// Store source as "binary" (it's the deployable artifact for interpreted langs)
 	c.store.UpdateCompileResult(ctx, fn.ID, []byte(sourceCode), crypto.HashString(sourceCode), domain.CompileStatusNotRequired, "")
+}
+
+// CompileWithDeps compiles code with dependencies for multi-file functions.
+// Returns the files map with dependencies added.
+func (c *Compiler) CompileWithDeps(ctx context.Context, fn *domain.Function, files map[string][]byte) (map[string][]byte, error) {
+	result := make(map[string][]byte)
+	for k, v := range files {
+		result[k] = v
+	}
+
+	switch fn.Runtime {
+	case domain.RuntimePython:
+		if reqTxt, ok := files["requirements.txt"]; ok && len(reqTxt) > 0 {
+			deps, err := c.installPythonDeps(ctx, reqTxt)
+			if err != nil {
+				logging.Op().Warn("failed to install Python deps", "function", fn.Name, "error", err)
+			} else {
+				for k, v := range deps {
+					result["deps/"+k] = v
+				}
+				logging.Op().Info("installed Python deps", "function", fn.Name, "dep_files", len(deps))
+			}
+		}
+
+	case domain.RuntimeNode:
+		if pkgJson, ok := files["package.json"]; ok && len(pkgJson) > 0 {
+			deps, err := c.installNodeDeps(ctx, pkgJson)
+			if err != nil {
+				logging.Op().Warn("failed to install Node deps", "function", fn.Name, "error", err)
+			} else {
+				for k, v := range deps {
+					result["node_modules/"+k] = v
+				}
+				logging.Op().Info("installed Node deps", "function", fn.Name, "dep_files", len(deps))
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// installPythonDeps installs Python dependencies from requirements.txt
+func (c *Compiler) installPythonDeps(ctx context.Context, requirements []byte) (map[string][]byte, error) {
+	// Check cache
+	hash := hashBytes(requirements)
+	if cached, ok := c.depsCache.Load(hash); ok {
+		return cached.(map[string][]byte), nil
+	}
+
+	// Create temp directory
+	workDir, err := os.MkdirTemp(c.tmpDir, "pydeps-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(workDir)
+
+	// Write requirements.txt
+	reqPath := filepath.Join(workDir, "requirements.txt")
+	if err := os.WriteFile(reqPath, requirements, 0644); err != nil {
+		return nil, err
+	}
+
+	// Create deps directory
+	depsDir := filepath.Join(workDir, "deps")
+	os.MkdirAll(depsDir, 0755)
+
+	// Run pip install in Docker
+	args := []string{
+		"run", "--rm",
+		"-v", workDir + ":/work",
+		"python:3.12-slim",
+		"sh", "-c", "pip install --no-cache-dir -r /work/requirements.txt -t /work/deps 2>&1",
+	}
+
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	logging.Op().Debug("installing Python deps", "requirements_size", len(requirements))
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("pip install failed: %w: %s", err, stderr.String())
+	}
+
+	// Collect installed files
+	deps := make(map[string][]byte)
+	err = filepath.Walk(depsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return err
+		}
+		relPath, _ := filepath.Rel(depsDir, path)
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		deps[relPath] = content
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache result
+	c.depsCache.Store(hash, deps)
+
+	return deps, nil
+}
+
+// installNodeDeps installs Node.js dependencies from package.json
+func (c *Compiler) installNodeDeps(ctx context.Context, packageJson []byte) (map[string][]byte, error) {
+	// Check cache
+	hash := hashBytes(packageJson)
+	if cached, ok := c.depsCache.Load(hash); ok {
+		return cached.(map[string][]byte), nil
+	}
+
+	// Create temp directory
+	workDir, err := os.MkdirTemp(c.tmpDir, "nodedeps-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(workDir)
+
+	// Write package.json
+	pkgPath := filepath.Join(workDir, "package.json")
+	if err := os.WriteFile(pkgPath, packageJson, 0644); err != nil {
+		return nil, err
+	}
+
+	// Run npm install in Docker
+	args := []string{
+		"run", "--rm",
+		"-v", workDir + ":/work",
+		"node:20-slim",
+		"sh", "-c", "cd /work && npm install --production --no-audit --no-fund 2>&1",
+	}
+
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	logging.Op().Debug("installing Node deps", "package_json_size", len(packageJson))
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("npm install failed: %w: %s", err, stderr.String())
+	}
+
+	// Collect installed files
+	nodeModulesDir := filepath.Join(workDir, "node_modules")
+	deps := make(map[string][]byte)
+	err = filepath.Walk(nodeModulesDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return err
+		}
+		relPath, _ := filepath.Rel(nodeModulesDir, path)
+		// Skip .bin directory and unnecessary files
+		if strings.HasPrefix(relPath, ".bin/") || strings.HasSuffix(relPath, ".md") {
+			return nil
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		deps[relPath] = content
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache result
+	c.depsCache.Store(hash, deps)
+
+	return deps, nil
 }
 
 func (c *Compiler) compile(ctx context.Context, fn *domain.Function, sourceCode string) ([]byte, error) {

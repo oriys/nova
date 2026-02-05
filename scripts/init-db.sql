@@ -98,6 +98,22 @@ INSERT INTO config (key, value) VALUES
     ('log_level', 'info')
 ON CONFLICT (key) DO NOTHING;
 
+-- Function files table (for multi-file functions)
+CREATE TABLE IF NOT EXISTS function_files (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    function_id TEXT NOT NULL REFERENCES functions(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,           -- Relative path, e.g., "lib/utils.py"
+    content BYTEA NOT NULL,       -- File content
+    is_binary BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(function_id, path)
+);
+
+CREATE INDEX IF NOT EXISTS idx_function_files_function_id ON function_files(function_id);
+
+-- Add entry_point column to functions table for multi-file support
+-- ALTER TABLE functions ADD COLUMN IF NOT EXISTS entry_point TEXT;
+
 -- Grant permissions
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO nova;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO nova;

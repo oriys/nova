@@ -521,6 +521,146 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 	return vm, nil
 }
 
+// CreateVMWithFiles boots a microVM with multiple code files.
+// files is a map of relative path -> content.
+func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, files map[string][]byte) (*VM, error) {
+	// If single file, use the standard CreateVM path
+	if len(files) == 1 {
+		for _, content := range files {
+			return m.CreateVM(ctx, fn, content)
+		}
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no files provided")
+	}
+
+	vmID := uuid.New().String()[:8]
+	cid, err := m.allocateCID()
+	if err != nil {
+		return nil, err
+	}
+	cidAllocated := true
+
+	vm := &VM{
+		ID:         vmID,
+		Runtime:    fn.Runtime,
+		State:      VMStateCreating,
+		CID:        cid,
+		SocketPath: filepath.Join(m.config.SocketDir, vmID+".sock"),
+		VsockPath:  filepath.Join(m.config.VsockDir, vmID+".vsock"),
+		CreatedAt:  time.Now(),
+		LastUsed:   time.Now(),
+	}
+	defer func() {
+		if vm.State == VMStateStopped {
+			if cidAllocated {
+				m.releaseCID(cid)
+			}
+			m.releaseIP(vm.GuestIP)
+		}
+	}()
+
+	// Clean up any stale sockets
+	_ = os.Remove(vm.SocketPath)
+	_ = os.Remove(vm.VsockPath)
+
+	// Prepare rootfs
+	var rootfsFile string
+	if fn.RuntimeImageName != "" {
+		rootfsFile = fn.RuntimeImageName
+	} else {
+		rootfsFile = rootfsForRuntime(fn.Runtime)
+	}
+	rootfsPath := filepath.Join(m.config.RootfsDir, rootfsFile)
+	if _, err := os.Stat(rootfsPath); os.IsNotExist(err) {
+		vm.State = VMStateStopped
+		return nil, fmt.Errorf("rootfs not found: %s", rootfsPath)
+	}
+
+	// Build code drive with multiple files
+	codeDrive := filepath.Join(m.config.SocketDir, vmID+"-code.ext4")
+	if err := m.buildCodeDriveMulti(codeDrive, files); err != nil {
+		vm.State = VMStateStopped
+		return nil, fmt.Errorf("build code drive: %w", err)
+	}
+	vm.CodeDrive = codeDrive
+
+	// Setup network
+	if err := m.ensureBridge(); err != nil {
+		vm.State = VMStateStopped
+		return nil, fmt.Errorf("ensure bridge: %w", err)
+	}
+	tap, err := m.createTAP(vmID)
+	if err != nil {
+		vm.State = VMStateStopped
+		return nil, fmt.Errorf("create tap: %w", err)
+	}
+	vm.TapDevice = tap
+	ip, err := m.allocateIP()
+	if err != nil {
+		vm.State = VMStateStopped
+		deleteTAP(vm.TapDevice)
+		return nil, err
+	}
+	vm.GuestIP = ip
+	vm.GuestMAC = generateMAC(vmID)
+
+	// Note: snapshots not supported for multi-file VMs initially
+
+	// Start Firecracker process
+	logFile, err := os.Create(filepath.Join(m.config.LogDir, vmID+".log"))
+	if err != nil {
+		return nil, fmt.Errorf("create log file: %w", err)
+	}
+
+	cmd := exec.Command(m.config.FirecrackerBin,
+		"--api-sock", vm.SocketPath,
+	)
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	if err := cmd.Start(); err != nil {
+		logFile.Close()
+		deleteTAP(vm.TapDevice)
+		vm.State = VMStateStopped
+		return nil, fmt.Errorf("start firecracker: %w", err)
+	}
+	if err := logFile.Close(); err != nil {
+		m.StopVM(vm.ID)
+		return nil, fmt.Errorf("close log file: %w", err)
+	}
+	vm.Cmd = cmd
+
+	// Wait for API socket
+	if err := m.waitForSocket(ctx, vm.SocketPath, cmd.Process, m.config.BootTimeout); err != nil {
+		m.StopVM(vm.ID)
+		return nil, fmt.Errorf("wait api socket: %w", err)
+	}
+
+	// Regular Boot (no snapshot support for multi-file yet)
+	if err := m.apiBoot(ctx, vm, rootfsPath, codeDrive, fn); err != nil {
+		m.StopVM(vm.ID)
+		return nil, err
+	}
+
+	vm.State = VMStateRunning
+	m.mu.Lock()
+	m.vms[vm.ID] = vm
+	m.mu.Unlock()
+
+	metrics.Global().RecordVMCreated()
+
+	go m.monitorProcess(vm)
+
+	if err := m.waitForVsock(ctx, vm); err != nil {
+		m.StopVM(vm.ID)
+		return nil, fmt.Errorf("wait vsock: %w", err)
+	}
+
+	return vm, nil
+}
+
 // snapshotMeta stores metadata needed for snapshot restore.
 type snapshotMeta struct {
 	VsockPath       string `json:"vsock_path"`
@@ -1075,6 +1215,154 @@ func (m *Manager) buildCodeDrive(drivePath string, codeContent []byte) error {
 	return nil
 }
 
+// buildCodeDriveMulti creates an ext4 image and injects multiple files.
+// files is a map of relative path -> content.
+func (m *Manager) buildCodeDriveMulti(drivePath string, files map[string][]byte) error {
+	// Calculate total size
+	var totalSize int64
+	for _, content := range files {
+		totalSize += int64(len(content))
+	}
+	totalSizeMB := float64(totalSize) / (1024 * 1024)
+
+	// Use config values with fallback to defaults
+	defaultSize := m.config.CodeDriveSizeMB
+	if defaultSize <= 0 {
+		defaultSize = defaultCodeDriveSizeMB
+	}
+	minSize := m.config.MinCodeDriveSizeMB
+	if minSize <= 0 {
+		minSize = minCodeDriveSizeMB
+	}
+
+	// Calculate required drive size:
+	// - Add 50% headroom for future growth
+	// - Account for ext4 overhead (15%)
+	// - Add buffer for directory inodes and metadata
+	contentWithHeadroom := totalSizeMB * 1.5
+	requiredSizeMB := int(contentWithHeadroom/ext4OverheadFactor) + 4 // +4MB for metadata
+
+	// Determine drive size with min/max limits
+	driveSizeMB := defaultSize
+	if requiredSizeMB > defaultSize {
+		driveSizeMB = requiredSizeMB
+	}
+	if driveSizeMB < minSize {
+		driveSizeMB = minSize
+	}
+	// Cap at 512MB to prevent excessive resource usage
+	const maxCodeDriveSizeMB = 512
+	if driveSizeMB > maxCodeDriveSizeMB {
+		driveSizeMB = maxCodeDriveSizeMB
+	}
+
+	// Create the ext4 drive
+	logging.Op().Info("creating multi-file code drive",
+		"size_mb", driveSizeMB,
+		"total_size_mb", totalSizeMB,
+		"file_count", len(files))
+	if err := createTemplateDrive(drivePath, driveSizeMB); err != nil {
+		return err
+	}
+
+	// Collect all directories that need to be created
+	dirs := make(map[string]bool)
+	for path := range files {
+		parts := strings.Split(path, "/")
+		for i := 1; i < len(parts); i++ {
+			dir := strings.Join(parts[:i], "/")
+			if dir != "" {
+				dirs[dir] = true
+			}
+		}
+	}
+
+	// Build debugfs commands
+	var debugfsCmds strings.Builder
+
+	// Create directories first (sorted to ensure parent dirs exist)
+	sortedDirs := make([]string, 0, len(dirs))
+	for dir := range dirs {
+		sortedDirs = append(sortedDirs, dir)
+	}
+	// Simple sort by path depth then alphabetically
+	for i := range sortedDirs {
+		for j := i + 1; j < len(sortedDirs); j++ {
+			iDepth := strings.Count(sortedDirs[i], "/")
+			jDepth := strings.Count(sortedDirs[j], "/")
+			if iDepth > jDepth || (iDepth == jDepth && sortedDirs[i] > sortedDirs[j]) {
+				sortedDirs[i], sortedDirs[j] = sortedDirs[j], sortedDirs[i]
+			}
+		}
+	}
+
+	for _, dir := range sortedDirs {
+		debugfsCmds.WriteString(fmt.Sprintf("mkdir %s\n", dir))
+	}
+
+	// Write files to temp dir and build injection commands
+	tmpDir, err := os.MkdirTemp("", "nova-multifile-*")
+	if err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	for path, content := range files {
+		// Write to temp file
+		tmpFile := filepath.Join(tmpDir, strings.ReplaceAll(path, "/", "_"))
+		if err := os.WriteFile(tmpFile, content, 0644); err != nil {
+			return fmt.Errorf("write temp file %s: %w", path, err)
+		}
+
+		// Add debugfs commands
+		debugfsCmds.WriteString(fmt.Sprintf("write %s %s\n", tmpFile, path))
+		// Make executable if it looks like an executable
+		if isExecutable(path, content) {
+			debugfsCmds.WriteString(fmt.Sprintf("sif %s mode 0100755\n", path))
+		}
+	}
+
+	// Run debugfs to inject all files
+	cmd := exec.Command("debugfs", "-w", drivePath)
+	cmd.Stdin = strings.NewReader(debugfsCmds.String())
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("debugfs inject (drive=%dMB, total=%.1fMB, files=%d): %s: %w",
+			driveSizeMB, totalSizeMB, len(files), out, err)
+	}
+
+	return nil
+}
+
+// isExecutable determines if a file should be executable based on path and content
+func isExecutable(path string, content []byte) bool {
+	// Check extension
+	ext := filepath.Ext(path)
+	execExtensions := map[string]bool{
+		".sh": true, ".bash": true, ".py": true, ".rb": true, ".pl": true,
+	}
+	if execExtensions[ext] {
+		return true
+	}
+
+	// Check for shebang
+	if len(content) >= 2 && content[0] == '#' && content[1] == '!' {
+		return true
+	}
+
+	// Check for ELF binary (compiled Go/Rust/etc)
+	if len(content) >= 4 && content[0] == 0x7f && content[1] == 'E' && content[2] == 'L' && content[3] == 'F' {
+		return true
+	}
+
+	// Check for "handler" in path (main entry point)
+	base := filepath.Base(path)
+	if base == "handler" || strings.HasPrefix(base, "handler.") {
+		return true
+	}
+
+	return false
+}
+
 func createTemplateDrive(path string, sizeMB int) error {
 	f, err := os.Create(path)
 	if err != nil {
@@ -1380,11 +1668,12 @@ func rootfsForRuntime(rt domain.Runtime) string {
 // ─── Vsock protocol ─────────────────────────────────────
 
 const (
-	MsgTypeInit = 1
-	MsgTypeExec = 2
-	MsgTypeResp = 3
-	MsgTypePing = 4
-	MsgTypeStop = 5
+	MsgTypeInit   = 1
+	MsgTypeExec   = 2
+	MsgTypeResp   = 3
+	MsgTypePing   = 4
+	MsgTypeStop   = 5
+	MsgTypeReload = 6 // Hot reload code files
 )
 
 type VsockMessage struct {
@@ -1662,6 +1951,42 @@ func (c *VsockClient) Ping() error {
 	_, err := c.receiveLocked()
 	_ = c.conn.SetDeadline(time.Time{})
 	return err
+}
+
+// Reload sends new code files to the agent for hot reload
+func (c *VsockClient) Reload(files map[string][]byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	type reloadPayload struct {
+		Files map[string][]byte `json:"files"`
+	}
+
+	payload, err := json.Marshal(&reloadPayload{Files: files})
+	if err != nil {
+		return err
+	}
+
+	if err := c.redialAndInitLocked(5 * time.Second); err != nil {
+		return err
+	}
+	defer c.closeLocked()
+
+	_ = c.conn.SetDeadline(time.Now().Add(30 * time.Second))
+	if err := c.sendLocked(&VsockMessage{Type: MsgTypeReload, Payload: payload}); err != nil {
+		return err
+	}
+
+	resp, err := c.receiveLocked()
+	_ = c.conn.SetDeadline(time.Time{})
+	if err != nil {
+		return err
+	}
+
+	if resp.Type != MsgTypeResp {
+		return fmt.Errorf("unexpected response type: %d", resp.Type)
+	}
+	return nil
 }
 
 func dialVsock(vm *VM, timeout time.Duration) (net.Conn, error) {

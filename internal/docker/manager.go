@@ -205,6 +205,108 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 	return vm, nil
 }
 
+// CreateVMWithFiles creates a new Docker container with multiple code files.
+func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, files map[string][]byte) (*backend.VM, error) {
+	vmID := uuid.New().String()[:12]
+	port := m.allocatePort()
+
+	// Prepare code directory
+	codeDir := filepath.Join(m.config.CodeDir, vmID)
+	if err := os.MkdirAll(codeDir, 0755); err != nil {
+		return nil, fmt.Errorf("create code dir: %w", err)
+	}
+
+	// Write all files to container code directory
+	for path, content := range files {
+		fullPath := filepath.Join(codeDir, path)
+		// Create parent directories if needed
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			os.RemoveAll(codeDir)
+			return nil, fmt.Errorf("create dir for %s: %w", path, err)
+		}
+		// Make files executable by default
+		if err := os.WriteFile(fullPath, content, 0755); err != nil {
+			os.RemoveAll(codeDir)
+			return nil, fmt.Errorf("write file %s: %w", path, err)
+		}
+	}
+
+	var image string
+	if fn.RuntimeImageName != "" {
+		image = fn.RuntimeImageName
+	} else {
+		image = imageForRuntime(fn.Runtime, m.config.ImagePrefix)
+	}
+	containerName := fmt.Sprintf("nova-%s", vmID)
+
+	// Build docker run command
+	cpuLimit := m.config.CPULimit
+	if cpuLimit <= 0 {
+		cpuLimit = 1.0
+	}
+	args := []string{
+		"run", "-d",
+		"--name", containerName,
+		"-p", fmt.Sprintf("127.0.0.1:%d:%d", port, agentPort),
+		"-v", fmt.Sprintf("%s:/code:ro", codeDir),
+		"-e", "NOVA_AGENT_MODE=tcp",
+		"-e", "NOVA_SKIP_MOUNT=true",
+		"--memory", fmt.Sprintf("%dm", fn.MemoryMB),
+		"--cpus", fmt.Sprintf("%.2f", cpuLimit),
+	}
+
+	if m.config.Network != "" {
+		args = append(args, "--network", m.config.Network)
+	}
+
+	for k, v := range fn.EnvVars {
+		args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
+	}
+
+	args = append(args, image)
+
+	logging.Op().Debug("starting Docker container with files", "image", image, "name", containerName, "port", port, "files", len(files))
+
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		os.RemoveAll(codeDir)
+		return nil, fmt.Errorf("docker run failed: %w: %s", err, output)
+	}
+
+	containerID := strings.TrimSpace(string(output))
+
+	vm := &backend.VM{
+		ID:                vmID,
+		Runtime:           fn.Runtime,
+		State:             backend.VMStateCreating,
+		DockerContainerID: containerID,
+		AssignedPort:      port,
+		CodeDir:           codeDir,
+		CreatedAt:         time.Now(),
+		LastUsed:          time.Now(),
+	}
+
+	agentTimeout := m.config.AgentTimeout
+	if agentTimeout == 0 {
+		agentTimeout = 10 * time.Second
+	}
+	if err := waitForAgent(port, agentTimeout); err != nil {
+		m.stopContainer(containerID, codeDir)
+		return nil, fmt.Errorf("agent not ready: %w", err)
+	}
+
+	vm.State = backend.VMStateRunning
+	metrics.Global().RecordVMCreated()
+
+	m.mu.Lock()
+	m.containers[vmID] = vm
+	m.mu.Unlock()
+
+	logging.Op().Info("Docker container ready", "container", containerID[:12], "port", port, "files", len(files))
+	return vm, nil
+}
+
 // waitForAgent polls the agent until it's ready.
 func waitForAgent(port int, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
@@ -439,6 +541,38 @@ func (c *Client) Ping() error {
 	_, err := c.receiveLocked()
 	_ = c.conn.SetDeadline(time.Time{})
 	return err
+}
+
+// Reload sends new code files to the agent for hot reload.
+func (c *Client) Reload(files map[string][]byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	payload, err := json.Marshal(&backend.ReloadPayload{Files: files})
+	if err != nil {
+		return err
+	}
+
+	if err := c.redialAndInit(5 * time.Second); err != nil {
+		return err
+	}
+	defer c.closeLocked()
+
+	_ = c.conn.SetDeadline(time.Now().Add(30 * time.Second))
+	if err := c.sendLocked(&backend.VsockMessage{Type: backend.MsgTypeReload, Payload: payload}); err != nil {
+		return err
+	}
+
+	resp, err := c.receiveLocked()
+	_ = c.conn.SetDeadline(time.Time{})
+	if err != nil {
+		return err
+	}
+
+	if resp.Type != backend.MsgTypeResp {
+		return fmt.Errorf("unexpected response type: %d", resp.Type)
+	}
+	return nil
 }
 
 // Close closes the client connection.

@@ -86,6 +86,13 @@ type MetadataStore interface {
 	UpdateFunctionCode(ctx context.Context, funcID, sourceCode, sourceHash string) error
 	UpdateCompileResult(ctx context.Context, funcID string, binary []byte, binaryHash string, status domain.CompileStatus, compileError string) error
 	DeleteFunctionCode(ctx context.Context, funcID string) error
+
+	// Function files (multi-file support)
+	SaveFunctionFiles(ctx context.Context, funcID string, files map[string][]byte) error
+	GetFunctionFiles(ctx context.Context, funcID string) (map[string][]byte, error)
+	ListFunctionFiles(ctx context.Context, funcID string) ([]FunctionFileInfo, error)
+	DeleteFunctionFiles(ctx context.Context, funcID string) error
+	HasFunctionFiles(ctx context.Context, funcID string) (bool, error)
 }
 
 // Store wraps the MetadataStore (Postgres) for all persistence.

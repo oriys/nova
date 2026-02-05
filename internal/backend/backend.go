@@ -15,6 +15,11 @@ type Backend interface {
 	// codeContent is the source code or binary to execute.
 	CreateVM(ctx context.Context, fn *domain.Function, codeContent []byte) (*VM, error)
 
+	// CreateVMWithFiles creates a new VM/container with multiple code files.
+	// files is a map of relative path -> content.
+	// If not implemented, falls back to CreateVM with files["handler"] or first file.
+	CreateVMWithFiles(ctx context.Context, fn *domain.Function, files map[string][]byte) (*VM, error)
+
 	// StopVM stops and cleans up a VM/container.
 	StopVM(vmID string) error
 
@@ -38,6 +43,9 @@ type Client interface {
 
 	// ExecuteWithTrace runs a function invocation with W3C trace context.
 	ExecuteWithTrace(reqID string, input json.RawMessage, timeoutS int, traceParent, traceState string) (*RespPayload, error)
+
+	// Reload sends new code files to the agent for hot reload.
+	Reload(files map[string][]byte) error
 
 	// Ping checks if the agent is responsive.
 	Ping() error

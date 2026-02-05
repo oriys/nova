@@ -428,3 +428,126 @@ func (s *PostgresStore) DeleteFunctionCode(ctx context.Context, funcID string) e
 	}
 	return nil
 }
+
+// ─── Function Files (Multi-file Support) ─────────────────────────────────────
+
+// FunctionFileInfo represents metadata about a file in a function
+type FunctionFileInfo struct {
+	Path     string `json:"path"`
+	Size     int    `json:"size"`
+	IsBinary bool   `json:"is_binary"`
+}
+
+// SaveFunctionFiles saves multiple files for a function, replacing any existing files
+func (s *PostgresStore) SaveFunctionFiles(ctx context.Context, funcID string, files map[string][]byte) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Delete existing files
+	if _, err := tx.Exec(ctx, `DELETE FROM function_files WHERE function_id = $1`, funcID); err != nil {
+		return fmt.Errorf("delete existing files: %w", err)
+	}
+
+	// Insert new files
+	for path, content := range files {
+		isBinary := isBinaryContent(content)
+		_, err := tx.Exec(ctx, `
+			INSERT INTO function_files (function_id, path, content, is_binary)
+			VALUES ($1, $2, $3, $4)
+		`, funcID, path, content, isBinary)
+		if err != nil {
+			return fmt.Errorf("insert file %s: %w", path, err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
+}
+
+// GetFunctionFiles retrieves all files for a function
+func (s *PostgresStore) GetFunctionFiles(ctx context.Context, funcID string) (map[string][]byte, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT path, content FROM function_files WHERE function_id = $1
+	`, funcID)
+	if err != nil {
+		return nil, fmt.Errorf("get function files: %w", err)
+	}
+	defer rows.Close()
+
+	files := make(map[string][]byte)
+	for rows.Next() {
+		var path string
+		var content []byte
+		if err := rows.Scan(&path, &content); err != nil {
+			return nil, fmt.Errorf("scan file: %w", err)
+		}
+		files[path] = content
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+	return files, nil
+}
+
+// ListFunctionFiles returns metadata about all files in a function
+func (s *PostgresStore) ListFunctionFiles(ctx context.Context, funcID string) ([]FunctionFileInfo, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT path, LENGTH(content), is_binary FROM function_files WHERE function_id = $1 ORDER BY path
+	`, funcID)
+	if err != nil {
+		return nil, fmt.Errorf("list function files: %w", err)
+	}
+	defer rows.Close()
+
+	var files []FunctionFileInfo
+	for rows.Next() {
+		var f FunctionFileInfo
+		if err := rows.Scan(&f.Path, &f.Size, &f.IsBinary); err != nil {
+			return nil, fmt.Errorf("scan file info: %w", err)
+		}
+		files = append(files, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+	return files, nil
+}
+
+// DeleteFunctionFiles deletes all files for a function
+func (s *PostgresStore) DeleteFunctionFiles(ctx context.Context, funcID string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM function_files WHERE function_id = $1`, funcID)
+	if err != nil {
+		return fmt.Errorf("delete function files: %w", err)
+	}
+	return nil
+}
+
+// HasFunctionFiles returns true if a function has any files stored
+func (s *PostgresStore) HasFunctionFiles(ctx context.Context, funcID string) (bool, error) {
+	var count int
+	err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM function_files WHERE function_id = $1`, funcID).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("count function files: %w", err)
+	}
+	return count > 0, nil
+}
+
+// isBinaryContent checks if content appears to be binary (contains null bytes)
+func isBinaryContent(content []byte) bool {
+	// Check first 512 bytes for null bytes (common binary indicator)
+	checkLen := len(content)
+	if checkLen > 512 {
+		checkLen = 512
+	}
+	for i := 0; i < checkLen; i++ {
+		if content[i] == 0 {
+			return true
+		}
+	}
+	return false
+}

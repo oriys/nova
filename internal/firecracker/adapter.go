@@ -32,6 +32,15 @@ func (a *Adapter) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 	return vmToBackend(vm), nil
 }
 
+// CreateVMWithFiles creates a new Firecracker microVM with multiple code files.
+func (a *Adapter) CreateVMWithFiles(ctx context.Context, fn *domain.Function, files map[string][]byte) (*backend.VM, error) {
+	vm, err := a.manager.CreateVMWithFiles(ctx, fn, files)
+	if err != nil {
+		return nil, err
+	}
+	return vmToBackend(vm), nil
+}
+
 // StopVM stops a Firecracker microVM.
 func (a *Adapter) StopVM(vmID string) error {
 	return a.manager.StopVM(vmID)
@@ -149,6 +158,11 @@ func (c *VsockClientAdapter) ExecuteWithTrace(reqID string, input json.RawMessag
 // Ping checks if the agent is responsive.
 func (c *VsockClientAdapter) Ping() error {
 	return c.client.Ping()
+}
+
+// Reload sends new code files to the agent for hot reload.
+func (c *VsockClientAdapter) Reload(files map[string][]byte) error {
+	return c.client.Reload(files)
 }
 
 // Close closes the client.

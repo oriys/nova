@@ -146,6 +146,16 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			PRIMARY KEY (function_id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS function_files (
+			id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+			function_id TEXT NOT NULL REFERENCES functions(id) ON DELETE CASCADE,
+			path TEXT NOT NULL,
+			content BYTEA NOT NULL,
+			is_binary BOOLEAN DEFAULT false,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE(function_id, path)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_function_files_function_id ON function_files(function_id)`,
 	}
 
 	for _, stmt := range stmts {

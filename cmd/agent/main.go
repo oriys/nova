@@ -21,11 +21,12 @@ import (
 )
 
 const (
-	MsgTypeInit = 1
-	MsgTypeExec = 2
-	MsgTypeResp = 3
-	MsgTypePing = 4
-	MsgTypeStop = 5
+	MsgTypeInit   = 1
+	MsgTypeExec   = 2
+	MsgTypeResp   = 3
+	MsgTypePing   = 4
+	MsgTypeStop   = 5
+	MsgTypeReload = 6 // Hot reload code files
 
 	VsockPort = 9999
 
@@ -88,6 +89,11 @@ type RespPayload struct {
 	DurationMs int64           `json:"duration_ms"`
 	Stdout     string          `json:"stdout,omitempty"`
 	Stderr     string          `json:"stderr,omitempty"`
+}
+
+// ReloadPayload is sent to hot-reload function code
+type ReloadPayload struct {
+	Files map[string][]byte `json:"files"` // relative path -> content
 }
 
 type Agent struct {
@@ -196,6 +202,8 @@ func (a *Agent) handleMessage(msg *Message) (*Message, error) {
 		return a.handleExec(msg.Payload)
 	case MsgTypePing:
 		return &Message{Type: MsgTypeResp, Payload: json.RawMessage(`{"status":"ok"}`)}, nil
+	case MsgTypeReload:
+		return a.handleReload(msg.Payload)
 	default:
 		return nil, fmt.Errorf("unknown message type: %d", msg.Type)
 	}
@@ -252,6 +260,8 @@ func (a *Agent) startPersistentProcess() error {
 	}
 
 	cmd.Env = append(defaultEnv(), "NOVA_MODE=persistent", "NOVA_CODE_DIR="+CodeMountPoint)
+	// Add dependency paths based on runtime
+	cmd.Env = appendDependencyEnv(cmd.Env, a.function.Runtime)
 	for k, v := range a.function.EnvVars {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
@@ -277,6 +287,67 @@ func (a *Agent) startPersistentProcess() error {
 
 	fmt.Printf("[agent] Persistent process started (pid=%d)\n", cmd.Process.Pid)
 	return nil
+}
+
+// handleReload replaces the code files in /code without destroying the VM
+func (a *Agent) handleReload(payload json.RawMessage) (*Message, error) {
+	var req ReloadPayload
+	if err := json.Unmarshal(payload, &req); err != nil {
+		return nil, fmt.Errorf("unmarshal reload payload: %w", err)
+	}
+
+	if len(req.Files) == 0 {
+		return nil, fmt.Errorf("no files to reload")
+	}
+
+	fmt.Printf("[agent] Reloading %d files\n", len(req.Files))
+
+	// 1. Stop persistent process if running
+	if a.persistentProc != nil && a.persistentProc.Process != nil {
+		fmt.Println("[agent] Stopping persistent process for reload")
+		a.persistentProc.Process.Kill()
+		a.persistentProc.Wait()
+		a.persistentProc = nil
+		a.persistentIn = nil
+		a.persistentOut = nil
+		a.persistentOutRaw = nil
+	}
+
+	// 2. Clear /code directory contents
+	entries, err := os.ReadDir(CodeMountPoint)
+	if err == nil {
+		for _, entry := range entries {
+			os.RemoveAll(filepath.Join(CodeMountPoint, entry.Name()))
+		}
+	}
+
+	// 3. Write new files
+	for name, content := range req.Files {
+		path := filepath.Join(CodeMountPoint, name)
+		// Create parent directories
+		if dir := filepath.Dir(path); dir != CodeMountPoint {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return nil, fmt.Errorf("create dir for %s: %w", name, err)
+			}
+		}
+		if err := os.WriteFile(path, content, 0755); err != nil {
+			return nil, fmt.Errorf("write file %s: %w", name, err)
+		}
+		fmt.Printf("[agent] Wrote file: %s (%d bytes)\n", name, len(content))
+	}
+
+	// 4. Restart persistent process if in persistent mode
+	if a.function != nil && a.function.Mode == ModePersistent {
+		fmt.Println("[agent] Restarting persistent process after reload")
+		if err := a.startPersistentProcess(); err != nil {
+			return nil, fmt.Errorf("restart persistent process: %w", err)
+		}
+	}
+
+	return &Message{
+		Type:    MsgTypeResp,
+		Payload: json.RawMessage(`{"status":"reloaded"}`),
+	}, nil
 }
 
 func (a *Agent) handleExec(payload json.RawMessage) (*Message, error) {
@@ -390,6 +461,8 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int) (json.RawMe
 	}
 
 	cmd.Env = append(defaultEnv(), "NOVA_CODE_DIR="+CodeMountPoint)
+	// Add dependency paths based on runtime
+	cmd.Env = appendDependencyEnv(cmd.Env, a.function.Runtime)
 	if a.function.Runtime == "dotnet" {
 		cmd.Env = append(cmd.Env,
 			"DOTNET_ROOT="+dotnetRoot,
@@ -524,6 +597,26 @@ func defaultEnv() []string {
 		}
 	}
 	return append(env, "PATH="+defaultPath)
+}
+
+// appendDependencyEnv adds runtime-specific environment variables for dependency paths
+func appendDependencyEnv(env []string, runtime string) []string {
+	switch runtime {
+	case "python":
+		// Python looks for modules in PYTHONPATH
+		// /code/deps is where pip install -t puts packages
+		env = append(env, "PYTHONPATH=/code/deps:/code")
+	case "node":
+		// Node.js looks for modules in NODE_PATH
+		env = append(env, "NODE_PATH=/code/node_modules")
+	case "deno":
+		// Deno can use DENO_DIR for cached modules
+		env = append(env, "DENO_DIR=/code/.deno")
+	case "bun":
+		// Bun uses NODE_PATH like Node
+		env = append(env, "NODE_PATH=/code/node_modules")
+	}
+	return env
 }
 
 func ensurePath() {

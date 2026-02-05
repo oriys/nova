@@ -3,6 +3,7 @@ package pool
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -427,6 +428,168 @@ func (p *Pool) createVM(ctx context.Context, fn *domain.Function, codeContent []
 	return pvm, nil
 }
 
+// AcquireWithFiles acquires a VM for a multi-file function.
+// files is a map of relative path -> content.
+func (p *Pool) AcquireWithFiles(ctx context.Context, fn *domain.Function, files map[string][]byte) (*PooledVM, error) {
+	fp := p.getOrCreatePool(fn.ID)
+
+	// Check if code has changed
+	if fn.CodeHash != "" {
+		storedHash, _ := fp.codeHash.Load().(string)
+		if storedHash != "" && storedHash != fn.CodeHash {
+			fp.mu.Lock()
+			storedHash2, _ := fp.codeHash.Load().(string)
+			if storedHash2 != "" && storedHash2 != fn.CodeHash {
+				logging.Op().Info("code change detected, evicting VMs",
+					"function", fn.Name,
+					"old_hash", storedHash2[:8],
+					"new_hash", fn.CodeHash[:8])
+				vmsToStop := fp.vms
+				fp.vms = nil
+				fp.codeHash.Store(fn.CodeHash)
+				fp.mu.Unlock()
+
+				go func() {
+					for _, pvm := range vmsToStop {
+						pvm.Client.Close()
+						p.backend.StopVM(pvm.VM.ID)
+					}
+				}()
+			} else {
+				fp.mu.Unlock()
+			}
+		} else if storedHash == "" {
+			fp.codeHash.Store(fn.CodeHash)
+		}
+	}
+
+	if fn.MaxReplicas > 0 {
+		fp.maxReplicas.Store(int32(fn.MaxReplicas))
+	}
+
+	// Fast path: find an idle VM
+	fp.mu.Lock()
+	for _, pvm := range fp.vms {
+		if pvm.inflight < pvm.maxConcurrent {
+			pvm.inflight++
+			pvm.LastUsed = time.Now()
+			pvm.ColdStart = false
+			fp.mu.Unlock()
+			logging.Op().Debug("reusing warm VM", "vm_id", pvm.VM.ID, "function", fn.Name)
+			return pvm, nil
+		}
+	}
+
+	// Check concurrency limit
+	maxReps := fp.maxReplicas.Load()
+	if maxReps > 0 && len(fp.vms) >= int(maxReps) {
+		fp.waiters++
+		done := make(chan struct{})
+		go func() {
+			fp.cond.Wait()
+			close(done)
+		}()
+		fp.mu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			fp.mu.Lock()
+			fp.waiters--
+			fp.mu.Unlock()
+			return nil, ctx.Err()
+		case <-done:
+			fp.mu.Lock()
+			fp.waiters--
+			for _, pvm := range fp.vms {
+				if pvm.inflight < pvm.maxConcurrent {
+					pvm.inflight++
+					pvm.LastUsed = time.Now()
+					pvm.ColdStart = false
+					fp.mu.Unlock()
+					return pvm, nil
+				}
+			}
+			fp.mu.Unlock()
+		}
+	} else {
+		fp.mu.Unlock()
+	}
+
+	// Cold start with singleflight
+	val, err, shared := p.group.Do(fn.ID, func() (interface{}, error) {
+		return p.createVMWithFiles(ctx, fn, files)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	pvm := val.(*PooledVM)
+	if shared {
+		fp.mu.Lock()
+		for _, existing := range fp.vms {
+			if existing.VM.ID == pvm.VM.ID && existing.inflight < existing.maxConcurrent {
+				existing.inflight++
+				existing.LastUsed = time.Now()
+				existing.ColdStart = false
+				fp.mu.Unlock()
+				return existing, nil
+			}
+		}
+		fp.mu.Unlock()
+	}
+
+	fp.mu.Lock()
+	fp.vms = append(fp.vms, pvm)
+	fp.mu.Unlock()
+
+	return pvm, nil
+}
+
+// createVMWithFiles creates a VM with multiple code files
+func (p *Pool) createVMWithFiles(ctx context.Context, fn *domain.Function, files map[string][]byte) (*PooledVM, error) {
+	logging.Op().Info("creating VM with files", "function", fn.Name, "runtime", fn.Runtime, "file_count", len(files))
+
+	bootStart := time.Now()
+	vm, err := p.backend.CreateVMWithFiles(ctx, fn, files)
+	if err != nil {
+		return nil, err
+	}
+	bootDurationMs := time.Since(bootStart).Milliseconds()
+
+	client, err := p.backend.NewClient(vm)
+	if err != nil {
+		p.backend.StopVM(vm.ID)
+		return nil, err
+	}
+
+	if err := client.Init(fn); err != nil {
+		client.Close()
+		p.backend.StopVM(vm.ID)
+		return nil, err
+	}
+
+	fromSnapshot := bootDurationMs < 1000
+	metrics.RecordVMBootDuration(fn.Name, string(fn.Runtime), bootDurationMs, fromSnapshot)
+	if fromSnapshot {
+		metrics.RecordSnapshotRestoreTime(fn.Name, bootDurationMs)
+	}
+
+	pvm := &PooledVM{
+		VM:            vm,
+		Client:        client,
+		Function:      fn,
+		LastUsed:      time.Now(),
+		ColdStart:     true,
+		inflight:      1,
+		maxConcurrent: p.computeInstanceConcurrency(fn),
+	}
+
+	// Note: snapshot creation for multi-file VMs is deferred for now
+
+	logging.Op().Info("VM ready", "vm_id", vm.ID, "function", fn.Name)
+	return pvm, nil
+}
+
 func (p *Pool) getSnapshotLock(funcID string) *sync.Mutex {
 	if lock, ok := p.snapshotLocks.Load(funcID); ok {
 		return lock.(*sync.Mutex)
@@ -496,6 +659,49 @@ func (p *Pool) EvictVM(funcID string, target *PooledVM) {
 
 	target.Client.Close()
 	p.backend.StopVM(target.VM.ID)
+}
+
+// ReloadCode sends new code files to all active VMs for a function.
+// Returns nil if no VMs are active. Falls back to eviction on failure.
+func (p *Pool) ReloadCode(funcID string, files map[string][]byte) error {
+	val, ok := p.pools.Load(funcID)
+	if !ok {
+		return nil // No active pool, nothing to reload
+	}
+	fp := val.(*functionPool)
+
+	fp.mu.Lock()
+	vms := make([]*PooledVM, len(fp.vms))
+	copy(vms, fp.vms)
+	fp.mu.Unlock()
+
+	if len(vms) == 0 {
+		return nil
+	}
+
+	logging.Op().Info("hot reloading code", "function", funcID, "vm_count", len(vms))
+
+	var failedVMs []*PooledVM
+	for _, pvm := range vms {
+		if err := pvm.Client.Reload(files); err != nil {
+			logging.Op().Warn("reload failed on VM, will evict",
+				"vm_id", pvm.VM.ID,
+				"function", funcID,
+				"error", err)
+			failedVMs = append(failedVMs, pvm)
+		}
+	}
+
+	// Evict VMs that failed to reload
+	for _, pvm := range failedVMs {
+		p.EvictVM(funcID, pvm)
+	}
+
+	if len(failedVMs) > 0 {
+		return fmt.Errorf("reload failed on %d/%d VMs", len(failedVMs), len(vms))
+	}
+
+	return nil
 }
 
 func (p *Pool) Stats() map[string]interface{} {
