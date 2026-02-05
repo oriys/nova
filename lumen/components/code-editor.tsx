@@ -1,10 +1,11 @@
 "use client"
 
-import { useState, useRef, useCallback } from "react"
-import { Highlight, themes } from "prism-react-renderer"
+import { useRef, useCallback } from "react"
+import Editor, { OnMount } from "@monaco-editor/react"
+import type { editor } from "monaco-editor"
 import { cn } from "@/lib/utils"
 
-// Map runtime IDs to Prism language names
+// Map runtime IDs to Monaco language identifiers
 const LANGUAGE_MAP: Record<string, string> = {
   python: "python",
   node: "javascript",
@@ -12,13 +13,31 @@ const LANGUAGE_MAP: Record<string, string> = {
   rust: "rust",
   java: "java",
   ruby: "ruby",
-  php: "markup",
+  php: "php",
   dotnet: "csharp",
   deno: "typescript",
   bun: "typescript",
   javascript: "javascript",
   typescript: "typescript",
   csharp: "csharp",
+  kotlin: "kotlin",
+  swift: "swift",
+  scala: "scala",
+  shell: "shell",
+  bash: "shell",
+  lua: "lua",
+  perl: "perl",
+  r: "r",
+  sql: "sql",
+  yaml: "yaml",
+  json: "json",
+  xml: "xml",
+  html: "html",
+  css: "css",
+  markdown: "markdown",
+  dockerfile: "dockerfile",
+  c: "c",
+  cpp: "cpp",
 }
 
 interface CodeEditorProps {
@@ -30,6 +49,8 @@ interface CodeEditorProps {
   className?: string
   showLineNumbers?: boolean
   minHeight?: string
+  fontSize?: number
+  minimap?: boolean
 }
 
 export function CodeEditor({
@@ -41,114 +62,80 @@ export function CodeEditor({
   className,
   showLineNumbers = true,
   minHeight = "200px",
+  fontSize = 14,
+  minimap = false,
 }: CodeEditorProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [isFocused, setIsFocused] = useState(false)
+  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
 
-  // Determine language from runtime or explicit language prop
-  const prismLanguage = language || LANGUAGE_MAP[runtime || ""] || "javascript"
+  const monacoLanguage = language || LANGUAGE_MAP[runtime || ""] || "plaintext"
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (readOnly) return
-
-      // Handle Tab key for indentation
-      if (e.key === "Tab") {
-        e.preventDefault()
-        const textarea = e.currentTarget
-        const start = textarea.selectionStart
-        const end = textarea.selectionEnd
-        const value = textarea.value
-
-        // Insert 2 spaces for tab
-        const newValue = value.substring(0, start) + "  " + value.substring(end)
-        onChange?.(newValue)
-
-        // Move cursor after the inserted spaces
-        requestAnimationFrame(() => {
-          textarea.selectionStart = textarea.selectionEnd = start + 2
-        })
-      }
-    },
-    [onChange, readOnly]
-  )
-
-  const handleScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
-    // Sync scroll between textarea and highlighted code
-    const textarea = e.currentTarget
-    const pre = textarea.parentElement?.querySelector("pre")
-    if (pre) {
-      pre.scrollTop = textarea.scrollTop
-      pre.scrollLeft = textarea.scrollLeft
-    }
+  const handleMount: OnMount = useCallback((editor) => {
+    editorRef.current = editor
+    editor.focus()
   }, [])
+
+  const handleChange = useCallback(
+    (value: string | undefined) => {
+      onChange?.(value ?? "")
+    },
+    [onChange]
+  )
 
   return (
     <div
-      className={cn(
-        "relative rounded-lg border border-border bg-[#1e1e1e] overflow-hidden font-mono text-sm",
-        isFocused && "ring-2 ring-ring ring-offset-2 ring-offset-background",
-        className
-      )}
+      className={cn("rounded-lg border border-border overflow-hidden", className)}
       style={{ minHeight }}
     >
-      {/* Syntax highlighted code (visual layer) */}
-      <Highlight theme={themes.vsDark} code={code} language={prismLanguage}>
-        {({ className: highlightClass, style, tokens, getLineProps, getTokenProps }) => (
-          <pre
-            className={cn(highlightClass, "m-0 p-4 overflow-auto pointer-events-none")}
-            style={{
-              ...style,
-              background: "transparent",
-              minHeight,
-              margin: 0,
-            }}
-          >
-            {tokens.map((line, i) => (
-              <div key={i} {...getLineProps({ line })} className="table-row">
-                {showLineNumbers && (
-                  <span className="table-cell pr-4 text-right select-none text-muted-foreground/50 w-8">
-                    {i + 1}
-                  </span>
-                )}
-                <span className="table-cell">
-                  {line.map((token, key) => (
-                    <span key={key} {...getTokenProps({ token })} />
-                  ))}
-                </span>
-              </div>
-            ))}
-          </pre>
-        )}
-      </Highlight>
-
-      {/* Editable textarea (input layer) */}
-      {!readOnly && (
-        <textarea
-          ref={textareaRef}
-          value={code}
-          onChange={(e) => onChange?.(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onScroll={handleScroll}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          spellCheck={false}
-          className={cn(
-            "absolute inset-0 w-full h-full p-4 resize-none bg-transparent text-transparent caret-white",
-            "focus:outline-none font-mono text-sm leading-relaxed",
-            showLineNumbers && "pl-12"
-          )}
-          style={{
-            minHeight,
-            lineHeight: "1.5rem",
-          }}
-        />
-      )}
+      <Editor
+        height={minHeight}
+        language={monacoLanguage}
+        value={code}
+        onChange={handleChange}
+        onMount={handleMount}
+        theme="vs-dark"
+        options={{
+          readOnly,
+          fontSize,
+          lineNumbers: showLineNumbers ? "on" : "off",
+          minimap: { enabled: minimap },
+          scrollBeyondLastLine: false,
+          folding: true,
+          wordWrap: "on",
+          automaticLayout: true,
+          tabSize: 2,
+          insertSpaces: true,
+          renderWhitespace: "selection",
+          bracketPairColorization: { enabled: true },
+          guides: {
+            indentation: true,
+            bracketPairs: true,
+          },
+          padding: { top: 12, bottom: 12 },
+          overviewRulerLanes: 0,
+          hideCursorInOverviewRuler: true,
+          overviewRulerBorder: false,
+          scrollbar: {
+            verticalScrollbarSize: 8,
+            horizontalScrollbarSize: 8,
+          },
+          contextmenu: true,
+          quickSuggestions: !readOnly,
+          suggestOnTriggerCharacters: !readOnly,
+          find: {
+            addExtraSpaceOnTop: false,
+          },
+        }}
+        loading={
+          <div className="flex items-center justify-center h-full bg-[#1e1e1e] text-muted-foreground text-sm">
+            Loading editor...
+          </div>
+        }
+      />
     </div>
   )
 }
 
-// Read-only code display component (simpler version)
+// Read-only code display component
 interface CodeDisplayProps {
   code: string
   language?: string
@@ -156,6 +143,7 @@ interface CodeDisplayProps {
   className?: string
   showLineNumbers?: boolean
   maxHeight?: string
+  fontSize?: number
 }
 
 export function CodeDisplay({
@@ -164,45 +152,48 @@ export function CodeDisplay({
   runtime,
   className,
   showLineNumbers = true,
-  maxHeight,
+  maxHeight = "400px",
+  fontSize = 13,
 }: CodeDisplayProps) {
-  const prismLanguage = language || LANGUAGE_MAP[runtime || ""] || "javascript"
+  const monacoLanguage = language || LANGUAGE_MAP[runtime || ""] || "plaintext"
 
   return (
     <div
-      className={cn(
-        "rounded-lg border border-border bg-[#1e1e1e] overflow-auto font-mono text-sm",
-        className
-      )}
+      className={cn("rounded-lg border border-border overflow-hidden", className)}
       style={{ maxHeight }}
     >
-      <Highlight theme={themes.vsDark} code={code} language={prismLanguage}>
-        {({ className: highlightClass, style, tokens, getLineProps, getTokenProps }) => (
-          <pre
-            className={cn(highlightClass, "m-0 p-4")}
-            style={{
-              ...style,
-              background: "transparent",
-              margin: 0,
-            }}
-          >
-            {tokens.map((line, i) => (
-              <div key={i} {...getLineProps({ line })} className="table-row">
-                {showLineNumbers && (
-                  <span className="table-cell pr-4 text-right select-none text-muted-foreground/50 w-8">
-                    {i + 1}
-                  </span>
-                )}
-                <span className="table-cell whitespace-pre">
-                  {line.map((token, key) => (
-                    <span key={key} {...getTokenProps({ token })} />
-                  ))}
-                </span>
-              </div>
-            ))}
-          </pre>
-        )}
-      </Highlight>
+      <Editor
+        height={maxHeight}
+        language={monacoLanguage}
+        value={code}
+        theme="vs-dark"
+        options={{
+          readOnly: true,
+          fontSize,
+          lineNumbers: showLineNumbers ? "on" : "off",
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
+          folding: true,
+          wordWrap: "on",
+          automaticLayout: true,
+          padding: { top: 12, bottom: 12 },
+          overviewRulerLanes: 0,
+          hideCursorInOverviewRuler: true,
+          overviewRulerBorder: false,
+          scrollbar: {
+            verticalScrollbarSize: 8,
+            horizontalScrollbarSize: 8,
+          },
+          domReadOnly: true,
+          renderLineHighlight: "none",
+          contextmenu: false,
+        }}
+        loading={
+          <div className="flex items-center justify-center h-full bg-[#1e1e1e] text-muted-foreground text-sm">
+            Loading...
+          </div>
+        }
+      />
     </div>
   )
 }

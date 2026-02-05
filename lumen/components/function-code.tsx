@@ -249,6 +249,7 @@ export function FunctionCode({ func, onCodeSaved }: FunctionCodeProps) {
           onChange={setCode}
           runtime={runtimeId}
           minHeight="500px"
+          minimap
         />
       </div>
 
