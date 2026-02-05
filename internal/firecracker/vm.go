@@ -455,8 +455,26 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 	}
 
 	if useSnapshot {
-		// Load Snapshot (pass funcID for metadata lookup)
-		err = m.apiLoadSnapshot(ctx, vm, snapshotPath, memPath, fn.ID)
+		// Load Snapshot (pass funcID for metadata lookup and original CID for resource management)
+		err = m.apiLoadSnapshot(ctx, vm, snapshotPath, memPath, fn.ID, cid)
+		if err != nil {
+			// Check if it's an old snapshot without required metadata
+			if strings.Contains(err.Error(), "missing code_drive field") {
+				logging.Op().Warn("invalid snapshot detected, falling back to fresh boot",
+					"func_id", fn.ID,
+					"error", err)
+				// Delete invalid snapshot files
+				os.Remove(snapshotPath)
+				os.Remove(memPath)
+				os.Remove(filepath.Join(m.config.SnapshotDir, fn.ID+".meta"))
+				// Fall back to fresh boot
+				useSnapshot = false
+				err = m.apiBoot(ctx, vm, rootfsPath, codeDrive, fn)
+			}
+		} else {
+			// Snapshot loaded successfully - apiLoadSnapshot already released the original CID
+			cidAllocated = false
+		}
 	} else {
 		// Regular Boot
 		err = m.apiBoot(ctx, vm, rootfsPath, codeDrive, fn)
@@ -685,7 +703,7 @@ func (m *Manager) apiBoot(ctx context.Context, vm *VM, rootfs, codeDrive string,
 	return nil
 }
 
-func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath, funcID string) error {
+func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath, funcID string, originalCID uint32) error {
 	// Per Firecracker docs (v1.12+), only Logger and Metrics may be configured
 	// before snapshot/load. All other resources (vsock, drives, network) are
 	// restored from the snapshot state.
@@ -706,22 +724,55 @@ func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath
 		return fmt.Errorf("parse snapshot metadata: %w", err)
 	}
 
+	// Validate snapshot has required metadata (CodeDrive was added in a later version)
+	if meta.CodeDrive == "" {
+		return fmt.Errorf("snapshot metadata missing code_drive field (created by older version)")
+	}
+
+	// Reserve the snapshot's CID to prevent conflicts.
+	// If the CID is already in use by another VM, the snapshot cannot be loaded.
+	// Note: We don't release the original CID here - the caller handles CID cleanup.
+	m.cidMu.Lock()
+	if _, inUse := m.usedCIDs[meta.VsockCID]; inUse && meta.VsockCID != originalCID {
+		m.cidMu.Unlock()
+		return fmt.Errorf("snapshot CID %d is already in use", meta.VsockCID)
+	}
+	if meta.VsockCID != originalCID {
+		m.usedCIDs[meta.VsockCID] = struct{}{}
+	}
+	m.cidMu.Unlock()
+
 	// Clean up stale vsock socket at the original path and update VM
 	_ = os.Remove(meta.VsockPath)
 	vm.VsockPath = meta.VsockPath
 	vm.CID = meta.VsockCID
 
-	if meta.CodeDrive != "" {
-		if _, err := os.Stat(meta.CodeDrive); os.IsNotExist(err) {
-			if err := os.MkdirAll(filepath.Dir(meta.CodeDrive), 0755); err != nil {
-				return fmt.Errorf("create snapshot code drive dir: %w", err)
+	// Handle code drive: ensure the original code drive file exists
+	originalCodeDrive := vm.CodeDrive // newly created code drive
+	if _, err := os.Stat(meta.CodeDrive); os.IsNotExist(err) {
+		if err := os.MkdirAll(filepath.Dir(meta.CodeDrive), 0755); err != nil {
+			// Clean up reserved CID on failure
+			if meta.VsockCID != originalCID {
+				m.releaseCID(meta.VsockCID)
 			}
-			if err := copyFile(vm.CodeDrive, meta.CodeDrive); err != nil {
-				return fmt.Errorf("restore snapshot code drive backing file: %w", err)
-			}
+			vm.CID = originalCID // restore original CID for caller cleanup
+			return fmt.Errorf("create snapshot code drive dir: %w", err)
 		}
-		vm.CodeDrive = meta.CodeDrive
-		vm.PreserveCodeDrive = true
+		if err := copyFile(originalCodeDrive, meta.CodeDrive); err != nil {
+			// Clean up reserved CID on failure
+			if meta.VsockCID != originalCID {
+				m.releaseCID(meta.VsockCID)
+			}
+			vm.CID = originalCID // restore original CID for caller cleanup
+			return fmt.Errorf("restore snapshot code drive backing file: %w", err)
+		}
+	}
+	vm.CodeDrive = meta.CodeDrive
+	vm.PreserveCodeDrive = true
+
+	// Clean up the newly created code drive since we're using the snapshot's code drive
+	if originalCodeDrive != meta.CodeDrive {
+		os.Remove(originalCodeDrive)
 	}
 
 	// Configure logger before snapshot load (allowed per API)
@@ -752,8 +803,19 @@ func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath
 	}
 
 	if err := m.apiCall(ctx, vm, "PUT", "/snapshot/load", req); err != nil {
+		// Clean up reserved CID on failure
+		if meta.VsockCID != originalCID {
+			m.releaseCID(meta.VsockCID)
+		}
+		vm.CID = originalCID // restore original CID for caller cleanup
 		return fmt.Errorf("load snapshot: %w", err)
 	}
+
+	// Snapshot loaded successfully - release the original CID since we're now using the snapshot's CID
+	if originalCID != meta.VsockCID {
+		m.releaseCID(originalCID)
+	}
+
 	return nil
 }
 

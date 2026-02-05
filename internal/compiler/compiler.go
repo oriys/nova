@@ -151,6 +151,7 @@ func (c *Compiler) writeSourceFiles(workDir string, runtime domain.Runtime, sour
 		if err := os.WriteFile(filepath.Join(srcDir, "main.rs"), []byte(sourceCode), 0644); err != nil {
 			return err
 		}
+		// Configure static linking via Cargo.toml
 		cargoToml := `[package]
 name = "handler"
 version = "0.1.0"
@@ -159,8 +160,21 @@ edition = "2021"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[profile.release]
+lto = true
+strip = true
 `
 		if err := os.WriteFile(filepath.Join(workDir, "Cargo.toml"), []byte(cargoToml), 0644); err != nil {
+			return err
+		}
+		// Create .cargo/config.toml for static musl linking
+		cargoDir := filepath.Join(workDir, ".cargo")
+		os.MkdirAll(cargoDir, 0755)
+		cargoConfig := `[target.x86_64-unknown-linux-musl]
+rustflags = ["-C", "target-feature=+crt-static"]
+`
+		if err := os.WriteFile(filepath.Join(cargoDir, "config.toml"), []byte(cargoConfig), 0644); err != nil {
 			return err
 		}
 	case domain.RuntimeJava:
@@ -213,7 +227,8 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 	case domain.RuntimeGo:
 		return "golang:1.23-alpine", "cd /work && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o handler ."
 	case domain.RuntimeRust:
-		return "rust:1.84-alpine", "cd /work && cargo build --release && cp target/release/handler /work/handler"
+		// Use musl target for static linking; install target first, then build
+		return "rust:1.84-alpine", "rustup target add x86_64-unknown-linux-musl && cd /work && cargo build --release --target x86_64-unknown-linux-musl && cp target/x86_64-unknown-linux-musl/release/handler /work/handler"
 	case domain.RuntimeJava:
 		return "eclipse-temurin:21-jdk", "cd /work && javac Handler.java && jar cfe handler.jar Handler *.class && cp handler.jar handler"
 	case domain.RuntimeKotlin:
