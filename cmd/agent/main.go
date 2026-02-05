@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -380,6 +381,9 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int) (json.RawMe
 		case "dotnet":
 			// Expect a single-file apphost at /code/handler (PublishSingleFile=true).
 			cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
+		case "custom", "provided":
+			bootstrapPath := filepath.Join(CodeMountPoint, "bootstrap")
+			cmd = exec.CommandContext(ctx, bootstrapPath, "/tmp/input.json")
 		default:
 			return nil, "", "", fmt.Errorf("unsupported runtime: %s", a.function.Runtime)
 		}

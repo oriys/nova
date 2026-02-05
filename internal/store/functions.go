@@ -131,6 +131,12 @@ func (s *PostgresStore) UpdateFunction(ctx context.Context, name string, update 
 	if update.MinReplicas != nil {
 		fn.MinReplicas = *update.MinReplicas
 	}
+	if update.MaxReplicas != nil {
+		fn.MaxReplicas = *update.MaxReplicas
+	}
+	if update.InstanceConcurrency != nil {
+		fn.InstanceConcurrency = *update.InstanceConcurrency
+	}
 	if update.Mode != nil {
 		fn.Mode = *update.Mode
 	}

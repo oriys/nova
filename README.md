@@ -94,6 +94,11 @@ nova/
 | Ping | 4 | Host → VM | 健康检查 |
 | Stop | 5 | Host → VM | 优雅停机 |
 
+
+## 路线图
+
+- 阶段一（核心性能与机制增强）：`docs/core-mechanics-phase1.md`
+
 ## 环境要求
 
 - **开发机**: macOS 或 Linux（编写代码、交叉编译）
