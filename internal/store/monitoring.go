@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -10,19 +11,21 @@ import (
 
 // InvocationLog represents a single function invocation record
 type InvocationLog struct {
-	ID           string    `json:"id"`
-	FunctionID   string    `json:"function_id"`
-	FunctionName string    `json:"function_name"`
-	Runtime      string    `json:"runtime"`
-	DurationMs   int64     `json:"duration_ms"`
-	ColdStart    bool      `json:"cold_start"`
-	Success      bool      `json:"success"`
-	ErrorMessage string    `json:"error_message,omitempty"`
-	InputSize    int       `json:"input_size"`
-	OutputSize   int       `json:"output_size"`
-	Stdout       string    `json:"stdout,omitempty"`
-	Stderr       string    `json:"stderr,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           string          `json:"id"`
+	FunctionID   string          `json:"function_id"`
+	FunctionName string          `json:"function_name"`
+	Runtime      string          `json:"runtime"`
+	DurationMs   int64           `json:"duration_ms"`
+	ColdStart    bool            `json:"cold_start"`
+	Success      bool            `json:"success"`
+	ErrorMessage string          `json:"error_message,omitempty"`
+	InputSize    int             `json:"input_size"`
+	OutputSize   int             `json:"output_size"`
+	Input        json.RawMessage `json:"input,omitempty"`
+	Output       json.RawMessage `json:"output,omitempty"`
+	Stdout       string          `json:"stdout,omitempty"`
+	Stderr       string          `json:"stderr,omitempty"`
+	CreatedAt    time.Time       `json:"created_at"`
 }
 
 // TimeSeriesBucket represents aggregated metrics for a time period
@@ -42,10 +45,10 @@ func (s *PostgresStore) SaveInvocationLog(ctx context.Context, log *InvocationLo
 	}
 
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO invocation_logs (id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, stdout, stderr, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		INSERT INTO invocation_logs (id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, stdout, stderr, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		ON CONFLICT (id) DO NOTHING
-	`, log.ID, log.FunctionID, log.FunctionName, log.Runtime, log.DurationMs, log.ColdStart, log.Success, log.ErrorMessage, log.InputSize, log.OutputSize, log.Stdout, log.Stderr, log.CreatedAt)
+	`, log.ID, log.FunctionID, log.FunctionName, log.Runtime, log.DurationMs, log.ColdStart, log.Success, log.ErrorMessage, log.InputSize, log.OutputSize, log.Input, log.Output, log.Stdout, log.Stderr, log.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("save invocation log: %w", err)
 	}
@@ -66,10 +69,10 @@ func (s *PostgresStore) SaveInvocationLogs(ctx context.Context, logs []*Invocati
 			log.CreatedAt = time.Now()
 		}
 		batch.Queue(`
-			INSERT INTO invocation_logs (id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, stdout, stderr, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			INSERT INTO invocation_logs (id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, stdout, stderr, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 			ON CONFLICT (id) DO NOTHING
-		`, log.ID, log.FunctionID, log.FunctionName, log.Runtime, log.DurationMs, log.ColdStart, log.Success, log.ErrorMessage, log.InputSize, log.OutputSize, log.Stdout, log.Stderr, log.CreatedAt)
+		`, log.ID, log.FunctionID, log.FunctionName, log.Runtime, log.DurationMs, log.ColdStart, log.Success, log.ErrorMessage, log.InputSize, log.OutputSize, log.Input, log.Output, log.Stdout, log.Stderr, log.CreatedAt)
 	}
 
 	results := s.pool.SendBatch(ctx, batch)
@@ -90,7 +93,7 @@ func (s *PostgresStore) ListInvocationLogs(ctx context.Context, functionID strin
 	}
 
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, stdout, stderr, created_at
+		SELECT id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, stdout, stderr, created_at
 		FROM invocation_logs
 		WHERE function_id = $1
 		ORDER BY created_at DESC
@@ -105,11 +108,18 @@ func (s *PostgresStore) ListInvocationLogs(ctx context.Context, functionID strin
 	for rows.Next() {
 		var log InvocationLog
 		var errorMessage, stdout, stderr *string
-		if err := rows.Scan(&log.ID, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &stdout, &stderr, &log.CreatedAt); err != nil {
+		var input, output []byte
+		if err := rows.Scan(&log.ID, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &input, &output, &stdout, &stderr, &log.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan invocation log: %w", err)
 		}
 		if errorMessage != nil {
 			log.ErrorMessage = *errorMessage
+		}
+		if input != nil {
+			log.Input = input
+		}
+		if output != nil {
+			log.Output = output
 		}
 		if stdout != nil {
 			log.Stdout = *stdout
@@ -131,7 +141,7 @@ func (s *PostgresStore) ListAllInvocationLogs(ctx context.Context, limit int) ([
 	}
 
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, stdout, stderr, created_at
+		SELECT id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, stdout, stderr, created_at
 		FROM invocation_logs
 		ORDER BY created_at DESC
 		LIMIT $1
@@ -145,11 +155,18 @@ func (s *PostgresStore) ListAllInvocationLogs(ctx context.Context, limit int) ([
 	for rows.Next() {
 		var log InvocationLog
 		var errorMessage, stdout, stderr *string
-		if err := rows.Scan(&log.ID, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &stdout, &stderr, &log.CreatedAt); err != nil {
+		var input, output []byte
+		if err := rows.Scan(&log.ID, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &input, &output, &stdout, &stderr, &log.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan invocation log: %w", err)
 		}
 		if errorMessage != nil {
 			log.ErrorMessage = *errorMessage
+		}
+		if input != nil {
+			log.Input = input
+		}
+		if output != nil {
+			log.Output = output
 		}
 		if stdout != nil {
 			log.Stdout = *stdout
@@ -168,11 +185,12 @@ func (s *PostgresStore) ListAllInvocationLogs(ctx context.Context, limit int) ([
 func (s *PostgresStore) GetInvocationLog(ctx context.Context, requestID string) (*InvocationLog, error) {
 	var log InvocationLog
 	var errorMessage, stdout, stderr *string
+	var input, output []byte
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, stdout, stderr, created_at
+		SELECT id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, stdout, stderr, created_at
 		FROM invocation_logs
 		WHERE id = $1
-	`, requestID).Scan(&log.ID, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &stdout, &stderr, &log.CreatedAt)
+	`, requestID).Scan(&log.ID, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &input, &output, &stdout, &stderr, &log.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("invocation log not found: %s", requestID)
 	}
@@ -181,6 +199,12 @@ func (s *PostgresStore) GetInvocationLog(ctx context.Context, requestID string) 
 	}
 	if errorMessage != nil {
 		log.ErrorMessage = *errorMessage
+	}
+	if input != nil {
+		log.Input = input
+	}
+	if output != nil {
+		log.Output = output
 	}
 	if stdout != nil {
 		log.Stdout = *stdout

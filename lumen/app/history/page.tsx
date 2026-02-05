@@ -39,6 +39,10 @@ interface InvocationRecord {
   status: "success" | "failed"
   duration: number
   coldStart: boolean
+  input?: string
+  output?: string
+  inputTitle?: string
+  outputTitle?: string
 }
 
 export default function HistoryPage() {
@@ -67,15 +71,42 @@ export default function HistoryPage() {
       setFunctions(transformedFuncs)
 
       // Transform logs to invocation records
-      const records: InvocationRecord[] = logs.map((log) => ({
-        id: log.id,
-        functionId: log.function_id,
-        functionName: log.function_name,
-        timestamp: log.created_at,
-        status: log.success ? "success" : "failed",
-        duration: log.duration_ms,
-        coldStart: log.cold_start,
-      }))
+      const formatPayload = (payload: unknown) => {
+        if (payload === undefined) return ""
+        try {
+          return JSON.stringify(payload)
+        } catch {
+          return String(payload)
+        }
+      }
+
+      const prettyPayload = (payload: unknown) => {
+        if (payload === undefined) return ""
+        try {
+          return JSON.stringify(payload, null, 2)
+        } catch {
+          return String(payload)
+        }
+      }
+
+      const records: InvocationRecord[] = logs.map((log) => {
+        const input = formatPayload(log.input)
+        const output = formatPayload(log.output)
+
+        return {
+          id: log.id,
+          functionId: log.function_id,
+          functionName: log.function_name,
+          timestamp: log.created_at,
+          status: log.success ? "success" : "failed",
+          duration: log.duration_ms,
+          coldStart: log.cold_start,
+          input,
+          output,
+          inputTitle: input ? prettyPayload(log.input) : "No input captured",
+          outputTitle: output ? prettyPayload(log.output) : "No output captured",
+        }
+      })
 
       setInvocations(records)
     } catch (err) {
@@ -266,6 +297,12 @@ export default function HistoryPage() {
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
                     Cold Start
                   </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
+                    Input
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
+                    Output
+                  </th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">
                     Actions
                   </th>
@@ -275,7 +312,7 @@ export default function HistoryPage() {
                 {loading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i} className="border-b border-border">
-                      <td colSpan={7} className="px-4 py-3">
+                      <td colSpan={9} className="px-4 py-3">
                         <div className="h-4 bg-muted rounded animate-pulse" />
                       </td>
                     </tr>
@@ -283,7 +320,7 @@ export default function HistoryPage() {
                 ) : filteredInvocations.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={9}
                       className="px-4 py-8 text-center text-muted-foreground"
                     >
                       No invocations found
@@ -346,6 +383,22 @@ export default function HistoryPage() {
                             Warm
                           </Badge>
                         )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className="block max-w-[220px] truncate font-mono text-xs text-muted-foreground"
+                          title={inv.inputTitle}
+                        >
+                          {inv.input || "-"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className="block max-w-[220px] truncate font-mono text-xs text-muted-foreground"
+                          title={inv.outputTitle}
+                        >
+                          {inv.output || "-"}
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <Button variant="ghost" size="sm" asChild>

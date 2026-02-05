@@ -5,6 +5,7 @@ import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FunctionMetrics } from "@/components/function-metrics"
 import { FunctionCode } from "@/components/function-code"
@@ -34,6 +35,10 @@ export default function FunctionDetailPage({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [invoking, setInvoking] = useState(false)
+  const [invokeInput, setInvokeInput] = useState("{\n  \n}")
+  const [invokeOutput, setInvokeOutput] = useState<string | null>(null)
+  const [invokeError, setInvokeError] = useState<string | null>(null)
+  const [invokeMeta, setInvokeMeta] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     try {
@@ -67,11 +72,36 @@ export default function FunctionDetailPage({
 
     try {
       setInvoking(true)
-      await functionsApi.invoke(func.name, {})
+      setInvokeError(null)
+      setInvokeMeta(null)
+      let payload: unknown = {}
+
+      if (invokeInput.trim()) {
+        try {
+          payload = JSON.parse(invokeInput)
+        } catch (parseError) {
+          setInvokeError(
+            parseError instanceof Error
+              ? parseError.message
+              : "Invalid JSON payload"
+          )
+          return
+        }
+      }
+
+      const response = await functionsApi.invoke(func.name, payload)
+      setInvokeOutput(JSON.stringify(response.output ?? null, null, 2))
+      setInvokeMeta(
+        `request_id: ${response.request_id} · duration: ${response.duration_ms} ms · ${response.cold_start ? "cold" : "warm"} start`
+      )
+      if (response.error) {
+        setInvokeError(response.error)
+      }
       // Refresh data after invocation
       fetchData()
     } catch (err) {
       console.error("Failed to invoke function:", err)
+      setInvokeError(err instanceof Error ? err.message : "Invocation failed")
     } finally {
       setInvoking(false)
     }
@@ -191,6 +221,64 @@ export default function FunctionDetailPage({
       <div className="p-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsContent value="overview" className="mt-0 space-y-6">
+            <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground">
+                    Invoke function
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Provide a JSON payload to test your function and inspect the result.
+                  </p>
+                </div>
+                <Button onClick={handleInvoke} disabled={invoking} size="sm">
+                  {invoking ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Play className="mr-2 h-4 w-4" />
+                  )}
+                  Invoke
+                </Button>
+              </div>
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-foreground">Input</div>
+                  <Textarea
+                    value={invokeInput}
+                    onChange={(event) => setInvokeInput(event.target.value)}
+                    className="min-h-[160px] font-mono text-xs"
+                    placeholder='{\n  "key": "value"\n}'
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Payload must be valid JSON. Leave empty to send an empty object.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-foreground">Output</span>
+                    {invokeMeta && (
+                      <span className="text-xs text-muted-foreground">{invokeMeta}</span>
+                    )}
+                  </div>
+                  <div className="min-h-[160px] rounded-md border border-border bg-muted/30 p-3">
+                    {invokeOutput ? (
+                      <pre className="whitespace-pre-wrap text-xs text-foreground">
+                        {invokeOutput}
+                      </pre>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        No output yet. Invoke the function to see results.
+                      </p>
+                    )}
+                  </div>
+                  {invokeError && (
+                    <p className="text-xs text-destructive">{invokeError}</p>
+                  )}
+                </div>
+              </div>
+            </section>
             <FunctionMetrics func={func} metrics={metrics} />
           </TabsContent>
 
