@@ -29,6 +29,7 @@ type ServerConfig struct {
 	FCAdapter    *firecracker.Adapter // Optional: for Firecracker-specific features (snapshots)
 	AuthCfg      *config.AuthConfig
 	RateLimitCfg *config.RateLimitConfig
+	RootfsDir    string
 }
 
 // StartHTTPServer creates and starts the HTTP server with control plane and data plane handlers.
@@ -49,6 +50,7 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 		FCAdapter:       cfg.FCAdapter,
 		Compiler:        comp,
 		FunctionService: funcService,
+		RootfsDir:       cfg.RootfsDir,
 	}
 	cpHandler.RegisterRoutes(mux)
 

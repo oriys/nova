@@ -1,16 +1,25 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { Pagination } from "@/components/pagination"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { runtimesApi, CreateRuntimeRequest } from "@/lib/api"
+import { runtimesApi, CreateRuntimeRequest, UploadRuntimeRequest } from "@/lib/api"
 import { transformRuntime, RuntimeInfo } from "@/lib/types"
-import { RefreshCw, CheckCircle, AlertTriangle, Wrench, Plus, Trash2, X } from "lucide-react"
+import { RefreshCw, CheckCircle, AlertTriangle, Wrench, Plus, Trash2, X, Upload, FileText } from "lucide-react"
 import { RuntimeIcon, getRuntimeColor } from "@/components/runtime-logos"
 import { cn } from "@/lib/utils"
+
+type CreateMode = "reference" | "upload"
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return bytes + " B"
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB"
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + " MB"
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB"
+}
 
 export default function RuntimesPage() {
   const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([])
@@ -22,11 +31,18 @@ export default function RuntimesPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [createMode, setCreateMode] = useState<CreateMode>("reference")
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [formData, setFormData] = useState<CreateRuntimeRequest>({
     id: "",
     name: "",
     version: "",
     status: "available",
+    image_name: "",
+    entrypoint: [],
+    file_extension: "",
   })
 
   const fetchData = useCallback(async () => {
@@ -54,17 +70,76 @@ export default function RuntimesPage() {
 
   const pagedRuntimes = runtimes.slice((page - 1) * pageSize, page * pageSize)
 
+  const resetForm = () => {
+    setFormData({ id: "", name: "", version: "", status: "available", image_name: "", entrypoint: [], file_extension: "" })
+    setUploadFile(null)
+    setUploadProgress(null)
+    setCreateMode("reference")
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.name.endsWith(".ext4")) {
+      setError("File must have .ext4 extension")
+      return
+    }
+
+    const maxSize = 2 * 1024 * 1024 * 1024 // 2GB
+    if (file.size > maxSize) {
+      setError("File size must be less than 2GB")
+      return
+    }
+
+    setUploadFile(file)
+    // Auto-fill ID from filename (without extension)
+    const baseName = file.name.replace(/\.ext4$/i, "").replace(/[^a-zA-Z0-9_-]/g, "")
+    if (!formData.id) {
+      setFormData(prev => ({ ...prev, id: baseName }))
+    }
+  }
+
   const handleCreate = async () => {
-    if (!formData.id || !formData.name || !formData.version) return
     try {
       setCreating(true)
-      await runtimesApi.create(formData)
+      setError(null)
+
+      if (createMode === "upload") {
+        if (!uploadFile) {
+          setError("Please select a file to upload")
+          return
+        }
+        if (!formData.id || !formData.name || !formData.entrypoint.length || !formData.file_extension) {
+          setError("Please fill in all required fields")
+          return
+        }
+
+        setUploadProgress("Uploading...")
+        const metadata: UploadRuntimeRequest = {
+          id: formData.id,
+          name: formData.name,
+          version: formData.version || undefined,
+          entrypoint: formData.entrypoint,
+          file_extension: formData.file_extension,
+        }
+        await runtimesApi.upload(uploadFile, metadata)
+        setUploadProgress(null)
+      } else {
+        if (!formData.id || !formData.name || !formData.version || !formData.image_name || !formData.entrypoint.length || !formData.file_extension) {
+          setError("Please fill in all required fields")
+          return
+        }
+        await runtimesApi.create(formData)
+      }
+
       setShowCreateDialog(false)
-      setFormData({ id: "", name: "", version: "", status: "available" })
+      resetForm()
       fetchData()
     } catch (err) {
       console.error("Failed to create runtime:", err)
       setError(err instanceof Error ? err.message : "Failed to create runtime")
+      setUploadProgress(null)
     } finally {
       setCreating(false)
     }
@@ -97,7 +172,11 @@ export default function RuntimesPage() {
     }
   }
 
-  if (error) {
+  const isFormValid = createMode === "upload"
+    ? uploadFile && formData.id && formData.name && formData.entrypoint.length > 0 && formData.file_extension
+    : formData.id && formData.name && formData.version && formData.image_name && formData.entrypoint.length > 0 && formData.file_extension
+
+  if (error && !showCreateDialog) {
     return (
       <DashboardLayout>
         <Header title="Runtimes" description="Available execution environments" />
@@ -141,51 +220,149 @@ export default function RuntimesPage() {
         {showCreateDialog && (
           <div className="rounded-xl border border-border bg-card p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-card-foreground">Add Runtime</h3>
-              <Button variant="ghost" size="sm" onClick={() => setShowCreateDialog(false)}>
+              <h3 className="text-sm font-semibold text-card-foreground">Add Custom Runtime</h3>
+              <Button variant="ghost" size="sm" onClick={() => { setShowCreateDialog(false); resetForm(); }}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+
+            {/* Mode toggle */}
+            <div className="flex gap-2 mb-4">
+              <Button
+                variant={createMode === "reference" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setCreateMode("reference")}
+              >
+                <FileText className="mr-2 h-4 w-4" />
+                Reference Existing
+              </Button>
+              <Button
+                variant={createMode === "upload" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setCreateMode("upload")}
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Upload New Image
+              </Button>
+            </div>
+
+            {/* Error display */}
+            {error && (
+              <div className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+
+            {/* Upload mode: file picker */}
+            {createMode === "upload" && (
+              <div className="mb-4">
+                <label className="text-xs font-medium text-muted-foreground">Rootfs Image (.ext4) *</label>
+                <div
+                  className={cn(
+                    "mt-1 border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors",
+                    uploadFile ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground"
+                  )}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".ext4"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                  {uploadFile ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <FileText className="h-5 w-5 text-primary" />
+                      <span className="text-sm font-medium">{uploadFile.name}</span>
+                      <span className="text-xs text-muted-foreground">({formatFileSize(uploadFile.size)})</span>
+                    </div>
+                  ) : (
+                    <div>
+                      <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+                      <p className="text-sm text-muted-foreground">Click to select .ext4 file (max 2GB)</p>
+                    </div>
+                  )}
+                </div>
+                {uploadProgress && (
+                  <p className="mt-2 text-sm text-muted-foreground">{uploadProgress}</p>
+                )}
+              </div>
+            )}
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
-                <label className="text-xs font-medium text-muted-foreground">ID</label>
+                <label className="text-xs font-medium text-muted-foreground">ID *</label>
                 <input
                   type="text"
-                  placeholder="e.g. python3.13"
+                  placeholder="e.g. bash-custom"
                   className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                   value={formData.id}
                   onChange={(e) => setFormData({ ...formData, id: e.target.value })}
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground">Name</label>
+                <label className="text-xs font-medium text-muted-foreground">Name *</label>
                 <input
                   type="text"
-                  placeholder="e.g. Python"
+                  placeholder="e.g. Bash"
                   className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground">Version</label>
+                <label className="text-xs font-medium text-muted-foreground">
+                  Version {createMode === "reference" ? "*" : "(optional)"}
+                </label>
                 <input
                   type="text"
-                  placeholder="e.g. 3.13"
+                  placeholder="e.g. 5.2"
                   className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                   value={formData.version}
                   onChange={(e) => setFormData({ ...formData, version: e.target.value })}
                 />
               </div>
-              <div className="flex items-end">
-                <Button
-                  onClick={handleCreate}
-                  disabled={creating || !formData.id || !formData.name || !formData.version}
-                  className="w-full"
-                >
-                  {creating ? "Creating..." : "Create"}
-                </Button>
+              {createMode === "reference" && (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Image Name *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. bash.ext4"
+                    className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                    value={formData.image_name}
+                    onChange={(e) => setFormData({ ...formData, image_name: e.target.value })}
+                  />
+                </div>
+              )}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Entrypoint * (comma-separated)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. /bin/bash"
+                  className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  value={formData.entrypoint.join(", ")}
+                  onChange={(e) => setFormData({ ...formData, entrypoint: e.target.value.split(",").map(s => s.trim()).filter(Boolean) })}
+                />
               </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">File Extension *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. .sh"
+                  className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  value={formData.file_extension}
+                  onChange={(e) => setFormData({ ...formData, file_extension: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end mt-4">
+              <Button
+                onClick={handleCreate}
+                disabled={creating || !isFormValid}
+              >
+                {creating ? (uploadProgress || "Creating...") : (createMode === "upload" ? "Upload & Create" : "Create Runtime")}
+              </Button>
             </div>
           </div>
         )}
@@ -234,6 +411,11 @@ export default function RuntimesPage() {
                         <p className="text-sm text-muted-foreground">
                           v{runtime.version}
                         </p>
+                        {runtime.imageName && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {runtime.imageName}
+                          </p>
+                        )}
                       </div>
                       <Button
                         variant="ghost"

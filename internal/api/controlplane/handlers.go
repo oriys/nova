@@ -19,6 +19,7 @@ type Handler struct {
 	FCAdapter       *firecracker.Adapter // Optional: for Firecracker-specific features
 	Compiler        *compiler.Compiler
 	FunctionService *service.FunctionService
+	RootfsDir       string // Directory where rootfs ext4 images are stored
 }
 
 // RegisterRoutes registers all control plane routes on the given mux.
@@ -37,6 +38,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Runtimes
 	mux.HandleFunc("GET /runtimes", h.ListRuntimes)
 	mux.HandleFunc("POST /runtimes", h.CreateRuntime)
+	mux.HandleFunc("POST /runtimes/upload", h.UploadRuntime)
 	mux.HandleFunc("DELETE /runtimes/{id}", h.DeleteRuntime)
 
 	// Configuration

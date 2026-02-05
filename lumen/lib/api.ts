@@ -55,6 +55,10 @@ export interface Runtime {
   name: string;
   version: string;
   status: "available" | "deprecated" | "maintenance";
+  image_name?: string;
+  entrypoint?: string[];
+  file_extension?: string;
+  env_vars?: Record<string, string>;
   functions_count: number;
 }
 
@@ -184,6 +188,19 @@ export interface CreateRuntimeRequest {
   name: string;
   version: string;
   status?: string;
+  image_name: string;
+  entrypoint: string[];
+  file_extension: string;
+  env_vars?: Record<string, string>;
+}
+
+export interface UploadRuntimeRequest {
+  id: string;
+  name: string;
+  version?: string;
+  entrypoint: string[];
+  file_extension: string;
+  env_vars?: Record<string, string>;
 }
 
 class ApiError extends Error {
@@ -267,6 +284,24 @@ export const runtimesApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  upload: async (file: File, metadata: UploadRuntimeRequest): Promise<Runtime> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("metadata", JSON.stringify(metadata));
+
+    const response = await fetch(`${API_BASE}/runtimes/upload`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new ApiError(response.status, text || response.statusText);
+    }
+
+    return response.json();
+  },
 
   delete: (id: string) =>
     request<{ status: string; id: string }>(`/runtimes/${encodeURIComponent(id)}`, {

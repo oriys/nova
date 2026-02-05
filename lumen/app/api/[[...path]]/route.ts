@@ -14,11 +14,22 @@ async function handler(req: NextRequest) {
     }
   });
 
+  let body: BodyInit | undefined;
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    const contentType = req.headers.get("content-type") || "";
+    if (contentType.includes("multipart/form-data")) {
+      // Preserve raw binary data for multipart uploads
+      body = await req.blob();
+    } else {
+      body = await req.text();
+    }
+  }
+
   try {
     const response = await fetch(targetUrl, {
       method: req.method,
       headers,
-      body: req.method !== "GET" && req.method !== "HEAD" ? await req.text() : undefined,
+      body,
     });
 
     const responseHeaders = new Headers();

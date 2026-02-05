@@ -164,6 +164,7 @@ func daemonCmd() *cobra.Command {
 					FCAdapter:    fcAdapter,
 					AuthCfg:      &cfg.Auth,
 					RateLimitCfg: &cfg.RateLimit,
+					RootfsDir:    cfg.Firecracker.RootfsDir,
 				})
 				logging.Op().Info("HTTP API started", "addr", cfg.Daemon.HTTPAddr)
 			}
