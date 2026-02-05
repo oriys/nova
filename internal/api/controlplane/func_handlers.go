@@ -42,21 +42,22 @@ func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 
 	// Build response
 	response := map[string]interface{}{
-		"id":             fn.ID,
-		"name":           fn.Name,
-		"runtime":        fn.Runtime,
-		"handler":        fn.Handler,
-		"code_hash":      fn.CodeHash,
-		"memory_mb":      fn.MemoryMB,
-		"timeout_s":      fn.TimeoutS,
-		"min_replicas":   fn.MinReplicas,
-		"max_replicas":   fn.MaxReplicas,
-		"mode":           fn.Mode,
-		"env_vars":       fn.EnvVars,
-		"limits":         fn.Limits,
-		"created_at":     fn.CreatedAt,
-		"updated_at":     fn.UpdatedAt,
-		"compile_status": compileStatus,
+		"id":                   fn.ID,
+		"name":                 fn.Name,
+		"runtime":              fn.Runtime,
+		"handler":              fn.Handler,
+		"code_hash":            fn.CodeHash,
+		"memory_mb":            fn.MemoryMB,
+		"timeout_s":            fn.TimeoutS,
+		"min_replicas":         fn.MinReplicas,
+		"max_replicas":         fn.MaxReplicas,
+		"mode":                 fn.Mode,
+		"instance_concurrency": fn.InstanceConcurrency,
+		"env_vars":             fn.EnvVars,
+		"limits":               fn.Limits,
+		"created_at":           fn.CreatedAt,
+		"updated_at":           fn.UpdatedAt,
+		"compile_status":       compileStatus,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

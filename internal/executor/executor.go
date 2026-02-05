@@ -76,16 +76,19 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 
 	rtCfg, err := e.store.GetRuntime(ctx, string(fn.Runtime))
 	if err != nil {
-		return nil, fmt.Errorf("get runtime config: %w", err)
-	}
-	fn.RuntimeCommand = append([]string(nil), rtCfg.Entrypoint...)
-	fn.RuntimeExtension = rtCfg.FileExtension
-	if fn.EnvVars == nil {
-		fn.EnvVars = map[string]string{}
-	}
-	for k, v := range rtCfg.EnvVars {
-		if _, ok := fn.EnvVars[k]; !ok {
-			fn.EnvVars[k] = v
+		if fn.Runtime != domain.RuntimeCustom && fn.Runtime != domain.RuntimeProvided {
+			return nil, fmt.Errorf("get runtime config: %w", err)
+		}
+	} else {
+		fn.RuntimeCommand = append([]string(nil), rtCfg.Entrypoint...)
+		fn.RuntimeExtension = rtCfg.FileExtension
+		if fn.EnvVars == nil {
+			fn.EnvVars = map[string]string{}
+		}
+		for k, v := range rtCfg.EnvVars {
+			if _, ok := fn.EnvVars[k]; !ok {
+				fn.EnvVars[k] = v
+			}
 		}
 	}
 

@@ -8,26 +8,28 @@ import (
 type Runtime string
 
 const (
-	RuntimePython Runtime = "python"
-	RuntimeGo     Runtime = "go"
-	RuntimeRust   Runtime = "rust"
-	RuntimeWasm   Runtime = "wasm"
-	RuntimeNode   Runtime = "node"
-	RuntimeRuby   Runtime = "ruby"
-	RuntimeJava   Runtime = "java"
-	RuntimeDeno   Runtime = "deno"
-	RuntimeBun    Runtime = "bun"
-	RuntimePHP    Runtime = "php"
-	RuntimeDotnet Runtime = "dotnet"
-	RuntimeElixir Runtime = "elixir"
-	RuntimeKotlin Runtime = "kotlin"
-	RuntimeSwift  Runtime = "swift"
-	RuntimeZig    Runtime = "zig"
-	RuntimeLua    Runtime = "lua"
-	RuntimePerl   Runtime = "perl"
-	RuntimeR      Runtime = "r"
-	RuntimeJulia  Runtime = "julia"
-	RuntimeScala  Runtime = "scala"
+	RuntimePython   Runtime = "python"
+	RuntimeGo       Runtime = "go"
+	RuntimeRust     Runtime = "rust"
+	RuntimeWasm     Runtime = "wasm"
+	RuntimeNode     Runtime = "node"
+	RuntimeRuby     Runtime = "ruby"
+	RuntimeJava     Runtime = "java"
+	RuntimeDeno     Runtime = "deno"
+	RuntimeBun      Runtime = "bun"
+	RuntimePHP      Runtime = "php"
+	RuntimeDotnet   Runtime = "dotnet"
+	RuntimeElixir   Runtime = "elixir"
+	RuntimeKotlin   Runtime = "kotlin"
+	RuntimeSwift    Runtime = "swift"
+	RuntimeZig      Runtime = "zig"
+	RuntimeLua      Runtime = "lua"
+	RuntimePerl     Runtime = "perl"
+	RuntimeR        Runtime = "r"
+	RuntimeJulia    Runtime = "julia"
+	RuntimeScala    Runtime = "scala"
+	RuntimeCustom   Runtime = "custom"
+	RuntimeProvided Runtime = "provided"
 )
 
 // ExecutionMode determines how functions are executed
@@ -47,6 +49,7 @@ func (r Runtime) IsValid() bool {
 		RuntimeNode: true, RuntimeRuby: true, RuntimeJava: true, RuntimeDeno: true, RuntimeBun: true,
 		RuntimePHP: true, RuntimeDotnet: true, RuntimeElixir: true, RuntimeKotlin: true, RuntimeSwift: true,
 		RuntimeZig: true, RuntimeLua: true, RuntimePerl: true, RuntimeR: true, RuntimeJulia: true, RuntimeScala: true,
+		RuntimeCustom: true, RuntimeProvided: true,
 	}
 	if validRuntimes[r] {
 		return true
@@ -74,20 +77,21 @@ type ResourceLimits struct {
 }
 
 type Function struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Runtime     Runtime           `json:"runtime"`
-	Handler     string            `json:"handler"`
-	CodeHash    string            `json:"code_hash,omitempty"` // SHA256 hash of code for change detection
-	MemoryMB    int               `json:"memory_mb"`
-	TimeoutS    int               `json:"timeout_s"`
-	MinReplicas int               `json:"min_replicas"`
-	MaxReplicas int               `json:"max_replicas,omitempty"` // Maximum concurrent VMs (0 = unlimited)
-	Mode        ExecutionMode     `json:"mode,omitempty"`         // "process" or "persistent"
-	Limits      *ResourceLimits   `json:"limits,omitempty"`
-	EnvVars     map[string]string `json:"env_vars,omitempty"`
-	CreatedAt   time.Time         `json:"created_at"`
-	UpdatedAt   time.Time         `json:"updated_at"`
+	ID                  string            `json:"id"`
+	Name                string            `json:"name"`
+	Runtime             Runtime           `json:"runtime"`
+	Handler             string            `json:"handler"`
+	CodeHash            string            `json:"code_hash,omitempty"` // SHA256 hash of code for change detection
+	MemoryMB            int               `json:"memory_mb"`
+	TimeoutS            int               `json:"timeout_s"`
+	MinReplicas         int               `json:"min_replicas"`
+	MaxReplicas         int               `json:"max_replicas,omitempty"`         // Maximum concurrent VMs (0 = unlimited)
+	InstanceConcurrency int               `json:"instance_concurrency,omitempty"` // Max in-flight requests per instance
+	Mode                ExecutionMode     `json:"mode,omitempty"`                 // "process" or "persistent"
+	Limits              *ResourceLimits   `json:"limits,omitempty"`
+	EnvVars             map[string]string `json:"env_vars,omitempty"`
+	CreatedAt           time.Time         `json:"created_at"`
+	UpdatedAt           time.Time         `json:"updated_at"`
 
 	// Versioning
 	Version        int         `json:"version"`                   // Current version number (1, 2, 3, ...)

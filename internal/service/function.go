@@ -25,17 +25,18 @@ func NewFunctionService(s *store.Store, c *compiler.Compiler) *FunctionService {
 }
 
 type CreateFunctionRequest struct {
-	Name        string
-	Runtime     string
-	Handler     string
-	Code        string // Source code (required)
-	MemoryMB    int
-	TimeoutS    int
-	MinReplicas int
-	MaxReplicas int
-	Mode        string
-	EnvVars     map[string]string
-	Limits      *domain.ResourceLimits
+	Name                string
+	Runtime             string
+	Handler             string
+	Code                string // Source code (required)
+	MemoryMB            int
+	TimeoutS            int
+	MinReplicas         int
+	MaxReplicas         int
+	Mode                string
+	InstanceConcurrency int
+	EnvVars             map[string]string
+	Limits              *domain.ResourceLimits
 }
 
 func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunctionRequest) (*domain.Function, string, error) {
@@ -70,20 +71,21 @@ func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunction
 	codeHash := crypto.HashString(req.Code)
 
 	fn := &domain.Function{
-		ID:          uuid.New().String(),
-		Name:        req.Name,
-		Runtime:     rt,
-		Handler:     req.Handler,
-		CodeHash:    codeHash,
-		MemoryMB:    req.MemoryMB,
-		TimeoutS:    req.TimeoutS,
-		MinReplicas: req.MinReplicas,
-		MaxReplicas: req.MaxReplicas,
-		Mode:        domain.ExecutionMode(req.Mode),
-		EnvVars:     req.EnvVars,
-		Limits:      req.Limits,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:                  uuid.New().String(),
+		Name:                req.Name,
+		Runtime:             rt,
+		Handler:             req.Handler,
+		CodeHash:            codeHash,
+		MemoryMB:            req.MemoryMB,
+		TimeoutS:            req.TimeoutS,
+		MinReplicas:         req.MinReplicas,
+		MaxReplicas:         req.MaxReplicas,
+		Mode:                domain.ExecutionMode(req.Mode),
+		InstanceConcurrency: req.InstanceConcurrency,
+		EnvVars:             req.EnvVars,
+		Limits:              req.Limits,
+		CreatedAt:           time.Now(),
+		UpdatedAt:           time.Now(),
 	}
 
 	if err := s.store.SaveFunction(ctx, fn); err != nil {

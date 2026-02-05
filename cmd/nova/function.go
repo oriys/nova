@@ -23,20 +23,21 @@ import (
 
 func registerCmd() *cobra.Command {
 	var (
-		runtime        string
-		handler        string
-		codeFile       string
-		memoryMB       int
-		timeoutS       int
-		minReplicas    int
-		maxReplicas    int
-		vcpus          int
-		diskIOPS       int64
-		diskBandwidth  int64
-		netRxBandwidth int64
-		netTxBandwidth int64
-		mode           string
-		envVars        []string
+		runtime             string
+		handler             string
+		codeFile            string
+		memoryMB            int
+		timeoutS            int
+		minReplicas         int
+		maxReplicas         int
+		vcpus               int
+		diskIOPS            int64
+		diskBandwidth       int64
+		netRxBandwidth      int64
+		netTxBandwidth      int64
+		mode                string
+		instanceConcurrency int
+		envVars             []string
 	)
 
 	cmd := &cobra.Command{
@@ -78,19 +79,20 @@ func registerCmd() *cobra.Command {
 			codeHash := crypto.HashBytes(codeContent)
 
 			fn := &domain.Function{
-				ID:          uuid.New().String(),
-				Name:        name,
-				Runtime:     rt,
-				Handler:     handler,
-				CodeHash:    codeHash,
-				MemoryMB:    memoryMB,
-				TimeoutS:    timeoutS,
-				MinReplicas: minReplicas,
-				MaxReplicas: maxReplicas,
-				Mode:        domain.ExecutionMode(mode),
-				EnvVars:     envMap,
-				CreatedAt:   time.Now(),
-				UpdatedAt:   time.Now(),
+				ID:                  uuid.New().String(),
+				Name:                name,
+				Runtime:             rt,
+				Handler:             handler,
+				CodeHash:            codeHash,
+				MemoryMB:            memoryMB,
+				TimeoutS:            timeoutS,
+				MinReplicas:         minReplicas,
+				MaxReplicas:         maxReplicas,
+				Mode:                domain.ExecutionMode(mode),
+				InstanceConcurrency: instanceConcurrency,
+				EnvVars:             envMap,
+				CreatedAt:           time.Now(),
+				UpdatedAt:           time.Now(),
 			}
 
 			if vcpus > 1 || diskIOPS > 0 || diskBandwidth > 0 || netRxBandwidth > 0 || netTxBandwidth > 0 {
@@ -125,6 +127,7 @@ func registerCmd() *cobra.Command {
 	cmd.Flags().IntVarP(&timeoutS, "timeout", "t", 30, "Timeout s")
 	cmd.Flags().IntVar(&minReplicas, "min-replicas", 0, "Min replicas")
 	cmd.Flags().IntVar(&maxReplicas, "max-replicas", 0, "Max replicas")
+	cmd.Flags().IntVar(&instanceConcurrency, "instance-concurrency", 1, "Max in-flight requests per instance (effective for docker backend)")
 	cmd.Flags().IntVar(&vcpus, "vcpus", 1, "vCPUs")
 	cmd.Flags().Int64Var(&diskIOPS, "disk-iops", 0, "Disk IOPS")
 	cmd.Flags().Int64Var(&diskBandwidth, "disk-bandwidth", 0, "Disk BW")
@@ -157,8 +160,8 @@ func listCmd() *cobra.Command {
 			}
 
 			printer := output.NewPrinter(output.ParseFormat(outputFormat))
-		
-rows := make([]output.FunctionRow, 0, len(funcs))
+
+			rows := make([]output.FunctionRow, 0, len(funcs))
 			for _, fn := range funcs {
 				rows = append(rows, output.FunctionRow{
 					Name:        fn.Name,

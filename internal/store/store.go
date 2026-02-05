@@ -9,15 +9,17 @@ import (
 
 // FunctionUpdate contains optional fields for updating a function.
 type FunctionUpdate struct {
-	Handler      *string
-	Code         *string // inline code update
-	MemoryMB     *int
-	TimeoutS     *int
-	MinReplicas  *int
-	Mode         *domain.ExecutionMode
-	Limits       *domain.ResourceLimits
-	EnvVars      map[string]string
-	MergeEnvVars bool
+	Handler             *string
+	Code                *string // inline code update
+	MemoryMB            *int
+	TimeoutS            *int
+	MinReplicas         *int
+	MaxReplicas         *int
+	InstanceConcurrency *int
+	Mode                *domain.ExecutionMode
+	Limits              *domain.ResourceLimits
+	EnvVars             map[string]string
+	MergeEnvVars        bool
 }
 
 // MetadataStore is the durable metadata store (functions, versions, aliases).

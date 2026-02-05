@@ -25,12 +25,13 @@ const (
 )
 
 type PooledVM struct {
-	VM        *backend.VM
-	Client    backend.Client
-	Function  *domain.Function
-	LastUsed  time.Time
-	ColdStart bool
-	busy      bool // true while handling a request
+	VM            *backend.VM
+	Client        backend.Client
+	Function      *domain.Function
+	LastUsed      time.Time
+	ColdStart     bool
+	inflight      int
+	maxConcurrent int
 }
 
 // functionPool holds VMs for a single function with its own lock
@@ -133,7 +134,7 @@ func (p *Pool) cleanupExpired() {
 		var kept []*PooledVM
 
 		for _, pvm := range fp.vms {
-			if pvm.busy {
+			if pvm.inflight > 0 {
 				kept = append(kept, pvm)
 				continue
 			}
@@ -197,7 +198,7 @@ func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function, codeContent
 				logging.Op().Error("pre-warm failed", "error", err)
 				return
 			}
-			pvm.busy = false
+			pvm.inflight = 0
 
 			fp.mu.Lock()
 			fp.vms = append(fp.vms, pvm)
@@ -206,6 +207,17 @@ func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function, codeContent
 	}
 	wg.Wait()
 	return nil
+}
+
+func (p *Pool) computeInstanceConcurrency(fn *domain.Function) int {
+	// Firecracker backend keeps strong isolation: one request per VM.
+	if p.backend.SnapshotDir() != "" {
+		return 1
+	}
+	if fn.InstanceConcurrency > 0 {
+		return fn.InstanceConcurrency
+	}
+	return 1
 }
 
 func (p *Pool) Acquire(ctx context.Context, fn *domain.Function, codeContent []byte) (*PooledVM, error) {
@@ -251,8 +263,8 @@ func (p *Pool) Acquire(ctx context.Context, fn *domain.Function, codeContent []b
 	// Fast path: find an idle VM
 	fp.mu.Lock()
 	for _, pvm := range fp.vms {
-		if !pvm.busy {
-			pvm.busy = true
+		if pvm.inflight < pvm.maxConcurrent {
+			pvm.inflight++
 			pvm.LastUsed = time.Now()
 			pvm.ColdStart = false
 			fp.mu.Unlock()
@@ -264,7 +276,7 @@ func (p *Pool) Acquire(ctx context.Context, fn *domain.Function, codeContent []b
 	// Check concurrency limit
 	maxReps := fp.maxReplicas.Load()
 	if maxReps > 0 && len(fp.vms) >= int(maxReps) {
-		// All VMs are busy and at max capacity - wait for one to become available
+		// All VMs at capacity and at max replica limit - wait for one to become available
 		logging.Op().Debug("concurrency limit reached, waiting", "limit", maxReps, "function", fn.Name)
 		fp.waiters++
 
@@ -288,8 +300,8 @@ func (p *Pool) Acquire(ctx context.Context, fn *domain.Function, codeContent []b
 			fp.waiters--
 			// Try to find an idle VM again
 			for _, pvm := range fp.vms {
-				if !pvm.busy {
-					pvm.busy = true
+				if pvm.inflight < pvm.maxConcurrent {
+					pvm.inflight++
 					pvm.LastUsed = time.Now()
 					pvm.ColdStart = false
 					fp.mu.Unlock()
@@ -360,12 +372,13 @@ func (p *Pool) createVM(ctx context.Context, fn *domain.Function, codeContent []
 	}
 
 	pvm := &PooledVM{
-		VM:        vm,
-		Client:    client,
-		Function:  fn,
-		LastUsed:  time.Now(),
-		ColdStart: true,
-		busy:      true,
+		VM:            vm,
+		Client:        client,
+		Function:      fn,
+		LastUsed:      time.Now(),
+		ColdStart:     true,
+		inflight:      1,
+		maxConcurrent: p.computeInstanceConcurrency(fn),
 	}
 
 	// Create snapshot if callback is set and no snapshot exists for this function
@@ -401,7 +414,9 @@ func (p *Pool) getSnapshotLock(funcID string) *sync.Mutex {
 func (p *Pool) Release(pvm *PooledVM) {
 	fp := p.getOrCreatePool(pvm.Function.ID)
 	fp.mu.Lock()
-	pvm.busy = false
+	if pvm.inflight > 0 {
+		pvm.inflight--
+	}
 	pvm.LastUsed = time.Now()
 	hasWaiters := fp.waiters > 0
 	fp.mu.Unlock()
@@ -470,11 +485,12 @@ func (p *Pool) Stats() map[string]interface{} {
 		totalVMs += len(fp.vms)
 		for _, pvm := range fp.vms {
 			vmStats = append(vmStats, map[string]interface{}{
-				"function_id": funcID,
-				"vm_id":       pvm.VM.ID,
-				"runtime":     pvm.VM.Runtime,
-				"busy":        pvm.busy,
-				"idle_sec":    time.Since(pvm.LastUsed).Seconds(),
+				"function_id":    funcID,
+				"vm_id":          pvm.VM.ID,
+				"runtime":        pvm.VM.Runtime,
+				"inflight":       pvm.inflight,
+				"max_concurrent": pvm.maxConcurrent,
+				"idle_sec":       time.Since(pvm.LastUsed).Seconds(),
 			})
 		}
 		fp.mu.Unlock()
@@ -502,7 +518,7 @@ func (p *Pool) FunctionStats(funcID string) map[string]interface{} {
 		busyCount := 0
 		idleCount := 0
 		for _, pvm := range fp.vms {
-			if pvm.busy {
+			if pvm.inflight > 0 {
 				busyCount++
 			} else {
 				idleCount++
@@ -589,7 +605,7 @@ func (p *Pool) healthCheck() {
 
 		fp.mu.Lock()
 		for _, pvm := range fp.vms {
-			if !pvm.busy {
+			if pvm.inflight == 0 {
 				targets = append(targets, checkTarget{funcID: funcID, pvm: pvm})
 			}
 		}
