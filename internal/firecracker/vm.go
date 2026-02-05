@@ -1224,7 +1224,8 @@ func rootfsForRuntime(rt domain.Runtime) string {
 		return "node.ext4"
 	case r == string(domain.RuntimeRuby) || strings.HasPrefix(r, "ruby"):
 		return "ruby.ext4"
-	case r == string(domain.RuntimeJava) || strings.HasPrefix(r, "java"):
+	case r == string(domain.RuntimeJava) || strings.HasPrefix(r, "java") ||
+		r == string(domain.RuntimeKotlin) || r == string(domain.RuntimeScala):
 		return "java.ext4"
 	case r == string(domain.RuntimePHP) || strings.HasPrefix(r, "php"):
 		return "php.ext4"
@@ -1237,7 +1238,7 @@ func rootfsForRuntime(rt domain.Runtime) string {
 	case r == string(domain.RuntimeBun) || strings.HasPrefix(r, "bun"):
 		return "bun.ext4"
 	default:
-		// Go, Rust use base
+		// Go, Rust, Zig, Swift use base. (Swift might need more, but base is current)
 		return "base.ext4"
 	}
 }

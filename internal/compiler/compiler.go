@@ -187,7 +187,7 @@ serde_json = "1"
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
-    <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
+    <RuntimeIdentifier>linux-musl-x64</RuntimeIdentifier>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
   </PropertyGroup>
@@ -213,7 +213,7 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 	case domain.RuntimeGo:
 		return "golang:1.23-alpine", "cd /work && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o handler ."
 	case domain.RuntimeRust:
-		return "rust:latest", "cd /work && cargo build --release && cp target/release/handler /work/handler"
+		return "rust:1.84-alpine", "cd /work && cargo build --release && cp target/release/handler /work/handler"
 	case domain.RuntimeJava:
 		return "eclipse-temurin:21-jdk", "cd /work && javac Handler.java && jar cfe handler.jar Handler *.class && cp handler.jar handler"
 	case domain.RuntimeKotlin:
@@ -221,9 +221,9 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 	case domain.RuntimeSwift:
 		return "swift:5.10", "cd /work && swiftc -o handler main.swift"
 	case domain.RuntimeZig:
-		return "euantorano/zig:0.13.0", "cd /work && zig build-exe main.zig -name handler"
+		return "euantorano/zig:0.13.0", "cd /work && zig build-exe main.zig -name handler -target x86_64-linux-musl"
 	case domain.RuntimeDotnet:
-		return "mcr.microsoft.com/dotnet/sdk:8.0", "cd /work && dotnet publish -c Release -o out && cp out/handler /work/handler"
+		return "mcr.microsoft.com/dotnet/sdk:8.0", "cd /work && dotnet publish -c Release -r linux-musl-x64 -o out && cp out/handler /work/handler"
 	case domain.RuntimeScala:
 		return "sbtscala/scala-sbt:eclipse-temurin-21.0.2_13_1.10.1_3.5.1", "cd /work && scalac Handler.scala && jar cfe handler.jar Handler *.class && cp handler.jar handler"
 	default:

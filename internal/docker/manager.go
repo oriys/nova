@@ -276,7 +276,8 @@ func imageForRuntime(rt domain.Runtime, prefix string) string {
 		return prefix + "-base"
 	case r == string(domain.RuntimeRuby) || strings.HasPrefix(r, "ruby"):
 		return prefix + "-ruby"
-	case r == string(domain.RuntimeJava) || strings.HasPrefix(r, "java"):
+	case r == string(domain.RuntimeJava) || strings.HasPrefix(r, "java") ||
+		r == string(domain.RuntimeKotlin) || r == string(domain.RuntimeScala):
 		return prefix + "-java"
 	case r == string(domain.RuntimePHP) || strings.HasPrefix(r, "php"):
 		return prefix + "-php"
