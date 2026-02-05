@@ -92,7 +92,7 @@ export function CodeEditor({
         value={code}
         onChange={handleChange}
         onMount={handleMount}
-        theme="vs-dark"
+        theme="light"
         options={{
           readOnly,
           fontSize,
@@ -126,7 +126,7 @@ export function CodeEditor({
           },
         }}
         loading={
-          <div className="flex items-center justify-center h-full bg-[#1e1e1e] text-muted-foreground text-sm">
+          <div className="flex items-center justify-center h-full bg-white text-muted-foreground text-sm">
             Loading editor...
           </div>
         }
@@ -166,7 +166,7 @@ export function CodeDisplay({
         height={maxHeight}
         language={monacoLanguage}
         value={code}
-        theme="vs-dark"
+        theme="light"
         options={{
           readOnly: true,
           fontSize,
@@ -189,7 +189,7 @@ export function CodeDisplay({
           contextmenu: false,
         }}
         loading={
-          <div className="flex items-center justify-center h-full bg-[#1e1e1e] text-muted-foreground text-sm">
+          <div className="flex items-center justify-center h-full bg-white text-muted-foreground text-sm">
             Loading...
           </div>
         }

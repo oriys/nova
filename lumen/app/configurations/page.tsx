@@ -18,6 +18,7 @@ import {
 import { healthApi, snapshotsApi, configApi } from "@/lib/api"
 import { RefreshCw, Server, Database, HardDrive, Trash2, Save, CheckCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useAutoRefresh } from "@/lib/use-auto-refresh"
 
 interface Snapshot {
   function_id: string
@@ -98,9 +99,9 @@ export default function ConfigurationsPage() {
 
   useEffect(() => {
     fetchData()
-    const interval = setInterval(fetchData, 30000)
-    return () => clearInterval(interval)
   }, [fetchData])
+
+  const { enabled: autoRefresh, toggle: toggleAutoRefresh } = useAutoRefresh("configurations", fetchData, 30000)
 
   const snapshotsTotalPages = Math.max(1, Math.ceil(snapshots.length / snapshotsPageSize))
   useEffect(() => {
@@ -162,8 +163,19 @@ export default function ConfigurationsPage() {
       <Header title="Configurations" description="System settings and health" />
 
       <div className="p-6 space-y-6">
-        <div className="flex items-center justify-end">
-          <Button variant="outline" onClick={fetchData} disabled={loading}>
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            variant={autoRefresh ? "default" : "outline"}
+            size="sm"
+            onClick={toggleAutoRefresh}
+          >
+            <span className={cn(
+              "mr-2 h-2 w-2 rounded-full",
+              autoRefresh ? "bg-success animate-pulse" : "bg-muted-foreground"
+            )} />
+            Auto
+          </Button>
+          <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
             <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
             Refresh
           </Button>
