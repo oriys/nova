@@ -280,6 +280,8 @@ func imageForRuntime(rt domain.Runtime, prefix string) string {
 		return prefix + "-java"
 	case r == string(domain.RuntimePHP) || strings.HasPrefix(r, "php"):
 		return prefix + "-php"
+	case r == string(domain.RuntimeLua) || strings.HasPrefix(r, "lua"):
+		return prefix + "-lua"
 	case r == string(domain.RuntimeDotnet) || strings.HasPrefix(r, "dotnet"):
 		return prefix + "-dotnet"
 	case r == string(domain.RuntimeDeno) || strings.HasPrefix(r, "deno"):
@@ -312,9 +314,11 @@ func (c *Client) Init(fn *domain.Function) error {
 	defer c.mu.Unlock()
 
 	payload, _ := json.Marshal(&backend.InitPayload{
-		Runtime: string(fn.Runtime),
-		Handler: fn.Handler,
-		EnvVars: fn.EnvVars,
+		Runtime:   string(fn.Runtime),
+		Handler:   fn.Handler,
+		EnvVars:   fn.EnvVars,
+		Command:   fn.RuntimeCommand,
+		Extension: fn.RuntimeExtension,
 	})
 	c.initPayload = payload
 

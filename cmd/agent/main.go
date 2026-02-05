@@ -39,6 +39,7 @@ const (
 	rubyPath     = "/usr/bin/ruby"
 	javaPath     = "/usr/bin/java"
 	phpPath      = "/usr/bin/php"
+	luaPath      = "/usr/bin/lua"
 	denoPath     = "/usr/local/bin/deno"
 	bunPath      = "/usr/local/bin/bun"
 	dotnetRoot   = "/usr/share/dotnet"
@@ -63,10 +64,12 @@ type Message struct {
 }
 
 type InitPayload struct {
-	Runtime string            `json:"runtime"`
-	Handler string            `json:"handler"`
-	EnvVars map[string]string `json:"env_vars"`
-	Mode    ExecutionMode     `json:"mode,omitempty"` // "process" or "persistent"
+	Runtime   string            `json:"runtime"`
+	Handler   string            `json:"handler"`
+	EnvVars   map[string]string `json:"env_vars"`
+	Command   []string          `json:"command,omitempty"`
+	Extension string            `json:"extension,omitempty"`
+	Mode      ExecutionMode     `json:"mode,omitempty"` // "process" or "persistent"
 }
 
 type ExecPayload struct {
@@ -204,7 +207,10 @@ func (a *Agent) handleInit(payload json.RawMessage) (*Message, error) {
 	}
 
 	// Normalize versioned runtime IDs (e.g., python3.12, node24, php8.4, dotnet8)
-	init.Runtime = normalizeRuntime(init.Runtime)
+	// for legacy hardcoded paths only. Dynamic command mode bypasses this.
+	if len(init.Command) == 0 {
+		init.Runtime = normalizeRuntime(init.Runtime)
+	}
 
 	// Default to process mode
 	if init.Mode == "" {
@@ -335,32 +341,48 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int) (json.RawMe
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutS)*time.Second)
 		defer cancel()
 	}
-	switch a.function.Runtime {
-	case "python":
-		cmd = exec.CommandContext(ctx, resolveBinary(pythonPath, "python3"), CodePath, "/tmp/input.json")
-	case "go", "rust":
-		cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
-	case "wasm":
-		cmd = exec.CommandContext(ctx, resolveBinary(wasmtimePath, "wasmtime"), CodePath, "--", "/tmp/input.json")
-	case "node":
-		cmd = exec.CommandContext(ctx, resolveBinary(nodePath, "node"), CodePath, "/tmp/input.json")
-	case "ruby":
-		cmd = exec.CommandContext(ctx, resolveBinary(rubyPath, "ruby"), CodePath, "/tmp/input.json")
-	case "java":
-		// Java expects a JAR file: java -jar /code/handler.jar input.json
-		cmd = exec.CommandContext(ctx, resolveBinary(javaPath, "java"), "-jar", CodePath, "/tmp/input.json")
-	case "php":
-		cmd = exec.CommandContext(ctx, resolveBinary(phpPath, "php"), CodePath, "/tmp/input.json")
-	case "deno":
-		// Deno needs --allow-read for input file
-		cmd = exec.CommandContext(ctx, resolveBinary(denoPath, "deno"), "run", "--allow-read", CodePath, "/tmp/input.json")
-	case "bun":
-		cmd = exec.CommandContext(ctx, resolveBinary(bunPath, "bun"), "run", CodePath, "/tmp/input.json")
-	case "dotnet":
-		// Expect a single-file apphost at /code/handler (PublishSingleFile=true).
-		cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
-	default:
-		return nil, "", "", fmt.Errorf("unsupported runtime: %s", a.function.Runtime)
+	if len(a.function.Command) > 0 {
+		args := append([]string(nil), a.function.Command...)
+		if len(args) == 0 {
+			return nil, "", "", fmt.Errorf("invalid command: empty")
+		}
+		if a.function.Extension != "" {
+			args = append(args, CodePath+a.function.Extension)
+		} else {
+			args = append(args, CodePath)
+		}
+		args = append(args, "/tmp/input.json")
+		cmd = exec.CommandContext(ctx, args[0], args[1:]...)
+	} else {
+		switch a.function.Runtime {
+		case "python":
+			cmd = exec.CommandContext(ctx, resolveBinary(pythonPath, "python3"), CodePath, "/tmp/input.json")
+		case "go", "rust":
+			cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
+		case "wasm":
+			cmd = exec.CommandContext(ctx, resolveBinary(wasmtimePath, "wasmtime"), CodePath, "--", "/tmp/input.json")
+		case "node":
+			cmd = exec.CommandContext(ctx, resolveBinary(nodePath, "node"), CodePath, "/tmp/input.json")
+		case "ruby":
+			cmd = exec.CommandContext(ctx, resolveBinary(rubyPath, "ruby"), CodePath, "/tmp/input.json")
+		case "java":
+			// Java expects a JAR file: java -jar /code/handler.jar input.json
+			cmd = exec.CommandContext(ctx, resolveBinary(javaPath, "java"), "-jar", CodePath, "/tmp/input.json")
+		case "php":
+			cmd = exec.CommandContext(ctx, resolveBinary(phpPath, "php"), CodePath, "/tmp/input.json")
+		case "lua":
+			cmd = exec.CommandContext(ctx, resolveBinary(luaPath, "lua"), CodePath, "/tmp/input.json")
+		case "deno":
+			// Deno needs --allow-read for input file
+			cmd = exec.CommandContext(ctx, resolveBinary(denoPath, "deno"), "run", "--allow-read", CodePath, "/tmp/input.json")
+		case "bun":
+			cmd = exec.CommandContext(ctx, resolveBinary(bunPath, "bun"), "run", CodePath, "/tmp/input.json")
+		case "dotnet":
+			// Expect a single-file apphost at /code/handler (PublishSingleFile=true).
+			cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
+		default:
+			return nil, "", "", fmt.Errorf("unsupported runtime: %s", a.function.Runtime)
+		}
 	}
 
 	cmd.Env = append(defaultEnv(), "NOVA_CODE_DIR="+CodeMountPoint)
