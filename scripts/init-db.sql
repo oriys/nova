@@ -52,6 +52,10 @@ CREATE TABLE IF NOT EXISTS runtimes (
     name TEXT NOT NULL,
     version TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'available',
+    image_name TEXT,
+    entrypoint TEXT[],
+    file_extension TEXT,
+    env_vars JSONB DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

@@ -47,6 +47,10 @@ export interface RuntimeInfo {
   status: "available" | "deprecated" | "maintenance";
   functionsCount: number;
   icon: string;
+  imageName?: string;
+  entrypoint?: string[];
+  fileExtension?: string;
+  envVars?: Record<string, string>;
 }
 
 // Runtime display names
@@ -154,6 +158,10 @@ export function transformRuntime(runtime: Runtime): RuntimeInfo {
     status: runtime.status,
     functionsCount: runtime.functions_count,
     icon: RUNTIME_ICONS[runtime.id] || runtime.id,
+    imageName: runtime.image_name,
+    entrypoint: runtime.entrypoint,
+    fileExtension: runtime.file_extension,
+    envVars: runtime.env_vars,
   };
 }
 

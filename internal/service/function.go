@@ -41,8 +41,14 @@ type CreateFunctionRequest struct {
 
 func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunctionRequest) (*domain.Function, string, error) {
 	rt := domain.Runtime(req.Runtime)
+	if rt == "" {
+		return nil, "", fmt.Errorf("runtime is required")
+	}
 	if !rt.IsValid() {
-		return nil, "", fmt.Errorf("invalid runtime: %s", req.Runtime)
+		// Not a built-in runtime, check if it exists in DB
+		if _, err := s.store.GetRuntime(ctx, string(rt)); err != nil {
+			return nil, "", fmt.Errorf("invalid runtime: %s", req.Runtime)
+		}
 	}
 
 	if req.Code == "" {

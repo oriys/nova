@@ -102,6 +102,7 @@ type Function struct {
 	// Runtime metadata resolved at invocation time from runtimes table.
 	RuntimeCommand   []string `json:"-"`
 	RuntimeExtension string   `json:"-"`
+	RuntimeImageName string   `json:"-"` // rootfs/image name from custom runtime config
 }
 
 // FunctionVersion represents a specific version of a function
