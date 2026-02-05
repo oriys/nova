@@ -119,7 +119,12 @@ func daemonCmd() *cobra.Command {
 				be = adapter
 			}
 
-			p := pool.NewPool(be, cfg.Pool.IdleTTL)
+			p := pool.NewPool(be, pool.PoolConfig{
+				IdleTTL:             cfg.Pool.IdleTTL,
+				CleanupInterval:     cfg.Pool.CleanupInterval,
+				HealthCheckInterval: cfg.Pool.HealthCheckInterval,
+				MaxPreWarmWorkers:   cfg.Pool.MaxPreWarmWorkers,
+			})
 			if fcAdapter != nil {
 				mgr := fcAdapter.Manager()
 				p.SetSnapshotCallback(func(ctx context.Context, vmID, funcID string) error {
@@ -152,6 +157,12 @@ func daemonCmd() *cobra.Command {
 			if secretsResolver != nil {
 				execOpts = append(execOpts, executor.WithSecretsResolver(secretsResolver))
 			}
+			execOpts = append(execOpts, executor.WithLogBatcherConfig(executor.LogBatcherConfig{
+				BatchSize:     cfg.Executor.LogBatchSize,
+				BufferSize:    cfg.Executor.LogBufferSize,
+				FlushInterval: cfg.Executor.LogFlushInterval,
+				Timeout:       cfg.Executor.LogTimeout,
+			}))
 			exec := executor.New(s, p, execOpts...)
 
 			var httpServer *http.Server

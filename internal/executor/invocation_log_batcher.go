@@ -16,22 +16,49 @@ const (
 	defaultInvocationLogTimeout       = 5 * time.Second
 )
 
+// LogBatcherConfig holds configuration for the invocation log batcher
+type LogBatcherConfig struct {
+	BatchSize     int
+	BufferSize    int
+	FlushInterval time.Duration
+	Timeout       time.Duration
+}
+
 type invocationLogBatcher struct {
 	store         *store.Store
 	logger        *slog.Logger
 	logs          chan *store.InvocationLog
 	flushInterval time.Duration
 	batchSize     int
+	timeout       time.Duration
 	done          chan struct{}
 }
 
-func newInvocationLogBatcher(s *store.Store) *invocationLogBatcher {
+func newInvocationLogBatcher(s *store.Store, cfg LogBatcherConfig) *invocationLogBatcher {
+	batchSize := cfg.BatchSize
+	if batchSize <= 0 {
+		batchSize = defaultInvocationLogBatchSize
+	}
+	bufferSize := cfg.BufferSize
+	if bufferSize <= 0 {
+		bufferSize = defaultInvocationLogBufferSize
+	}
+	flushInterval := cfg.FlushInterval
+	if flushInterval <= 0 {
+		flushInterval = defaultInvocationLogFlushInterval
+	}
+	timeout := cfg.Timeout
+	if timeout <= 0 {
+		timeout = defaultInvocationLogTimeout
+	}
+
 	b := &invocationLogBatcher{
 		store:         s,
 		logger:        logging.Op(),
-		logs:          make(chan *store.InvocationLog, defaultInvocationLogBufferSize),
-		flushInterval: defaultInvocationLogFlushInterval,
-		batchSize:     defaultInvocationLogBatchSize,
+		logs:          make(chan *store.InvocationLog, bufferSize),
+		flushInterval: flushInterval,
+		batchSize:     batchSize,
+		timeout:       timeout,
 		done:          make(chan struct{}),
 	}
 	go b.run()
@@ -67,7 +94,7 @@ func (b *invocationLogBatcher) run() {
 		if len(batch) == 0 {
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), defaultInvocationLogTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 		defer cancel()
 		if err := b.store.SaveInvocationLogs(ctx, batch); err != nil {
 			b.logger.Warn("failed to persist invocation logs", "error", err, "count", len(batch))

@@ -228,7 +228,7 @@ func invokeCmd() *cobra.Command {
 			}
 			defer be.Shutdown()
 
-			p := pool.NewPool(be, pool.DefaultIdleTTL)
+			p := pool.NewPool(be, pool.PoolConfig{IdleTTL: pool.DefaultIdleTTL})
 			defer p.Shutdown()
 
 			exec := executor.New(s, p)

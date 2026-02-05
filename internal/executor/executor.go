@@ -27,6 +27,7 @@ type Executor struct {
 	logger          *logging.Logger
 	secretsResolver *secrets.Resolver
 	logBatcher      *invocationLogBatcher
+	logBatcherConfig LogBatcherConfig
 	inflight        sync.WaitGroup
 	closing         atomic.Bool
 }
@@ -47,6 +48,13 @@ func WithSecretsResolver(resolver *secrets.Resolver) Option {
 	}
 }
 
+// WithLogBatcherConfig sets the log batcher configuration
+func WithLogBatcherConfig(cfg LogBatcherConfig) Option {
+	return func(e *Executor) {
+		e.logBatcherConfig = cfg
+	}
+}
+
 func New(store *store.Store, pool *pool.Pool, opts ...Option) *Executor {
 	e := &Executor{
 		store:  store,
@@ -56,7 +64,7 @@ func New(store *store.Store, pool *pool.Pool, opts ...Option) *Executor {
 	for _, opt := range opts {
 		opt(e)
 	}
-	e.logBatcher = newInvocationLogBatcher(store)
+	e.logBatcher = newInvocationLogBatcher(store, e.logBatcherConfig)
 	return e
 }
 
@@ -82,6 +90,7 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	} else {
 		fn.RuntimeCommand = append([]string(nil), rtCfg.Entrypoint...)
 		fn.RuntimeExtension = rtCfg.FileExtension
+		fn.RuntimeImageName = rtCfg.ImageName
 		if fn.EnvVars == nil {
 			fn.EnvVars = map[string]string{}
 		}

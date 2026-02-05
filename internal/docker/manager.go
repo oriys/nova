@@ -31,12 +31,15 @@ const (
 
 // Config holds Docker backend configuration.
 type Config struct {
-	CodeDir      string // Base directory for function code
-	AgentPath    string // Path to nova-agent binary (for mounting)
-	ImagePrefix  string // Docker image prefix (e.g., "nova-runtime")
-	Network      string // Docker network name (optional)
-	PortRangeMin int    // Minimum host port for agent mapping
-	PortRangeMax int    // Maximum host port for agent mapping
+	CodeDir        string        // Base directory for function code
+	AgentPath      string        // Path to nova-agent binary (for mounting)
+	ImagePrefix    string        // Docker image prefix (e.g., "nova-runtime")
+	Network        string        // Docker network name (optional)
+	PortRangeMin   int           // Minimum host port for agent mapping
+	PortRangeMax   int           // Maximum host port for agent mapping
+	CPULimit       float64       // CPU limit per container (default: 1.0)
+	DefaultTimeout time.Duration // Default operation timeout (default: 30s)
+	AgentTimeout   time.Duration // Agent startup timeout (default: 10s)
 }
 
 // DefaultConfig returns sensible defaults for Docker backend.
@@ -55,12 +58,15 @@ func DefaultConfig() *Config {
 	}
 
 	return &Config{
-		CodeDir:      codeDir,
-		AgentPath:    agentPath,
-		ImagePrefix:  imagePrefix,
-		Network:      os.Getenv("NOVA_DOCKER_NETWORK"),
-		PortRangeMin: 20000,
-		PortRangeMax: 30000,
+		CodeDir:        codeDir,
+		AgentPath:      agentPath,
+		ImagePrefix:    imagePrefix,
+		Network:        os.Getenv("NOVA_DOCKER_NETWORK"),
+		PortRangeMin:   20000,
+		PortRangeMax:   30000,
+		CPULimit:       1.0,
+		DefaultTimeout: 30 * time.Second,
+		AgentTimeout:   10 * time.Second,
 	}
 }
 
@@ -120,10 +126,19 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 		}
 	}
 
-	image := imageForRuntime(fn.Runtime, m.config.ImagePrefix)
+	var image string
+	if fn.RuntimeImageName != "" {
+		image = fn.RuntimeImageName
+	} else {
+		image = imageForRuntime(fn.Runtime, m.config.ImagePrefix)
+	}
 	containerName := fmt.Sprintf("nova-%s", vmID)
 
 	// Build docker run command
+	cpuLimit := m.config.CPULimit
+	if cpuLimit <= 0 {
+		cpuLimit = 1.0
+	}
 	args := []string{
 		"run", "-d",
 		"--name", containerName,
@@ -132,7 +147,7 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 		"-e", "NOVA_AGENT_MODE=tcp",
 		"-e", "NOVA_SKIP_MOUNT=true",
 		"--memory", fmt.Sprintf("%dm", fn.MemoryMB),
-		"--cpus", "1",
+		"--cpus", fmt.Sprintf("%.2f", cpuLimit),
 	}
 
 	// Add network if specified
@@ -170,7 +185,11 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 	}
 
 	// Wait for agent to be ready
-	if err := waitForAgent(port, 10*time.Second); err != nil {
+	agentTimeout := m.config.AgentTimeout
+	if agentTimeout == 0 {
+		agentTimeout = 10 * time.Second
+	}
+	if err := waitForAgent(port, agentTimeout); err != nil {
 		m.stopContainer(containerID, codeDir)
 		return nil, fmt.Errorf("agent not ready: %w", err)
 	}

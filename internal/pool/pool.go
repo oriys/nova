@@ -20,8 +20,10 @@ var ErrConcurrencyLimit = errors.New("concurrency limit reached")
 const (
 	DefaultIdleTTL = 60 * time.Second
 
-	// Maximum concurrent pre-warm goroutines
-	maxPreWarmConcurrency = 8
+	// Default values for pool settings
+	DefaultCleanupInterval     = 10 * time.Second
+	DefaultHealthCheckInterval = 30 * time.Second
+	DefaultMaxPreWarmWorkers   = 8
 )
 
 type PooledVM struct {
@@ -48,28 +50,51 @@ type functionPool struct {
 type SnapshotCallback func(ctx context.Context, vmID, funcID string) error
 
 type Pool struct {
-	backend          backend.Backend
-	pools            sync.Map // map[string]*functionPool - per-function pools
-	group            singleflight.Group
-	idleTTL          time.Duration
-	ctx              context.Context
-	cancel           context.CancelFunc
-	snapshotCallback SnapshotCallback
-	snapshotCache    sync.Map // funcID -> bool (true if snapshot exists)
-	snapshotLocks    sync.Map // funcID -> *sync.Mutex
+	backend             backend.Backend
+	pools               sync.Map // map[string]*functionPool - per-function pools
+	group               singleflight.Group
+	idleTTL             time.Duration
+	cleanupInterval     time.Duration
+	healthCheckInterval time.Duration
+	maxPreWarmWorkers   int
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	snapshotCallback    SnapshotCallback
+	snapshotCache       sync.Map // funcID -> bool (true if snapshot exists)
+	snapshotLocks       sync.Map // funcID -> *sync.Mutex
 }
 
-func NewPool(b backend.Backend, idleTTL time.Duration) *Pool {
-	if idleTTL == 0 {
-		idleTTL = DefaultIdleTTL
+// PoolConfig holds pool configuration options
+type PoolConfig struct {
+	IdleTTL             time.Duration
+	CleanupInterval     time.Duration
+	HealthCheckInterval time.Duration
+	MaxPreWarmWorkers   int
+}
+
+func NewPool(b backend.Backend, cfg PoolConfig) *Pool {
+	if cfg.IdleTTL == 0 {
+		cfg.IdleTTL = DefaultIdleTTL
+	}
+	if cfg.CleanupInterval == 0 {
+		cfg.CleanupInterval = DefaultCleanupInterval
+	}
+	if cfg.HealthCheckInterval == 0 {
+		cfg.HealthCheckInterval = DefaultHealthCheckInterval
+	}
+	if cfg.MaxPreWarmWorkers == 0 {
+		cfg.MaxPreWarmWorkers = DefaultMaxPreWarmWorkers
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &Pool{
-		backend: b,
-		idleTTL: idleTTL,
-		ctx:     ctx,
-		cancel:  cancel,
+		backend:             b,
+		idleTTL:             cfg.IdleTTL,
+		cleanupInterval:     cfg.CleanupInterval,
+		healthCheckInterval: cfg.HealthCheckInterval,
+		maxPreWarmWorkers:   cfg.MaxPreWarmWorkers,
+		ctx:                 ctx,
+		cancel:              cancel,
 	}
 
 	go p.cleanupLoop()
@@ -99,7 +124,7 @@ func (p *Pool) getOrCreatePool(funcID string) *functionPool {
 }
 
 func (p *Pool) cleanupLoop() {
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(p.cleanupInterval)
 	defer ticker.Stop()
 
 	for {
@@ -184,7 +209,7 @@ func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function, codeContent
 
 	logging.Op().Info("pre-warming VMs", "count", needed, "function", fn.Name)
 
-	sem := make(chan struct{}, maxPreWarmConcurrency)
+	sem := make(chan struct{}, p.maxPreWarmWorkers)
 	var wg sync.WaitGroup
 	for i := 0; i < needed; i++ {
 		wg.Add(1)
@@ -578,7 +603,7 @@ func (p *Pool) Shutdown() {
 
 // healthCheckLoop periodically pings idle VMs and evicts unresponsive ones
 func (p *Pool) healthCheckLoop() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(p.healthCheckInterval)
 	defer ticker.Stop()
 
 	for {

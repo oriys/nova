@@ -55,18 +55,22 @@ const (
 )
 
 type Config struct {
-	Backend        string // "firecracker" or "docker"
-	FirecrackerBin string
-	KernelPath     string
-	RootfsDir      string
-	SnapshotDir    string
-	SocketDir      string
-	VsockDir       string
-	LogDir         string
-	BridgeName     string
-	Subnet         string
-	BootTimeout    time.Duration
-	LogLevel       string // Firecracker log level: Error, Warning, Info, Debug
+	Backend             string // "firecracker" or "docker"
+	FirecrackerBin      string
+	KernelPath          string
+	RootfsDir           string
+	SnapshotDir         string
+	SocketDir           string
+	VsockDir            string
+	LogDir              string
+	BridgeName          string
+	Subnet              string
+	BootTimeout         time.Duration
+	LogLevel            string // Firecracker log level: Error, Warning, Info, Debug
+	CodeDriveSizeMB     int    // Default code drive size in MB (default: 16)
+	MinCodeDriveSizeMB  int    // Minimum code drive size in MB (default: 4)
+	VsockPort           int    // Vsock port for guest agent (default: 9999)
+	MaxVsockMessageMB   int    // Maximum vsock message size in MB (default: 8)
 }
 
 // NovaDir is the base installation directory for nova
@@ -78,18 +82,22 @@ func DefaultConfig() *Config {
 		backend = v
 	}
 	return &Config{
-		Backend:        backend,
-		FirecrackerBin: NovaDir + "/bin/firecracker",
-		KernelPath:     NovaDir + "/kernel/vmlinux",
-		RootfsDir:      NovaDir + "/rootfs",
-		SnapshotDir:    NovaDir + "/snapshots",
-		SocketDir:      "/tmp/nova/sockets",
-		VsockDir:       "/tmp/nova/vsock",
-		LogDir:         "/tmp/nova/logs",
-		BridgeName:     "novabr0",
-		Subnet:         "172.30.0.0/24",
-		BootTimeout:    10 * time.Second,
-		LogLevel:       "Warning",
+		Backend:            backend,
+		FirecrackerBin:     NovaDir + "/bin/firecracker",
+		KernelPath:         NovaDir + "/kernel/vmlinux",
+		RootfsDir:          NovaDir + "/rootfs",
+		SnapshotDir:        NovaDir + "/snapshots",
+		SocketDir:          "/tmp/nova/sockets",
+		VsockDir:           "/tmp/nova/vsock",
+		LogDir:             "/tmp/nova/logs",
+		BridgeName:         "novabr0",
+		Subnet:             "172.30.0.0/24",
+		BootTimeout:        10 * time.Second,
+		LogLevel:           "Warning",
+		CodeDriveSizeMB:    defaultCodeDriveSizeMB,
+		MinCodeDriveSizeMB: minCodeDriveSizeMB,
+		VsockPort:          defaultVsockPort,
+		MaxVsockMessageMB:  8,
 	}
 }
 
@@ -375,7 +383,13 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 	_ = os.Remove(vm.VsockPath)
 
 	// Prepare resources
-	rootfsPath := filepath.Join(m.config.RootfsDir, rootfsForRuntime(fn.Runtime))
+	var rootfsFile string
+	if fn.RuntimeImageName != "" {
+		rootfsFile = fn.RuntimeImageName
+	} else {
+		rootfsFile = rootfsForRuntime(fn.Runtime)
+	}
+	rootfsPath := filepath.Join(m.config.RootfsDir, rootfsFile)
 	if _, err := os.Stat(rootfsPath); os.IsNotExist(err) {
 		vm.State = VMStateStopped
 		return nil, fmt.Errorf("rootfs not found: %s", rootfsPath)
@@ -983,11 +997,21 @@ func (m *Manager) buildCodeDrive(drivePath string, codeContent []byte) error {
 	// Get code size
 	codeSizeMB := float64(len(codeContent)) / (1024 * 1024)
 
+	// Use config values with fallback to defaults
+	defaultSize := m.config.CodeDriveSizeMB
+	if defaultSize <= 0 {
+		defaultSize = defaultCodeDriveSizeMB
+	}
+	minSize := m.config.MinCodeDriveSizeMB
+	if minSize <= 0 {
+		minSize = minCodeDriveSizeMB
+	}
+
 	// Calculate required drive size (code + ext4 overhead + buffer)
 	requiredSizeMB := int(codeSizeMB/ext4OverheadFactor) + 2 // +2MB buffer for ext4 metadata
 
 	// Determine if we can use the standard template
-	useTemplate := requiredSizeMB <= defaultCodeDriveSizeMB
+	useTemplate := requiredSizeMB <= defaultSize
 	var driveSizeMB int
 
 	if useTemplate {
@@ -998,7 +1022,7 @@ func (m *Manager) buildCodeDrive(drivePath string, codeContent []byte) error {
 		if !m.templateReady.Load() {
 			m.templateMu.Lock()
 			if !m.templateReady.Load() {
-				if err := createTemplateDrive(templatePath, defaultCodeDriveSizeMB); err != nil {
+				if err := createTemplateDrive(templatePath, defaultSize); err != nil {
 					m.templateMu.Unlock()
 					return err
 				}
@@ -1011,12 +1035,12 @@ func (m *Manager) buildCodeDrive(drivePath string, codeContent []byte) error {
 		if err := copyFileBuffered(templatePath, drivePath); err != nil {
 			return err
 		}
-		driveSizeMB = defaultCodeDriveSizeMB
+		driveSizeMB = defaultSize
 	} else {
 		// Create custom-sized drive for large functions
 		driveSizeMB = requiredSizeMB
-		if driveSizeMB < minCodeDriveSizeMB {
-			driveSizeMB = minCodeDriveSizeMB
+		if driveSizeMB < minSize {
+			driveSizeMB = minSize
 		}
 		logging.Op().Info("creating custom code drive",
 			"size_mb", driveSizeMB,

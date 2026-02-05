@@ -18,7 +18,10 @@ type PostgresConfig struct {
 
 // PoolConfig holds VM pool settings
 type PoolConfig struct {
-	IdleTTL time.Duration `json:"idle_ttl"`
+	IdleTTL             time.Duration `json:"idle_ttl"`
+	CleanupInterval     time.Duration `json:"cleanup_interval"`      // Interval for expired VM cleanup (default: 10s)
+	HealthCheckInterval time.Duration `json:"health_check_interval"` // Interval for idle VM health checks (default: 30s)
+	MaxPreWarmWorkers   int           `json:"max_prewarm_workers"`   // Max concurrent pre-warm goroutines (default: 8)
 }
 
 // DaemonConfig holds daemon-specific settings
@@ -56,6 +59,14 @@ type OutputCaptureConfig struct {
 	MaxSize    int64  `json:"max_size"`    // 1MB
 	StorageDir string `json:"storage_dir"` // /tmp/nova/output
 	RetentionS int    `json:"retention_s"` // 3600
+}
+
+// ExecutorConfig holds executor settings
+type ExecutorConfig struct {
+	LogBatchSize     int           `json:"log_batch_size"`     // Number of logs batched before flushing (default: 100)
+	LogBufferSize    int           `json:"log_buffer_size"`    // Channel buffer for pending logs (default: 1000)
+	LogFlushInterval time.Duration `json:"log_flush_interval"` // Periodic flush interval (default: 500ms)
+	LogTimeout       time.Duration `json:"log_timeout"`        // Database persistence timeout (default: 5s)
 }
 
 // ObservabilityConfig holds all observability-related settings
@@ -128,6 +139,7 @@ type Config struct {
 	Docker        docker.Config       `json:"docker"`
 	Postgres      PostgresConfig      `json:"postgres"`
 	Pool          PoolConfig          `json:"pool"`
+	Executor      ExecutorConfig      `json:"executor"`
 	Daemon        DaemonConfig        `json:"daemon"`
 	Observability ObservabilityConfig `json:"observability"`
 	GRPC          GRPCConfig          `json:"grpc"`
@@ -147,7 +159,16 @@ func DefaultConfig() *Config {
 			DSN: "postgres://nova:nova@localhost:5432/nova?sslmode=disable",
 		},
 		Pool: PoolConfig{
-			IdleTTL: 60 * time.Second,
+			IdleTTL:             60 * time.Second,
+			CleanupInterval:     10 * time.Second,
+			HealthCheckInterval: 30 * time.Second,
+			MaxPreWarmWorkers:   8,
+		},
+		Executor: ExecutorConfig{
+			LogBatchSize:     100,
+			LogBufferSize:    1000,
+			LogFlushInterval: 500 * time.Millisecond,
+			LogTimeout:       5 * time.Second,
 		},
 		Daemon: DaemonConfig{
 			HTTPAddr: "",
@@ -358,6 +379,99 @@ func LoadFromEnv(cfg *Config) {
 	}
 	if v := os.Getenv("NOVA_MASTER_KEY_FILE"); v != "" {
 		cfg.Secrets.MasterKeyFile = v
+	}
+
+	// Firecracker VM overrides
+	if v := os.Getenv("NOVA_CODE_DRIVE_SIZE_MB"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Firecracker.CodeDriveSizeMB = n
+		}
+	}
+	if v := os.Getenv("NOVA_MIN_CODE_DRIVE_SIZE_MB"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Firecracker.MinCodeDriveSizeMB = n
+		}
+	}
+	if v := os.Getenv("NOVA_VSOCK_PORT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Firecracker.VsockPort = n
+		}
+	}
+	if v := os.Getenv("NOVA_MAX_VSOCK_MESSAGE_MB"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Firecracker.MaxVsockMessageMB = n
+		}
+	}
+
+	// Pool overrides
+	if v := os.Getenv("NOVA_POOL_IDLE_TTL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Pool.IdleTTL = d
+		}
+	}
+	if v := os.Getenv("NOVA_POOL_CLEANUP_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Pool.CleanupInterval = d
+		}
+	}
+	if v := os.Getenv("NOVA_POOL_HEALTH_CHECK_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Pool.HealthCheckInterval = d
+		}
+	}
+	if v := os.Getenv("NOVA_POOL_MAX_PREWARM_WORKERS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Pool.MaxPreWarmWorkers = n
+		}
+	}
+
+	// Docker backend overrides
+	if v := os.Getenv("NOVA_DOCKER_PORT_RANGE_MIN"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Docker.PortRangeMin = n
+		}
+	}
+	if v := os.Getenv("NOVA_DOCKER_PORT_RANGE_MAX"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Docker.PortRangeMax = n
+		}
+	}
+	if v := os.Getenv("NOVA_DOCKER_CPU_LIMIT"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			cfg.Docker.CPULimit = f
+		}
+	}
+	if v := os.Getenv("NOVA_DOCKER_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Docker.DefaultTimeout = d
+		}
+	}
+	if v := os.Getenv("NOVA_DOCKER_AGENT_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Docker.AgentTimeout = d
+		}
+	}
+
+	// Executor log batching overrides
+	if v := os.Getenv("NOVA_EXECUTOR_LOG_BATCH_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Executor.LogBatchSize = n
+		}
+	}
+	if v := os.Getenv("NOVA_EXECUTOR_LOG_BUFFER_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Executor.LogBufferSize = n
+		}
+	}
+	if v := os.Getenv("NOVA_EXECUTOR_LOG_FLUSH_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Executor.LogFlushInterval = d
+		}
+	}
+	if v := os.Getenv("NOVA_EXECUTOR_LOG_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Executor.LogTimeout = d
+		}
 	}
 }
 
