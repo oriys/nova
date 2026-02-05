@@ -234,13 +234,22 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 	case domain.RuntimeKotlin:
 		return "gradle:8-jdk21", "cd /work && kotlinc Handler.kt -include-runtime -d handler.jar && cp handler.jar handler"
 	case domain.RuntimeSwift:
-		return "swift:5.10", "cd /work && swiftc -o handler main.swift"
+		// Use -static-executable to produce a fully static binary for base.ext4 (no libc)
+		return "swift:5.10", "cd /work && swiftc -o handler -static-executable main.swift"
 	case domain.RuntimeZig:
 		return "euantorano/zig:0.13.0", "cd /work && zig build-exe main.zig -name handler -target x86_64-linux-musl"
 	case domain.RuntimeDotnet:
 		return "mcr.microsoft.com/dotnet/sdk:8.0", "cd /work && dotnet publish -c Release -r linux-musl-x64 -o out && cp out/handler /work/handler"
 	case domain.RuntimeScala:
-		return "sbtscala/scala-sbt:eclipse-temurin-21.0.2_13_1.10.1_3.5.1", "cd /work && scalac Handler.scala && jar cfe handler.jar Handler *.class && cp handler.jar handler"
+		// Build a fat JAR including the Scala standard library so it runs standalone on java.ext4
+		return "sbtscala/scala-sbt:eclipse-temurin-21.0.2_13_1.10.1_3.5.1",
+			`cd /work && scalac Handler.scala && ` +
+				`SCALA_LIB=$(find / -name "scala-library*.jar" 2>/dev/null | head -1) && ` +
+				`mkdir -p /tmp/fatjar && cd /tmp/fatjar && ` +
+				`jar xf "$SCALA_LIB" && ` +
+				`cp /work/*.class . && ` +
+				`jar cfe /work/handler.jar Handler -C . . && ` +
+				`cp /work/handler.jar /work/handler`
 	default:
 		return "", ""
 	}

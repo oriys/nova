@@ -358,7 +358,7 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int) (json.RawMe
 		switch a.function.Runtime {
 		case "python":
 			cmd = exec.CommandContext(ctx, resolveBinary(pythonPath, "python3"), CodePath, "/tmp/input.json")
-		case "go", "rust":
+		case "go", "rust", "zig", "swift":
 			cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
 		case "wasm":
 			cmd = exec.CommandContext(ctx, resolveBinary(wasmtimePath, "wasmtime"), CodePath, "--", "/tmp/input.json")
@@ -366,8 +366,8 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int) (json.RawMe
 			cmd = exec.CommandContext(ctx, resolveBinary(nodePath, "node"), CodePath, "/tmp/input.json")
 		case "ruby":
 			cmd = exec.CommandContext(ctx, resolveBinary(rubyPath, "ruby"), CodePath, "/tmp/input.json")
-		case "java":
-			// Java expects a JAR file: java -jar /code/handler.jar input.json
+		case "java", "kotlin", "scala":
+			// Java/Kotlin/Scala all compile to JAR files executed via JVM
 			cmd = exec.CommandContext(ctx, resolveBinary(javaPath, "java"), "-jar", CodePath, "/tmp/input.json")
 		case "php":
 			cmd = exec.CommandContext(ctx, resolveBinary(phpPath, "php"), CodePath, "/tmp/input.json")
