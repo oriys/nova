@@ -230,6 +230,7 @@ build_java_rootfs() {
   tmp="$(mktemp -d)"
   stage_alpine_root "${tmp}"
   apk_add "${tmp}" openjdk21-jre-headless
+  chroot "${tmp}" /bin/sh -c 'jli="$(find /usr/lib/jvm -name libjli.so | head -n1)"; [ -n "$jli" ] && ln -sf "$jli" /usr/lib/libjli.so'
   inject_agent_init "${tmp}"
   build_image_from_dir "${OUT_DIR}/java.ext4" "${ROOTFS_SIZE_JAVA_MB}" "${tmp}"
   rm -rf "${tmp}"
