@@ -104,6 +104,10 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			status TEXT NOT NULL DEFAULT 'available',
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
+		`ALTER TABLE runtimes ADD COLUMN IF NOT EXISTS image_name TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE runtimes ADD COLUMN IF NOT EXISTS entrypoint TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`,
+		`ALTER TABLE runtimes ADD COLUMN IF NOT EXISTS file_extension VARCHAR(10) NOT NULL DEFAULT ''`,
+		`ALTER TABLE runtimes ADD COLUMN IF NOT EXISTS env_vars JSONB NOT NULL DEFAULT '{}'::jsonb`,
 		`CREATE TABLE IF NOT EXISTS config (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL,

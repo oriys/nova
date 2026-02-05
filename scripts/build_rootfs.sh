@@ -9,6 +9,7 @@
 #   java.ext4   - Java (apk openjdk21-jre-headless)
 #   wasm.ext4   - WASM (wasmtime + glibc compat)
 #   php.ext4    - PHP (apk php)
+#   lua.ext4    - Lua (apk lua5.4)
 #   dotnet.ext4 - .NET (dotnet runtime + dependencies)
 #   deno.ext4   - Deno (deno binary + glibc compat)
 #   bun.ext4    - Bun (bun binary, musl)
@@ -275,6 +276,18 @@ build_php_rootfs() {
   log "php.ext4 ready -> ${OUT_DIR}/php.ext4"
 }
 
+build_lua_rootfs() {
+  log "Building lua rootfs (Alpine + lua)..."
+  local tmp
+  tmp="$(mktemp -d)"
+  stage_alpine_root "${tmp}"
+  apk_add "${tmp}" lua5.4
+  inject_agent_init "${tmp}"
+  build_image_from_dir "${OUT_DIR}/lua.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
+  rm -rf "${tmp}"
+  log "lua.ext4 ready -> ${OUT_DIR}/lua.ext4"
+}
+
 build_dotnet_rootfs() {
   log "Building dotnet rootfs (Alpine + .NET runtime)..."
   local tmp
@@ -382,6 +395,7 @@ main() {
   build_java_rootfs
   build_wasm_rootfs
   build_php_rootfs
+  build_lua_rootfs
   build_dotnet_rootfs
   build_deno_rootfs
   build_bun_rootfs

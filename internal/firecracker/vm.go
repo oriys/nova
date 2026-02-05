@@ -1185,6 +1185,8 @@ func rootfsForRuntime(rt domain.Runtime) string {
 		return "java.ext4"
 	case r == string(domain.RuntimePHP) || strings.HasPrefix(r, "php"):
 		return "php.ext4"
+	case r == string(domain.RuntimeLua) || strings.HasPrefix(r, "lua"):
+		return "lua.ext4"
 	case r == string(domain.RuntimeDotnet) || strings.HasPrefix(r, "dotnet"):
 		return "dotnet.ext4"
 	case r == string(domain.RuntimeDeno) || strings.HasPrefix(r, "deno"):
@@ -1213,9 +1215,11 @@ type VsockMessage struct {
 }
 
 type InitPayload struct {
-	Runtime string            `json:"runtime"`
-	Handler string            `json:"handler"`
-	EnvVars map[string]string `json:"env_vars"`
+	Runtime   string            `json:"runtime"`
+	Handler   string            `json:"handler"`
+	EnvVars   map[string]string `json:"env_vars"`
+	Command   []string          `json:"command,omitempty"`
+	Extension string            `json:"extension,omitempty"`
 }
 
 type ExecPayload struct {
@@ -1377,9 +1381,11 @@ func (c *VsockClient) Init(fn *domain.Function) error {
 	defer c.mu.Unlock()
 
 	payload, _ := json.Marshal(&InitPayload{
-		Runtime: string(fn.Runtime),
-		Handler: fn.Handler,
-		EnvVars: fn.EnvVars,
+		Runtime:   string(fn.Runtime),
+		Handler:   fn.Handler,
+		EnvVars:   fn.EnvVars,
+		Command:   fn.RuntimeCommand,
+		Extension: fn.RuntimeExtension,
 	})
 	c.initPayload = payload
 	if err := c.redialAndInitLocked(5 * time.Second); err != nil {

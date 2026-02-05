@@ -90,10 +90,14 @@ type Function struct {
 	UpdatedAt   time.Time         `json:"updated_at"`
 
 	// Versioning
-	Version        int               `json:"version"`                   // Current version number (1, 2, 3, ...)
-	VersionAlias   string            `json:"version_alias,omitempty"`   // Alias for this version (e.g., "stable", "canary")
-	ActiveVersions []int             `json:"active_versions,omitempty"` // List of active versions
-	TrafficSplit   map[int]int       `json:"traffic_split,omitempty"`   // version -> percentage (must sum to 100)
+	Version        int         `json:"version"`                   // Current version number (1, 2, 3, ...)
+	VersionAlias   string      `json:"version_alias,omitempty"`   // Alias for this version (e.g., "stable", "canary")
+	ActiveVersions []int       `json:"active_versions,omitempty"` // List of active versions
+	TrafficSplit   map[int]int `json:"traffic_split,omitempty"`   // version -> percentage (must sum to 100)
+
+	// Runtime metadata resolved at invocation time from runtimes table.
+	RuntimeCommand   []string `json:"-"`
+	RuntimeExtension string   `json:"-"`
 }
 
 // FunctionVersion represents a specific version of a function
@@ -114,8 +118,8 @@ type FunctionVersion struct {
 // FunctionAlias maps an alias name to a specific version or traffic split
 type FunctionAlias struct {
 	FunctionID   string      `json:"function_id"`
-	Name         string      `json:"name"`  // e.g., "latest", "stable", "canary"
-	Version      int         `json:"version,omitempty"` // Single version target
+	Name         string      `json:"name"`                    // e.g., "latest", "stable", "canary"
+	Version      int         `json:"version,omitempty"`       // Single version target
 	TrafficSplit map[int]int `json:"traffic_split,omitempty"` // version -> percentage for gradual rollout
 	CreatedAt    time.Time   `json:"created_at"`
 	UpdatedAt    time.Time   `json:"updated_at"`

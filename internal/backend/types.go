@@ -24,17 +24,17 @@ type VM struct {
 	ID                string
 	Runtime           domain.Runtime
 	State             VMState
-	CID               uint32         // Firecracker CID
-	SocketPath        string         // Firecracker API socket
-	VsockPath         string         // Firecracker vsock path
-	CodeDrive         string         // Path to code drive (Firecracker)
-	TapDevice         string         // TAP device (Firecracker)
-	GuestIP           string         // Guest IP (Firecracker)
-	GuestMAC          string         // Guest MAC (Firecracker)
-	Cmd               *exec.Cmd      // Firecracker process
-	DockerContainerID string         // Docker container ID
-	AssignedPort      int            // Docker: host port mapped to agent
-	CodeDir           string         // Docker: mounted code directory
+	CID               uint32    // Firecracker CID
+	SocketPath        string    // Firecracker API socket
+	VsockPath         string    // Firecracker vsock path
+	CodeDrive         string    // Path to code drive (Firecracker)
+	TapDevice         string    // TAP device (Firecracker)
+	GuestIP           string    // Guest IP (Firecracker)
+	GuestMAC          string    // Guest MAC (Firecracker)
+	Cmd               *exec.Cmd // Firecracker process
+	DockerContainerID string    // Docker container ID
+	AssignedPort      int       // Docker: host port mapped to agent
+	CodeDir           string    // Docker: mounted code directory
 	CreatedAt         time.Time
 	LastUsed          time.Time
 	mu                sync.RWMutex
@@ -87,9 +87,11 @@ type VsockMessage struct {
 
 // InitPayload is sent to initialize the agent.
 type InitPayload struct {
-	Runtime string            `json:"runtime"`
-	Handler string            `json:"handler"`
-	EnvVars map[string]string `json:"env_vars"`
+	Runtime   string            `json:"runtime"`
+	Handler   string            `json:"handler"`
+	EnvVars   map[string]string `json:"env_vars"`
+	Command   []string          `json:"command,omitempty"`
+	Extension string            `json:"extension,omitempty"`
 }
 
 // ExecPayload is sent to execute a function.

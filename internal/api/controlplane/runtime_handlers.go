@@ -26,10 +26,14 @@ func (h *Handler) ListRuntimes(w http.ResponseWriter, r *http.Request) {
 // CreateRuntime handles POST /runtimes
 func (h *Handler) CreateRuntime(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ID      string `json:"id"`
-		Name    string `json:"name"`
-		Version string `json:"version"`
-		Status  string `json:"status"`
+		ID            string            `json:"id"`
+		Name          string            `json:"name"`
+		Version       string            `json:"version"`
+		Status        string            `json:"status"`
+		ImageName     string            `json:"image_name"`
+		Entrypoint    []string          `json:"entrypoint"`
+		FileExtension string            `json:"file_extension"`
+		EnvVars       map[string]string `json:"env_vars"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -46,18 +50,33 @@ func (h *Handler) CreateRuntime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Version == "" {
-		http.Error(w, "version is required", http.StatusBadRequest)
-		return
+		req.Version = "dynamic"
 	}
 	if req.Status == "" {
 		req.Status = "available"
 	}
+	if req.ImageName == "" {
+		http.Error(w, "image_name is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.Entrypoint) == 0 {
+		http.Error(w, "entrypoint is required", http.StatusBadRequest)
+		return
+	}
+	if req.FileExtension == "" {
+		http.Error(w, "file_extension is required", http.StatusBadRequest)
+		return
+	}
 
 	rt := &store.RuntimeRecord{
-		ID:      req.ID,
-		Name:    req.Name,
-		Version: req.Version,
-		Status:  req.Status,
+		ID:            req.ID,
+		Name:          req.Name,
+		Version:       req.Version,
+		Status:        req.Status,
+		ImageName:     req.ImageName,
+		Entrypoint:    req.Entrypoint,
+		FileExtension: req.FileExtension,
+		EnvVars:       req.EnvVars,
 	}
 
 	if err := h.Store.SaveRuntime(r.Context(), rt); err != nil {
@@ -85,7 +104,7 @@ func (h *Handler) DeleteRuntime(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":  "deleted",
-		"id":      id,
+		"status": "deleted",
+		"id":     id,
 	})
 }
