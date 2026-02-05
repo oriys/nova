@@ -509,9 +509,12 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 
 // snapshotMeta stores metadata needed for snapshot restore.
 type snapshotMeta struct {
-	VsockPath string `json:"vsock_path"`
-	VsockCID  uint32 `json:"vsock_cid"`
-	CodeDrive string `json:"code_drive,omitempty"`
+	VsockPath       string `json:"vsock_path"`
+	VsockCID        uint32 `json:"vsock_cid"`
+	CodeDrive       string `json:"code_drive,omitempty"`        // path Firecracker expects (may be in /tmp)
+	CodeDriveBackup string `json:"code_drive_backup,omitempty"` // persistent copy in SnapshotDir
+	GuestIP         string `json:"guest_ip,omitempty"`
+	GuestMAC        string `json:"guest_mac,omitempty"`
 }
 
 // CreateSnapshot pauses the VM, creates snapshot files, and stops the VM.
@@ -541,11 +544,27 @@ func (m *Manager) CreateSnapshot(ctx context.Context, vmID string, funcID string
 		return fmt.Errorf("create snapshot: %w", err)
 	}
 
-	// Save metadata for snapshot restore (vsock path, CID, etc.)
+	// Firecracker's snapshot state internally records the code drive path
+	// that was configured at snapshot creation time. On restore, it expects
+	// the backing file at that exact path. Since the code drive lives in
+	// /tmp (SocketDir), it may be cleaned up by systemd-tmpfiles or lost
+	// on reboot. We keep a persistent copy in SnapshotDir so we can
+	// restore the file on demand during snapshot load.
+	persistentCodeDrive := filepath.Join(m.config.SnapshotDir, funcID+"-code.ext4")
+	if err := copyFile(vm.CodeDrive, persistentCodeDrive); err != nil {
+		return fmt.Errorf("persist code drive for snapshot: %w", err)
+	}
+
+	// Save metadata for snapshot restore (vsock path, CID, network, etc.)
+	// CodeDrive stores the path Firecracker expects (the original /tmp path).
+	// CodeDriveBackup stores the persistent copy that survives reboots.
 	meta := snapshotMeta{
-		VsockPath: vm.VsockPath,
-		VsockCID:  vm.CID,
-		CodeDrive: vm.CodeDrive,
+		VsockPath:       vm.VsockPath,
+		VsockCID:        vm.CID,
+		CodeDrive:       vm.CodeDrive,
+		CodeDriveBackup: persistentCodeDrive,
+		GuestIP:         vm.GuestIP,
+		GuestMAC:        vm.GuestMAC,
 	}
 	metaData, _ := json.Marshal(meta)
 	metaPath := filepath.Join(m.config.SnapshotDir, funcID+".meta")
@@ -747,23 +766,52 @@ func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath
 	vm.VsockPath = meta.VsockPath
 	vm.CID = meta.VsockCID
 
-	// Handle code drive: ensure the original code drive file exists
+	// Restore guest IP/MAC from snapshot metadata to avoid conflicts.
+	// The snapshot was created with a specific IP baked into the kernel boot args,
+	// so the restored VM will use that IP regardless of what we allocated.
+	if meta.GuestIP != "" {
+		newIP := vm.GuestIP
+		m.ipMu.Lock()
+		// Reserve the snapshot's IP
+		m.usedIPs[meta.GuestIP] = struct{}{}
+		// Release the newly allocated IP (unless it's the same)
+		if newIP != meta.GuestIP {
+			delete(m.usedIPs, newIP)
+		}
+		m.ipMu.Unlock()
+		vm.GuestIP = meta.GuestIP
+	}
+	if meta.GuestMAC != "" {
+		vm.GuestMAC = meta.GuestMAC
+	}
+
+	// Handle code drive: Firecracker expects the drive at meta.CodeDrive (the
+	// path recorded when the snapshot was created, typically under /tmp).
+	// If it's been cleaned up, restore from the persistent backup in SnapshotDir,
+	// or fall back to the newly-built code drive.
 	originalCodeDrive := vm.CodeDrive // newly created code drive
 	if _, err := os.Stat(meta.CodeDrive); os.IsNotExist(err) {
 		if err := os.MkdirAll(filepath.Dir(meta.CodeDrive), 0755); err != nil {
-			// Clean up reserved CID on failure
+			// Clean up reserved resources on failure
 			if meta.VsockCID != originalCID {
 				m.releaseCID(meta.VsockCID)
 			}
-			vm.CID = originalCID // restore original CID for caller cleanup
+			vm.CID = originalCID
 			return fmt.Errorf("create snapshot code drive dir: %w", err)
 		}
-		if err := copyFile(originalCodeDrive, meta.CodeDrive); err != nil {
-			// Clean up reserved CID on failure
+		// Prefer restoring from persistent backup (identical to the original)
+		restoreSource := originalCodeDrive
+		if meta.CodeDriveBackup != "" {
+			if _, err := os.Stat(meta.CodeDriveBackup); err == nil {
+				restoreSource = meta.CodeDriveBackup
+			}
+		}
+		if err := copyFile(restoreSource, meta.CodeDrive); err != nil {
+			// Clean up reserved resources on failure
 			if meta.VsockCID != originalCID {
 				m.releaseCID(meta.VsockCID)
 			}
-			vm.CID = originalCID // restore original CID for caller cleanup
+			vm.CID = originalCID
 			return fmt.Errorf("restore snapshot code drive backing file: %w", err)
 		}
 	}
@@ -803,7 +851,7 @@ func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath
 	}
 
 	if err := m.apiCall(ctx, vm, "PUT", "/snapshot/load", req); err != nil {
-		// Clean up reserved CID on failure
+		// Clean up reserved resources on failure
 		if meta.VsockCID != originalCID {
 			m.releaseCID(meta.VsockCID)
 		}

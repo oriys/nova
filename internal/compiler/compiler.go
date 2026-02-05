@@ -137,12 +137,10 @@ func (c *Compiler) writeSourceFiles(workDir string, runtime domain.Runtime, sour
 		if err := os.WriteFile(filepath.Join(workDir, "main.go"), []byte(sourceCode), 0644); err != nil {
 			return err
 		}
-		// Write go.mod if not present in source
-		if !bytes.Contains([]byte(sourceCode), []byte("module")) {
-			goMod := "module handler\n\ngo 1.23\n"
-			if err := os.WriteFile(filepath.Join(workDir, "go.mod"), []byte(goMod), 0644); err != nil {
-				return err
-			}
+		// Always write go.mod so `go build` and `go mod tidy` work correctly
+		goMod := "module handler\n\ngo 1.23\n"
+		if err := os.WriteFile(filepath.Join(workDir, "go.mod"), []byte(goMod), 0644); err != nil {
+			return err
 		}
 	case domain.RuntimeRust:
 		// Create Cargo project structure
@@ -225,7 +223,7 @@ rustflags = ["-C", "target-feature=+crt-static"]
 func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 	switch runtime {
 	case domain.RuntimeGo:
-		return "golang:1.23-alpine", "cd /work && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o handler ."
+		return "golang:1.23-alpine", "cd /work && go mod tidy && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o handler ."
 	case domain.RuntimeRust:
 		// Use musl target for static linking; install target first, then build
 		return "rust:1.84-alpine", "rustup target add x86_64-unknown-linux-musl && cd /work && cargo build --release --target x86_64-unknown-linux-musl && cp target/x86_64-unknown-linux-musl/release/handler /work/handler"

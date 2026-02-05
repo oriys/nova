@@ -110,6 +110,21 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		return nil, fmt.Errorf("function code not found: %s", fn.Name)
 	}
 
+	// For compiled languages, check compilation status before proceeding
+	if domain.NeedsCompilation(fn.Runtime) {
+		switch codeRecord.CompileStatus {
+		case domain.CompileStatusCompiling:
+			return nil, fmt.Errorf("function '%s' is still compiling", fn.Name)
+		case domain.CompileStatusFailed:
+			return nil, fmt.Errorf("function '%s' compilation failed: %s", fn.Name, codeRecord.CompileError)
+		case domain.CompileStatusPending:
+			return nil, fmt.Errorf("function '%s' compilation is pending", fn.Name)
+		}
+		if len(codeRecord.CompiledBinary) == 0 {
+			return nil, fmt.Errorf("function '%s' has no compiled binary", fn.Name)
+		}
+	}
+
 	// Use compiled binary if available, otherwise use source code
 	var codeContent []byte
 	if len(codeRecord.CompiledBinary) > 0 {
@@ -247,11 +262,19 @@ func InvalidateSnapshot(snapshotDir, funcID string) error {
 	metaPath := filepath.Join(snapshotDir, funcID+".meta")
 	if metaData, err := os.ReadFile(metaPath); err == nil {
 		var meta struct {
-			CodeDrive string `json:"code_drive"`
+			CodeDrive       string `json:"code_drive"`
+			CodeDriveBackup string `json:"code_drive_backup"`
 		}
-		if json.Unmarshal(metaData, &meta) == nil && meta.CodeDrive != "" {
-			if err := os.Remove(meta.CodeDrive); err != nil && !os.IsNotExist(err) {
-				return err
+		if json.Unmarshal(metaData, &meta) == nil {
+			if meta.CodeDrive != "" {
+				if err := os.Remove(meta.CodeDrive); err != nil && !os.IsNotExist(err) {
+					return err
+				}
+			}
+			if meta.CodeDriveBackup != "" {
+				if err := os.Remove(meta.CodeDriveBackup); err != nil && !os.IsNotExist(err) {
+					return err
+				}
 			}
 		}
 	}
