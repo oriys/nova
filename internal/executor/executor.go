@@ -244,10 +244,22 @@ func InvalidateSnapshot(snapshotDir, funcID string) error {
 	if snapshotDir == "" {
 		return nil
 	}
+	metaPath := filepath.Join(snapshotDir, funcID+".meta")
+	if metaData, err := os.ReadFile(metaPath); err == nil {
+		var meta struct {
+			CodeDrive string `json:"code_drive"`
+		}
+		if json.Unmarshal(metaData, &meta) == nil && meta.CodeDrive != "" {
+			if err := os.Remove(meta.CodeDrive); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+	}
+
 	paths := []string{
 		filepath.Join(snapshotDir, funcID+".snap"),
 		filepath.Join(snapshotDir, funcID+".mem"),
-		filepath.Join(snapshotDir, funcID+".meta"),
+		metaPath,
 	}
 
 	var lastErr error

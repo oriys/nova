@@ -101,6 +101,7 @@ type VM struct {
 	SocketPath        string
 	VsockPath         string
 	CodeDrive         string // path to per-VM code drive
+	PreserveCodeDrive bool   // whether code drive should survive VM stop (needed for snapshot restore)
 	TapDevice         string // TAP device name (e.g., "nova-abc123")
 	GuestIP           string // IP assigned to guest (e.g., "172.30.0.2")
 	GuestMAC          string // MAC address for guest
@@ -492,6 +493,7 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 type snapshotMeta struct {
 	VsockPath string `json:"vsock_path"`
 	VsockCID  uint32 `json:"vsock_cid"`
+	CodeDrive string `json:"code_drive,omitempty"`
 }
 
 // CreateSnapshot pauses the VM, creates snapshot files, and stops the VM.
@@ -525,12 +527,17 @@ func (m *Manager) CreateSnapshot(ctx context.Context, vmID string, funcID string
 	meta := snapshotMeta{
 		VsockPath: vm.VsockPath,
 		VsockCID:  vm.CID,
+		CodeDrive: vm.CodeDrive,
 	}
 	metaData, _ := json.Marshal(meta)
 	metaPath := filepath.Join(m.config.SnapshotDir, funcID+".meta")
 	if err := os.WriteFile(metaPath, metaData, 0644); err != nil {
 		return errors.New("write snapshot metadata: " + err.Error())
 	}
+
+	// Snapshot state references the original code drive backing file,
+	// so keep it on disk after this VM is stopped.
+	vm.PreserveCodeDrive = true
 
 	return nil
 }
@@ -703,6 +710,19 @@ func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath
 	_ = os.Remove(meta.VsockPath)
 	vm.VsockPath = meta.VsockPath
 	vm.CID = meta.VsockCID
+
+	if meta.CodeDrive != "" {
+		if _, err := os.Stat(meta.CodeDrive); os.IsNotExist(err) {
+			if err := os.MkdirAll(filepath.Dir(meta.CodeDrive), 0755); err != nil {
+				return fmt.Errorf("create snapshot code drive dir: %w", err)
+			}
+			if err := copyFile(vm.CodeDrive, meta.CodeDrive); err != nil {
+				return fmt.Errorf("restore snapshot code drive backing file: %w", err)
+			}
+		}
+		vm.CodeDrive = meta.CodeDrive
+		vm.PreserveCodeDrive = true
+	}
 
 	// Configure logger before snapshot load (allowed per API)
 	logPath := filepath.Join(m.config.LogDir, vm.ID+"-fc.log")
@@ -1057,7 +1077,9 @@ func (m *Manager) monitorProcess(vm *VM) {
 		deleteTAP(vm.TapDevice)
 		os.Remove(vm.SocketPath)
 		os.Remove(vm.VsockPath)
-		os.Remove(vm.CodeDrive)
+		if !vm.PreserveCodeDrive {
+			os.Remove(vm.CodeDrive)
+		}
 		os.Remove(filepath.Join(m.config.SocketDir, vm.ID+".json"))
 		m.releaseCID(vm.CID)
 		m.releaseIP(vm.GuestIP)
@@ -1115,7 +1137,9 @@ func (m *Manager) StopVM(vmID string) error {
 	deleteTAP(vm.TapDevice)
 	os.Remove(vm.SocketPath)
 	os.Remove(vm.VsockPath)
-	os.Remove(vm.CodeDrive)
+	if !vm.PreserveCodeDrive {
+		os.Remove(vm.CodeDrive)
+	}
 	os.Remove(filepath.Join(m.config.SocketDir, vm.ID+".json"))
 	m.releaseCID(vm.CID)
 	m.releaseIP(vm.GuestIP)
@@ -1164,6 +1188,25 @@ func (m *Manager) Shutdown() {
 // SnapshotDir returns the directory where snapshots are stored.
 func (m *Manager) SnapshotDir() string {
 	return m.config.SnapshotDir
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Sync()
 }
 
 // rootfsForRuntime maps runtime to rootfs image.
