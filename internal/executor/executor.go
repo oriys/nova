@@ -161,7 +161,7 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		observability.SetSpanError(span, err)
 
 		// Async persist invocation log to database
-		e.persistInvocationLog(reqID, fn, durationMs, pvm.ColdStart, false, err.Error(), len(payload), 0, "", "")
+		e.persistInvocationLog(reqID, fn, durationMs, pvm.ColdStart, false, err.Error(), len(payload), 0, payload, nil, "", "")
 
 		return nil, fmt.Errorf("execute: %w", err)
 	}
@@ -183,7 +183,7 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	}
 
 	// Async persist invocation log to database
-	e.persistInvocationLog(reqID, fn, durationMs, pvm.ColdStart, success, resp.Error, len(payload), len(resp.Output), resp.Stdout, resp.Stderr)
+	e.persistInvocationLog(reqID, fn, durationMs, pvm.ColdStart, success, resp.Error, len(payload), len(resp.Output), payload, resp.Output, resp.Stdout, resp.Stderr)
 
 	if success {
 		observability.SetSpanOK(span)
@@ -201,7 +201,7 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 }
 
 // persistInvocationLog asynchronously saves an invocation log to Postgres
-func (e *Executor) persistInvocationLog(reqID string, fn *domain.Function, durationMs int64, coldStart, success bool, errMsg string, inputSize, outputSize int, stdout, stderr string) {
+func (e *Executor) persistInvocationLog(reqID string, fn *domain.Function, durationMs int64, coldStart, success bool, errMsg string, inputSize, outputSize int, input, output json.RawMessage, stdout, stderr string) {
 	e.logBatcher.Enqueue(&store.InvocationLog{
 		ID:           reqID,
 		FunctionID:   fn.ID,
@@ -213,6 +213,8 @@ func (e *Executor) persistInvocationLog(reqID string, fn *domain.Function, durat
 		ErrorMessage: errMsg,
 		InputSize:    inputSize,
 		OutputSize:   outputSize,
+		Input:        input,
+		Output:       output,
 		Stdout:       stdout,
 		Stderr:       stderr,
 		CreatedAt:    time.Now(),

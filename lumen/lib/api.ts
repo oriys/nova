@@ -68,6 +68,8 @@ export interface LogEntry {
   created_at: string;
   stdout?: string;
   stderr?: string;
+  input?: unknown;
+  output?: unknown;
   duration_ms: number;
   cold_start: boolean;
   success: boolean;
