@@ -304,6 +304,8 @@ build_java_rootfs() {
     # Use OpenJDK 21 (LTS) headless for smaller size
     chroot "${mnt}" /bin/sh -c "apk add --no-cache openjdk21-jre-headless" >/dev/null 2>&1
 
+    chroot "${mnt}" /bin/sh -c 'jli="$(find /usr/lib/jvm -name libjli.so | head -n1)"; [ -n "$jli" ] && ln -sf "$jli" /usr/lib/libjli.so' >/dev/null 2>&1
+
     # init = nova-agent
     [[ -f ${INSTALL_DIR}/bin/nova-agent ]] && \
         cp ${INSTALL_DIR}/bin/nova-agent "${mnt}/init" && \
