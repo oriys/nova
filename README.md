@@ -98,6 +98,7 @@ nova/
 ## 路线图
 
 - 阶段一（核心性能与机制增强）：`docs/core-mechanics-phase1.md`
+- 三年落地规划（2026-2028）：`docs/serverless-three-year-plan.md`
 
 ## 环境要求
 
