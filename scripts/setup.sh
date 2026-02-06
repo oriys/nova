@@ -63,21 +63,24 @@ run_parallel_functions() {
     done
 
     local idx
+    local failed_count=0
+    local failed_names=""
     for idx in "${!pids[@]}"; do
         if wait "${pids[$idx]}"; then
             log "  [done] ${names[$idx]}"
         else
-            local failed="${names[$idx]}"
-            local k
-            for k in "${!pids[@]}"; do
-                if [[ "${k}" != "${idx}" ]]; then
-                    kill "${pids[$k]}" 2>/dev/null || true
-                fi
-            done
-            wait 2>/dev/null || true
-            err "Parallel stage failed: ${failed}"
+            failed_count=$((failed_count + 1))
+            if [[ -z "${failed_names}" ]]; then
+                failed_names="${names[$idx]}"
+            else
+                failed_names="${failed_names}, ${names[$idx]}"
+            fi
         fi
     done
+
+    if [[ "${failed_count}" -gt 0 ]]; then
+        err "Parallel stage failed (${failed_count} task(s)): ${failed_names}"
+    fi
 }
 
 # Calculate a safe default parallelism level.
@@ -137,6 +140,96 @@ Expected binaries at:
     # Export for later use
     export NOVA_BIN="${nova_bin}"
     export AGENT_BIN="${agent_bin}"
+}
+
+# ─── Cleanup ──────────────────────────────────────────────
+cleanup_existing_binaries() {
+    log "Cleaning existing binary artifacts..."
+
+    mkdir -p "${INSTALL_DIR}/bin"
+
+    local removed=0
+    local source_nova source_agent
+    source_nova="$(readlink -f "${NOVA_BIN}" 2>/dev/null || echo "${NOVA_BIN}")"
+    source_agent="$(readlink -f "${AGENT_BIN}" 2>/dev/null || echo "${AGENT_BIN}")"
+    local -a targets=(
+        "${INSTALL_DIR}/bin/nova"
+        "${INSTALL_DIR}/bin/nova-linux"
+        "${INSTALL_DIR}/bin/nova-agent"
+        "${INSTALL_DIR}/bin/firecracker"
+        "${INSTALL_DIR}/bin/jailer"
+    )
+
+    # Include versioned Firecracker/Jailer binaries from prior installs.
+    shopt -s nullglob
+    targets+=("${INSTALL_DIR}/bin"/firecracker-*)
+    targets+=("${INSTALL_DIR}/bin"/jailer-*)
+    shopt -u nullglob
+
+    local f
+    for f in "${targets[@]}"; do
+        if [[ -e "${f}" || -L "${f}" ]]; then
+            local f_real
+            f_real="$(readlink -f "${f}" 2>/dev/null || echo "${f}")"
+            if [[ "${f_real}" == "${source_nova}" || "${f_real}" == "${source_agent}" ]]; then
+                info "  [keep] ${f} (deployment source binary)"
+                continue
+            fi
+            rm -f "${f}"
+            removed=$((removed + 1))
+        fi
+    done
+
+    # Remove legacy symlinks only when they point to /opt/nova/bin artifacts.
+    local link target
+    for link in /usr/local/bin/firecracker /usr/local/bin/jailer; do
+        if [[ -L "${link}" ]]; then
+            target="$(readlink "${link}" 2>/dev/null || true)"
+            case "${target}" in
+                "${INSTALL_DIR}/bin/"*)
+                    rm -f "${link}"
+                    removed=$((removed + 1))
+                    ;;
+            esac
+        fi
+    done
+
+    log "Removed ${removed} binary artifact(s)"
+}
+
+cleanup_deploy_build_binaries() {
+    local deploy_bin="${DEPLOY_DIR}/bin"
+    local install_bin="${INSTALL_DIR}/bin"
+
+    [[ -d "${deploy_bin}" ]] || return 0
+
+    # Safety: if deploy dir and install dir are the same path, skip cleanup.
+    local deploy_real install_real
+    deploy_real="$(readlink -f "${deploy_bin}" 2>/dev/null || echo "${deploy_bin}")"
+    install_real="$(readlink -f "${install_bin}" 2>/dev/null || echo "${install_bin}")"
+    if [[ "${deploy_real}" == "${install_real}" ]]; then
+        warn "Skipping deploy build cleanup: deploy bin equals install bin (${deploy_real})"
+        return 0
+    fi
+
+    log "Cleaning deployment build binaries from ${deploy_bin}..."
+
+    local removed=0
+    local -a files=(
+        "${deploy_bin}/nova"
+        "${deploy_bin}/nova-linux"
+        "${deploy_bin}/nova-agent"
+    )
+
+    local f
+    for f in "${files[@]}"; do
+        if [[ -f "${f}" || -L "${f}" ]]; then
+            rm -f "${f}"
+            removed=$((removed + 1))
+        fi
+    done
+
+    log "Removed ${removed} deployment build binary file(s)"
 }
 
 # ─── Dependencies ────────────────────────────────────────
@@ -698,21 +791,23 @@ build_rootfs_images() {
         done
 
         local idx
+        local batch_failed=0
+        local batch_failed_names=""
         for idx in "${!pids[@]}"; do
             if wait "${pids[$idx]}"; then
                 log "  [done] ${names[$idx]}"
             else
-                local failed="${names[$idx]}"
-                local k
-                for k in "${!pids[@]}"; do
-                    if [[ "${k}" != "${idx}" ]]; then
-                        kill "${pids[$k]}" 2>/dev/null || true
-                    fi
-                done
-                wait 2>/dev/null || true
-                err "Rootfs build failed: ${failed}"
+                batch_failed=$((batch_failed + 1))
+                if [[ -z "${batch_failed_names}" ]]; then
+                    batch_failed_names="${names[$idx]}"
+                else
+                    batch_failed_names="${batch_failed_names}, ${names[$idx]}"
+                fi
             fi
         done
+        if [[ "${batch_failed}" -gt 0 ]]; then
+            err "Rootfs build failed (${batch_failed} task(s)): ${batch_failed_names}"
+        fi
     done
 }
 
@@ -1026,6 +1121,9 @@ main() {
     mkdir -p /tmp/nova/{sockets,vsock,logs}
     chmod 755 "${INSTALL_DIR}" "${INSTALL_DIR}"/{kernel,rootfs,bin,snapshots,configs,lumen}
 
+    # Ensure old installed binaries do not interfere with fresh deployment.
+    cleanup_existing_binaries
+
     # PostgreSQL
     install_postgres
     setup_database
@@ -1036,6 +1134,7 @@ main() {
 
     # Deploy Nova binaries first (so agent is available for rootfs)
     deploy_nova_backend
+    cleanup_deploy_build_binaries
 
     # Build steps are independent at this stage.
     log "Running rootfs build + Lumen build in parallel..."
