@@ -49,6 +49,55 @@ warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 err()  { echo -e "${RED}[!]${NC} $1" >&2; exit 1; }
 info() { echo -e "${BLUE}[*]${NC} $1"; }
 
+# Run independent functions concurrently and fail fast on first error.
+run_parallel_functions() {
+    local -a pids=()
+    local -a names=()
+    local fn
+
+    for fn in "$@"; do
+        info "  [start] ${fn}"
+        "${fn}" &
+        pids+=("$!")
+        names+=("${fn}")
+    done
+
+    local idx
+    for idx in "${!pids[@]}"; do
+        if wait "${pids[$idx]}"; then
+            log "  [done] ${names[$idx]}"
+        else
+            local failed="${names[$idx]}"
+            local k
+            for k in "${!pids[@]}"; do
+                if [[ "${k}" != "${idx}" ]]; then
+                    kill "${pids[$k]}" 2>/dev/null || true
+                fi
+            done
+            wait 2>/dev/null || true
+            err "Parallel stage failed: ${failed}"
+        fi
+    done
+}
+
+# Calculate a safe default parallelism level.
+default_parallel_jobs() {
+    local cpus
+    cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 4)
+    if ! [[ "${cpus}" =~ ^[0-9]+$ ]] || [[ "${cpus}" -lt 1 ]]; then
+        cpus=4
+    fi
+
+    # Keep enough parallelism for speed, but avoid overloading low-end hosts.
+    if [[ "${cpus}" -lt 2 ]]; then
+        echo 1
+    elif [[ "${cpus}" -gt 6 ]]; then
+        echo 6
+    else
+        echo "${cpus}"
+    fi
+}
+
 # ─── Checks ──────────────────────────────────────────────
 check_root() {
     [[ $EUID -eq 0 ]] || err "This script must be run as root: sudo $0"
@@ -185,11 +234,62 @@ setup_database() {
 
     # Run schema initialization
     if [[ -f "${SCRIPT_DIR}/init-db.sql" ]]; then
-        su - postgres -c "psql -d nova" < "${SCRIPT_DIR}/init-db.sql" >/dev/null 2>&1
+        # Run schema as role `nova` to ensure created objects are owned by nova.
+        su - postgres -c "psql -d nova -v ON_ERROR_STOP=1 -c 'SET ROLE nova;' -f '${SCRIPT_DIR}/init-db.sql'" >/dev/null 2>&1
         log "Database schema initialized"
     else
         warn "init-db.sql not found at ${SCRIPT_DIR}/init-db.sql - skipping schema initialization"
     fi
+
+    # Normalize ownership for existing objects (covers upgrades from old setup runs).
+    su - postgres -c "psql -d nova -v ON_ERROR_STOP=1" >/dev/null 2>&1 <<'SQL'
+ALTER DATABASE nova OWNER TO nova;
+ALTER SCHEMA public OWNER TO nova;
+
+DO $$
+DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN
+        SELECT tablename
+        FROM pg_tables
+        WHERE schemaname = 'public'
+    LOOP
+        EXECUTE format('ALTER TABLE public.%I OWNER TO nova', r.tablename);
+    END LOOP;
+
+    FOR r IN
+        SELECT sequence_name
+        FROM information_schema.sequences
+        WHERE sequence_schema = 'public'
+    LOOP
+        EXECUTE format('ALTER SEQUENCE public.%I OWNER TO nova', r.sequence_name);
+    END LOOP;
+
+    FOR r IN
+        SELECT viewname
+        FROM pg_views
+        WHERE schemaname = 'public'
+    LOOP
+        EXECUTE format('ALTER VIEW public.%I OWNER TO nova', r.viewname);
+    END LOOP;
+
+    FOR r IN
+        SELECT matviewname
+        FROM pg_matviews
+        WHERE schemaname = 'public'
+    LOOP
+        EXECUTE format('ALTER MATERIALIZED VIEW public.%I OWNER TO nova', r.matviewname);
+    END LOOP;
+END
+$$;
+
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO nova;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO nova;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO nova;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO nova;
+SQL
+    log "Database ownership normalized for role: nova"
 
     log "PostgreSQL configured (db=nova user=nova)"
 }
@@ -462,12 +562,15 @@ build_dotnet_rootfs() {
 
     chroot "${mnt}" /bin/sh -c "apk add --no-cache ca-certificates-bundle libgcc libssl3 libstdc++ zlib" >/dev/null 2>&1
 
+    local dotnet_tar
+    dotnet_tar="$(mktemp /tmp/dotnet-runtime.XXXXXX.tar.gz)"
+
     curl -fsSL \
         "https://builds.dotnet.microsoft.com/dotnet/Runtime/${DOTNET_VERSION}/dotnet-runtime-${DOTNET_VERSION}-linux-musl-x64.tar.gz" \
-        -o /tmp/dotnet-runtime.tar.gz
-    tar -xzf /tmp/dotnet-runtime.tar.gz -C "${mnt}/usr/share/dotnet"
+        -o "${dotnet_tar}"
+    tar -xzf "${dotnet_tar}" -C "${mnt}/usr/share/dotnet"
     ln -sf /usr/share/dotnet/dotnet "${mnt}/usr/bin/dotnet"
-    rm -f /tmp/dotnet-runtime.tar.gz
+    rm -f "${dotnet_tar}"
 
     [[ -f "${INSTALL_DIR}/bin/nova-agent" ]] && \
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
@@ -492,12 +595,15 @@ build_deno_rootfs() {
 
     chroot "${mnt}" /bin/sh -c "apk add --no-cache libstdc++ gcompat" >/dev/null 2>&1
 
+    local deno_zip
+    deno_zip="$(mktemp /tmp/deno.XXXXXX.zip)"
+
     curl -fsSL \
         "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" \
-        -o /tmp/deno.zip
-    unzip -q -o /tmp/deno.zip -d "${mnt}/usr/local/bin"
+        -o "${deno_zip}"
+    unzip -q -o "${deno_zip}" -d "${mnt}/usr/local/bin"
     chmod +x "${mnt}/usr/local/bin/deno"
-    rm -f /tmp/deno.zip
+    rm -f "${deno_zip}"
 
     [[ -f "${INSTALL_DIR}/bin/nova-agent" ]] && \
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
@@ -522,13 +628,17 @@ build_bun_rootfs() {
 
     chroot "${mnt}" /bin/sh -c "apk add --no-cache libgcc libstdc++" >/dev/null 2>&1
 
+    local bun_zip bun_extract
+    bun_zip="$(mktemp /tmp/bun.XXXXXX.zip)"
+    bun_extract="$(mktemp -d /tmp/bun-extract.XXXXXX)"
+
     curl -fsSL \
         "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/bun-linux-x64-musl.zip" \
-        -o /tmp/bun.zip
-    unzip -q -o /tmp/bun.zip -d /tmp/bun-extract
-    cp /tmp/bun-extract/bun-linux-x64-musl/bun "${mnt}/usr/local/bin/bun"
+        -o "${bun_zip}"
+    unzip -q -o "${bun_zip}" -d "${bun_extract}"
+    cp "${bun_extract}/bun-linux-x64-musl/bun" "${mnt}/usr/local/bin/bun"
     chmod +x "${mnt}/usr/local/bin/bun"
-    rm -rf /tmp/bun.zip /tmp/bun-extract
+    rm -rf "${bun_zip}" "${bun_extract}"
 
     [[ -f "${INSTALL_DIR}/bin/nova-agent" ]] && \
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
@@ -541,9 +651,9 @@ build_bun_rootfs() {
 # Build all rootfs images in controlled parallel batches.
 # Dependency order is preserved at stage level (this runs only after binaries are deployed).
 build_rootfs_images() {
-    local max_jobs="${NOVA_ROOTFS_JOBS:-3}"
+    local max_jobs="${NOVA_ROOTFS_JOBS:-$(default_parallel_jobs)}"
     if ! [[ "${max_jobs}" =~ ^[0-9]+$ ]] || [[ "${max_jobs}" -lt 1 ]]; then
-        max_jobs=3
+        max_jobs="$(default_parallel_jobs)"
     fi
 
     local builders=(
@@ -920,18 +1030,16 @@ main() {
     install_postgres
     setup_database
 
-    # Firecracker + Kernel
-    install_firecracker
-    download_kernel
+    # Firecracker install and kernel download are independent.
+    log "Running Firecracker + kernel setup in parallel..."
+    run_parallel_functions install_firecracker download_kernel
 
     # Deploy Nova binaries first (so agent is available for rootfs)
     deploy_nova_backend
 
-    # Build all rootfs images (independent tasks, run in controlled parallel)
-    build_rootfs_images
-
-    # Deploy Lumen
-    deploy_lumen_frontend
+    # Build steps are independent at this stage.
+    log "Running rootfs build + Lumen build in parallel..."
+    run_parallel_functions build_rootfs_images deploy_lumen_frontend
 
     # Set KVM permissions
     chmod 666 /dev/kvm 2>/dev/null || true
