@@ -565,6 +565,15 @@ func enrichExecError(err error, runtime string) error {
 		}
 		return fmt.Errorf("%w (exec format error: check shebang and executable format of /code/handler)", err)
 	}
+	if errors.As(err, &pathErr) && errors.Is(pathErr.Err, syscall.ENOENT) && pathErr.Path == CodePath {
+		if _, statErr := os.Stat(CodePath); statErr == nil {
+			if runtime == "go" || runtime == "rust" || runtime == "zig" || runtime == "swift" || runtime == "dotnet" {
+				return fmt.Errorf("%w (/code/handler exists but required dynamic loader is missing; build a static Linux binary, e.g. Rust target x86_64-unknown-linux-musl)", err)
+			}
+			return fmt.Errorf("%w (/code/handler exists but its interpreter is missing; check shebang/interpreter path)", err)
+		}
+		return fmt.Errorf("%w (/code/handler not found in code package; ensure entry file is named 'handler' or provide a handler alias)", err)
+	}
 	return err
 }
 

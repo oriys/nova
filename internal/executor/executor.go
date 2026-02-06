@@ -156,6 +156,14 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 			// Replace the entry point file with compiled binary
 			files[fn.Handler] = codeRecord.CompiledBinary
 		}
+
+		// Agent always executes/loads /code/handler.
+		// Keep a canonical alias even when entry point is a different file name.
+		if _, ok := files["handler"]; !ok {
+			if entry, ok := files[fn.Handler]; ok {
+				files["handler"] = entry
+			}
+		}
 	} else {
 		// Single file function
 		if len(codeRecord.CompiledBinary) > 0 {
