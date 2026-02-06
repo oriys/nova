@@ -154,7 +154,7 @@ func (c *Compiler) installPythonDeps(ctx context.Context, requirements []byte) (
 	image := "python:3.12-slim"
 	buildCmd := "pip install --no-cache-dir -r /work/requirements.txt -t /work/deps 2>&1"
 
-	createCmd := exec.CommandContext(ctx, "docker", "create", "--name", containerName, image, "sh", "-c", buildCmd)
+	createCmd := exec.CommandContext(ctx, "docker", "create", "--network", "host", "--name", containerName, image, "sh", "-c", buildCmd)
 	var createStderr bytes.Buffer
 	createCmd.Stderr = &createStderr
 	if err := createCmd.Run(); err != nil {
@@ -235,7 +235,7 @@ func (c *Compiler) installNodeDeps(ctx context.Context, packageJson []byte) (map
 	image := "node:20-slim"
 	buildCmd := "cd /work && npm install --production --no-audit --no-fund 2>&1"
 
-	createCmd := exec.CommandContext(ctx, "docker", "create", "--name", containerName, image, "sh", "-c", buildCmd)
+	createCmd := exec.CommandContext(ctx, "docker", "create", "--network", "host", "--name", containerName, image, "sh", "-c", buildCmd)
 	var createStderr bytes.Buffer
 	createCmd.Stderr = &createStderr
 	if err := createCmd.Run(); err != nil {
@@ -325,7 +325,7 @@ func (c *Compiler) compile(ctx context.Context, fn *domain.Function, sourceCode 
 	// Force linux/amd64 platform — compiled binaries must run in x86_64 VMs/containers.
 	// Without this, ARM hosts pull ARM images and cross-compilation may fail
 	// (e.g., Rust proc-macros need host-native toolchain).
-	createArgs := []string{"create", "--platform", "linux/amd64", "--name", containerName, image, "sh", "-c", buildCmd}
+	createArgs := []string{"create", "--platform", "linux/amd64", "--network", "host", "--name", containerName, image, "sh", "-c", buildCmd}
 	createCmd := exec.CommandContext(ctx, "docker", createArgs...)
 	var createStderr bytes.Buffer
 	createCmd.Stderr = &createStderr
@@ -515,7 +515,7 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 	case domain.RuntimeGo:
 		return "golang:1.23-alpine", "cd /work && go mod tidy && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o handler ."
 	case domain.RuntimeRust:
-		return "rust:1.84-alpine", "apk add --no-cache musl-dev && rustup target add x86_64-unknown-linux-musl && cd /work && cargo build --release --target x86_64-unknown-linux-musl && cp target/x86_64-unknown-linux-musl/release/handler /work/handler"
+		return "rust:1.84-alpine", "cd /work && cargo build --release --target x86_64-unknown-linux-musl && cp target/x86_64-unknown-linux-musl/release/handler /work/handler"
 	case domain.RuntimeJava:
 		return "eclipse-temurin:21-jdk", "cd /work && javac Main.java Handler.java && jar cfe handler.jar Main *.class && cp handler.jar handler"
 	case domain.RuntimeKotlin:
