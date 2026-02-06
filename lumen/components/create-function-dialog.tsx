@@ -25,114 +25,92 @@ import { RuntimeInfo } from "@/lib/types"
 import { functionsApi, CompileStatus } from "@/lib/api"
 import { Loader2, Check, AlertCircle } from "lucide-react"
 
-// Code templates for each runtime (base language)
+// Code templates for each runtime (handler-only style)
 const CODE_TEMPLATES: Record<string, string> = {
-  python: `import json
-import sys
-
-def handler(event):
+  python: `def handler(event, context):
     name = event.get("name", "World")
     return {"message": f"Hello, {name}!"}
-
-if __name__ == "__main__":
-    with open(sys.argv[1]) as f:
-        event = json.load(f)
-    result = handler(event)
-    print(json.dumps(result))
 `,
-  node: `const fs = require('fs');
-
-function handler(event) {
+  node: `function handler(event, context) {
   const name = event.name || 'World';
   return { message: \`Hello, \${name}!\` };
 }
 
-const event = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-console.log(JSON.stringify(handler(event)));
+module.exports = { handler };
 `,
   go: `package main
 
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 )
 
-type Event struct {
-	Name string \`json:"name"\`
-}
-
-func main() {
-	data, _ := os.ReadFile(os.Args[1])
-	var event Event
-	json.Unmarshal(data, &event)
-	name := event.Name
+func Handler(event json.RawMessage, ctx Context) (interface{}, error) {
+	var input struct {
+		Name string \`json:"name"\`
+	}
+	json.Unmarshal(event, &input)
+	name := input.Name
 	if name == "" {
 		name = "World"
 	}
-	result := map[string]string{"message": fmt.Sprintf("Hello, %s!", name)}
-	output, _ := json.Marshal(result)
-	fmt.Println(string(output))
+	return map[string]string{"message": fmt.Sprintf("Hello, %s!", name)}, nil
 }
 `,
-  rust: `use std::env;
-use std::fs;
-use serde::{Deserialize, Serialize};
+  rust: `use serde_json::Value;
 
-#[derive(Deserialize)]
-struct Event { name: Option<String> }
-
-#[derive(Serialize)]
-struct Response { message: String }
-
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    let data = fs::read_to_string(&args[1]).unwrap();
-    let event: Event = serde_json::from_str(&data).unwrap();
-    let name = event.name.unwrap_or_else(|| "World".to_string());
-    let resp = Response { message: format!("Hello, {}!", name) };
-    println!("{}", serde_json::to_string(&resp).unwrap());
+pub fn handler(event: Value, ctx: crate::context::Context) -> Result<Value, String> {
+    let name = event.get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("World");
+    Ok(serde_json::json!({ "message": format!("Hello, {}!", name) }))
 }
 `,
-  java: `import java.nio.file.*;
+  java: `import java.util.*;
 
 public class Handler {
-    public static void main(String[] args) throws Exception {
-        String content = Files.readString(Path.of(args[0]));
-        String name = content.contains("name") ? "User" : "World";
-        System.out.println("{\\"message\\": \\"Hello, " + name + "!\\"}");
+    public static Object handler(String event, Map<String, Object> context) {
+        // Parse event JSON manually or use a JSON library
+        String name = event.contains("name") ? "User" : "World";
+        return "{\\"message\\": \\"Hello, " + name + "!\\"}";
     }
 }
 `,
-  ruby: `require 'json'
-
-def handler(event)
+  ruby: `def handler(event, context)
   name = event['name'] || 'World'
   { message: "Hello, #{name}!" }
 end
-
-event = JSON.parse(File.read(ARGV[0]))
-puts JSON.generate(handler(event))
 `,
   php: `<?php
-$event = json_decode(file_get_contents($argv[1]), true);
-$name = $event['name'] ?? 'World';
-echo json_encode(['message' => "Hello, $name!"]);
+function handler($event, $context) {
+    $name = $event['name'] ?? 'World';
+    return ['message' => "Hello, $name!"];
+}
 `,
   dotnet: `using System.Text.Json;
+using System.Collections.Generic;
 
-var json = File.ReadAllText(args[0]);
-var evt = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
-var name = evt?.GetValueOrDefault("name", "World") ?? "World";
-Console.WriteLine(JsonSerializer.Serialize(new { message = $"Hello, {name}!" }));
+public static class Handler
+{
+    public static object Handle(string eventJson, Dictionary<string, object> context)
+    {
+        var evt = JsonSerializer.Deserialize<Dictionary<string, string>>(eventJson);
+        var name = evt?.GetValueOrDefault("name", "World") ?? "World";
+        return new { message = $"Hello, {name}!" };
+    }
+}
 `,
-  deno: `const event = JSON.parse(await Deno.readTextFile(Deno.args[0]));
-const name = event.name || 'World';
-console.log(JSON.stringify({ message: \`Hello, \${name}!\` }));
+  deno: `export function handler(event, context) {
+  const name = event.name || 'World';
+  return { message: \`Hello, \${name}!\` };
+}
 `,
-  bun: `const event = JSON.parse(await Bun.file(Bun.argv[2]).text());
-const name = event.name || 'World';
-console.log(JSON.stringify({ message: \`Hello, \${name}!\` }));
+  bun: `function handler(event, context) {
+  const name = event.name || 'World';
+  return { message: \`Hello, \${name}!\` };
+}
+
+module.exports = { handler };
 `,
 }
 

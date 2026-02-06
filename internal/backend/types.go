@@ -88,11 +88,16 @@ type VsockMessage struct {
 
 // InitPayload is sent to initialize the agent.
 type InitPayload struct {
-	Runtime   string            `json:"runtime"`
-	Handler   string            `json:"handler"`
-	EnvVars   map[string]string `json:"env_vars"`
-	Command   []string          `json:"command,omitempty"`
-	Extension string            `json:"extension,omitempty"`
+	Runtime         string            `json:"runtime"`
+	Handler         string            `json:"handler"`
+	EnvVars         map[string]string `json:"env_vars"`
+	Command         []string          `json:"command,omitempty"`
+	Extension       string            `json:"extension,omitempty"`
+	Mode            string            `json:"mode,omitempty"`
+	FunctionName    string            `json:"function_name,omitempty"`
+	FunctionVersion int               `json:"function_version,omitempty"`
+	MemoryMB        int               `json:"memory_mb,omitempty"`
+	TimeoutS        int               `json:"timeout_s,omitempty"`
 }
 
 // ExecPayload is sent to execute a function.

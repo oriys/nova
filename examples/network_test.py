@@ -1,14 +1,12 @@
-#!/usr/bin/env python3
 """Network test function - fetch external URL"""
 
 import json
-import sys
 import time
 import urllib.request
 import urllib.error
 
 
-def handler(event):
+def handler(event, context):
     url = event.get("url", "https://httpbin.org/get")
     timeout = event.get("timeout", 10)
 
@@ -18,11 +16,10 @@ def handler(event):
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             status = resp.status
             body = resp.read().decode("utf-8")
-            # Try to parse as JSON, fallback to raw
             try:
                 data = json.loads(body)
             except:
-                data = body[:500]  # Truncate if too long
+                data = body[:500]
     except urllib.error.HTTPError as e:
         status = e.code
         data = {"error": str(e)}
@@ -41,10 +38,3 @@ def handler(event):
         "elapsed_ms": elapsed_ms,
         "response": data,
     }
-
-
-if __name__ == "__main__":
-    input_file = sys.argv[1] if len(sys.argv) > 1 else "/tmp/input.json"
-    with open(input_file) as f:
-        event = json.load(f)
-    print(json.dumps(handler(event)))

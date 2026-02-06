@@ -106,6 +106,16 @@ func (m *Manager) allocatePort() int {
 	return int(port)
 }
 
+// agentAddr returns the address to reach the agent on.
+// In network mode (DinD), use container name as hostname via Docker DNS.
+// In port-mapping mode (bare metal), use localhost:port.
+func (m *Manager) agentAddr(containerName string, port int) string {
+	if m.config.Network != "" {
+		return fmt.Sprintf("%s:%d", containerName, agentPort)
+	}
+	return fmt.Sprintf("127.0.0.1:%d", port)
+}
+
 // CreateVM creates a new Docker container for the function.
 func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent []byte) (*backend.VM, error) {
 	vmID := uuid.New().String()[:12]
@@ -117,7 +127,7 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 		return nil, fmt.Errorf("create code dir: %w", err)
 	}
 
-	// Write code to container code directory
+	// Write code to local code directory
 	if len(codeContent) > 0 {
 		handlerPath := filepath.Join(codeDir, "handler")
 		if err := os.WriteFile(handlerPath, codeContent, 0755); err != nil {
@@ -134,25 +144,27 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 	}
 	containerName := fmt.Sprintf("nova-%s", vmID)
 
-	// Build docker run command
+	// Build docker create command (no bind mount — use docker cp instead,
+	// which works in Docker-in-Docker where host can't see container paths)
 	cpuLimit := m.config.CPULimit
 	if cpuLimit <= 0 {
 		cpuLimit = 1.0
 	}
 	args := []string{
-		"run", "-d",
+		"create",
 		"--name", containerName,
-		"-p", fmt.Sprintf("127.0.0.1:%d:%d", port, agentPort),
-		"-v", fmt.Sprintf("%s:/code:ro", codeDir),
 		"-e", "NOVA_AGENT_MODE=tcp",
 		"-e", "NOVA_SKIP_MOUNT=true",
 		"--memory", fmt.Sprintf("%dm", fn.MemoryMB),
 		"--cpus", fmt.Sprintf("%.2f", cpuLimit),
 	}
 
-	// Add network if specified
 	if m.config.Network != "" {
+		// Network mode (DinD): use Docker DNS, no port mapping needed
 		args = append(args, "--network", m.config.Network)
+	} else {
+		// Bare metal: map agent port to host localhost
+		args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", port, agentPort))
 	}
 
 	// Add environment variables
@@ -162,16 +174,32 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 
 	args = append(args, image)
 
-	logging.Op().Debug("starting Docker container", "image", image, "name", containerName, "port", port)
+	logging.Op().Debug("creating Docker container", "image", image, "name", containerName, "port", port)
 
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		os.RemoveAll(codeDir)
-		return nil, fmt.Errorf("docker run failed: %w: %s", err, output)
+		return nil, fmt.Errorf("docker create failed: %w: %s", err, output)
 	}
 
 	containerID := strings.TrimSpace(string(output))
+
+	// Copy code files into container (works in Docker-in-Docker)
+	cpCmd := exec.CommandContext(ctx, "docker", "cp", codeDir+"/.", containerName+":/code/")
+	if cpOut, err := cpCmd.CombinedOutput(); err != nil {
+		m.stopContainer(containerID, codeDir)
+		return nil, fmt.Errorf("docker cp failed: %w: %s", err, cpOut)
+	}
+
+	// Start container
+	startCmd := exec.CommandContext(ctx, "docker", "start", containerName)
+	if startOut, err := startCmd.CombinedOutput(); err != nil {
+		m.stopContainer(containerID, codeDir)
+		return nil, fmt.Errorf("docker start failed: %w: %s", err, startOut)
+	}
+
+	agentAddress := m.agentAddr(containerName, port)
 
 	vm := &backend.VM{
 		ID:                vmID,
@@ -179,6 +207,7 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 		State:             backend.VMStateCreating,
 		DockerContainerID: containerID,
 		AssignedPort:      port,
+		GuestIP:           agentAddress,
 		CodeDir:           codeDir,
 		CreatedAt:         time.Now(),
 		LastUsed:          time.Now(),
@@ -189,7 +218,7 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 	if agentTimeout == 0 {
 		agentTimeout = 10 * time.Second
 	}
-	if err := waitForAgent(port, agentTimeout); err != nil {
+	if err := waitForAgent(agentAddress, agentTimeout); err != nil {
 		m.stopContainer(containerID, codeDir)
 		return nil, fmt.Errorf("agent not ready: %w", err)
 	}
@@ -201,7 +230,7 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 	m.containers[vmID] = vm
 	m.mu.Unlock()
 
-	logging.Op().Info("Docker container ready", "container", containerID[:12], "port", port)
+	logging.Op().Info("Docker container ready", "container", containerID[:12], "addr", agentAddress)
 	return vm, nil
 }
 
@@ -216,7 +245,7 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 		return nil, fmt.Errorf("create code dir: %w", err)
 	}
 
-	// Write all files to container code directory
+	// Write all files to local code directory
 	for path, content := range files {
 		fullPath := filepath.Join(codeDir, path)
 		// Create parent directories if needed
@@ -239,16 +268,14 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 	}
 	containerName := fmt.Sprintf("nova-%s", vmID)
 
-	// Build docker run command
+	// Build docker create command (no bind mount — use docker cp instead)
 	cpuLimit := m.config.CPULimit
 	if cpuLimit <= 0 {
 		cpuLimit = 1.0
 	}
 	args := []string{
-		"run", "-d",
+		"create",
 		"--name", containerName,
-		"-p", fmt.Sprintf("127.0.0.1:%d:%d", port, agentPort),
-		"-v", fmt.Sprintf("%s:/code:ro", codeDir),
 		"-e", "NOVA_AGENT_MODE=tcp",
 		"-e", "NOVA_SKIP_MOUNT=true",
 		"--memory", fmt.Sprintf("%dm", fn.MemoryMB),
@@ -257,6 +284,8 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 
 	if m.config.Network != "" {
 		args = append(args, "--network", m.config.Network)
+	} else {
+		args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", port, agentPort))
 	}
 
 	for k, v := range fn.EnvVars {
@@ -265,16 +294,32 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 
 	args = append(args, image)
 
-	logging.Op().Debug("starting Docker container with files", "image", image, "name", containerName, "port", port, "files", len(files))
+	logging.Op().Debug("creating Docker container with files", "image", image, "name", containerName, "port", port, "files", len(files))
 
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		os.RemoveAll(codeDir)
-		return nil, fmt.Errorf("docker run failed: %w: %s", err, output)
+		return nil, fmt.Errorf("docker create failed: %w: %s", err, output)
 	}
 
 	containerID := strings.TrimSpace(string(output))
+
+	// Copy code files into container (works in Docker-in-Docker)
+	cpCmd := exec.CommandContext(ctx, "docker", "cp", codeDir+"/.", containerName+":/code/")
+	if cpOut, err := cpCmd.CombinedOutput(); err != nil {
+		m.stopContainer(containerID, codeDir)
+		return nil, fmt.Errorf("docker cp failed: %w: %s", err, cpOut)
+	}
+
+	// Start container
+	startCmd := exec.CommandContext(ctx, "docker", "start", containerName)
+	if startOut, err := startCmd.CombinedOutput(); err != nil {
+		m.stopContainer(containerID, codeDir)
+		return nil, fmt.Errorf("docker start failed: %w: %s", err, startOut)
+	}
+
+	agentAddress := m.agentAddr(containerName, port)
 
 	vm := &backend.VM{
 		ID:                vmID,
@@ -282,6 +327,7 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 		State:             backend.VMStateCreating,
 		DockerContainerID: containerID,
 		AssignedPort:      port,
+		GuestIP:           agentAddress,
 		CodeDir:           codeDir,
 		CreatedAt:         time.Now(),
 		LastUsed:          time.Now(),
@@ -291,7 +337,7 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 	if agentTimeout == 0 {
 		agentTimeout = 10 * time.Second
 	}
-	if err := waitForAgent(port, agentTimeout); err != nil {
+	if err := waitForAgent(agentAddress, agentTimeout); err != nil {
 		m.stopContainer(containerID, codeDir)
 		return nil, fmt.Errorf("agent not ready: %w", err)
 	}
@@ -303,14 +349,13 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 	m.containers[vmID] = vm
 	m.mu.Unlock()
 
-	logging.Op().Info("Docker container ready", "container", containerID[:12], "port", port, "files", len(files))
+	logging.Op().Info("Docker container ready", "container", containerID[:12], "addr", agentAddress, "files", len(files))
 	return vm, nil
 }
 
 // waitForAgent polls the agent until it's ready.
-func waitForAgent(port int, timeout time.Duration) error {
+func waitForAgent(addr string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
 
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
@@ -320,7 +365,7 @@ func waitForAgent(port int, timeout time.Duration) error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return fmt.Errorf("timeout waiting for agent on port %d", port)
+	return fmt.Errorf("timeout waiting for agent on %s", addr)
 }
 
 // StopVM stops and removes a Docker container.
@@ -436,11 +481,16 @@ func (c *Client) Init(fn *domain.Function) error {
 	defer c.mu.Unlock()
 
 	payload, _ := json.Marshal(&backend.InitPayload{
-		Runtime:   string(fn.Runtime),
-		Handler:   fn.Handler,
-		EnvVars:   fn.EnvVars,
-		Command:   fn.RuntimeCommand,
-		Extension: fn.RuntimeExtension,
+		Runtime:         string(fn.Runtime),
+		Handler:         fn.Handler,
+		EnvVars:         fn.EnvVars,
+		Command:         fn.RuntimeCommand,
+		Extension:       fn.RuntimeExtension,
+		Mode:            string(fn.Mode),
+		FunctionName:    fn.Name,
+		FunctionVersion: fn.Version,
+		MemoryMB:        fn.MemoryMB,
+		TimeoutS:        fn.TimeoutS,
 	})
 	c.initPayload = payload
 
@@ -592,7 +642,10 @@ func (c *Client) closeLocked() error {
 }
 
 func (c *Client) dialLocked(timeout time.Duration) error {
-	addr := fmt.Sprintf("127.0.0.1:%d", c.vm.AssignedPort)
+	addr := c.vm.GuestIP
+	if addr == "" {
+		addr = fmt.Sprintf("127.0.0.1:%d", c.vm.AssignedPort)
+	}
 	conn, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
 		return err

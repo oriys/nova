@@ -11,6 +11,20 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+func remountCodeDriveRW() error {
+	if os.Getenv("NOVA_SKIP_MOUNT") == "true" {
+		return nil // Docker mode: /code is a regular directory, no remount needed
+	}
+	return unix.Mount("", CodeMountPoint, "", unix.MS_REMOUNT, "")
+}
+
+func remountCodeDriveRO() error {
+	if os.Getenv("NOVA_SKIP_MOUNT") == "true" {
+		return nil
+	}
+	return unix.Mount("", CodeMountPoint, "", unix.MS_REMOUNT|unix.MS_RDONLY, "")
+}
+
 func mountCodeDrive() {
 	if os.Getenv("NOVA_SKIP_MOUNT") == "true" {
 		fmt.Println("[agent] NOVA_SKIP_MOUNT=true, skipping code drive mount")

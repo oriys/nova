@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::env;
-use std::fs;
+use serde_json::Value;
 
 #[derive(Deserialize)]
 struct Event {
@@ -11,24 +10,16 @@ struct Event {
 struct Response {
     message: String,
     runtime: String,
+    request_id: String,
 }
 
-fn handler(event: Event) -> Response {
-    let name = event.name.unwrap_or_else(|| "Anonymous".to_string());
-    Response {
+pub fn handler(event: Value, ctx: crate::context::Context) -> Result<Value, String> {
+    let e: Event = serde_json::from_value(event).map_err(|e| e.to_string())?;
+    let name = e.name.unwrap_or_else(|| "Anonymous".to_string());
+    let resp = Response {
         message: format!("Hello, {}!", name),
         runtime: "rust".to_string(),
-    }
-}
-
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    let input_file = args.get(1).map(|s| s.as_str()).unwrap_or("/tmp/input.json");
-
-    let data = fs::read_to_string(input_file).expect("Failed to read input file");
-    let event: Event = serde_json::from_str(&data).expect("Failed to parse input");
-
-    let result = handler(event);
-    let output = serde_json::to_string(&result).expect("Failed to serialize output");
-    println!("{}", output);
+        request_id: ctx.request_id,
+    };
+    serde_json::to_value(&resp).map_err(|e| e.to_string())
 }

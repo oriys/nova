@@ -56,7 +56,7 @@ func (s *PostgresStore) GetRuntime(ctx context.Context, id string) (*RuntimeReco
 	var rt RuntimeRecord
 	var rtEnvVars []byte
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, name, version, status, image_name, entrypoint, file_extension, env_vars, created_at
+		SELECT id, name, version, status, COALESCE(image_name, ''), entrypoint, COALESCE(file_extension, ''), COALESCE(env_vars, '{}'::jsonb), created_at
 		FROM runtimes
 		WHERE id = $1
 	`, id).Scan(&rt.ID, &rt.Name, &rt.Version, &rt.Status, &rt.ImageName, &rt.Entrypoint, &rt.FileExtension, &rtEnvVars, &rt.CreatedAt)
@@ -74,7 +74,7 @@ func (s *PostgresStore) GetRuntime(ctx context.Context, id string) (*RuntimeReco
 
 func (s *PostgresStore) ListRuntimes(ctx context.Context) ([]*RuntimeRecord, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT r.id, r.name, r.version, r.status, r.image_name, r.entrypoint, r.file_extension, r.env_vars, r.created_at, COUNT(f.id) as functions_count
+		SELECT r.id, r.name, r.version, r.status, COALESCE(r.image_name, ''), r.entrypoint, COALESCE(r.file_extension, ''), COALESCE(r.env_vars, '{}'::jsonb), r.created_at, COUNT(f.id) as functions_count
 		FROM runtimes r
 		LEFT JOIN functions f ON f.data->>'runtime' = r.id
 		GROUP BY r.id, r.name, r.version, r.status, r.image_name, r.entrypoint, r.file_extension, r.env_vars, r.created_at

@@ -29,6 +29,7 @@ services:
       NOVA_ROOTFS_DIR: /opt/nova/rootfs
       NOVA_CODE_DIR: /tmp/nova/code
       NOVA_DOCKER_IMAGE_PREFIX: nova-runtime
+      NOVA_DOCKER_NETWORK: nova_default
       # Ensure Nova knows where to put FC sockets/logs
       NOVA_RUN_DIR: /var/lib/nova/run
     ports:
@@ -77,20 +78,20 @@ services:
         echo "Creating sample functions..."
         sleep 2
 
-        # hello-python
-        curl -sf -X POST http://nova:9000/functions -H "Content-Type: application/json" -d '{"name":"hello-python","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import json\nimport sys\n\ndef main():\n    with open(sys.argv[1]) as f:\n        event = json.load(f)\n    name = event.get(\"name\", \"World\")\n    print(json.dumps({\"message\": f\"Hello, {name}!\", \"runtime\": \"python\"}))\n\nif __name__ == \"__main__\":\n    main()"}' && echo " -> hello-python created" || echo " -> hello-python skipped"
+        # hello-python (handler-only style)
+        curl -sf -X POST http://nova:9000/functions -H "Content-Type: application/json" -d '{"name":"hello-python","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"def handler(event, context):\n    name = event.get(\"name\", \"World\")\n    return {\"message\": f\"Hello, {name}!\", \"runtime\": \"python\"}"}' && echo " -> hello-python created" || echo " -> hello-python skipped"
 
-        # hello-node
-        curl -sf -X POST http://nova:9000/functions -H "Content-Type: application/json" -d '{"name":"hello-node","runtime":"node","handler":"handler","memory_mb":256,"timeout_s":30,"code":"const fs = require(\"fs\");\nconst event = JSON.parse(fs.readFileSync(process.argv[2], \"utf8\"));\nconst name = event.name || \"World\";\nconsole.log(JSON.stringify({ message: \"Hello, \" + name + \"!\", runtime: \"node\" }));"}' && echo " -> hello-node created" || echo " -> hello-node skipped"
+        # hello-node (handler-only style)
+        curl -sf -X POST http://nova:9000/functions -H "Content-Type: application/json" -d '{"name":"hello-node","runtime":"node","handler":"handler","memory_mb":256,"timeout_s":30,"code":"function handler(event, context) {\n  const name = event.name || \"World\";\n  return { message: \"Hello, \" + name + \"!\", runtime: \"node\" };\n}\n\nmodule.exports = { handler };"}' && echo " -> hello-node created" || echo " -> hello-node skipped"
 
-        # fibonacci
-        curl -sf -X POST http://nova:9000/functions -H "Content-Type: application/json" -d '{"name":"fibonacci","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import json\nimport sys\n\ndef fib(n):\n    if n <= 1:\n        return n\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b\n\ndef main():\n    with open(sys.argv[1]) as f:\n        event = json.load(f)\n    n = event.get(\"n\", 10)\n    result = fib(n)\n    print(json.dumps({\"n\": n, \"fibonacci\": result}))\n\nif __name__ == \"__main__\":\n    main()"}' && echo " -> fibonacci created" || echo " -> fibonacci skipped"
+        # fibonacci (handler-only style)
+        curl -sf -X POST http://nova:9000/functions -H "Content-Type: application/json" -d '{"name":"fibonacci","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"def handler(event, context):\n    def fib(n):\n        if n <= 1:\n            return n\n        a, b = 0, 1\n        for _ in range(2, n + 1):\n            a, b = b, a + b\n        return b\n    n = event.get(\"n\", 10)\n    return {\"n\": n, \"fibonacci\": fib(n)}"}' && echo " -> fibonacci created" || echo " -> fibonacci skipped"
 
-        # echo
-        curl -sf -X POST http://nova:9000/functions -H "Content-Type: application/json" -d '{"name":"echo","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import json\nimport sys\nimport time\n\ndef main():\n    with open(sys.argv[1]) as f:\n        event = json.load(f)\n    print(json.dumps({\"echo\": event, \"timestamp\": time.time()}))\n\nif __name__ == \"__main__\":\n    main()"}' && echo " -> echo created" || echo " -> echo skipped"
+        # echo (handler-only style)
+        curl -sf -X POST http://nova:9000/functions -H "Content-Type: application/json" -d '{"name":"echo","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import time\n\ndef handler(event, context):\n    return {\"echo\": event, \"timestamp\": time.time()}"}' && echo " -> echo created" || echo " -> echo skipped"
 
-        # prime-checker
-        curl -sf -X POST http://nova:9000/functions -H "Content-Type: application/json" -d '{"name":"prime-checker","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import json\nimport sys\nimport math\n\ndef is_prime(n):\n    if n < 2:\n        return False\n    if n == 2:\n        return True\n    if n % 2 == 0:\n        return False\n    for i in range(3, int(math.sqrt(n)) + 1, 2):\n        if n % i == 0:\n            return False\n    return True\n\ndef main():\n    with open(sys.argv[1]) as f:\n        event = json.load(f)\n    n = event.get(\"n\", 17)\n    result = is_prime(n)\n    print(json.dumps({\"n\": n, \"is_prime\": result}))\n\nif __name__ == \"__main__\":\n    main()"}' && echo " -> prime-checker created" || echo " -> prime-checker skipped"
+        # prime-checker (handler-only style)
+        curl -sf -X POST http://nova:9000/functions -H "Content-Type: application/json" -d '{"name":"prime-checker","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import math\n\ndef handler(event, context):\n    n = event.get(\"n\", 17)\n    if n < 2:\n        return {\"n\": n, \"is_prime\": False}\n    if n == 2:\n        return {\"n\": n, \"is_prime\": True}\n    if n % 2 == 0:\n        return {\"n\": n, \"is_prime\": False}\n    for i in range(3, int(math.sqrt(n)) + 1, 2):\n        if n % i == 0:\n            return {\"n\": n, \"is_prime\": False}\n    return {\"n\": n, \"is_prime\": True}"}' && echo " -> prime-checker created" || echo " -> prime-checker skipped"
 
         echo "Sample functions seeding complete!"
 

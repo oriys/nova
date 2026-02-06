@@ -1682,12 +1682,16 @@ type VsockMessage struct {
 }
 
 type InitPayload struct {
-	Runtime   string            `json:"runtime"`
-	Handler   string            `json:"handler"`
-	EnvVars   map[string]string `json:"env_vars"`
-	Command   []string          `json:"command,omitempty"`
-	Extension string            `json:"extension,omitempty"`
-	Mode      string            `json:"mode,omitempty"`
+	Runtime         string            `json:"runtime"`
+	Handler         string            `json:"handler"`
+	EnvVars         map[string]string `json:"env_vars"`
+	Command         []string          `json:"command,omitempty"`
+	Extension       string            `json:"extension,omitempty"`
+	Mode            string            `json:"mode,omitempty"`
+	FunctionName    string            `json:"function_name,omitempty"`
+	FunctionVersion int               `json:"function_version,omitempty"`
+	MemoryMB        int               `json:"memory_mb,omitempty"`
+	TimeoutS        int               `json:"timeout_s,omitempty"`
 }
 
 type ExecPayload struct {
@@ -1849,12 +1853,16 @@ func (c *VsockClient) Init(fn *domain.Function) error {
 	defer c.mu.Unlock()
 
 	payload, _ := json.Marshal(&InitPayload{
-		Runtime:   string(fn.Runtime),
-		Handler:   fn.Handler,
-		EnvVars:   fn.EnvVars,
-		Command:   fn.RuntimeCommand,
-		Extension: fn.RuntimeExtension,
-		Mode:      string(fn.Mode),
+		Runtime:         string(fn.Runtime),
+		Handler:         fn.Handler,
+		EnvVars:         fn.EnvVars,
+		Command:         fn.RuntimeCommand,
+		Extension:       fn.RuntimeExtension,
+		Mode:            string(fn.Mode),
+		FunctionName:    fn.Name,
+		FunctionVersion: fn.Version,
+		MemoryMB:        fn.MemoryMB,
+		TimeoutS:        fn.TimeoutS,
 	})
 	c.initPayload = payload
 	if err := c.redialAndInitLocked(5 * time.Second); err != nil {

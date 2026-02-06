@@ -67,12 +67,16 @@ type Message struct {
 }
 
 type InitPayload struct {
-	Runtime   string            `json:"runtime"`
-	Handler   string            `json:"handler"`
-	EnvVars   map[string]string `json:"env_vars"`
-	Command   []string          `json:"command,omitempty"`
-	Extension string            `json:"extension,omitempty"`
-	Mode      ExecutionMode     `json:"mode,omitempty"` // "process" or "persistent"
+	Runtime         string            `json:"runtime"`
+	Handler         string            `json:"handler"`
+	EnvVars         map[string]string `json:"env_vars"`
+	Command         []string          `json:"command,omitempty"`
+	Extension       string            `json:"extension,omitempty"`
+	Mode            ExecutionMode     `json:"mode,omitempty"` // "process" or "persistent"
+	FunctionName    string            `json:"function_name,omitempty"`
+	FunctionVersion int               `json:"function_version,omitempty"`
+	MemoryMB        int               `json:"memory_mb,omitempty"`
+	TimeoutS        int               `json:"timeout_s,omitempty"`
 }
 
 type ExecPayload struct {
@@ -230,6 +234,11 @@ func (a *Agent) handleInit(payload json.RawMessage) (*Message, error) {
 	a.function = &init
 	fmt.Printf("[agent] Init: runtime=%s handler=%s mode=%s\n", init.Runtime, init.Handler, init.Mode)
 
+	// Write bootstrap script for interpreted runtimes
+	if err := a.writeBootstrap(); err != nil {
+		fmt.Fprintf(os.Stderr, "[agent] Warning: failed to write bootstrap: %v\n", err)
+	}
+
 	// For persistent mode, start the process now
 	if init.Mode == ModePersistent {
 		if err := a.startPersistentProcess(); err != nil {
@@ -243,24 +252,59 @@ func (a *Agent) handleInit(payload json.RawMessage) (*Message, error) {
 	}, nil
 }
 
+// writeBootstrap writes the runtime-appropriate bootstrap script to /tmp
+func (a *Agent) writeBootstrap() error {
+	ext := bootstrapExtension(a.function.Runtime)
+	if ext == "" {
+		return nil // compiled runtimes don't need a bootstrap
+	}
+	content := bootstrapContent(a.function.Runtime)
+	if content == "" {
+		return nil
+	}
+	path := "/tmp/_bootstrap" + ext
+	if err := os.WriteFile(path, []byte(content), 0755); err != nil {
+		return err
+	}
+	fmt.Printf("[agent] Wrote bootstrap: %s\n", path)
+	return nil
+}
+
 // startPersistentProcess starts a long-running function process for connection reuse
 func (a *Agent) startPersistentProcess() error {
 	var cmd *exec.Cmd
 	switch a.function.Runtime {
 	case "python":
-		// Python persistent mode: reads JSON lines from stdin, writes to stdout
-		cmd = exec.Command(resolveBinary(pythonPath, "python3"), "-u", CodePath, "--persistent")
+		cmd = exec.Command(resolveBinary(pythonPath, "python3"), "/tmp/_bootstrap.py", "--persistent")
+	case "node":
+		cmd = exec.Command(resolveBinary(nodePath, "node"), "/tmp/_bootstrap.js", "--persistent")
+	case "ruby":
+		cmd = exec.Command(resolveBinary(rubyPath, "ruby"), "/tmp/_bootstrap.rb", "--persistent")
+	case "php":
+		cmd = exec.Command(resolveBinary(phpPath, "php"), "/tmp/_bootstrap.php", "--persistent")
+	case "deno":
+		cmd = exec.Command(resolveBinary(denoPath, "deno"), "run", "--allow-read", "--allow-env", "/tmp/_bootstrap.ts", "--persistent")
+	case "bun":
+		cmd = exec.Command(resolveBinary(bunPath, "bun"), "run", "/tmp/_bootstrap.js", "--persistent")
+	case "lua":
+		cmd = exec.Command(resolveBinary(luaPath, "lua"), "/tmp/_bootstrap.lua", "--persistent")
 	case "go", "rust":
 		cmd = exec.Command(CodePath, "--persistent")
 	case "wasm":
-		// WASM persistent mode: wasmtime with stdin/stdout communication
-		// The WASM module must implement a loop reading JSON from stdin
 		cmd = exec.Command(resolveBinary(wasmtimePath, "wasmtime"), CodePath, "--", "--persistent")
 	default:
 		return fmt.Errorf("persistent mode not supported for runtime: %s", a.function.Runtime)
 	}
 
 	cmd.Env = append(defaultEnv(), "NOVA_MODE=persistent", "NOVA_CODE_DIR="+CodeMountPoint)
+	// Inject context env vars for persistent bootstraps
+	cmd.Env = append(cmd.Env,
+		"NOVA_FUNCTION_NAME="+a.function.FunctionName,
+		fmt.Sprintf("NOVA_FUNCTION_VERSION=%d", a.function.FunctionVersion),
+		fmt.Sprintf("NOVA_MEMORY_LIMIT_MB=%d", a.function.MemoryMB),
+		fmt.Sprintf("NOVA_TIMEOUT_S=%d", a.function.TimeoutS),
+		"NOVA_RUNTIME="+a.function.Runtime,
+	)
 	// Add dependency paths based on runtime
 	cmd.Env = appendDependencyEnv(cmd.Env, a.function.Runtime)
 	for k, v := range a.function.EnvVars {
@@ -314,7 +358,13 @@ func (a *Agent) handleReload(payload json.RawMessage) (*Message, error) {
 		a.persistentOutRaw = nil
 	}
 
-	// 2. Clear /code directory contents
+	// 2. Remount code drive as read-write (it's mounted read-only at boot)
+	if err := remountCodeDriveRW(); err != nil {
+		return nil, fmt.Errorf("remount code drive rw: %w", err)
+	}
+	defer remountCodeDriveRO()
+
+	// 3. Clear /code directory contents
 	entries, err := os.ReadDir(CodeMountPoint)
 	if err == nil {
 		for _, entry := range entries {
@@ -322,7 +372,7 @@ func (a *Agent) handleReload(payload json.RawMessage) (*Message, error) {
 		}
 	}
 
-	// 3. Write new files
+	// 4. Write new files
 	for name, content := range req.Files {
 		path := filepath.Join(CodeMountPoint, name)
 		// Create parent directories
@@ -337,7 +387,7 @@ func (a *Agent) handleReload(payload json.RawMessage) (*Message, error) {
 		fmt.Printf("[agent] Wrote file: %s (%d bytes)\n", name, len(content))
 	}
 
-	// 4. Restart persistent process if in persistent mode
+	// 5. Restart persistent process if in persistent mode
 	if a.function != nil && a.function.Mode == ModePersistent {
 		fmt.Println("[agent] Restarting persistent process after reload")
 		if err := a.startPersistentProcess(); err != nil {
@@ -369,7 +419,7 @@ func (a *Agent) handleExec(payload json.RawMessage) (*Message, error) {
 	}
 
 	start := time.Now()
-	output, stdout, stderr, execErr := a.executeFunction(req.Input, req.TimeoutS)
+	output, stdout, stderr, execErr := a.executeFunction(req.Input, req.TimeoutS, req.RequestID)
 	duration := time.Since(start).Milliseconds()
 
 	// Log execution result
@@ -395,7 +445,7 @@ func (a *Agent) handleExec(payload json.RawMessage) (*Message, error) {
 	return &Message{Type: MsgTypeResp, Payload: respData}, nil
 }
 
-func (a *Agent) executeFunction(input json.RawMessage, timeoutS int) (json.RawMessage, string, string, error) {
+func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID string) (json.RawMessage, string, string, error) {
 	// Use persistent mode if available
 	if a.function.Mode == ModePersistent && a.persistentProc != nil {
 		output, err := a.executePersistent(input, timeoutS)
@@ -429,29 +479,26 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int) (json.RawMe
 	} else {
 		switch a.function.Runtime {
 		case "python":
-			cmd = exec.CommandContext(ctx, resolveBinary(pythonPath, "python3"), CodePath, "/tmp/input.json")
+			cmd = exec.CommandContext(ctx, resolveBinary(pythonPath, "python3"), "/tmp/_bootstrap.py", "/tmp/input.json")
+		case "node":
+			cmd = exec.CommandContext(ctx, resolveBinary(nodePath, "node"), "/tmp/_bootstrap.js", "/tmp/input.json")
+		case "ruby":
+			cmd = exec.CommandContext(ctx, resolveBinary(rubyPath, "ruby"), "/tmp/_bootstrap.rb", "/tmp/input.json")
+		case "php":
+			cmd = exec.CommandContext(ctx, resolveBinary(phpPath, "php"), "/tmp/_bootstrap.php", "/tmp/input.json")
+		case "deno":
+			cmd = exec.CommandContext(ctx, resolveBinary(denoPath, "deno"), "run", "--allow-read", "--allow-env", "/tmp/_bootstrap.ts", "/tmp/input.json")
+		case "bun":
+			cmd = exec.CommandContext(ctx, resolveBinary(bunPath, "bun"), "run", "/tmp/_bootstrap.js", "/tmp/input.json")
+		case "lua":
+			cmd = exec.CommandContext(ctx, resolveBinary(luaPath, "lua"), "/tmp/_bootstrap.lua", "/tmp/input.json")
 		case "go", "rust", "zig", "swift":
 			cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
 		case "wasm":
 			cmd = exec.CommandContext(ctx, resolveBinary(wasmtimePath, "wasmtime"), CodePath, "--", "/tmp/input.json")
-		case "node":
-			cmd = exec.CommandContext(ctx, resolveBinary(nodePath, "node"), CodePath, "/tmp/input.json")
-		case "ruby":
-			cmd = exec.CommandContext(ctx, resolveBinary(rubyPath, "ruby"), CodePath, "/tmp/input.json")
 		case "java", "kotlin", "scala":
-			// Java/Kotlin/Scala all compile to JAR files executed via JVM
 			cmd = exec.CommandContext(ctx, resolveBinary(javaPath, "java"), "-jar", CodePath, "/tmp/input.json")
-		case "php":
-			cmd = exec.CommandContext(ctx, resolveBinary(phpPath, "php"), CodePath, "/tmp/input.json")
-		case "lua":
-			cmd = exec.CommandContext(ctx, resolveBinary(luaPath, "lua"), CodePath, "/tmp/input.json")
-		case "deno":
-			// Deno needs --allow-read for input file
-			cmd = exec.CommandContext(ctx, resolveBinary(denoPath, "deno"), "run", "--allow-read", CodePath, "/tmp/input.json")
-		case "bun":
-			cmd = exec.CommandContext(ctx, resolveBinary(bunPath, "bun"), "run", CodePath, "/tmp/input.json")
 		case "dotnet":
-			// Expect a single-file apphost at /code/handler (PublishSingleFile=true).
 			cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
 		case "custom", "provided":
 			bootstrapPath := filepath.Join(CodeMountPoint, "bootstrap")
@@ -462,6 +509,15 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int) (json.RawMe
 	}
 
 	cmd.Env = append(defaultEnv(), "NOVA_CODE_DIR="+CodeMountPoint)
+	// Inject context env vars
+	cmd.Env = append(cmd.Env,
+		"NOVA_REQUEST_ID="+requestID,
+		"NOVA_FUNCTION_NAME="+a.function.FunctionName,
+		fmt.Sprintf("NOVA_FUNCTION_VERSION=%d", a.function.FunctionVersion),
+		fmt.Sprintf("NOVA_MEMORY_LIMIT_MB=%d", a.function.MemoryMB),
+		fmt.Sprintf("NOVA_TIMEOUT_S=%d", a.function.TimeoutS),
+		"NOVA_RUNTIME="+a.function.Runtime,
+	)
 	// Add dependency paths based on runtime
 	cmd.Env = appendDependencyEnv(cmd.Env, a.function.Runtime)
 	if a.function.Runtime == "dotnet" {
@@ -515,9 +571,19 @@ func enrichExecError(err error, runtime string) error {
 // executePersistent sends request to long-running process via stdin/stdout
 func (a *Agent) executePersistent(input json.RawMessage, timeoutS int) (json.RawMessage, error) {
 	// Protocol: write JSON line to stdin, read JSON line from stdout
-	// Format: {"input": ...}\n -> {"output": ...}\n
+	// Format: {"input": ..., "context": {...}}\n -> {"output": ...}\n
 
-	req := map[string]json.RawMessage{"input": input}
+	req := map[string]interface{}{
+		"input": json.RawMessage(input),
+		"context": map[string]interface{}{
+			"request_id":      os.Getenv("NOVA_REQUEST_ID"),
+			"function_name":   a.function.FunctionName,
+			"function_version": a.function.FunctionVersion,
+			"memory_limit_mb": a.function.MemoryMB,
+			"timeout_s":       a.function.TimeoutS,
+			"runtime":         a.function.Runtime,
+		},
+	}
 	reqBytes, _ := json.Marshal(req)
 	reqBytes = append(reqBytes, '\n')
 

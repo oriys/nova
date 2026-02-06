@@ -1,34 +1,26 @@
-#!/usr/bin/env python3
 """
 Persistent mode database function with connection reuse.
 
-This function runs as a long-lived process, reading JSON requests from stdin
-and writing JSON responses to stdout. Database connections are maintained
-across invocations.
-
-Protocol:
-  Input:  {"input": {...}}\n
-  Output: {"output": {...}}\n  or  {"error": "..."}\n
+This function maintains database connections across invocations.
+The bootstrap handles persistent mode stdin/stdout protocol automatically.
 
 Usage:
   nova register db-persistent \
     --runtime python \
     --code examples/db_persistent.py \
+    --mode persistent \
     --env DB_HOST=172.30.0.1 \
     --env DB_USER=nova \
     --env DB_PASSWORD=secret
 """
 
-import json
-import sys
 import os
+import sys
 
-# Global connection - reused across invocations
 _db_conn = None
 
 
 def get_connection():
-    """Get or create database connection"""
     global _db_conn
 
     if _db_conn is not None:
@@ -48,12 +40,11 @@ def get_connection():
         password=os.environ.get("DB_PASSWORD", "secret"),
     )
     _db_conn.autocommit = True
-    print(f"[db] Connection established", file=sys.stderr)
+    print("[db] Connection established", file=sys.stderr)
     return _db_conn
 
 
-def handler(event):
-    """Execute database query"""
+def handler(event, context):
     query = event.get("query", "SELECT 1 as result")
     params = event.get("params", [])
 
@@ -73,36 +64,3 @@ def handler(event):
         return {"error": str(e)}
     finally:
         cur.close()
-
-
-def run_persistent():
-    """Persistent mode: read requests from stdin, write responses to stdout"""
-    print("[persistent] Starting persistent mode", file=sys.stderr)
-
-    for line in sys.stdin:
-        try:
-            req = json.loads(line.strip())
-            event = req.get("input", {})
-
-            result = handler(event)
-
-            response = {"output": result}
-            print(json.dumps(response), flush=True)
-
-        except Exception as e:
-            print(json.dumps({"error": str(e)}), flush=True)
-
-
-def run_single(input_file):
-    """Single invocation mode: read from file, write to stdout"""
-    with open(input_file) as f:
-        event = json.load(f)
-    print(json.dumps(handler(event)))
-
-
-if __name__ == "__main__":
-    if "--persistent" in sys.argv or os.environ.get("NOVA_MODE") == "persistent":
-        run_persistent()
-    else:
-        input_file = sys.argv[1] if len(sys.argv) > 1 else "/tmp/input.json"
-        run_single(input_file)
