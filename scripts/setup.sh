@@ -240,6 +240,24 @@ stop_existing_services() {
     systemctl reset-failed nova-lumen >/dev/null 2>&1 || true
 }
 
+reset_installation_state() {
+    log "Resetting installation state (fresh deployment)..."
+
+    stop_existing_services
+
+    # Remove all runtime artifacts under /opt/nova so every run starts clean.
+    rm -rf \
+        "${INSTALL_DIR}/kernel" \
+        "${INSTALL_DIR}/rootfs" \
+        "${INSTALL_DIR}/bin" \
+        "${INSTALL_DIR}/snapshots" \
+        "${INSTALL_DIR}/configs" \
+        "${INSTALL_DIR}/lumen"
+
+    # Remove transient runtime state.
+    rm -rf /tmp/nova
+}
+
 # ─── Dependencies ────────────────────────────────────────
 install_deps() {
     log "Installing system dependencies..."
@@ -319,19 +337,27 @@ install_postgres() {
 }
 
 setup_database() {
-    log "Setting up Nova database..."
+    log "Setting up Nova database (fresh start)..."
 
-    # Create user if not exists
-    if ! su - postgres -c "psql -tAc \"SELECT 1 FROM pg_roles WHERE rolname='nova'\"" | grep -q 1; then
-        su - postgres -c "psql -c \"CREATE USER nova WITH PASSWORD 'nova';\""
-        log "Created database user: nova"
-    fi
+    info "  Recreating role/database..."
+    su - postgres -c "psql -v ON_ERROR_STOP=1" >/dev/null <<'SQL'
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'nova') THEN
+        ALTER ROLE nova WITH LOGIN PASSWORD 'nova';
+    ELSE
+        CREATE ROLE nova WITH LOGIN PASSWORD 'nova';
+    END IF;
+END
+$$;
 
-    # Create database if not exists
-    if ! su - postgres -c "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='nova'\"" | grep -q 1; then
-        su - postgres -c "psql -c \"CREATE DATABASE nova OWNER nova;\""
-        log "Created database: nova"
-    fi
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE datname = 'nova' AND pid <> pg_backend_pid();
+
+DROP DATABASE IF EXISTS nova;
+CREATE DATABASE nova OWNER nova;
+SQL
 
     # Run schema initialization
     if [[ -f "${SCRIPT_DIR}/init-db.sql" ]]; then
@@ -342,59 +368,6 @@ setup_database() {
     else
         warn "init-db.sql not found at ${SCRIPT_DIR}/init-db.sql - skipping schema initialization"
     fi
-
-    # Normalize ownership for existing objects (covers upgrades from old setup runs).
-    info "  Normalizing DB object ownership to role nova..."
-    su - postgres -c "psql -d nova -v ON_ERROR_STOP=1" >/dev/null <<'SQL'
-SET lock_timeout = '10s';
-SET statement_timeout = '10min';
-ALTER DATABASE nova OWNER TO nova;
-ALTER SCHEMA public OWNER TO nova;
-
-DO $$
-DECLARE
-    r RECORD;
-BEGIN
-    FOR r IN
-        SELECT tablename
-        FROM pg_tables
-        WHERE schemaname = 'public'
-    LOOP
-        EXECUTE format('ALTER TABLE public.%I OWNER TO nova', r.tablename);
-    END LOOP;
-
-    FOR r IN
-        SELECT sequence_name
-        FROM information_schema.sequences
-        WHERE sequence_schema = 'public'
-    LOOP
-        EXECUTE format('ALTER SEQUENCE public.%I OWNER TO nova', r.sequence_name);
-    END LOOP;
-
-    FOR r IN
-        SELECT viewname
-        FROM pg_views
-        WHERE schemaname = 'public'
-    LOOP
-        EXECUTE format('ALTER VIEW public.%I OWNER TO nova', r.viewname);
-    END LOOP;
-
-    FOR r IN
-        SELECT matviewname
-        FROM pg_matviews
-        WHERE schemaname = 'public'
-    LOOP
-        EXECUTE format('ALTER MATERIALIZED VIEW public.%I OWNER TO nova', r.matviewname);
-    END LOOP;
-END
-$$;
-
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO nova;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO nova;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO nova;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO nova;
-SQL
-    log "Database ownership normalized for role: nova"
 
     log "PostgreSQL configured (db=nova user=nova)"
 }
@@ -1127,17 +1100,14 @@ main() {
     install_deps
     install_nodejs
 
+    # Reset previous installation state.
+    reset_installation_state
+
     # Create directories
     log "Setting up directories..."
     mkdir -p "${INSTALL_DIR}"/{kernel,rootfs,bin,snapshots,configs,lumen}
     mkdir -p /tmp/nova/{sockets,vsock,logs}
     chmod 755 "${INSTALL_DIR}" "${INSTALL_DIR}"/{kernel,rootfs,bin,snapshots,configs,lumen}
-
-    # Avoid DB lock contention during schema/ownership migration.
-    stop_existing_services
-
-    # Ensure old installed binaries do not interfere with fresh deployment.
-    cleanup_existing_binaries
 
     # PostgreSQL
     install_postgres
