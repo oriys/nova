@@ -86,7 +86,8 @@ struct Event { name: Option<String> }
 struct Response { message: String }
 
 fn main() {
-    let data = fs::read_to_string(&env::args().nth(1).unwrap()).unwrap();
+    let args: Vec<String> = env::args().collect();
+    let data = fs::read_to_string(&args[1]).unwrap();
     let event: Event = serde_json::from_str(&data).unwrap();
     let name = event.name.unwrap_or_else(|| "World".to_string());
     let resp = Response { message: format!("Hello, {}!", name) };
