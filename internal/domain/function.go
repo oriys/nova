@@ -188,5 +188,18 @@ func NeedsCompilation(runtime Runtime) bool {
 		RuntimeDotnet: true,
 		RuntimeScala:  true,
 	}
-	return compiledRuntimes[runtime]
+	if compiledRuntimes[runtime] {
+		return true
+	}
+
+	rt := string(runtime)
+	versionedPrefixes := []string{
+		"go1.", "rust1.", "java", "dotnet", "scala",
+	}
+	for _, prefix := range versionedPrefixes {
+		if len(rt) > len(prefix) && rt[:len(prefix)] == prefix {
+			return true
+		}
+	}
+	return false
 }

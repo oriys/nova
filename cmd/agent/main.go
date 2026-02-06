@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/oriys/nova/internal/pkg/vsock"
@@ -489,7 +490,7 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int) (json.RawMe
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return nil, stdout, stderr, fmt.Errorf("exit %d: %s", exitErr.ExitCode(), stderr)
 		}
-		return nil, stdout, stderr, err
+		return nil, stdout, stderr, enrichExecError(err, a.function.Runtime)
 	}
 
 	output := stdoutBuf.Bytes()
@@ -498,6 +499,17 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int) (json.RawMe
 	}
 	result, _ := json.Marshal(string(output))
 	return result, "", stderr, nil
+}
+
+func enrichExecError(err error, runtime string) error {
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) && errors.Is(pathErr.Err, syscall.ENOEXEC) {
+		if runtime == "go" || runtime == "rust" || runtime == "zig" || runtime == "swift" || runtime == "dotnet" {
+			return fmt.Errorf("%w (exec format error: /code/handler must be a Linux executable for the VM architecture, e.g. x86_64-unknown-linux-musl)", err)
+		}
+		return fmt.Errorf("%w (exec format error: check shebang and executable format of /code/handler)", err)
+	}
+	return err
 }
 
 // executePersistent sends request to long-running process via stdin/stdout
@@ -649,6 +661,14 @@ func normalizeRuntime(rt string) string {
 		return "php"
 	case strings.HasPrefix(rt, "dotnet"):
 		return "dotnet"
+	case strings.HasPrefix(rt, "go"):
+		return "go"
+	case strings.HasPrefix(rt, "rust"):
+		return "rust"
+	case strings.HasPrefix(rt, "swift"):
+		return "swift"
+	case strings.HasPrefix(rt, "zig"):
+		return "zig"
 	default:
 		return rt
 	}
