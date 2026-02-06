@@ -472,19 +472,50 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 		// Load Snapshot (pass funcID for metadata lookup and original CID for resource management)
 		err = m.apiLoadSnapshot(ctx, vm, snapshotPath, memPath, fn.ID, cid)
 		if err != nil {
-			// Check if it's an old snapshot without required metadata
-			if strings.Contains(err.Error(), "missing code_drive field") {
-				logging.Op().Warn("invalid snapshot detected, falling back to fresh boot",
-					"func_id", fn.ID,
-					"error", err)
-				// Delete invalid snapshot files
-				os.Remove(snapshotPath)
-				os.Remove(memPath)
-				os.Remove(filepath.Join(m.config.SnapshotDir, fn.ID+".meta"))
-				// Fall back to fresh boot
-				useSnapshot = false
-				err = m.apiBoot(ctx, vm, rootfsPath, codeDrive, fn)
+			logging.Op().Warn("snapshot load failed, falling back to fresh boot",
+				"func_id", fn.ID,
+				"error", err)
+
+			// Delete broken snapshot files so we don't hit this again
+			os.Remove(snapshotPath)
+			os.Remove(memPath)
+			metaPath := filepath.Join(m.config.SnapshotDir, fn.ID+".meta")
+			os.Remove(metaPath)
+
+			// After a failed /snapshot/load the Firecracker process is in
+			// an undefined state. Kill it and start a fresh one.
+			if vm.Cmd != nil && vm.Cmd.Process != nil {
+				syscall.Kill(-vm.Cmd.Process.Pid, syscall.SIGKILL)
+				vm.Cmd.Wait()
 			}
+			removeSocketClient(vm.SocketPath)
+			os.Remove(vm.SocketPath)
+
+			logFile2, err2 := os.Create(filepath.Join(m.config.LogDir, vmID+".log"))
+			if err2 != nil {
+				vm.State = VMStateStopped
+				return nil, fmt.Errorf("create log file for fresh boot: %w", err2)
+			}
+			cmd2 := exec.Command(m.config.FirecrackerBin, "--api-sock", vm.SocketPath)
+			cmd2.Stdout = logFile2
+			cmd2.Stderr = logFile2
+			cmd2.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+			if err2 = cmd2.Start(); err2 != nil {
+				logFile2.Close()
+				vm.State = VMStateStopped
+				return nil, fmt.Errorf("restart firecracker for fresh boot: %w", err2)
+			}
+			logFile2.Close()
+			vm.Cmd = cmd2
+
+			if err2 = m.waitForSocket(ctx, vm.SocketPath, cmd2.Process, m.config.BootTimeout); err2 != nil {
+				m.StopVM(vm.ID)
+				return nil, fmt.Errorf("wait api socket (fresh boot): %w", err2)
+			}
+
+			// Fall back to fresh boot with the original code drive
+			useSnapshot = false
+			err = m.apiBoot(ctx, vm, rootfsPath, codeDrive, fn)
 		} else {
 			// Snapshot loaded successfully - apiLoadSnapshot already released the original CID
 			cidAllocated = false
@@ -969,13 +1000,9 @@ func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath
 			return fmt.Errorf("restore snapshot code drive backing file: %w", err)
 		}
 	}
-	vm.CodeDrive = meta.CodeDrive
-	vm.PreserveCodeDrive = true
-
-	// Clean up the newly created code drive since we're using the snapshot's code drive
-	if originalCodeDrive != meta.CodeDrive {
-		os.Remove(originalCodeDrive)
-	}
+	// Don't update vm.CodeDrive or delete originalCodeDrive yet —
+	// wait until the Firecracker API call succeeds. If it fails, the
+	// caller can fall back to fresh boot using the original code drive.
 
 	// Configure logger before snapshot load (allowed per API)
 	logPath := filepath.Join(m.config.LogDir, vm.ID+"-fc.log")
@@ -1010,10 +1037,22 @@ func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath
 			m.releaseCID(meta.VsockCID)
 		}
 		vm.CID = originalCID // restore original CID for caller cleanup
+		// Restore vm.CodeDrive so caller can fall back to fresh boot
+		vm.CodeDrive = originalCodeDrive
+		vm.PreserveCodeDrive = false
 		return fmt.Errorf("load snapshot: %w", err)
 	}
 
-	// Snapshot loaded successfully - release the original CID since we're now using the snapshot's CID
+	// Snapshot loaded successfully
+	vm.CodeDrive = meta.CodeDrive
+	vm.PreserveCodeDrive = true
+
+	// Clean up the newly created code drive since we're using the snapshot's
+	if originalCodeDrive != meta.CodeDrive {
+		os.Remove(originalCodeDrive)
+	}
+
+	// Release the original CID since we're now using the snapshot's CID
 	if originalCID != meta.VsockCID {
 		m.releaseCID(originalCID)
 	}
