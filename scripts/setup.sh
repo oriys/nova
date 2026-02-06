@@ -232,6 +232,14 @@ cleanup_deploy_build_binaries() {
     log "Removed ${removed} deployment build binary file(s)"
 }
 
+stop_existing_services() {
+    log "Stopping existing Nova services (if any)..."
+    systemctl stop nova >/dev/null 2>&1 || true
+    systemctl stop nova-lumen >/dev/null 2>&1 || true
+    systemctl reset-failed nova >/dev/null 2>&1 || true
+    systemctl reset-failed nova-lumen >/dev/null 2>&1 || true
+}
+
 # ─── Dependencies ────────────────────────────────────────
 install_deps() {
     log "Installing system dependencies..."
@@ -327,15 +335,19 @@ setup_database() {
 
     # Run schema initialization
     if [[ -f "${SCRIPT_DIR}/init-db.sql" ]]; then
+        info "  Applying init-db.sql as role nova..."
         # Run schema as role `nova` to ensure created objects are owned by nova.
-        su - postgres -c "psql -d nova -v ON_ERROR_STOP=1 -c 'SET ROLE nova;' -f '${SCRIPT_DIR}/init-db.sql'" >/dev/null 2>&1
+        su - postgres -c "psql -d nova -v ON_ERROR_STOP=1 -c \"SET lock_timeout = '10s'; SET statement_timeout = '10min'; SET ROLE nova;\" -f '${SCRIPT_DIR}/init-db.sql'" >/dev/null
         log "Database schema initialized"
     else
         warn "init-db.sql not found at ${SCRIPT_DIR}/init-db.sql - skipping schema initialization"
     fi
 
     # Normalize ownership for existing objects (covers upgrades from old setup runs).
-    su - postgres -c "psql -d nova -v ON_ERROR_STOP=1" >/dev/null 2>&1 <<'SQL'
+    info "  Normalizing DB object ownership to role nova..."
+    su - postgres -c "psql -d nova -v ON_ERROR_STOP=1" >/dev/null <<'SQL'
+SET lock_timeout = '10s';
+SET statement_timeout = '10min';
 ALTER DATABASE nova OWNER TO nova;
 ALTER SCHEMA public OWNER TO nova;
 
@@ -1120,6 +1132,9 @@ main() {
     mkdir -p "${INSTALL_DIR}"/{kernel,rootfs,bin,snapshots,configs,lumen}
     mkdir -p /tmp/nova/{sockets,vsock,logs}
     chmod 755 "${INSTALL_DIR}" "${INSTALL_DIR}"/{kernel,rootfs,bin,snapshots,configs,lumen}
+
+    # Avoid DB lock contention during schema/ownership migration.
+    stop_existing_services
 
     # Ensure old installed binaries do not interfere with fresh deployment.
     cleanup_existing_binaries
