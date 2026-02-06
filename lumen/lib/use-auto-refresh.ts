@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback, useRef } from "react"
 
-const STORAGE_KEY = "nova-auto-refresh"
+const STORAGE_KEY = "lumen-auto-refresh"
+const LEGACY_STORAGE_KEY = "nova-auto-refresh"
 
 export interface AutoRefreshConfig {
   dashboard: boolean
@@ -19,7 +20,14 @@ const defaultConfig: AutoRefreshConfig = {
 function loadConfig(): AutoRefreshConfig {
   if (typeof window === "undefined") return defaultConfig
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    let raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) {
+      raw = localStorage.getItem(LEGACY_STORAGE_KEY)
+      if (raw) {
+        localStorage.setItem(STORAGE_KEY, raw)
+        localStorage.removeItem(LEGACY_STORAGE_KEY)
+      }
+    }
     if (!raw) return defaultConfig
     return { ...defaultConfig, ...JSON.parse(raw) }
   } catch {

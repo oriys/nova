@@ -113,7 +113,7 @@ export default function DashboardPage() {
             <p className="font-medium">Failed to load dashboard</p>
             <p className="text-sm mt-1">{error}</p>
             <p className="text-sm mt-2 text-muted-foreground">
-              Make sure the Nova daemon is running on port 9000
+              Make sure the nova backend is running on port 9000
             </p>
           </div>
         </div>

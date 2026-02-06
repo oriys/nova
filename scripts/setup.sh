@@ -235,8 +235,12 @@ cleanup_deploy_build_binaries() {
 stop_existing_services() {
     log "Stopping existing Nova services (if any)..."
     systemctl stop nova >/dev/null 2>&1 || true
+    systemctl stop lumen >/dev/null 2>&1 || true
     systemctl stop nova-lumen >/dev/null 2>&1 || true
+    systemctl disable lumen >/dev/null 2>&1 || true
+    systemctl disable nova-lumen >/dev/null 2>&1 || true
     systemctl reset-failed nova >/dev/null 2>&1 || true
+    systemctl reset-failed lumen >/dev/null 2>&1 || true
     systemctl reset-failed nova-lumen >/dev/null 2>&1 || true
 }
 
@@ -886,9 +890,10 @@ deploy_lumen_frontend() {
     fi
 
     # Create systemd service
-    cat > /etc/systemd/system/nova-lumen.service << 'EOF'
+    rm -f /etc/systemd/system/nova-lumen.service
+    cat > /etc/systemd/system/lumen.service << 'EOF'
 [Unit]
-Description=Nova Lumen Dashboard
+Description=Lumen Dashboard
 After=nova.service network.target
 
 [Service]
@@ -904,7 +909,7 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-    log "Created systemd service: nova-lumen.service"
+    log "Created systemd service: lumen.service"
 }
 
 # ─── Start Services ──────────────────────────────────────
@@ -932,15 +937,15 @@ start_services() {
     done
 
     # Enable and start Lumen
-    systemctl enable nova-lumen >/dev/null 2>&1
-    systemctl start nova-lumen
+    systemctl enable lumen >/dev/null 2>&1
+    systemctl start lumen
 
     # Wait for Lumen to be ready
     retries=10
     while ! curl -sf http://localhost:3000 >/dev/null 2>&1; do
         retries=$((retries - 1))
         if [[ ${retries} -eq 0 ]]; then
-            warn "Lumen health check failed - check logs with: journalctl -u nova-lumen"
+            warn "Lumen health check failed - check logs with: journalctl -u lumen"
             break
         fi
         sleep 1
@@ -1040,7 +1045,7 @@ print_summary() {
     local pg_status nova_status lumen_status
     pg_status=$(systemctl is-active postgresql 2>/dev/null || echo "unknown")
     nova_status=$(systemctl is-active nova 2>/dev/null || echo "unknown")
-    lumen_status=$(systemctl is-active nova-lumen 2>/dev/null || echo "unknown")
+    lumen_status=$(systemctl is-active lumen 2>/dev/null || echo "unknown")
 
     if [[ "${pg_status}" == "active" ]]; then
         echo -e "  ${GREEN}[OK]${NC} PostgreSQL      - running"
@@ -1049,15 +1054,15 @@ print_summary() {
     fi
 
     if [[ "${nova_status}" == "active" ]]; then
-        echo -e "  ${GREEN}[OK]${NC} Nova Backend    - running on port 9000"
+        echo -e "  ${GREEN}[OK]${NC} nova            - running on port 9000"
     else
-        echo -e "  ${RED}[!!]${NC} Nova Backend    - ${nova_status}"
+        echo -e "  ${RED}[!!]${NC} nova            - ${nova_status}"
     fi
 
     if [[ "${lumen_status}" == "active" ]]; then
-        echo -e "  ${GREEN}[OK]${NC} Lumen Dashboard - running on port 3000"
+        echo -e "  ${GREEN}[OK]${NC} lumen           - running on port 3000"
     else
-        echo -e "  ${RED}[!!]${NC} Lumen Dashboard - ${lumen_status}"
+        echo -e "  ${RED}[!!]${NC} lumen           - ${lumen_status}"
     fi
 
     echo ""
@@ -1072,9 +1077,9 @@ print_summary() {
     echo "  Useful Commands:"
     echo "  ----------------"
     echo "  journalctl -u nova -f          # View Nova logs"
-    echo "  journalctl -u nova-lumen -f    # View Lumen logs"
+    echo "  journalctl -u lumen -f         # View Lumen logs"
     echo "  systemctl restart nova         # Restart Nova"
-    echo "  systemctl restart nova-lumen   # Restart Lumen"
+    echo "  systemctl restart lumen        # Restart Lumen"
     echo ""
 
     # Health check

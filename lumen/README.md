@@ -1,12 +1,12 @@
-# Lumen - Nova Frontend
+# lumen - frontend for nova
 
-Nova 的 Web 管理界面。
+lumen 是 nova 的 Web 管理界面。
 
 ## 开发
 
 ### 前提条件
 
-确保 Nova 后端正在运行：
+确保 nova 后端正在运行：
 
 ```bash
 # 在 nova 根目录

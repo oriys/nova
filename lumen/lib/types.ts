@@ -1,5 +1,5 @@
 // Frontend types and transformers
-// Converts between Nova backend types and frontend display types
+// Converts between nova backend types and lumen display types
 
 import type { NovaFunction, LogEntry as ApiLogEntry, FunctionMetrics, Runtime, CompileStatus } from "./api";
 
@@ -110,7 +110,7 @@ export function transformFunction(
     errors,
     avgDuration: Math.round(avgDuration),
     lastModified: fn.updated_at,
-    region: "local", // Nova runs locally
+    region: "local", // nova runs locally
     handler: fn.handler,
     codeHash: fn.code_hash,
     minReplicas: fn.min_replicas,

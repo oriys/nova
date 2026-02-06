@@ -1,5 +1,5 @@
-// Nova API Client
-// Connects to the Nova backend at /api (proxied via Next.js rewrites)
+// nova API client
+// Connects to the nova backend at /api (proxied via Next.js rewrites)
 
 const API_BASE = "/api";
 
