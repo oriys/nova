@@ -278,23 +278,54 @@ func (c *Compiler) compile(ctx context.Context, fn *domain.Function, sourceCode 
 		return nil, fmt.Errorf("unsupported compiled runtime: %s", fn.Runtime)
 	}
 
-	// Run Docker compilation
-	args := []string{
-		"run", "--rm",
-		"-v", workDir + ":/work",
-		image,
-		"sh", "-c", buildCmd,
-	}
-
-	cmd := exec.CommandContext(ctx, "docker", args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	// Use docker create + docker cp pattern instead of bind mounts (-v).
+	// This works in Docker-in-Docker (e.g. Docker Compose with socket sharing)
+	// where the host daemon can't see paths inside the nova container.
+	containerName := fmt.Sprintf("nova-compile-%s-%d", fn.Name, os.Getpid())
 
 	logging.Op().Info("starting compilation", "function", fn.Name, "runtime", fn.Runtime, "image", image)
 
-	if err := cmd.Run(); err != nil {
+	// Step 1: Create container (not started)
+	createArgs := []string{"create", "--name", containerName, image, "sh", "-c", buildCmd}
+	createCmd := exec.CommandContext(ctx, "docker", createArgs...)
+	var createStderr bytes.Buffer
+	createCmd.Stderr = &createStderr
+	if err := createCmd.Run(); err != nil {
+		return nil, fmt.Errorf("docker create failed: %w: %s", err, createStderr.String())
+	}
+
+	// Ensure container is removed on exit
+	defer func() {
+		rmCmd := exec.Command("docker", "rm", "-f", containerName)
+		rmCmd.Run()
+	}()
+
+	// Step 2: Copy source files into container
+	cpInArgs := []string{"cp", workDir + "/.", containerName + ":/work/"}
+	cpInCmd := exec.CommandContext(ctx, "docker", cpInArgs...)
+	var cpInStderr bytes.Buffer
+	cpInCmd.Stderr = &cpInStderr
+	if err := cpInCmd.Run(); err != nil {
+		return nil, fmt.Errorf("docker cp (in) failed: %w: %s", err, cpInStderr.String())
+	}
+
+	// Step 3: Start container and wait for compilation
+	startArgs := []string{"start", "-a", containerName}
+	startCmd := exec.CommandContext(ctx, "docker", startArgs...)
+	var stdout, stderr bytes.Buffer
+	startCmd.Stdout = &stdout
+	startCmd.Stderr = &stderr
+	if err := startCmd.Run(); err != nil {
 		return nil, fmt.Errorf("compilation error: %s\n%s", err, stderr.String())
+	}
+
+	// Step 4: Copy compiled binary out of container
+	cpOutArgs := []string{"cp", containerName + ":/work/handler", workDir + "/handler"}
+	cpOutCmd := exec.CommandContext(ctx, "docker", cpOutArgs...)
+	var cpOutStderr bytes.Buffer
+	cpOutCmd.Stderr = &cpOutStderr
+	if err := cpOutCmd.Run(); err != nil {
+		return nil, fmt.Errorf("docker cp (out) failed: %w: %s", err, cpOutStderr.String())
 	}
 
 	// Read compiled binary

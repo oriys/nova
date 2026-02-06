@@ -122,8 +122,7 @@ func (h *Handler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pvm.Client.Close()
-	h.Backend.StopVM(pvm.VM.ID)
+	h.Pool.EvictVM(fn.ID, pvm)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

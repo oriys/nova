@@ -1687,6 +1687,7 @@ type InitPayload struct {
 	EnvVars   map[string]string `json:"env_vars"`
 	Command   []string          `json:"command,omitempty"`
 	Extension string            `json:"extension,omitempty"`
+	Mode      string            `json:"mode,omitempty"`
 }
 
 type ExecPayload struct {
@@ -1853,6 +1854,7 @@ func (c *VsockClient) Init(fn *domain.Function) error {
 		EnvVars:   fn.EnvVars,
 		Command:   fn.RuntimeCommand,
 		Extension: fn.RuntimeExtension,
+		Mode:      string(fn.Mode),
 	})
 	c.initPayload = payload
 	if err := c.redialAndInitLocked(5 * time.Second); err != nil {
