@@ -151,10 +151,16 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 			return nil, fmt.Errorf("get function files: %w", err)
 		}
 
-		// For compiled languages with multi-file, use the compiled binary
+		// The in-VM agent always executes /code/handler, so normalize
+		// multi-file entrypoints to that path before creating the VM.
 		if len(codeRecord.CompiledBinary) > 0 {
-			// Replace the entry point file with compiled binary
-			files[fn.Handler] = codeRecord.CompiledBinary
+			// Compiled runtimes: ensure /code/handler points to the binary.
+			files["handler"] = codeRecord.CompiledBinary
+		} else if len(files["handler"]) == 0 {
+			// Interpreted runtimes: mirror configured entry point to /code/handler.
+			if entryContent, ok := files[fn.Handler]; ok {
+				files["handler"] = entryContent
+			}
 		}
 	} else {
 		// Single file function
