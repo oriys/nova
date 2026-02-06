@@ -23,8 +23,8 @@ func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate required fields
-	if req.Name == "" {
-		http.Error(w, "name is required", http.StatusBadRequest)
+	if err := domain.ValidateFunctionName(req.Name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if req.Runtime == "" {

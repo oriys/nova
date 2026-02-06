@@ -40,6 +40,10 @@ type CreateFunctionRequest struct {
 }
 
 func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunctionRequest) (*domain.Function, string, error) {
+	if err := domain.ValidateFunctionName(req.Name); err != nil {
+		return nil, "", err
+	}
+
 	rt := domain.Runtime(req.Runtime)
 	if rt == "" {
 		return nil, "", fmt.Errorf("runtime is required")

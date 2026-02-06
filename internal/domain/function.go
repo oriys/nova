@@ -2,10 +2,14 @@ package domain
 
 import (
 	"encoding/json"
+	"fmt"
+	"regexp"
 	"time"
 )
 
 type Runtime string
+
+var functionNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 const (
 	RuntimePython   Runtime = "python"
@@ -31,6 +35,17 @@ const (
 	RuntimeCustom   Runtime = "custom"
 	RuntimeProvided Runtime = "provided"
 )
+
+// ValidateFunctionName enforces the accepted function name format.
+func ValidateFunctionName(name string) error {
+	if name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if !functionNamePattern.MatchString(name) {
+		return fmt.Errorf("invalid name: must match %s", functionNamePattern.String())
+	}
+	return nil
+}
 
 // ExecutionMode determines how functions are executed
 type ExecutionMode string
