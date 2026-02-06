@@ -538,6 +538,74 @@ build_bun_rootfs() {
     log "bun.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
+# Build all rootfs images in controlled parallel batches.
+# Dependency order is preserved at stage level (this runs only after binaries are deployed).
+build_rootfs_images() {
+    local max_jobs="${NOVA_ROOTFS_JOBS:-3}"
+    if ! [[ "${max_jobs}" =~ ^[0-9]+$ ]] || [[ "${max_jobs}" -lt 1 ]]; then
+        max_jobs=3
+    fi
+
+    local builders=(
+        build_base_rootfs
+        build_python_rootfs
+        build_wasm_rootfs
+        build_node_rootfs
+        build_ruby_rootfs
+        build_java_rootfs
+        build_php_rootfs
+        build_dotnet_rootfs
+        build_deno_rootfs
+        build_bun_rootfs
+    )
+
+    if [[ "${max_jobs}" -eq 1 ]]; then
+        log "Building rootfs images sequentially (NOVA_ROOTFS_JOBS=1)..."
+        local fn
+        for fn in "${builders[@]}"; do
+            "${fn}"
+        done
+        return
+    fi
+
+    log "Building rootfs images with concurrency=${max_jobs}..."
+    local total=${#builders[@]}
+    local i=0
+
+    while [[ ${i} -lt ${total} ]]; do
+        local -a pids=()
+        local -a names=()
+        local launched=0
+
+        while [[ ${launched} -lt ${max_jobs} && ${i} -lt ${total} ]]; do
+            local fn="${builders[$i]}"
+            info "  [start] ${fn}"
+            "${fn}" &
+            pids+=("$!")
+            names+=("${fn}")
+            i=$((i + 1))
+            launched=$((launched + 1))
+        done
+
+        local idx
+        for idx in "${!pids[@]}"; do
+            if wait "${pids[$idx]}"; then
+                log "  [done] ${names[$idx]}"
+            else
+                local failed="${names[$idx]}"
+                local k
+                for k in "${!pids[@]}"; do
+                    if [[ "${k}" != "${idx}" ]]; then
+                        kill "${pids[$k]}" 2>/dev/null || true
+                    fi
+                done
+                wait 2>/dev/null || true
+                err "Rootfs build failed: ${failed}"
+            fi
+        done
+    done
+}
+
 # ─── Nova Backend ────────────────────────────────────────
 deploy_nova_backend() {
     log "Deploying Nova backend..."
@@ -859,17 +927,8 @@ main() {
     # Deploy Nova binaries first (so agent is available for rootfs)
     deploy_nova_backend
 
-    # Build all rootfs images
-    build_base_rootfs
-    build_python_rootfs
-    build_wasm_rootfs
-    build_node_rootfs
-    build_ruby_rootfs
-    build_java_rootfs
-    build_php_rootfs
-    build_dotnet_rootfs
-    build_deno_rootfs
-    build_bun_rootfs
+    # Build all rootfs images (independent tasks, run in controlled parallel)
+    build_rootfs_images
 
     # Deploy Lumen
     deploy_lumen_frontend
