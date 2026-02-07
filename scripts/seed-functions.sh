@@ -137,21 +137,21 @@ main() {
     else
         info "Creating Go functions (will be compiled)..."
 
-        create_function "hello-go" "go" '"package main\n\nimport (\n\t\"encoding/json\"\n\t\"fmt\"\n\t\"os\"\n)\n\ntype Event struct {\n\tName string `json:\"name\"`\n}\n\ntype Response struct {\n\tMessage string `json:\"message\"`\n\tRuntime string `json:\"runtime\"`\n}\n\nfunc main() {\n\tdata, _ := os.ReadFile(os.Args[1])\n\tvar event Event\n\tjson.Unmarshal(data, &event)\n\tif event.Name == \"\" {\n\t\tevent.Name = \"World\"\n\t}\n\tresp := Response{Message: fmt.Sprintf(\"Hello, %s!\", event.Name), Runtime: \"go\"}\n\tout, _ := json.Marshal(resp)\n\tfmt.Println(string(out))\n}"'
+        create_function "hello-go" "go" '"package main\n\nimport (\n\t\"encoding/json\"\n\t\"fmt\"\n)\n\ntype Event struct {\n\tName string `json:\"name\"`\n}\n\nfunc Handler(event json.RawMessage, ctx Context) (interface{}, error) {\n\tvar e Event\n\tjson.Unmarshal(event, &e)\n\tif e.Name == \"\" {\n\t\te.Name = \"World\"\n\t}\n\treturn map[string]string{\"message\": fmt.Sprintf(\"Hello, %s!\", e.Name), \"runtime\": \"go\"}, nil\n}"'
 
-        create_function "sum-array-go" "go" '"package main\n\nimport (\n\t\"encoding/json\"\n\t\"fmt\"\n\t\"os\"\n)\n\ntype Event struct {\n\tNumbers []int `json:\"numbers\"`\n}\n\nfunc main() {\n\tdata, _ := os.ReadFile(os.Args[1])\n\tvar event Event\n\tjson.Unmarshal(data, &event)\n\tsum := 0\n\tfor _, n := range event.Numbers {\n\t\tsum += n\n\t}\n\tresult := map[string]interface{}{\"numbers\": event.Numbers, \"sum\": sum}\n\tout, _ := json.Marshal(result)\n\tfmt.Println(string(out))\n}"'
+        create_function "sum-array-go" "go" '"package main\n\nimport \"encoding/json\"\n\ntype SumEvent struct {\n\tNumbers []int `json:\"numbers\"`\n}\n\nfunc Handler(event json.RawMessage, ctx Context) (interface{}, error) {\n\tvar e SumEvent\n\tjson.Unmarshal(event, &e)\n\tsum := 0\n\tfor _, n := range e.Numbers {\n\t\tsum += n\n\t}\n\treturn map[string]interface{}{\"numbers\": e.Numbers, \"sum\": sum}, nil\n}"'
 
         info "Creating Rust functions (will be compiled)..."
 
-        create_function "hello-rust" "rust" '"use std::env;\nuse std::fs;\nuse serde::{Deserialize, Serialize};\n\n#[derive(Deserialize)]\nstruct Event {\n    name: Option<String>,\n}\n\n#[derive(Serialize)]\nstruct Response {\n    message: String,\n    runtime: String,\n}\n\nfn main() {\n    let args: Vec<String> = env::args().collect();\n    let data = fs::read_to_string(&args[1]).unwrap();\n    let event: Event = serde_json::from_str(&data).unwrap();\n    let name = event.name.unwrap_or_else(|| \"World\".to_string());\n    let resp = Response {\n        message: format!(\"Hello, {}!\", name),\n        runtime: \"rust\".to_string(),\n    };\n    println!(\"{}\", serde_json::to_string(&resp).unwrap());\n}"'
+        create_function "hello-rust" "rust" '"use serde::{Deserialize, Serialize};\nuse serde_json::Value;\n\n#[derive(Deserialize)]\nstruct Event {\n    name: Option<String>,\n}\n\n#[derive(Serialize)]\nstruct Response {\n    message: String,\n    runtime: String,\n}\n\npub fn handler(event: Value, _ctx: crate::context::Context) -> Result<Value, String> {\n    let e: Event = serde_json::from_value(event).map_err(|e| e.to_string())?;\n    let name = e.name.unwrap_or_else(|| \"World\".to_string());\n    let resp = Response {\n        message: format!(\"Hello, {}!\", name),\n        runtime: \"rust\".to_string(),\n    };\n    serde_json::to_value(&resp).map_err(|e| e.to_string())\n}"'
 
         info "Creating Java functions (will be compiled)..."
 
-        create_function "hello-java" "java" '"import java.nio.file.*;\nimport java.util.regex.*;\n\npublic class Handler {\n    public static void main(String[] args) throws Exception {\n        String content = Files.readString(Path.of(args[0]));\n        Pattern p = Pattern.compile(\"\\\"name\\\"\\\\s*:\\\\s*\\\"([^\\\"]+)\\\"\");\n        Matcher m = p.matcher(content);\n        String name = m.find() ? m.group(1) : \"World\";\n        System.out.println(\"{\\\"message\\\": \\\"Hello, \" + name + \"!\\\", \\\"runtime\\\": \\\"java\\\"}\");\n    }\n}"' 256
+        create_function "hello-java" "java" '"import java.util.*;\nimport java.util.regex.*;\n\npublic class Handler {\n    public static Object handler(String event, Map<String, Object> context) {\n        Pattern p = Pattern.compile(\"\\\\\"name\\\\\"\\\\s*:\\\\s*\\\\\"([^\\\\\"]+)\\\\\"\");\n        Matcher m = p.matcher(event);\n        String name = m.find() ? m.group(1) : \"World\";\n        return \"{\\\\\"message\\\\\": \\\\\"Hello, \" + name + \"!\\\\\", \\\\\"runtime\\\\\": \\\\\"java\\\\\"}\";\n    }\n}"' 256
 
         info "Creating .NET functions (will be compiled)..."
 
-        create_function "hello-dotnet" "dotnet" '"using System.Text.Json;\n\nvar json = File.ReadAllText(args[0]);\nvar doc = JsonDocument.Parse(json);\nvar name = doc.RootElement.TryGetProperty(\"name\", out var n) ? n.GetString() : \"World\";\nConsole.WriteLine(JsonSerializer.Serialize(new { message = $\"Hello, {name}!\", runtime = \"dotnet\" }));"' 256
+        create_function "hello-dotnet" "dotnet" '"using System.Text.Json;\nusing System.Collections.Generic;\n\npublic static class Handler {\n    public static object Handle(string eventJson, Dictionary<string, object> context) {\n        var doc = JsonDocument.Parse(eventJson);\n        var name = doc.RootElement.TryGetProperty(\"name\", out var n) ? n.GetString() : \"World\";\n        return new { message = $\"Hello, {name}!\", runtime = \"dotnet\" };\n    }\n}"' 256
     fi
 
     echo ""
@@ -170,6 +170,12 @@ main() {
     echo "  List all functions:"
     echo "  curl ${API_URL}/functions | jq '.[] | {name, runtime}'"
     echo ""
+
+    # Seed DAG workflows (multi-language pipelines)
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    if [ -x "${SCRIPT_DIR}/seed-workflows.sh" ]; then
+        "${SCRIPT_DIR}/seed-workflows.sh" "${API_URL}"
+    fi
 }
 
 main "$@"

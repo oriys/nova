@@ -95,6 +95,17 @@ services:
 
         echo "Sample functions seeding complete!"
 
+  workflow-seeder:
+    image: curlimages/curl:latest
+    container_name: nova-workflow-seeder
+    depends_on:
+      seeder:
+        condition: service_completed_successfully
+    restart: "no"
+    volumes:
+      - ./scripts:/scripts:ro
+    entrypoint: ["/bin/sh", "/scripts/seed-workflows.sh", "http://nova:9000"]
+
   rootfs-builder:
     build:
       context: .
