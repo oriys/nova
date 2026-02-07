@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select"
 import { CodeEditor } from "@/components/code-editor"
 import { RuntimeInfo } from "@/lib/types"
-import { functionsApi, CompileStatus } from "@/lib/api"
+import { functionsApi, CompileStatus, type ResourceLimits } from "@/lib/api"
 import { Loader2, Check, AlertCircle } from "lucide-react"
 
 // Code templates for each runtime (handler-only style)
@@ -140,7 +140,8 @@ interface CreateFunctionDialogProps {
     handler: string,
     memory: number,
     timeout: number,
-    code: string
+    code: string,
+    limits?: ResourceLimits
   ) => Promise<void>
   runtimes?: RuntimeInfo[]
 }
@@ -157,6 +158,11 @@ export function CreateFunctionDialog({
   const [timeout, setTimeout] = useState("30")
   const [handler, setHandler] = useState("main.handler")
   const [code, setCode] = useState(CODE_TEMPLATES.python)
+  const [vcpus, setVcpus] = useState("1")
+  const [diskIops, setDiskIops] = useState("0")
+  const [diskBandwidth, setDiskBandwidth] = useState("0")
+  const [netRx, setNetRx] = useState("0")
+  const [netTx, setNetTx] = useState("0")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -203,7 +209,14 @@ export function CreateFunctionDialog({
 
     try {
       setSubmitting(true)
-      await onCreate(name, runtime, handler, parseInt(memory), parseInt(timeout), codeValue)
+      const limits: ResourceLimits = {
+        vcpus: parseInt(vcpus) || 1,
+        disk_iops: parseInt(diskIops) || 0,
+        disk_bandwidth: parseInt(diskBandwidth) || 0,
+        net_rx_bandwidth: parseInt(netRx) || 0,
+        net_tx_bandwidth: parseInt(netTx) || 0,
+      }
+      await onCreate(name, runtime, handler, parseInt(memory), parseInt(timeout), codeValue, limits)
 
       // If it's a compiled language, track compile status
       if (needsCompilation(runtime)) {
@@ -228,6 +241,11 @@ export function CreateFunctionDialog({
     setTimeout("30")
     setHandler("main.handler")
     setCode(CODE_TEMPLATES.python)
+    setVcpus("1")
+    setDiskIops("0")
+    setDiskBandwidth("0")
+    setNetRx("0")
+    setNetTx("0")
     setCreatedFunctionName(null)
     setCompileStatus(undefined)
     setCompileError(undefined)
@@ -411,6 +429,77 @@ export function CreateFunctionDialog({
                 value={handler}
                 onChange={(e) => setHandler(e.target.value)}
               />
+            </div>
+          </div>
+
+          {/* Resource Limits */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Resource Limits</Label>
+            <p className="text-xs text-muted-foreground mb-2">
+              Configure CPU, disk I/O, and network bandwidth. Set to 0 for unlimited.
+            </p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              <div className="space-y-1">
+                <Label htmlFor="vcpus" className="text-xs text-muted-foreground">vCPUs</Label>
+                <Select value={vcpus} onValueChange={setVcpus}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 4, 8, 16, 32].map((v) => (
+                      <SelectItem key={v} value={v.toString()}>{v} vCPU{v > 1 ? "s" : ""}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="diskIops" className="text-xs text-muted-foreground">Disk IOPS</Label>
+                <Input
+                  id="diskIops"
+                  type="number"
+                  min="0"
+                  className="h-9"
+                  value={diskIops}
+                  onChange={(e) => setDiskIops(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="diskBw" className="text-xs text-muted-foreground">Disk BW (B/s)</Label>
+                <Input
+                  id="diskBw"
+                  type="number"
+                  min="0"
+                  className="h-9"
+                  value={diskBandwidth}
+                  onChange={(e) => setDiskBandwidth(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="netRx" className="text-xs text-muted-foreground">Net RX (B/s)</Label>
+                <Input
+                  id="netRx"
+                  type="number"
+                  min="0"
+                  className="h-9"
+                  value={netRx}
+                  onChange={(e) => setNetRx(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="netTx" className="text-xs text-muted-foreground">Net TX (B/s)</Label>
+                <Input
+                  id="netTx"
+                  type="number"
+                  min="0"
+                  className="h-9"
+                  value={netTx}
+                  onChange={(e) => setNetTx(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
             </div>
           </div>
 

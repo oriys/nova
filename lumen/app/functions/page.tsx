@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { functionsApi, metricsApi, runtimesApi } from "@/lib/api"
+import { functionsApi, metricsApi, runtimesApi, type ResourceLimits } from "@/lib/api"
 import { transformFunction, FunctionData, RuntimeInfo, transformRuntime } from "@/lib/types"
 import { Plus, Search, Filter, RefreshCw } from "lucide-react"
 
@@ -87,7 +87,7 @@ export default function FunctionsPage() {
 
   const pagedFunctions = filteredFunctions.slice((page - 1) * pageSize, page * pageSize)
 
-  const handleCreate = async (name: string, runtime: string, handler: string, memory: number, timeout: number, code: string) => {
+  const handleCreate = async (name: string, runtime: string, handler: string, memory: number, timeout: number, code: string, limits?: ResourceLimits) => {
     try {
       await functionsApi.create({
         name,
@@ -96,6 +96,7 @@ export default function FunctionsPage() {
         code,
         memory_mb: memory,
         timeout_s: timeout,
+        limits,
       })
       setIsCreateOpen(false)
       fetchData() // Refresh the list
