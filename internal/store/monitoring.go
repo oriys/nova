@@ -222,7 +222,7 @@ func (s *PostgresStore) GetFunctionTimeSeries(ctx context.Context, functionID st
 
 	rows, err := s.pool.Query(ctx, `
 		SELECT
-			date_trunc('hour', created_at) AS bucket,
+			date_trunc('minute', created_at) AS bucket,
 			COUNT(*) AS invocations,
 			COUNT(*) FILTER (WHERE NOT success) AS errors,
 			AVG(duration_ms) AS avg_duration
@@ -258,7 +258,7 @@ func (s *PostgresStore) GetGlobalTimeSeries(ctx context.Context, hours int) ([]T
 
 	rows, err := s.pool.Query(ctx, `
 		SELECT
-			date_trunc('hour', created_at) AS bucket,
+			date_trunc('minute', created_at) AS bucket,
 			COUNT(*) AS invocations,
 			COUNT(*) FILTER (WHERE NOT success) AS errors,
 			AVG(duration_ms) AS avg_duration

@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+const (
+	timeSeriesBucketDuration = time.Minute
+	timeSeriesBucketCount    = 24 * 60
+)
+
 // TimeSeriesBucket stores metrics for a single time bucket
 type TimeSeriesBucket struct {
 	Timestamp    time.Time
@@ -40,7 +45,7 @@ type Metrics struct {
 	// Per-function metrics
 	funcMetrics sync.Map // funcID -> *FunctionMetrics
 
-	// Time-series data (hourly buckets for last 24 hours)
+	// Time-series data (minute buckets for last 24 hours)
 	timeSeriesMu sync.RWMutex
 	timeSeries   []*TimeSeriesBucket
 
@@ -67,16 +72,16 @@ func init() {
 	global.initTimeSeries()
 }
 
-// initTimeSeries initializes time series buckets for the last 24 hours
+// initTimeSeries initializes minute-level buckets for the last 24 hours.
 func (m *Metrics) initTimeSeries() {
 	m.timeSeriesMu.Lock()
 	defer m.timeSeriesMu.Unlock()
 
-	now := time.Now().Truncate(time.Hour)
-	m.timeSeries = make([]*TimeSeriesBucket, 24)
-	for i := 0; i < 24; i++ {
+	now := time.Now().Truncate(timeSeriesBucketDuration)
+	m.timeSeries = make([]*TimeSeriesBucket, timeSeriesBucketCount)
+	for i := 0; i < timeSeriesBucketCount; i++ {
 		m.timeSeries[i] = &TimeSeriesBucket{
-			Timestamp: now.Add(time.Duration(i-23) * time.Hour),
+			Timestamp: now.Add(time.Duration(i-(timeSeriesBucketCount-1)) * timeSeriesBucketDuration),
 		}
 	}
 }
@@ -145,29 +150,29 @@ func (m *Metrics) recordTimeSeries(durationMs int64, isError bool) {
 	m.timeSeriesMu.Lock()
 	defer m.timeSeriesMu.Unlock()
 
-	now := time.Now().Truncate(time.Hour)
+	now := time.Now().Truncate(timeSeriesBucketDuration)
 
 	// Check if we need to rotate buckets
 	if len(m.timeSeries) > 0 {
 		lastBucket := m.timeSeries[len(m.timeSeries)-1]
-		hoursDiff := int(now.Sub(lastBucket.Timestamp).Hours())
+		bucketsDiff := int(now.Sub(lastBucket.Timestamp) / timeSeriesBucketDuration)
 
-		if hoursDiff > 0 {
+		if bucketsDiff > 0 {
 			// Rotate buckets
-			if hoursDiff >= 24 {
+			if bucketsDiff >= timeSeriesBucketCount {
 				// Reset all buckets
-				m.timeSeries = make([]*TimeSeriesBucket, 24)
-				for i := 0; i < 24; i++ {
+				m.timeSeries = make([]*TimeSeriesBucket, timeSeriesBucketCount)
+				for i := 0; i < timeSeriesBucketCount; i++ {
 					m.timeSeries[i] = &TimeSeriesBucket{
-						Timestamp: now.Add(time.Duration(i-23) * time.Hour),
+						Timestamp: now.Add(time.Duration(i-(timeSeriesBucketCount-1)) * timeSeriesBucketDuration),
 					}
 				}
 			} else {
 				// Shift and add new buckets
-				m.timeSeries = m.timeSeries[hoursDiff:]
-				for i := 0; i < hoursDiff; i++ {
+				m.timeSeries = m.timeSeries[bucketsDiff:]
+				for i := 0; i < bucketsDiff; i++ {
 					m.timeSeries = append(m.timeSeries, &TimeSeriesBucket{
-						Timestamp: lastBucket.Timestamp.Add(time.Duration(i+1) * time.Hour),
+						Timestamp: lastBucket.Timestamp.Add(time.Duration(i+1) * timeSeriesBucketDuration),
 					})
 				}
 			}
@@ -305,7 +310,7 @@ func (m *Metrics) JSONHandler() http.Handler {
 	})
 }
 
-// TimeSeries returns the time-series data for the last 24 hours
+// TimeSeries returns minute-level time-series data for the last 24 hours.
 func (m *Metrics) TimeSeries() []map[string]interface{} {
 	m.timeSeriesMu.RLock()
 	defer m.timeSeriesMu.RUnlock()
