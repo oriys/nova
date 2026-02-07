@@ -11,11 +11,13 @@ import {
   Settings,
   ScrollText,
   History,
+  GitBranch,
 } from "lucide-react"
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Functions", href: "/functions", icon: Code2 },
+  { name: "Workflows", href: "/workflows", icon: GitBranch },
   { name: "Runtimes", href: "/runtimes", icon: Play },
   { name: "Configurations", href: "/configurations", icon: Settings },
   { name: "Logs", href: "/logs", icon: ScrollText },

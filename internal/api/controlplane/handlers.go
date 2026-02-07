@@ -9,6 +9,7 @@ import (
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/service"
 	"github.com/oriys/nova/internal/store"
+	"github.com/oriys/nova/internal/workflow"
 )
 
 // Handler handles control plane HTTP requests (function lifecycle and snapshot management).
@@ -19,6 +20,7 @@ type Handler struct {
 	FCAdapter       *firecracker.Adapter // Optional: for Firecracker-specific features
 	Compiler        *compiler.Compiler
 	FunctionService *service.FunctionService
+	WorkflowService *workflow.Service
 	RootfsDir       string // Directory where rootfs ext4 images are stored
 }
 
@@ -50,4 +52,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /snapshots", h.ListSnapshots)
 	mux.HandleFunc("POST /functions/{name}/snapshot", h.CreateSnapshot)
 	mux.HandleFunc("DELETE /functions/{name}/snapshot", h.DeleteSnapshot)
+
+	// Workflows
+	h.RegisterWorkflowRoutes(mux)
 }

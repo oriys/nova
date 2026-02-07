@@ -18,6 +18,7 @@ import (
 	"github.com/oriys/nova/internal/ratelimit"
 	"github.com/oriys/nova/internal/service"
 	"github.com/oriys/nova/internal/store"
+	"github.com/oriys/nova/internal/workflow"
 )
 
 // ServerConfig contains dependencies for the HTTP server.
@@ -28,8 +29,9 @@ type ServerConfig struct {
 	Backend      backend.Backend
 	FCAdapter    *firecracker.Adapter // Optional: for Firecracker-specific features (snapshots)
 	AuthCfg      *config.AuthConfig
-	RateLimitCfg *config.RateLimitConfig
-	RootfsDir    string
+	RateLimitCfg    *config.RateLimitConfig
+	WorkflowService *workflow.Service
+	RootfsDir       string
 }
 
 // StartHTTPServer creates and starts the HTTP server with control plane and data plane handlers.
@@ -50,6 +52,7 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 		FCAdapter:       cfg.FCAdapter,
 		Compiler:        comp,
 		FunctionService: funcService,
+		WorkflowService: cfg.WorkflowService,
 		RootfsDir:       cfg.RootfsDir,
 	}
 	cpHandler.RegisterRoutes(mux)

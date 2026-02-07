@@ -371,4 +371,148 @@ export const snapshotsApi = {
     }),
 };
 
+// --- Workflow Types ---
+
+export type WorkflowStatus = "active" | "inactive" | "deleted";
+export type RunStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
+export type NodeStatus = "pending" | "ready" | "running" | "succeeded" | "failed" | "skipped";
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description: string;
+  status: WorkflowStatus;
+  current_version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkflowVersion {
+  id: string;
+  workflow_id: string;
+  version: number;
+  definition: unknown;
+  nodes?: WorkflowNode[];
+  edges?: WorkflowEdge[];
+  created_at: string;
+}
+
+export interface WorkflowNode {
+  id: string;
+  version_id: string;
+  node_key: string;
+  function_name: string;
+  input_mapping?: unknown;
+  retry_policy?: RetryPolicy;
+  timeout_s: number;
+  position: number;
+}
+
+export interface WorkflowEdge {
+  id: string;
+  version_id: string;
+  from_node_id: string;
+  to_node_id: string;
+}
+
+export interface RetryPolicy {
+  max_attempts: number;
+  base_ms: number;
+  max_backoff_ms: number;
+}
+
+export interface WorkflowRun {
+  id: string;
+  workflow_id: string;
+  workflow_name?: string;
+  version_id: string;
+  version?: number;
+  status: RunStatus;
+  trigger_type: string;
+  input?: unknown;
+  output?: unknown;
+  error_message?: string;
+  started_at: string;
+  finished_at?: string;
+  created_at: string;
+  nodes?: RunNode[];
+}
+
+export interface RunNode {
+  id: string;
+  run_id: string;
+  node_id: string;
+  node_key: string;
+  function_name: string;
+  status: NodeStatus;
+  unresolved_deps: number;
+  attempt: number;
+  input?: unknown;
+  output?: unknown;
+  error_message?: string;
+  started_at?: string;
+  finished_at?: string;
+  created_at: string;
+}
+
+export interface NodeDefinition {
+  node_key: string;
+  function_name: string;
+  input_mapping?: unknown;
+  retry_policy?: RetryPolicy;
+  timeout_s?: number;
+}
+
+export interface EdgeDefinition {
+  from: string;
+  to: string;
+}
+
+export interface PublishVersionRequest {
+  nodes: NodeDefinition[];
+  edges: EdgeDefinition[];
+}
+
+// Workflows API
+export const workflowsApi = {
+  list: () => request<Workflow[]>("/workflows"),
+
+  get: (name: string) => request<Workflow>(`/workflows/${encodeURIComponent(name)}`),
+
+  create: (data: { name: string; description?: string }) =>
+    request<Workflow>("/workflows", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  delete: (name: string) =>
+    request<{ status: string; name: string }>(`/workflows/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    }),
+
+  listVersions: (name: string) =>
+    request<WorkflowVersion[]>(`/workflows/${encodeURIComponent(name)}/versions`),
+
+  getVersion: (name: string, version: number) =>
+    request<WorkflowVersion>(`/workflows/${encodeURIComponent(name)}/versions/${version}`),
+
+  publishVersion: (name: string, def: PublishVersionRequest) =>
+    request<WorkflowVersion>(`/workflows/${encodeURIComponent(name)}/versions`, {
+      method: "POST",
+      body: JSON.stringify(def),
+    }),
+
+  listRuns: (name: string) =>
+    request<WorkflowRun[]>(`/workflows/${encodeURIComponent(name)}/runs`),
+
+  getRun: (name: string, runID: string) =>
+    request<WorkflowRun>(`/workflows/${encodeURIComponent(name)}/runs/${encodeURIComponent(runID)}`),
+
+  triggerRun: (name: string, input: unknown = {}) =>
+    request<WorkflowRun>(`/workflows/${encodeURIComponent(name)}/runs`, {
+      method: "POST",
+      body: JSON.stringify({ input }),
+    }),
+};
+
 export { ApiError };

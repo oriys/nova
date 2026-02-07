@@ -22,6 +22,7 @@ import (
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/store"
+	"github.com/oriys/nova/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
@@ -165,17 +166,23 @@ func daemonCmd() *cobra.Command {
 			}))
 			exec := executor.New(s, p, execOpts...)
 
+			// Create workflow service and engine
+			wfService := workflow.NewService(s)
+			wfEngine := workflow.NewEngine(s, exec, workflow.EngineConfig{})
+			wfEngine.Start()
+
 			var httpServer *http.Server
 			if cfg.Daemon.HTTPAddr != "" {
 				httpServer = api.StartHTTPServer(cfg.Daemon.HTTPAddr, api.ServerConfig{
-					Store:        s,
-					Exec:         exec,
-					Pool:         p,
-					Backend:      be,
-					FCAdapter:    fcAdapter,
-					AuthCfg:      &cfg.Auth,
-					RateLimitCfg: &cfg.RateLimit,
-					RootfsDir:    cfg.Firecracker.RootfsDir,
+					Store:           s,
+					Exec:            exec,
+					Pool:            p,
+					Backend:         be,
+					FCAdapter:       fcAdapter,
+					AuthCfg:         &cfg.Auth,
+					RateLimitCfg:    &cfg.RateLimit,
+					WorkflowService: wfService,
+					RootfsDir:       cfg.Firecracker.RootfsDir,
 				})
 				logging.Op().Info("HTTP API started", "addr", cfg.Daemon.HTTPAddr)
 			}
@@ -207,6 +214,7 @@ func daemonCmd() *cobra.Command {
 						httpServer.Shutdown(ctx)
 						cancel()
 					}
+					wfEngine.Stop()
 					exec.Shutdown(10 * time.Second)
 					be.Shutdown()
 					return nil

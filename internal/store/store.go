@@ -95,15 +95,21 @@ type MetadataStore interface {
 	HasFunctionFiles(ctx context.Context, funcID string) (bool, error)
 }
 
-// Store wraps the MetadataStore (Postgres) for all persistence.
+// Store wraps the MetadataStore and WorkflowStore (Postgres) for all persistence.
 type Store struct {
 	MetadataStore
+	WorkflowStore
 }
 
 func NewStore(meta MetadataStore) *Store {
-	return &Store{
+	s := &Store{
 		MetadataStore: meta,
 	}
+	// PostgresStore implements both interfaces
+	if ws, ok := meta.(WorkflowStore); ok {
+		s.WorkflowStore = ws
+	}
+	return s
 }
 
 func (s *Store) PingPostgres(ctx context.Context) error {

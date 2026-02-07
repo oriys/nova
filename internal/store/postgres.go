@@ -156,6 +156,89 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			UNIQUE(function_id, path)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_function_files_function_id ON function_files(function_id)`,
+
+		// DAG Workflow tables
+		`CREATE TABLE IF NOT EXISTS dag_workflows (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL UNIQUE,
+			description TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'active',
+			current_version INTEGER NOT NULL DEFAULT 0,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE TABLE IF NOT EXISTS dag_workflow_versions (
+			id TEXT PRIMARY KEY,
+			workflow_id TEXT NOT NULL REFERENCES dag_workflows(id) ON DELETE CASCADE,
+			version INTEGER NOT NULL,
+			definition JSONB NOT NULL DEFAULT '{}',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE(workflow_id, version)
+		)`,
+		`CREATE TABLE IF NOT EXISTS dag_workflow_nodes (
+			id TEXT PRIMARY KEY,
+			version_id TEXT NOT NULL REFERENCES dag_workflow_versions(id) ON DELETE CASCADE,
+			node_key TEXT NOT NULL,
+			function_name TEXT NOT NULL,
+			input_mapping JSONB,
+			retry_policy JSONB,
+			timeout_s INTEGER NOT NULL DEFAULT 30,
+			position INTEGER NOT NULL DEFAULT 0,
+			UNIQUE(version_id, node_key)
+		)`,
+		`CREATE TABLE IF NOT EXISTS dag_workflow_edges (
+			id TEXT PRIMARY KEY,
+			version_id TEXT NOT NULL REFERENCES dag_workflow_versions(id) ON DELETE CASCADE,
+			from_node_id TEXT NOT NULL REFERENCES dag_workflow_nodes(id) ON DELETE CASCADE,
+			to_node_id TEXT NOT NULL REFERENCES dag_workflow_nodes(id) ON DELETE CASCADE
+		)`,
+		`CREATE TABLE IF NOT EXISTS dag_runs (
+			id TEXT PRIMARY KEY,
+			workflow_id TEXT NOT NULL REFERENCES dag_workflows(id) ON DELETE CASCADE,
+			version_id TEXT NOT NULL REFERENCES dag_workflow_versions(id) ON DELETE CASCADE,
+			status TEXT NOT NULL DEFAULT 'pending',
+			trigger_type TEXT NOT NULL DEFAULT 'manual',
+			input JSONB,
+			output JSONB,
+			error_message TEXT,
+			started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			finished_at TIMESTAMPTZ,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_dag_runs_workflow ON dag_runs(workflow_id, created_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS dag_run_nodes (
+			id TEXT PRIMARY KEY,
+			run_id TEXT NOT NULL REFERENCES dag_runs(id) ON DELETE CASCADE,
+			node_id TEXT NOT NULL REFERENCES dag_workflow_nodes(id) ON DELETE CASCADE,
+			node_key TEXT NOT NULL,
+			function_name TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending',
+			unresolved_deps INTEGER NOT NULL DEFAULT 0,
+			attempt INTEGER NOT NULL DEFAULT 0,
+			input JSONB,
+			output JSONB,
+			error_message TEXT,
+			lease_owner TEXT,
+			lease_expires_at TIMESTAMPTZ,
+			started_at TIMESTAMPTZ,
+			finished_at TIMESTAMPTZ,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_dag_run_nodes_ready ON dag_run_nodes(status, lease_expires_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_dag_run_nodes_run ON dag_run_nodes(run_id)`,
+		`CREATE TABLE IF NOT EXISTS dag_node_attempts (
+			id TEXT PRIMARY KEY,
+			run_node_id TEXT NOT NULL REFERENCES dag_run_nodes(id) ON DELETE CASCADE,
+			attempt INTEGER NOT NULL,
+			status TEXT NOT NULL,
+			input JSONB,
+			output JSONB,
+			error TEXT,
+			duration_ms BIGINT NOT NULL DEFAULT 0,
+			started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			finished_at TIMESTAMPTZ,
+			UNIQUE(run_node_id, attempt)
+		)`,
 	}
 
 	for _, stmt := range stmts {
