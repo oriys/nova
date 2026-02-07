@@ -71,8 +71,8 @@ export default function FunctionDetailPage({
       ])
 
       // Fetch versions and schedules (non-blocking)
-      functionsApi.listVersions(fn.name).then(setVersions).catch(() => setVersions([]))
-      schedulesApi.list(fn.name).then(setSchedules).catch(() => setSchedules([]))
+      functionsApi.listVersions(fn.name).then(v => setVersions(v || [])).catch(() => setVersions([]))
+      schedulesApi.list(fn.name).then(s => setSchedules(s || [])).catch(() => setSchedules([]))
 
       setMetrics(fnMetrics)
       setFunc(transformFunction(fn, fnMetrics ?? undefined))
