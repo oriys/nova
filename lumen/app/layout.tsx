@@ -1,6 +1,7 @@
 import React from "react"
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import { ThemeProvider } from 'next-themes'
 import { Analytics } from '@vercel/analytics/next'
 import { SidebarProvider } from '@/components/sidebar-context'
 import './globals.css'
@@ -18,7 +19,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <link
           rel="stylesheet"
@@ -27,9 +28,11 @@ export default function RootLayout({
         />
       </head>
       <body className={`${inter.variable} font-sans antialiased`}>
-        <SidebarProvider>
-          {children}
-        </SidebarProvider>
+        <ThemeProvider attribute="class" defaultTheme="light">
+          <SidebarProvider>
+            {children}
+          </SidebarProvider>
+        </ThemeProvider>
         <Analytics />
       </body>
     </html>

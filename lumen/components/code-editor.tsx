@@ -1,9 +1,15 @@
 "use client"
 
 import { useRef, useCallback } from "react"
+import { useTheme } from "next-themes"
 import Editor, { OnMount } from "@monaco-editor/react"
 import type { editor } from "monaco-editor"
 import { cn } from "@/lib/utils"
+
+function useMonacoTheme() {
+  const { resolvedTheme } = useTheme()
+  return resolvedTheme === "dark" ? "vs-dark" : "light"
+}
 
 // Map runtime IDs to Monaco language identifiers
 const LANGUAGE_MAP: Record<string, string> = {
@@ -66,6 +72,7 @@ export function CodeEditor({
   minimap = false,
 }: CodeEditorProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
+  const monacoTheme = useMonacoTheme()
 
   const monacoLanguage = language || LANGUAGE_MAP[runtime || ""] || "plaintext"
 
@@ -92,7 +99,7 @@ export function CodeEditor({
         value={code}
         onChange={handleChange}
         onMount={handleMount}
-        theme="light"
+        theme={monacoTheme}
         options={{
           readOnly,
           fontSize,
@@ -126,7 +133,7 @@ export function CodeEditor({
           },
         }}
         loading={
-          <div className="flex items-center justify-center h-full bg-white text-muted-foreground text-sm">
+          <div className="flex items-center justify-center h-full bg-background text-muted-foreground text-sm">
             Loading editor...
           </div>
         }
@@ -156,6 +163,7 @@ export function CodeDisplay({
   fontSize = 13,
 }: CodeDisplayProps) {
   const monacoLanguage = language || LANGUAGE_MAP[runtime || ""] || "plaintext"
+  const monacoTheme = useMonacoTheme()
 
   return (
     <div
@@ -166,7 +174,7 @@ export function CodeDisplay({
         height={maxHeight}
         language={monacoLanguage}
         value={code}
-        theme="light"
+        theme={monacoTheme}
         options={{
           readOnly: true,
           fontSize,
@@ -189,7 +197,7 @@ export function CodeDisplay({
           contextmenu: false,
         }}
         loading={
-          <div className="flex items-center justify-center h-full bg-white text-muted-foreground text-sm">
+          <div className="flex items-center justify-center h-full bg-background text-muted-foreground text-sm">
             Loading...
           </div>
         }

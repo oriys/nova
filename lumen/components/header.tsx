@@ -3,6 +3,7 @@
 import { Bell, Search, User } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { ThemeToggle } from "./theme-toggle"
 
 interface HeaderProps {
   title: string
@@ -33,6 +34,8 @@ export function Header({ title, description }: HeaderProps) {
           <Bell className="h-5 w-5 text-muted-foreground" />
           <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
         </Button>
+
+        <ThemeToggle />
 
         <Button variant="ghost" size="icon">
           <User className="h-5 w-5 text-muted-foreground" />
