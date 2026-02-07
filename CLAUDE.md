@@ -8,21 +8,41 @@ Nova is a minimal serverless platform that runs functions in isolated Firecracke
 
 ## Build Commands
 
+Run `make` or `make help` to see all targets (interactive fzf picker if available, static list otherwise).
+
 ```bash
-# Nova backend
-make build          # Build nova (native) + nova-agent (linux/amd64) into bin/
-make build-linux    # Cross-compile nova for linux/amd64 + nova-agent
-make clean          # Remove bin/ directory
-make deploy SERVER=root@your-server  # Build linux + deploy via SCP
+# Backend
+make build              # Build nova (native) + agent (linux/amd64) into bin/
+make build-linux        # Cross-compile nova + agent for linux/amd64
+make agent              # Build only the guest agent
 
-# Docker development (recommended for local dev without KVM)
-docker compose up -d              # Start all services (postgres, nova, lumen)
-docker compose up -d --build      # Rebuild and start
-docker compose logs -f lumen      # View lumen logs
+# Frontend (Lumen)
+make frontend           # npm install + npm run build
+make frontend-dev       # Dev server on localhost:3000
 
-# Lumen frontend (standalone)
-cd lumen && npm install && npm run dev  # Dev server on localhost:3000
-cd lumen && npm run build               # Production build
+# Docker images
+make docker-backend     # Build Nova backend Docker image
+make docker-frontend    # Build Lumen frontend Docker image
+make docker-runtimes    # Build all runtime Docker images
+make docker-runtime-python  # Build a single runtime image
+
+# VM rootfs
+make rootfs             # Build all rootfs images via Docker
+make download-assets    # Download Firecracker binary, kernel, etc.
+
+# Full build
+make all                # Backend + frontend + all Docker images
+
+# Dev environment
+make dev                # docker compose up --build (Postgres + Nova + Lumen)
+make seed               # Seed sample functions
+
+# Deploy
+make deploy SERVER=root@your-server  # Cross-compile + SCP deploy
+
+# Clean
+make clean              # Remove bin/
+make clean-all          # Remove bin/ + assets/ + lumen build artifacts
 ```
 
 All Go binaries use `CGO_ENABLED=0`. The agent is always cross-compiled for `linux/amd64` since it runs inside VMs.

@@ -3,23 +3,34 @@ package main
 // Bootstrap scripts for interpreted runtimes.
 // Each bootstrap:
 // 1. Reads event JSON from input file (argv[1])
-// 2. Builds a context object from NOVA_* env vars
+// 2. Builds an AWS Lambda-compatible context object from NOVA_* env vars
 // 3. Imports the user's handler function from /code/handler
 // 4. Calls handler(event, context) and prints result as JSON
 //
+// Context follows the AWS Lambda convention (without aws prefix):
+//   Python:  context.function_name, context.request_id, context.get_remaining_time_in_millis()
+//   Node.js: context.functionName, context.requestId, context.getRemainingTimeInMillis()
+//
 // Each also supports --persistent mode: stdin/stdout JSON loop.
 
-const bootstrapPython = `import json, sys, os
+const bootstrapPython = `import json, sys, os, time as _time
 
-def _build_context():
-    return {
-        "request_id": os.environ.get("NOVA_REQUEST_ID", ""),
-        "function_name": os.environ.get("NOVA_FUNCTION_NAME", ""),
-        "function_version": os.environ.get("NOVA_FUNCTION_VERSION", ""),
-        "memory_limit_mb": int(os.environ.get("NOVA_MEMORY_LIMIT_MB", "0")),
-        "timeout_s": int(os.environ.get("NOVA_TIMEOUT_S", "0")),
-        "runtime": os.environ.get("NOVA_RUNTIME", ""),
-    }
+class _LambdaContext:
+    def __init__(self):
+        self.function_name = os.environ.get("NOVA_FUNCTION_NAME", "")
+        self.function_version = os.environ.get("NOVA_FUNCTION_VERSION", "$LATEST")
+        self.invoked_function_arn = ""
+        self.memory_limit_in_mb = int(os.environ.get("NOVA_MEMORY_LIMIT_MB", "128"))
+        self.request_id = os.environ.get("NOVA_REQUEST_ID", "")
+        self.log_group_name = ""
+        self.log_stream_name = ""
+        self._timeout_s = int(os.environ.get("NOVA_TIMEOUT_S", "0"))
+        self._start_ms = _time.time() * 1000
+
+    def get_remaining_time_in_millis(self):
+        if self._timeout_s <= 0:
+            return 300000
+        return max(0, int(self._timeout_s * 1000 - (_time.time() * 1000 - self._start_ms)))
 
 def _load_handler():
     with open("/code/handler") as f:
@@ -36,8 +47,11 @@ if "--persistent" in sys.argv:
         if not line:
             continue
         req = json.loads(line)
-        ctx = _build_context()
-        ctx["request_id"] = req.get("context", {}).get("request_id", ctx["request_id"])
+        ctx = _LambdaContext()
+        rid = req.get("context", {}).get("request_id")
+        if rid:
+            ctx.request_id = rid
+        ctx._start_ms = _time.time() * 1000
         try:
             result = _handler(req.get("input", {}), ctx)
             print(json.dumps({"output": result}), flush=True)
@@ -46,7 +60,7 @@ if "--persistent" in sys.argv:
 else:
     with open(sys.argv[1]) as f:
         event = json.load(f)
-    ctx = _build_context()
+    ctx = _LambdaContext()
     result = _handler(event, ctx)
     print(json.dumps(result))
 `
@@ -55,13 +69,20 @@ const bootstrapNode = `const fs = require('fs');
 const path = require('path');
 
 function buildContext() {
+  const timeoutS = parseInt(process.env.NOVA_TIMEOUT_S || '0', 10);
+  const startMs = Date.now();
   return {
-    requestId: process.env.NOVA_REQUEST_ID || '',
     functionName: process.env.NOVA_FUNCTION_NAME || '',
-    functionVersion: process.env.NOVA_FUNCTION_VERSION || '',
-    memoryLimitMB: parseInt(process.env.NOVA_MEMORY_LIMIT_MB || '0', 10),
-    timeoutS: parseInt(process.env.NOVA_TIMEOUT_S || '0', 10),
-    runtime: process.env.NOVA_RUNTIME || '',
+    functionVersion: process.env.NOVA_FUNCTION_VERSION || '$LATEST',
+    invokedFunctionArn: '',
+    memoryLimitInMB: parseInt(process.env.NOVA_MEMORY_LIMIT_MB || '128', 10),
+    requestId: process.env.NOVA_REQUEST_ID || '',
+    logGroupName: '',
+    logStreamName: '',
+    getRemainingTimeInMillis: () => {
+      if (timeoutS <= 0) return 300000;
+      return Math.max(0, timeoutS * 1000 - (Date.now() - startMs));
+    },
   };
 }
 
@@ -102,15 +123,27 @@ if (process.argv.includes('--persistent')) {
 
 const bootstrapRuby = `require 'json'
 
-def build_context
-  {
-    'request_id' => ENV['NOVA_REQUEST_ID'] || '',
-    'function_name' => ENV['NOVA_FUNCTION_NAME'] || '',
-    'function_version' => ENV['NOVA_FUNCTION_VERSION'] || '',
-    'memory_limit_mb' => (ENV['NOVA_MEMORY_LIMIT_MB'] || '0').to_i,
-    'timeout_s' => (ENV['NOVA_TIMEOUT_S'] || '0').to_i,
-    'runtime' => ENV['NOVA_RUNTIME'] || '',
-  }
+class LambdaContext
+  attr_accessor :function_name, :function_version, :invoked_function_arn,
+                :memory_limit_in_mb, :request_id, :log_group_name, :log_stream_name
+
+  def initialize
+    @function_name = ENV['NOVA_FUNCTION_NAME'] || ''
+    @function_version = ENV['NOVA_FUNCTION_VERSION'] || '$LATEST'
+    @invoked_function_arn = ''
+    @memory_limit_in_mb = (ENV['NOVA_MEMORY_LIMIT_MB'] || '128').to_i
+    @request_id = ENV['NOVA_REQUEST_ID'] || ''
+    @log_group_name = ''
+    @log_stream_name = ''
+    @timeout_s = (ENV['NOVA_TIMEOUT_S'] || '0').to_i
+    @start_ms = Process.clock_gettime(Process::CLOCK_MONOTONIC) * 1000
+  end
+
+  def get_remaining_time_in_millis
+    return 300000 if @timeout_s <= 0
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) * 1000 - @start_ms
+    [0, (@timeout_s * 1000 - elapsed).to_i].max
+  end
 end
 
 load '/code/handler'
@@ -120,8 +153,8 @@ if ARGV.include?('--persistent')
     line.strip!
     next if line.empty?
     req = JSON.parse(line)
-    ctx = build_context
-    ctx['request_id'] = req.dig('context', 'request_id') || ctx['request_id']
+    ctx = LambdaContext.new
+    ctx.request_id = req.dig('context', 'request_id') || ctx.request_id
     begin
       result = handler(req['input'] || {}, ctx)
       puts JSON.generate({ 'output' => result })
@@ -133,7 +166,7 @@ if ARGV.include?('--persistent')
   end
 else
   event = JSON.parse(File.read(ARGV[0]))
-  ctx = build_context
+  ctx = LambdaContext.new
   result = handler(event, ctx)
   puts JSON.generate(result)
 end
@@ -141,13 +174,20 @@ end
 
 const bootstrapPHP = `<?php
 function nova_build_context() {
+    $timeoutS = intval(getenv('NOVA_TIMEOUT_S') ?: '0');
+    $startMs = microtime(true) * 1000;
     return [
-        'request_id' => getenv('NOVA_REQUEST_ID') ?: '',
         'function_name' => getenv('NOVA_FUNCTION_NAME') ?: '',
-        'function_version' => getenv('NOVA_FUNCTION_VERSION') ?: '',
-        'memory_limit_mb' => intval(getenv('NOVA_MEMORY_LIMIT_MB') ?: '0'),
-        'timeout_s' => intval(getenv('NOVA_TIMEOUT_S') ?: '0'),
-        'runtime' => getenv('NOVA_RUNTIME') ?: '',
+        'function_version' => getenv('NOVA_FUNCTION_VERSION') ?: '$LATEST',
+        'invoked_function_arn' => '',
+        'memory_limit_in_mb' => intval(getenv('NOVA_MEMORY_LIMIT_MB') ?: '128'),
+        'request_id' => getenv('NOVA_REQUEST_ID') ?: '',
+        'log_group_name' => '',
+        'log_stream_name' => '',
+        'get_remaining_time_in_millis' => function() use ($timeoutS, $startMs) {
+            if ($timeoutS <= 0) return 300000;
+            return max(0, intval($timeoutS * 1000 - (microtime(true) * 1000 - $startMs)));
+        },
     ];
 }
 
@@ -183,13 +223,20 @@ const _mod = await import(_url);
 const handler = _mod.handler || _mod.default;
 
 function buildContext() {
+  const timeoutS = parseInt(Deno.env.get("NOVA_TIMEOUT_S") || "0", 10);
+  const startMs = Date.now();
   return {
-    requestId: Deno.env.get("NOVA_REQUEST_ID") || "",
     functionName: Deno.env.get("NOVA_FUNCTION_NAME") || "",
-    functionVersion: Deno.env.get("NOVA_FUNCTION_VERSION") || "",
-    memoryLimitMB: parseInt(Deno.env.get("NOVA_MEMORY_LIMIT_MB") || "0", 10),
-    timeoutS: parseInt(Deno.env.get("NOVA_TIMEOUT_S") || "0", 10),
-    runtime: Deno.env.get("NOVA_RUNTIME") || "",
+    functionVersion: Deno.env.get("NOVA_FUNCTION_VERSION") || "$LATEST",
+    invokedFunctionArn: "",
+    memoryLimitInMB: parseInt(Deno.env.get("NOVA_MEMORY_LIMIT_MB") || "128", 10),
+    requestId: Deno.env.get("NOVA_REQUEST_ID") || "",
+    logGroupName: "",
+    logStreamName: "",
+    getRemainingTimeInMillis: () => {
+      if (timeoutS <= 0) return 300000;
+      return Math.max(0, timeoutS * 1000 - (Date.now() - startMs));
+    },
   };
 }
 
@@ -264,13 +311,20 @@ function json.encode(val)
 end
 
 local function build_context()
+    local timeout_s = tonumber(os.getenv("NOVA_TIMEOUT_S") or "0")
+    local start_ms = os.clock() * 1000
     return {
-        request_id = os.getenv("NOVA_REQUEST_ID") or "",
         function_name = os.getenv("NOVA_FUNCTION_NAME") or "",
-        function_version = os.getenv("NOVA_FUNCTION_VERSION") or "",
-        memory_limit_mb = tonumber(os.getenv("NOVA_MEMORY_LIMIT_MB") or "0"),
-        timeout_s = tonumber(os.getenv("NOVA_TIMEOUT_S") or "0"),
-        runtime = os.getenv("NOVA_RUNTIME") or "",
+        function_version = os.getenv("NOVA_FUNCTION_VERSION") or "$LATEST",
+        invoked_function_arn = "",
+        memory_limit_in_mb = tonumber(os.getenv("NOVA_MEMORY_LIMIT_MB") or "128"),
+        request_id = os.getenv("NOVA_REQUEST_ID") or "",
+        log_group_name = "",
+        log_stream_name = "",
+        get_remaining_time_in_millis = function()
+            if timeout_s <= 0 then return 300000 end
+            return math.max(0, math.floor(timeout_s * 1000 - (os.clock() * 1000 - start_ms)))
+        end,
     }
 end
 

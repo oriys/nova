@@ -1,4 +1,4 @@
-"""Example Python function for Nova serverless platform"""
+"""Example Python function for Nova (AWS Lambda-compatible signature)"""
 
 
 def handler(event, context):
@@ -6,5 +6,5 @@ def handler(event, context):
     return {
         "message": f"Hello, {name}!",
         "runtime": "python",
-        "request_id": context.get("request_id", ""),
+        "request_id": context.request_id,
     }

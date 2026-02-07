@@ -1,5 +1,5 @@
 <?php
-// Example PHP function for Nova serverless platform
+// Example PHP function for Nova (AWS Lambda-compatible signature)
 
 function handler($event, $context) {
     $name = $event['name'] ?? 'Anonymous';

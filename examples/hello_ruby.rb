@@ -1,4 +1,4 @@
-# Example Ruby function for Nova serverless platform
+# Example Ruby function for Nova (AWS Lambda-compatible signature)
 
 def handler(event, context)
   name = event['name']
@@ -6,6 +6,6 @@ def handler(event, context)
   {
     message: "Hello, #{name}!",
     runtime: "ruby",
-    request_id: context['request_id'],
+    request_id: context.request_id,
   }
 end

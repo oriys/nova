@@ -2,6 +2,9 @@
 # Nova Sample Functions Seeder
 # Creates sample functions for all supported runtimes via the Nova API
 #
+# All handler functions follow the AWS Lambda convention:
+#   handler(event, context) -> result
+#
 # Usage:
 #   ./scripts/seed-functions.sh                   # Default: http://localhost:9000
 #   ./scripts/seed-functions.sh http://nova:9000  # Custom API URL
@@ -65,66 +68,66 @@ main() {
     wait_for_api
 
     # ─────────────────────────────────────────────────────────
-    # Python Functions
+    # Python Functions (handler-only style, AWS Lambda-compatible)
     # ─────────────────────────────────────────────────────────
     info "Creating Python functions..."
 
-    create_function "hello-python" "python" '"import json\nimport sys\n\ndef handler(event):\n    name = event.get(\"name\", \"World\")\n    return {\"message\": f\"Hello, {name}!\", \"runtime\": \"python\"}\n\nif __name__ == \"__main__\":\n    with open(sys.argv[1]) as f:\n        event = json.load(f)\n    result = handler(event)\n    print(json.dumps(result))"'
+    create_function "hello-python" "python" '"def handler(event, context):\n    name = event.get(\"name\", \"World\")\n    return {\n        \"message\": f\"Hello, {name}!\",\n        \"runtime\": \"python\",\n        \"request_id\": context.request_id,\n    }"'
 
-    create_function "fibonacci" "python" '"import json\nimport sys\n\ndef fib(n):\n    if n <= 1:\n        return n\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b\n\ndef main():\n    with open(sys.argv[1]) as f:\n        event = json.load(f)\n    n = event.get(\"n\", 10)\n    result = fib(n)\n    print(json.dumps({\"n\": n, \"fibonacci\": result}))\n\nif __name__ == \"__main__\":\n    main()"'
+    create_function "fibonacci" "python" '"def handler(event, context):\n    def fib(n):\n        if n <= 1:\n            return n\n        a, b = 0, 1\n        for _ in range(2, n + 1):\n            a, b = b, a + b\n        return b\n    n = event.get(\"n\", 10)\n    return {\"n\": n, \"fibonacci\": fib(n)}"'
 
-    create_function "prime-checker" "python" '"import json\nimport sys\nimport math\n\ndef is_prime(n):\n    if n < 2:\n        return False\n    if n == 2:\n        return True\n    if n % 2 == 0:\n        return False\n    for i in range(3, int(math.sqrt(n)) + 1, 2):\n        if n % i == 0:\n            return False\n    return True\n\ndef main():\n    with open(sys.argv[1]) as f:\n        event = json.load(f)\n    n = event.get(\"n\", 17)\n    print(json.dumps({\"n\": n, \"is_prime\": is_prime(n)}))\n\nif __name__ == \"__main__\":\n    main()"'
+    create_function "prime-checker" "python" '"import math\n\ndef handler(event, context):\n    n = event.get(\"n\", 17)\n    if n < 2:\n        return {\"n\": n, \"is_prime\": False}\n    if n == 2:\n        return {\"n\": n, \"is_prime\": True}\n    if n % 2 == 0:\n        return {\"n\": n, \"is_prime\": False}\n    for i in range(3, int(math.sqrt(n)) + 1, 2):\n        if n % i == 0:\n            return {\"n\": n, \"is_prime\": False}\n    return {\"n\": n, \"is_prime\": True}"'
 
-    create_function "echo" "python" '"import json\nimport sys\nimport time\n\ndef main():\n    with open(sys.argv[1]) as f:\n        event = json.load(f)\n    print(json.dumps({\"echo\": event, \"timestamp\": time.time()}))\n\nif __name__ == \"__main__\":\n    main()"'
+    create_function "echo" "python" '"import time\n\ndef handler(event, context):\n    return {\n        \"echo\": event,\n        \"timestamp\": time.time(),\n        \"remaining_ms\": context.get_remaining_time_in_millis(),\n    }"'
 
-    create_function "factorial" "python" '"import json\nimport sys\n\ndef factorial(n):\n    if n <= 1:\n        return 1\n    result = 1\n    for i in range(2, n + 1):\n        result *= i\n    return result\n\ndef main():\n    with open(sys.argv[1]) as f:\n        event = json.load(f)\n    n = event.get(\"n\", 5)\n    print(json.dumps({\"n\": n, \"factorial\": factorial(n)}))\n\nif __name__ == \"__main__\":\n    main()"'
+    create_function "factorial" "python" '"def handler(event, context):\n    n = event.get(\"n\", 5)\n    result = 1\n    for i in range(2, n + 1):\n        result *= i\n    return {\"n\": n, \"factorial\": result}"'
 
     # ─────────────────────────────────────────────────────────
-    # Node.js Functions
+    # Node.js Functions (handler-only style, AWS Lambda-compatible)
     # ─────────────────────────────────────────────────────────
     info "Creating Node.js functions..."
 
-    create_function "hello-node" "node" '"const fs = require(\"fs\");\n\nfunction handler(event) {\n  const name = event.name || \"World\";\n  return { message: `Hello, ${name}!`, runtime: \"node\" };\n}\n\nconst event = JSON.parse(fs.readFileSync(process.argv[2], \"utf8\"));\nconsole.log(JSON.stringify(handler(event)));"' 256
+    create_function "hello-node" "node" '"function handler(event, context) {\n  const name = event.name || \"World\";\n  return {\n    message: \"Hello, \" + name + \"!\",\n    runtime: \"node\",\n    requestId: context.requestId,\n  };\n}\n\nmodule.exports = { handler };"' 256
 
-    create_function "json-transform" "node" '"const fs = require(\"fs\");\nconst event = JSON.parse(fs.readFileSync(process.argv[2], \"utf8\"));\nconst data = event.data || {};\nconst op = event.operation || \"keys\";\n\nlet result;\nif (op === \"uppercase\") {\n  result = JSON.parse(JSON.stringify(data), (k, v) => typeof v === \"string\" ? v.toUpperCase() : v);\n} else if (op === \"lowercase\") {\n  result = JSON.parse(JSON.stringify(data), (k, v) => typeof v === \"string\" ? v.toLowerCase() : v);\n} else if (op === \"keys\") {\n  result = Object.keys(data);\n} else if (op === \"values\") {\n  result = Object.values(data);\n} else {\n  result = data;\n}\n\nconsole.log(JSON.stringify({ operation: op, result }));"' 256
+    create_function "json-transform" "node" '"function handler(event, context) {\n  const data = event.data || {};\n  const op = event.operation || \"keys\";\n  let result;\n  if (op === \"uppercase\") {\n    result = JSON.parse(JSON.stringify(data), (k, v) => typeof v === \"string\" ? v.toUpperCase() : v);\n  } else if (op === \"lowercase\") {\n    result = JSON.parse(JSON.stringify(data), (k, v) => typeof v === \"string\" ? v.toLowerCase() : v);\n  } else if (op === \"keys\") {\n    result = Object.keys(data);\n  } else if (op === \"values\") {\n    result = Object.values(data);\n  } else {\n    result = data;\n  }\n  return { operation: op, result };\n}\n\nmodule.exports = { handler };"' 256
 
-    create_function "uuid-generator" "node" '"const fs = require(\"fs\");\nconst crypto = require(\"crypto\");\nconst event = JSON.parse(fs.readFileSync(process.argv[2], \"utf8\"));\nconst count = event.count || 1;\nconst uuids = [];\nfor (let i = 0; i < count; i++) {\n  uuids.push(crypto.randomUUID());\n}\nconsole.log(JSON.stringify({ uuids }));"' 256
+    create_function "uuid-generator" "node" '"const crypto = require(\"crypto\");\n\nfunction handler(event, context) {\n  const count = event.count || 1;\n  const uuids = [];\n  for (let i = 0; i < count; i++) {\n    uuids.push(crypto.randomUUID());\n  }\n  return { uuids };\n}\n\nmodule.exports = { handler };"' 256
 
     # ─────────────────────────────────────────────────────────
-    # Ruby Functions
+    # Ruby Functions (handler-only style, AWS Lambda-compatible)
     # ─────────────────────────────────────────────────────────
     info "Creating Ruby functions..."
 
-    create_function "hello-ruby" "ruby" '"require \"json\"\n\ndef handler(event)\n  name = event[\"name\"] || \"World\"\n  { message: \"Hello, #{name}!\", runtime: \"ruby\" }\nend\n\nevent = JSON.parse(File.read(ARGV[0]))\nputs JSON.generate(handler(event))"'
+    create_function "hello-ruby" "ruby" '"def handler(event, context)\n  name = event[\"name\"] || \"World\"\n  {\n    message: \"Hello, #{name}!\",\n    runtime: \"ruby\",\n    request_id: context.request_id,\n  }\nend"'
 
-    create_function "word-count" "ruby" '"require \"json\"\n\nevent = JSON.parse(File.read(ARGV[0]))\ntext = event[\"text\"] || \"\"\nwords = text.split(/\\s+/).reject(&:empty?)\nputs JSON.generate({\n  text: text,\n  word_count: words.length,\n  char_count: text.length,\n  unique_words: words.uniq.length\n})"'
+    create_function "word-count" "ruby" '"def handler(event, context)\n  text = event[\"text\"] || \"\"\n  words = text.split(/\\s+/).reject(&:empty?)\n  {\n    text: text,\n    word_count: words.length,\n    char_count: text.length,\n    unique_words: words.uniq.length,\n  }\nend"'
 
     # ─────────────────────────────────────────────────────────
-    # PHP Functions
+    # PHP Functions (handler-only style, AWS Lambda-compatible)
     # ─────────────────────────────────────────────────────────
     info "Creating PHP functions..."
 
-    create_function "hello-php" "php" '"<?php\n$event = json_decode(file_get_contents($argv[1]), true);\n$name = $event[\"name\"] ?? \"World\";\necho json_encode([\"message\" => \"Hello, $name!\", \"runtime\" => \"php\"]);"'
+    create_function "hello-php" "php" '"<?php\nfunction handler($event, $context) {\n    $name = $event[\"name\"] ?? \"World\";\n    return [\"message\" => \"Hello, $name!\", \"runtime\" => \"php\", \"request_id\" => $context[\"request_id\"] ?? \"\"];\n}"'
 
-    create_function "array-stats" "php" '"<?php\n$event = json_decode(file_get_contents($argv[1]), true);\n$numbers = $event[\"numbers\"] ?? [1, 2, 3, 4, 5];\n$result = [\n    \"count\" => count($numbers),\n    \"sum\" => array_sum($numbers),\n    \"avg\" => count($numbers) > 0 ? array_sum($numbers) / count($numbers) : 0,\n    \"min\" => min($numbers),\n    \"max\" => max($numbers)\n];\necho json_encode($result);"'
+    create_function "array-stats" "php" '"<?php\nfunction handler($event, $context) {\n    $numbers = $event[\"numbers\"] ?? [1, 2, 3, 4, 5];\n    return [\n        \"count\" => count($numbers),\n        \"sum\" => array_sum($numbers),\n        \"avg\" => count($numbers) > 0 ? array_sum($numbers) / count($numbers) : 0,\n        \"min\" => min($numbers),\n        \"max\" => max($numbers),\n    ];\n}"'
 
     # ─────────────────────────────────────────────────────────
-    # Deno Functions
+    # Deno Functions (handler-only style, AWS Lambda-compatible)
     # ─────────────────────────────────────────────────────────
     info "Creating Deno functions..."
 
-    create_function "hello-deno" "deno" '"const event = JSON.parse(await Deno.readTextFile(Deno.args[0]));\nconst name = event.name || \"World\";\nconsole.log(JSON.stringify({ message: `Hello, ${name}!`, runtime: \"deno\" }));"'
+    create_function "hello-deno" "deno" '"export function handler(event, context) {\n  const name = event.name || \"World\";\n  return { message: `Hello, ${name}!`, runtime: \"deno\", requestId: context.requestId };\n}"'
 
-    create_function "base64-codec" "deno" '"const event = JSON.parse(await Deno.readTextFile(Deno.args[0]));\nconst operation = event.operation || \"encode\";\nconst data = event.data || \"\";\n\nlet result;\nif (operation === \"encode\") {\n  result = btoa(data);\n} else if (operation === \"decode\") {\n  result = atob(data);\n} else {\n  result = data;\n}\n\nconsole.log(JSON.stringify({ operation, input: data, output: result }));"'
+    create_function "base64-codec" "deno" '"export function handler(event, context) {\n  const operation = event.operation || \"encode\";\n  const data = event.data || \"\";\n  let result;\n  if (operation === \"encode\") {\n    result = btoa(data);\n  } else if (operation === \"decode\") {\n    result = atob(data);\n  } else {\n    result = data;\n  }\n  return { operation, input: data, output: result };\n}"'
 
     # ─────────────────────────────────────────────────────────
-    # Bun Functions
+    # Bun Functions (handler-only style, AWS Lambda-compatible)
     # ─────────────────────────────────────────────────────────
     info "Creating Bun functions..."
 
-    create_function "hello-bun" "bun" '"const event = JSON.parse(await Bun.file(Bun.argv[2]).text());\nconst name = event.name || \"World\";\nconsole.log(JSON.stringify({ message: `Hello, ${name}!`, runtime: \"bun\" }));"'
+    create_function "hello-bun" "bun" '"function handler(event, context) {\n  const name = event.name || \"World\";\n  return { message: `Hello, ${name}!`, runtime: \"bun\", requestId: context.requestId };\n}\n\nmodule.exports = { handler };"'
 
-    create_function "hash-generator" "bun" '"const event = JSON.parse(await Bun.file(Bun.argv[2]).text());\nconst data = event.data || \"hello\";\nconst algorithm = event.algorithm || \"sha256\";\n\nconst encoder = new TextEncoder();\nconst dataBuffer = encoder.encode(data);\nconst hashBuffer = await crypto.subtle.digest(algorithm.toUpperCase().replace(\"-\", \"\"), dataBuffer);\nconst hashArray = Array.from(new Uint8Array(hashBuffer));\nconst hashHex = hashArray.map(b => b.toString(16).padStart(2, \"0\")).join(\"\");\n\nconsole.log(JSON.stringify({ data, algorithm, hash: hashHex }));"'
+    create_function "hash-generator" "bun" '"const crypto = require(\"crypto\");\n\nfunction handler(event, context) {\n  const data = event.data || \"hello\";\n  const algorithm = event.algorithm || \"sha256\";\n  const hash = crypto.createHash(algorithm).update(data).digest(\"hex\");\n  return { data, algorithm, hash };\n}\n\nmodule.exports = { handler };"'
 
     # ─────────────────────────────────────────────────────────
     # Compiled Languages (Go, Rust, Java, .NET)
