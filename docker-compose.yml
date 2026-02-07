@@ -30,6 +30,7 @@ services:
       NOVA_CODE_DIR: /tmp/nova/code
       NOVA_DOCKER_IMAGE_PREFIX: nova-runtime
       NOVA_DOCKER_NETWORK: nova_default
+      NOVA_MASTER_KEY: "1710f674b5e29cd55bba9c1481625ac255886d763ed7dd6aeab8b21382910d1e"
       # Ensure Nova knows where to put FC sockets/logs
       NOVA_RUN_DIR: /var/lib/nova/run
     ports:

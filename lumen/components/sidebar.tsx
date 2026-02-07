@@ -12,6 +12,8 @@ import {
   ScrollText,
   History,
   GitBranch,
+  KeyRound,
+  Lock,
 } from "lucide-react"
 
 const navigation = [
@@ -19,6 +21,8 @@ const navigation = [
   { name: "Functions", href: "/functions", icon: Code2 },
   { name: "Workflows", href: "/workflows", icon: GitBranch },
   { name: "Runtimes", href: "/runtimes", icon: Play },
+  { name: "API Keys", href: "/api-keys", icon: KeyRound },
+  { name: "Secrets", href: "/secrets", icon: Lock },
   { name: "Configurations", href: "/configurations", icon: Settings },
   { name: "Logs", href: "/logs", icon: ScrollText },
   { name: "History", href: "/history", icon: History },

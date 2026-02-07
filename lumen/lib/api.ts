@@ -273,6 +273,12 @@ export const functionsApi = {
       method: "PUT",
       body: JSON.stringify({ code }),
     }),
+
+  listVersions: (name: string) =>
+    request<FunctionVersionEntry[]>(`/functions/${encodeURIComponent(name)}/versions`),
+
+  getVersion: (name: string, version: number) =>
+    request<FunctionVersionEntry>(`/functions/${encodeURIComponent(name)}/versions/${version}`),
 };
 
 // Runtimes API
@@ -319,7 +325,8 @@ export interface TimeSeriesPoint {
 // Metrics API
 export const metricsApi = {
   global: () => request<GlobalMetrics>("/metrics"),
-  timeseries: () => request<TimeSeriesPoint[]>("/metrics/timeseries"),
+  timeseries: (range?: string) =>
+    request<TimeSeriesPoint[]>(`/metrics/timeseries${range ? `?range=${range}` : ""}`),
   stats: () => request<Record<string, unknown>>("/stats"),
 };
 
@@ -512,6 +519,115 @@ export const workflowsApi = {
     request<WorkflowRun>(`/workflows/${encodeURIComponent(name)}/runs`, {
       method: "POST",
       body: JSON.stringify({ input }),
+    }),
+};
+
+// --- API Keys ---
+
+export interface APIKeyEntry {
+  name: string;
+  tier: string;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface APIKeyCreateResponse {
+  name: string;
+  key: string;
+  tier: string;
+}
+
+export const apiKeysApi = {
+  list: () => request<APIKeyEntry[]>("/apikeys"),
+
+  create: (name: string, tier: string = "default") =>
+    request<APIKeyCreateResponse>("/apikeys", {
+      method: "POST",
+      body: JSON.stringify({ name, tier }),
+    }),
+
+  delete: (name: string) =>
+    request<{ status: string; name: string }>(`/apikeys/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    }),
+
+  toggle: (name: string, enabled: boolean) =>
+    request<{ name: string; enabled: boolean }>(`/apikeys/${encodeURIComponent(name)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    }),
+};
+
+// --- Secrets ---
+
+export interface SecretEntry {
+  name: string;
+  created_at: string;
+}
+
+export const secretsApi = {
+  list: () => request<SecretEntry[]>("/secrets"),
+
+  create: (name: string, value: string) =>
+    request<{ name: string; status: string }>("/secrets", {
+      method: "POST",
+      body: JSON.stringify({ name, value }),
+    }),
+
+  delete: (name: string) =>
+    request<{ status: string; name: string }>(`/secrets/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    }),
+};
+
+// --- Function Versions ---
+
+export interface FunctionVersionEntry {
+  function_id: string;
+  version: number;
+  code_hash: string;
+  handler: string;
+  memory_mb: number;
+  timeout_s: number;
+  mode?: string;
+  limits?: ResourceLimits;
+  env_vars?: Record<string, string>;
+  description?: string;
+  created_at: string;
+}
+
+// --- Schedules ---
+
+export interface ScheduleEntry {
+  id: string;
+  function_name: string;
+  cron_expression: string;
+  input?: unknown;
+  enabled: boolean;
+  last_run_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export const schedulesApi = {
+  list: (functionName: string) =>
+    request<ScheduleEntry[]>(`/functions/${encodeURIComponent(functionName)}/schedules`),
+
+  create: (functionName: string, cronExpression: string, input?: unknown) =>
+    request<ScheduleEntry>(`/functions/${encodeURIComponent(functionName)}/schedules`, {
+      method: "POST",
+      body: JSON.stringify({ cron_expression: cronExpression, input }),
+    }),
+
+  delete: (functionName: string, id: string) =>
+    request<{ status: string; id: string }>(`/functions/${encodeURIComponent(functionName)}/schedules/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+
+  toggle: (functionName: string, id: string, enabled: boolean) =>
+    request<{ id: string; enabled: boolean }>(`/functions/${encodeURIComponent(functionName)}/schedules/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
     }),
 };
 

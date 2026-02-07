@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/oriys/nova/internal/api"
+	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/backend"
 	"github.com/oriys/nova/internal/config"
 	"github.com/oriys/nova/internal/docker"
@@ -20,6 +21,7 @@ import (
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/observability"
 	"github.com/oriys/nova/internal/pool"
+	"github.com/oriys/nova/internal/scheduler"
 	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/store"
 	"github.com/oriys/nova/internal/workflow"
@@ -137,6 +139,7 @@ func daemonCmd() *cobra.Command {
 			}
 
 			var secretsResolver *secrets.Resolver
+			var secretsStore *secrets.Store
 			if cfg.Secrets.Enabled || cfg.Secrets.MasterKey != "" || cfg.Secrets.MasterKeyFile != "" {
 				var cipher *secrets.Cipher
 				var err error
@@ -148,11 +151,15 @@ func daemonCmd() *cobra.Command {
 				if err != nil {
 					logging.Op().Warn("failed to initialize secrets", "error", err)
 				} else if cipher != nil {
-					secretsStore := secrets.NewStore(s, cipher)
+					secretsStore = secrets.NewStore(s, cipher)
 					secretsResolver = secrets.NewResolver(secretsStore)
 					logging.Op().Info("secrets management enabled")
 				}
 			}
+
+			// Create API Key manager
+			apiKeyAdapter := &apiKeyStoreAdapterDaemon{s: s}
+			apiKeyManager := auth.NewAPIKeyManager(apiKeyAdapter)
 
 			execOpts := []executor.Option{}
 			if secretsResolver != nil {
@@ -171,6 +178,12 @@ func daemonCmd() *cobra.Command {
 			wfEngine := workflow.NewEngine(s, exec, workflow.EngineConfig{})
 			wfEngine.Start()
 
+			// Create and start scheduler
+			sched := scheduler.New(s, exec)
+			if err := sched.Start(); err != nil {
+				logging.Op().Warn("failed to start scheduler", "error", err)
+			}
+
 			var httpServer *http.Server
 			if cfg.Daemon.HTTPAddr != "" {
 				httpServer = api.StartHTTPServer(cfg.Daemon.HTTPAddr, api.ServerConfig{
@@ -182,6 +195,9 @@ func daemonCmd() *cobra.Command {
 					AuthCfg:         &cfg.Auth,
 					RateLimitCfg:    &cfg.RateLimit,
 					WorkflowService: wfService,
+					APIKeyManager:   apiKeyManager,
+					SecretsStore:    secretsStore,
+					Scheduler:       sched,
 					RootfsDir:       cfg.Firecracker.RootfsDir,
 				})
 				logging.Op().Info("HTTP API started", "addr", cfg.Daemon.HTTPAddr)
@@ -214,6 +230,7 @@ func daemonCmd() *cobra.Command {
 						httpServer.Shutdown(ctx)
 						cancel()
 					}
+					sched.Stop()
 					wfEngine.Stop()
 					exec.Shutdown(10 * time.Second)
 					be.Shutdown()
@@ -254,4 +271,64 @@ func daemonCmd() *cobra.Command {
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level")
 
 	return cmd
+}
+
+// apiKeyStoreAdapterDaemon adapts store.Store to auth.APIKeyStore for use in daemon.
+type apiKeyStoreAdapterDaemon struct {
+	s *store.Store
+}
+
+func (a *apiKeyStoreAdapterDaemon) SaveAPIKey(ctx context.Context, key *auth.APIKey) error {
+	return a.s.SaveAPIKey(ctx, &store.APIKeyRecord{
+		Name: key.Name, KeyHash: key.KeyHash, Tier: key.Tier,
+		Enabled: key.Enabled, ExpiresAt: key.ExpiresAt,
+		CreatedAt: key.CreatedAt, UpdatedAt: key.UpdatedAt,
+	})
+}
+
+func (a *apiKeyStoreAdapterDaemon) GetAPIKeyByHash(ctx context.Context, keyHash string) (*auth.APIKey, error) {
+	rec, err := a.s.GetAPIKeyByHash(ctx, keyHash)
+	if err != nil {
+		return nil, err
+	}
+	if rec == nil {
+		return nil, nil
+	}
+	return &auth.APIKey{
+		Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
+		Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
+		CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,
+	}, nil
+}
+
+func (a *apiKeyStoreAdapterDaemon) GetAPIKeyByName(ctx context.Context, name string) (*auth.APIKey, error) {
+	rec, err := a.s.GetAPIKeyByName(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return &auth.APIKey{
+		Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
+		Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
+		CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,
+	}, nil
+}
+
+func (a *apiKeyStoreAdapterDaemon) ListAPIKeys(ctx context.Context) ([]*auth.APIKey, error) {
+	recs, err := a.s.ListAPIKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]*auth.APIKey, len(recs))
+	for i, rec := range recs {
+		keys[i] = &auth.APIKey{
+			Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
+			Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
+			CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,
+		}
+	}
+	return keys, nil
+}
+
+func (a *apiKeyStoreAdapterDaemon) DeleteAPIKey(ctx context.Context, name string) error {
+	return a.s.DeleteAPIKey(ctx, name)
 }

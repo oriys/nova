@@ -217,6 +217,19 @@ func (m *APIKeyManager) Revoke(ctx context.Context, name string) error {
 	return m.store.SaveAPIKey(ctx, apiKey)
 }
 
+// Enable re-enables a disabled API key
+func (m *APIKeyManager) Enable(ctx context.Context, name string) error {
+	apiKey, err := m.store.GetAPIKeyByName(ctx, name)
+	if err != nil {
+		return err
+	}
+
+	apiKey.Enabled = true
+	apiKey.UpdatedAt = time.Now()
+
+	return m.store.SaveAPIKey(ctx, apiKey)
+}
+
 // Delete removes an API key
 func (m *APIKeyManager) Delete(ctx context.Context, name string) error {
 	return m.store.DeleteAPIKey(ctx, name)

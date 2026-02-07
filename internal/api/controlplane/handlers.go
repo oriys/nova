@@ -1,12 +1,17 @@
 package controlplane
 
 import (
+	"encoding/json"
 	"net/http"
+	"strconv"
 
+	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/backend"
 	"github.com/oriys/nova/internal/compiler"
 	"github.com/oriys/nova/internal/firecracker"
 	"github.com/oriys/nova/internal/pool"
+	"github.com/oriys/nova/internal/scheduler"
+	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/service"
 	"github.com/oriys/nova/internal/store"
 	"github.com/oriys/nova/internal/workflow"
@@ -21,6 +26,9 @@ type Handler struct {
 	Compiler        *compiler.Compiler
 	FunctionService *service.FunctionService
 	WorkflowService *workflow.Service
+	APIKeyManager   *auth.APIKeyManager
+	SecretsStore    *secrets.Store
+	Scheduler       *scheduler.Scheduler
 	RootfsDir       string // Directory where rootfs ext4 images are stored
 }
 
@@ -37,6 +45,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /functions/{name}/code", h.GetFunctionCode)
 	mux.HandleFunc("PUT /functions/{name}/code", h.UpdateFunctionCode)
 	mux.HandleFunc("GET /functions/{name}/files", h.ListFunctionFiles)
+
+	// Function versions
+	mux.HandleFunc("GET /functions/{name}/versions", h.ListFunctionVersions)
+	mux.HandleFunc("GET /functions/{name}/versions/{version}", h.GetFunctionVersion)
 
 	// Runtimes
 	mux.HandleFunc("GET /runtimes", h.ListRuntimes)
@@ -55,4 +67,66 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// Workflows
 	h.RegisterWorkflowRoutes(mux)
+
+	// API Keys
+	if h.APIKeyManager != nil {
+		akHandler := &APIKeyHandler{Manager: h.APIKeyManager}
+		akHandler.RegisterRoutes(mux)
+	}
+
+	// Secrets
+	if h.SecretsStore != nil {
+		secHandler := &SecretHandler{Store: h.SecretsStore}
+		secHandler.RegisterRoutes(mux)
+	}
+
+	// Schedules
+	schedHandler := &ScheduleHandler{Store: h.Store, Scheduler: h.Scheduler}
+	schedHandler.RegisterRoutes(mux)
+}
+
+// ListFunctionVersions returns all versions of a function.
+func (h *Handler) ListFunctionVersions(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, "function not found: "+name, http.StatusNotFound)
+		return
+	}
+
+	versions, err := h.Store.ListVersions(r.Context(), fn.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(versions)
+}
+
+// GetFunctionVersion returns a specific version of a function.
+func (h *Handler) GetFunctionVersion(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	versionStr := r.PathValue("version")
+
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, "function not found: "+name, http.StatusNotFound)
+		return
+	}
+
+	v, err := strconv.Atoi(versionStr)
+	if err != nil {
+		http.Error(w, "invalid version number", http.StatusBadRequest)
+		return
+	}
+
+	version, err := h.Store.GetVersion(r.Context(), fn.ID, v)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(version)
 }

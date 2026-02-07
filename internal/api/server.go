@@ -16,6 +16,8 @@ import (
 	"github.com/oriys/nova/internal/observability"
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/ratelimit"
+	"github.com/oriys/nova/internal/scheduler"
+	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/service"
 	"github.com/oriys/nova/internal/store"
 	"github.com/oriys/nova/internal/workflow"
@@ -31,6 +33,9 @@ type ServerConfig struct {
 	AuthCfg      *config.AuthConfig
 	RateLimitCfg    *config.RateLimitConfig
 	WorkflowService *workflow.Service
+	APIKeyManager   *auth.APIKeyManager
+	SecretsStore    *secrets.Store
+	Scheduler       *scheduler.Scheduler
 	RootfsDir       string
 }
 
@@ -53,6 +58,9 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 		Compiler:        comp,
 		FunctionService: funcService,
 		WorkflowService: cfg.WorkflowService,
+		APIKeyManager:   cfg.APIKeyManager,
+		SecretsStore:    cfg.SecretsStore,
+		Scheduler:       cfg.Scheduler,
 		RootfsDir:       cfg.RootfsDir,
 	}
 	cpHandler.RegisterRoutes(mux)

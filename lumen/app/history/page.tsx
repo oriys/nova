@@ -28,6 +28,8 @@ import {
   Zap,
   Snowflake,
   Flame,
+  RotateCcw,
+  Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -55,6 +57,8 @@ export default function HistoryPage() {
   const [pageSize, setPageSize] = useState(20)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [replayingId, setReplayingId] = useState<string | null>(null)
+  const [replayResult, setReplayResult] = useState<Record<string, string>>({})
 
   const fetchData = useCallback(async () => {
     try {
@@ -120,6 +124,33 @@ export default function HistoryPage() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  const handleReplay = async (inv: InvocationRecord) => {
+    try {
+      setReplayingId(inv.id)
+      let payload: unknown = {}
+      if (inv.input && inv.input !== "-") {
+        try {
+          payload = JSON.parse(inv.input)
+        } catch {
+          payload = {}
+        }
+      }
+      const result = await functionsApi.invoke(inv.functionName, payload)
+      setReplayResult((prev) => ({
+        ...prev,
+        [inv.id]: `OK ${result.duration_ms}ms`,
+      }))
+      fetchData()
+    } catch (err) {
+      setReplayResult((prev) => ({
+        ...prev,
+        [inv.id]: err instanceof Error ? err.message : "Failed",
+      }))
+    } finally {
+      setReplayingId(null)
+    }
+  }
 
   const filteredInvocations = invocations.filter((inv) => {
     const matchesSearch =
@@ -401,11 +432,31 @@ export default function HistoryPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <Button variant="ghost" size="sm" asChild>
-                          <Link href={`/functions/${inv.functionName}`}>
-                            <ExternalLink className="h-4 w-4" />
-                          </Link>
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleReplay(inv)}
+                            disabled={replayingId === inv.id}
+                            title="Replay invocation"
+                          >
+                            {replayingId === inv.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <RotateCcw className="h-4 w-4" />
+                            )}
+                          </Button>
+                          {replayResult[inv.id] && (
+                            <span className="text-xs text-muted-foreground max-w-[100px] truncate">
+                              {replayResult[inv.id]}
+                            </span>
+                          )}
+                          <Button variant="ghost" size="sm" asChild>
+                            <Link href={`/functions/${inv.functionName}`}>
+                              <ExternalLink className="h-4 w-4" />
+                            </Link>
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))

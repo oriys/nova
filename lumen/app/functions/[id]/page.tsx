@@ -5,21 +5,33 @@ import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FunctionMetrics } from "@/components/function-metrics"
 import { FunctionCode } from "@/components/function-code"
 import { FunctionLogs } from "@/components/function-logs"
 import { FunctionConfig } from "@/components/function-config"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
-import { functionsApi } from "@/lib/api"
+import { functionsApi, schedulesApi } from "@/lib/api"
 import { transformFunction, transformLog, FunctionData, LogEntry } from "@/lib/types"
-import type { FunctionMetrics as FunctionMetricsType } from "@/lib/api"
+import type { FunctionMetrics as FunctionMetricsType, FunctionVersionEntry, ScheduleEntry } from "@/lib/api"
 import {
   ArrowLeft,
   Play,
   RefreshCw,
   Loader2,
+  Plus,
+  Trash2,
+  ToggleLeft,
+  ToggleRight,
 } from "lucide-react"
 
 export default function FunctionDetailPage({
@@ -39,6 +51,12 @@ export default function FunctionDetailPage({
   const [invokeOutput, setInvokeOutput] = useState<string | null>(null)
   const [invokeError, setInvokeError] = useState<string | null>(null)
   const [invokeMeta, setInvokeMeta] = useState<string | null>(null)
+  const [versions, setVersions] = useState<FunctionVersionEntry[]>([])
+  const [schedules, setSchedules] = useState<ScheduleEntry[]>([])
+  const [schedDialogOpen, setSchedDialogOpen] = useState(false)
+  const [newCron, setNewCron] = useState("")
+  const [newSchedInput, setNewSchedInput] = useState("")
+  const [creatingSchedule, setCreatingSchedule] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
@@ -51,6 +69,10 @@ export default function FunctionDetailPage({
         functionsApi.metrics(fn.name).catch(() => null),
         functionsApi.logs(fn.name, 20).catch(() => []),
       ])
+
+      // Fetch versions and schedules (non-blocking)
+      functionsApi.listVersions(fn.name).then(setVersions).catch(() => setVersions([]))
+      schedulesApi.list(fn.name).then(setSchedules).catch(() => setSchedules([]))
 
       setMetrics(fnMetrics)
       setFunc(transformFunction(fn, fnMetrics ?? undefined))
@@ -213,6 +235,18 @@ export default function FunctionDetailPage({
             >
               Configuration
             </TabsTrigger>
+            <TabsTrigger
+              value="versions"
+              className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
+            >
+              Versions
+            </TabsTrigger>
+            <TabsTrigger
+              value="schedules"
+              className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
+            >
+              Schedules
+            </TabsTrigger>
           </TabsList>
         </Tabs>
       </header>
@@ -292,6 +326,204 @@ export default function FunctionDetailPage({
 
           <TabsContent value="config" className="mt-0">
             <FunctionConfig func={func} onUpdate={fetchData} />
+          </TabsContent>
+
+          <TabsContent value="versions" className="mt-0">
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Version</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Code Hash</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Handler</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Memory</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Timeout</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Mode</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {versions.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
+                        No versions published yet
+                      </td>
+                    </tr>
+                  ) : (
+                    versions.map((v) => (
+                      <tr key={v.version} className="border-b border-border hover:bg-muted/50">
+                        <td className="px-4 py-3">
+                          <Badge variant="secondary" className="text-xs">v{v.version}</Badge>
+                        </td>
+                        <td className="px-4 py-3">
+                          <code className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                            {v.code_hash ? v.code_hash.slice(0, 12) + "..." : "-"}
+                          </code>
+                        </td>
+                        <td className="px-4 py-3 text-sm">{v.handler || "-"}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{v.memory_mb} MB</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{v.timeout_s}s</td>
+                        <td className="px-4 py-3">
+                          <Badge variant="secondary" className="text-xs">{v.mode || "process"}</Badge>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">
+                          {new Date(v.created_at).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="schedules" className="mt-0 space-y-4">
+            <div className="flex items-center justify-between">
+              <Dialog open={schedDialogOpen} onOpenChange={setSchedDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create Schedule
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create Schedule</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Cron Expression</label>
+                      <Input
+                        value={newCron}
+                        onChange={(e) => setNewCron(e.target.value)}
+                        placeholder="@every 5m"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Examples: <code>@every 1m</code>, <code>@hourly</code>, <code>@daily</code>, <code>0 */5 * * *</code>
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Input (optional JSON)</label>
+                      <Textarea
+                        value={newSchedInput}
+                        onChange={(e) => setNewSchedInput(e.target.value)}
+                        placeholder='{"key": "value"}'
+                        className="min-h-[80px] font-mono text-xs"
+                      />
+                    </div>
+                    <Button
+                      className="w-full"
+                      onClick={async () => {
+                        if (!func || !newCron.trim()) return
+                        setCreatingSchedule(true)
+                        try {
+                          let input: unknown = undefined
+                          if (newSchedInput.trim()) {
+                            input = JSON.parse(newSchedInput)
+                          }
+                          await schedulesApi.create(func.name, newCron.trim(), input)
+                          setSchedDialogOpen(false)
+                          setNewCron("")
+                          setNewSchedInput("")
+                          const updated = await schedulesApi.list(func.name)
+                          setSchedules(updated || [])
+                        } catch (err) {
+                          console.error("Failed to create schedule:", err)
+                        } finally {
+                          setCreatingSchedule(false)
+                        }
+                      }}
+                      disabled={creatingSchedule || !newCron.trim()}
+                    >
+                      {creatingSchedule ? "Creating..." : "Create"}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Cron</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Status</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Last Run</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Created</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {schedules.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                        No schedules configured
+                      </td>
+                    </tr>
+                  ) : (
+                    schedules.map((s) => (
+                      <tr key={s.id} className="border-b border-border hover:bg-muted/50">
+                        <td className="px-4 py-3">
+                          <code className="text-sm font-mono">{s.cron_expression}</code>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge
+                            variant="secondary"
+                            className={cn(
+                              "text-xs",
+                              s.enabled
+                                ? "bg-success/10 text-success border-0"
+                                : "bg-muted text-muted-foreground border-0"
+                            )}
+                          >
+                            {s.enabled ? "Active" : "Disabled"}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">
+                          {s.last_run_at ? new Date(s.last_run_at).toLocaleString() : "Never"}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">
+                          {new Date(s.created_at).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={async () => {
+                                if (!func) return
+                                await schedulesApi.toggle(func.name, s.id, !s.enabled)
+                                const updated = await schedulesApi.list(func.name)
+                                setSchedules(updated || [])
+                              }}
+                              title={s.enabled ? "Disable" : "Enable"}
+                            >
+                              {s.enabled ? (
+                                <ToggleRight className="h-4 w-4 text-success" />
+                              ) : (
+                                <ToggleLeft className="h-4 w-4 text-muted-foreground" />
+                              )}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={async () => {
+                                if (!func) return
+                                await schedulesApi.delete(func.name, s.id)
+                                const updated = await schedulesApi.list(func.name)
+                                setSchedules(updated || [])
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </TabsContent>
         </Tabs>
       </div>

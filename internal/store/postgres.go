@@ -239,6 +239,19 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			finished_at TIMESTAMPTZ,
 			UNIQUE(run_node_id, attempt)
 		)`,
+
+		// Schedules table
+		`CREATE TABLE IF NOT EXISTS schedules (
+			id TEXT PRIMARY KEY,
+			function_name TEXT NOT NULL,
+			cron_expression TEXT NOT NULL,
+			input JSONB,
+			enabled BOOLEAN NOT NULL DEFAULT TRUE,
+			last_run_at TIMESTAMPTZ,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_schedules_function ON schedules(function_name)`,
 	}
 
 	for _, stmt := range stmts {

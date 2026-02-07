@@ -50,8 +50,8 @@ type MetadataStore interface {
 	ListInvocationLogs(ctx context.Context, functionID string, limit int) ([]*InvocationLog, error)
 	ListAllInvocationLogs(ctx context.Context, limit int) ([]*InvocationLog, error)
 	GetInvocationLog(ctx context.Context, requestID string) (*InvocationLog, error)
-	GetFunctionTimeSeries(ctx context.Context, functionID string, hours int) ([]TimeSeriesBucket, error)
-	GetGlobalTimeSeries(ctx context.Context, hours int) ([]TimeSeriesBucket, error)
+	GetFunctionTimeSeries(ctx context.Context, functionID string, rangeSeconds, bucketSeconds int) ([]TimeSeriesBucket, error)
+	GetGlobalTimeSeries(ctx context.Context, rangeSeconds, bucketSeconds int) ([]TimeSeriesBucket, error)
 
 	// Runtimes
 	SaveRuntime(ctx context.Context, rt *RuntimeRecord) error
@@ -95,10 +95,11 @@ type MetadataStore interface {
 	HasFunctionFiles(ctx context.Context, funcID string) (bool, error)
 }
 
-// Store wraps the MetadataStore and WorkflowStore (Postgres) for all persistence.
+// Store wraps the MetadataStore, WorkflowStore, and ScheduleStore (Postgres) for all persistence.
 type Store struct {
 	MetadataStore
 	WorkflowStore
+	ScheduleStore
 }
 
 func NewStore(meta MetadataStore) *Store {
@@ -108,6 +109,9 @@ func NewStore(meta MetadataStore) *Store {
 	// PostgresStore implements both interfaces
 	if ws, ok := meta.(WorkflowStore); ok {
 		s.WorkflowStore = ws
+	}
+	if ss, ok := meta.(ScheduleStore); ok {
+		s.ScheduleStore = ss
 	}
 	return s
 }
