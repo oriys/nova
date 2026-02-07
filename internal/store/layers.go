@@ -24,8 +24,8 @@ func (s *PostgresStore) SaveLayer(ctx context.Context, layer *domain.Layer) erro
 	}
 
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO layers (id, name, runtime, version, size_mb, files, image_path, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO layers (id, name, runtime, version, size_mb, files, image_path, content_hash, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			runtime = EXCLUDED.runtime,
@@ -33,8 +33,9 @@ func (s *PostgresStore) SaveLayer(ctx context.Context, layer *domain.Layer) erro
 			size_mb = EXCLUDED.size_mb,
 			files = EXCLUDED.files,
 			image_path = EXCLUDED.image_path,
+			content_hash = EXCLUDED.content_hash,
 			updated_at = EXCLUDED.updated_at
-	`, layer.ID, layer.Name, string(layer.Runtime), layer.Version, layer.SizeMB, layer.Files, layer.ImagePath, layer.CreatedAt, layer.UpdatedAt)
+	`, layer.ID, layer.Name, string(layer.Runtime), layer.Version, layer.SizeMB, layer.Files, layer.ImagePath, layer.ContentHash, layer.CreatedAt, layer.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("save layer: %w", err)
 	}
@@ -46,9 +47,9 @@ func (s *PostgresStore) GetLayer(ctx context.Context, id string) (*domain.Layer,
 	var layer domain.Layer
 	var runtime string
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, name, runtime, version, size_mb, files, image_path, created_at, updated_at
+		SELECT id, name, runtime, version, size_mb, files, image_path, content_hash, created_at, updated_at
 		FROM layers WHERE id = $1
-	`, id).Scan(&layer.ID, &layer.Name, &runtime, &layer.Version, &layer.SizeMB, &layer.Files, &layer.ImagePath, &layer.CreatedAt, &layer.UpdatedAt)
+	`, id).Scan(&layer.ID, &layer.Name, &runtime, &layer.Version, &layer.SizeMB, &layer.Files, &layer.ImagePath, &layer.ContentHash, &layer.CreatedAt, &layer.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("layer not found: %s", id)
 	}
@@ -64,9 +65,9 @@ func (s *PostgresStore) GetLayerByName(ctx context.Context, name string) (*domai
 	var layer domain.Layer
 	var runtime string
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, name, runtime, version, size_mb, files, image_path, created_at, updated_at
+		SELECT id, name, runtime, version, size_mb, files, image_path, content_hash, created_at, updated_at
 		FROM layers WHERE name = $1
-	`, name).Scan(&layer.ID, &layer.Name, &runtime, &layer.Version, &layer.SizeMB, &layer.Files, &layer.ImagePath, &layer.CreatedAt, &layer.UpdatedAt)
+	`, name).Scan(&layer.ID, &layer.Name, &runtime, &layer.Version, &layer.SizeMB, &layer.Files, &layer.ImagePath, &layer.ContentHash, &layer.CreatedAt, &layer.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("layer not found: %s", name)
 	}
@@ -77,10 +78,28 @@ func (s *PostgresStore) GetLayerByName(ctx context.Context, name string) (*domai
 	return &layer, nil
 }
 
+// GetLayerByContentHash returns a layer with matching content hash, or nil if not found
+func (s *PostgresStore) GetLayerByContentHash(ctx context.Context, hash string) (*domain.Layer, error) {
+	var layer domain.Layer
+	var runtime string
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, name, runtime, version, size_mb, files, image_path, content_hash, created_at, updated_at
+		FROM layers WHERE content_hash = $1
+	`, hash).Scan(&layer.ID, &layer.Name, &runtime, &layer.Version, &layer.SizeMB, &layer.Files, &layer.ImagePath, &layer.ContentHash, &layer.CreatedAt, &layer.UpdatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get layer by content hash: %w", err)
+	}
+	layer.Runtime = domain.Runtime(runtime)
+	return &layer, nil
+}
+
 // ListLayers returns all layers ordered by name
 func (s *PostgresStore) ListLayers(ctx context.Context) ([]*domain.Layer, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, runtime, version, size_mb, files, image_path, created_at, updated_at
+		SELECT id, name, runtime, version, size_mb, files, image_path, content_hash, created_at, updated_at
 		FROM layers ORDER BY name
 	`)
 	if err != nil {
@@ -92,7 +111,7 @@ func (s *PostgresStore) ListLayers(ctx context.Context) ([]*domain.Layer, error)
 	for rows.Next() {
 		var layer domain.Layer
 		var runtime string
-		if err := rows.Scan(&layer.ID, &layer.Name, &runtime, &layer.Version, &layer.SizeMB, &layer.Files, &layer.ImagePath, &layer.CreatedAt, &layer.UpdatedAt); err != nil {
+		if err := rows.Scan(&layer.ID, &layer.Name, &runtime, &layer.Version, &layer.SizeMB, &layer.Files, &layer.ImagePath, &layer.ContentHash, &layer.CreatedAt, &layer.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("list layers scan: %w", err)
 		}
 		layer.Runtime = domain.Runtime(runtime)
@@ -149,7 +168,7 @@ func (s *PostgresStore) SetFunctionLayers(ctx context.Context, funcID string, la
 // GetFunctionLayers returns layers associated with a function, ordered by position
 func (s *PostgresStore) GetFunctionLayers(ctx context.Context, funcID string) ([]*domain.Layer, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT l.id, l.name, l.runtime, l.version, l.size_mb, l.files, l.image_path, l.created_at, l.updated_at
+		SELECT l.id, l.name, l.runtime, l.version, l.size_mb, l.files, l.image_path, l.content_hash, l.created_at, l.updated_at
 		FROM layers l
 		JOIN function_layers fl ON fl.layer_id = l.id
 		WHERE fl.function_id = $1
@@ -164,7 +183,7 @@ func (s *PostgresStore) GetFunctionLayers(ctx context.Context, funcID string) ([
 	for rows.Next() {
 		var layer domain.Layer
 		var runtime string
-		if err := rows.Scan(&layer.ID, &layer.Name, &runtime, &layer.Version, &layer.SizeMB, &layer.Files, &layer.ImagePath, &layer.CreatedAt, &layer.UpdatedAt); err != nil {
+		if err := rows.Scan(&layer.ID, &layer.Name, &runtime, &layer.Version, &layer.SizeMB, &layer.Files, &layer.ImagePath, &layer.ContentHash, &layer.CreatedAt, &layer.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("get function layers scan: %w", err)
 		}
 		layer.Runtime = domain.Runtime(runtime)

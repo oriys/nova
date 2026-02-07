@@ -149,8 +149,31 @@ func (h *Handler) SetFunctionLayers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fetch the resolved layers to show the user the ordering
+	resolvedLayers, _ := h.Store.GetFunctionLayers(r.Context(), fn.ID)
+	type layerInfo struct {
+		Position int    `json:"position"`
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		SizeMB   int    `json:"size_mb"`
+	}
+	var layerInfos []layerInfo
+	for i, l := range resolvedLayers {
+		layerInfos = append(layerInfos, layerInfo{
+			Position: i,
+			ID:       l.ID,
+			Name:     l.Name,
+			SizeMB:   l.SizeMB,
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "function": name, "layers": req.LayerIDs})
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":   "ok",
+		"function": name,
+		"layers":   layerInfos,
+		"note":     "Layers are mounted in position order. Position 0 has highest precedence in environment paths.",
+	})
 }
 
 // GetFunctionLayers returns layers associated with a function

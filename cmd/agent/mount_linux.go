@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -102,4 +103,35 @@ func mountLayerDrives() {
 	if mounted > 0 {
 		fmt.Printf("[agent] Mounted %d layer drives\n", mounted)
 	}
+}
+
+// mountLayerOverlay creates an overlayfs mount merging all layer directories
+// into /layers/merged for runtimes that need a single unified directory.
+func mountLayerOverlay(layerCount int) {
+	if layerCount == 0 {
+		return
+	}
+
+	// Build lower dirs string (in reverse order so layer 0 has highest priority)
+	var lowerDirs []string
+	for i := layerCount - 1; i >= 0; i-- {
+		lowerDirs = append(lowerDirs, fmt.Sprintf("/layers/%d", i))
+	}
+
+	mergedDir := "/layers/merged"
+	workDir := "/tmp/overlay-work"
+	upperDir := "/tmp/overlay-upper"
+
+	_ = os.MkdirAll(mergedDir, 0755)
+	_ = os.MkdirAll(workDir, 0755)
+	_ = os.MkdirAll(upperDir, 0755)
+
+	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s",
+		strings.Join(lowerDirs, ":"), upperDir, workDir)
+
+	if err := unix.Mount("overlay", mergedDir, "overlay", 0, opts); err != nil {
+		fmt.Fprintf(os.Stderr, "[agent] overlayfs mount failed: %v (falling back to separate mounts)\n", err)
+		return
+	}
+	fmt.Printf("[agent] Mounted overlayfs at %s (layers: %d)\n", mergedDir, layerCount)
 }

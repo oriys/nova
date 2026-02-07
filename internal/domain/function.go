@@ -93,10 +93,11 @@ type EgressRule struct {
 
 // ScaleThresholds defines metrics thresholds that trigger scaling actions
 type ScaleThresholds struct {
-	QueueDepth   int     `json:"queue_depth,omitempty"`    // waiters > N triggers action
-	AvgLatencyMs int64   `json:"avg_latency_ms,omitempty"` // avg latency threshold
-	ColdStartPct float64 `json:"cold_start_pct,omitempty"` // cold start % threshold (0-100)
-	IdlePct      float64 `json:"idle_pct,omitempty"`       // idle VM % (for scale-down)
+	QueueDepth        int     `json:"queue_depth,omitempty"`        // waiters > N triggers action
+	AvgLatencyMs      int64   `json:"avg_latency_ms,omitempty"`     // avg latency threshold
+	ColdStartPct      float64 `json:"cold_start_pct,omitempty"`     // cold start % threshold (0-100)
+	IdlePct           float64 `json:"idle_pct,omitempty"`           // idle VM % (for scale-down)
+	TargetConcurrency float64 `json:"target_concurrency,omitempty"` // target avg concurrency per instance (e.g. 0.7)
 }
 
 // AutoScalePolicy defines auto-scaling behavior for a function
@@ -108,19 +109,21 @@ type AutoScalePolicy struct {
 	ScaleDownThresholds ScaleThresholds `json:"scale_down_thresholds"`
 	CooldownScaleUpS    int             `json:"cooldown_scale_up_s"`
 	CooldownScaleDownS  int             `json:"cooldown_scale_down_s"`
+	ScaleDownStep       int             `json:"scale_down_step,omitempty"` // VMs to remove per scale-down (default 1)
 }
 
 // Layer represents a shared dependency layer that can be mounted as a read-only drive
 type Layer struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Runtime   Runtime   `json:"runtime"`
-	Version   string    `json:"version"`
-	SizeMB    int       `json:"size_mb"`
-	Files     []string  `json:"files"`
-	ImagePath string    `json:"image_path"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Runtime     Runtime   `json:"runtime"`
+	Version     string    `json:"version"`
+	ContentHash string    `json:"content_hash,omitempty"` // SHA256 of sorted file contents
+	SizeMB      int       `json:"size_mb"`
+	Files       []string  `json:"files"`
+	ImagePath   string    `json:"image_path"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type Function struct {

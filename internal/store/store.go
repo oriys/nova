@@ -109,6 +109,7 @@ type MetadataStore interface {
 	SaveLayer(ctx context.Context, layer *domain.Layer) error
 	GetLayer(ctx context.Context, id string) (*domain.Layer, error)
 	GetLayerByName(ctx context.Context, name string) (*domain.Layer, error)
+	GetLayerByContentHash(ctx context.Context, hash string) (*domain.Layer, error)
 	ListLayers(ctx context.Context) ([]*domain.Layer, error)
 	DeleteLayer(ctx context.Context, id string) error
 	SetFunctionLayers(ctx context.Context, funcID string, layerIDs []string) error

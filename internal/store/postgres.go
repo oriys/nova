@@ -280,6 +280,7 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
+		`ALTER TABLE layers ADD COLUMN IF NOT EXISTS content_hash TEXT NOT NULL DEFAULT ''`,
 		`CREATE TABLE IF NOT EXISTS function_layers (
 			function_id TEXT NOT NULL,
 			layer_id TEXT NOT NULL,

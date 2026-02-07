@@ -116,6 +116,7 @@ func main() {
 	ensurePath()
 	mountCodeDrive()
 	mountLayerDrives()
+	mountLayerOverlay(countMountedLayers())
 
 	listener, err := listen(VsockPort)
 	if err != nil {
@@ -706,17 +707,29 @@ func appendDependencyEnv(env []string, runtime string) []string {
 		for _, lp := range layerPaths {
 			paths = append(paths, lp+"/lib/python3/site-packages")
 		}
+		// Add merged overlay if available
+		if _, err := os.Stat("/layers/merged"); err == nil {
+			paths = append(paths, "/layers/merged/lib/python3/site-packages")
+		}
 		env = append(env, "PYTHONPATH="+strings.Join(paths, ":"))
 	case "node":
 		paths := []string{"/code/node_modules"}
 		for _, lp := range layerPaths {
 			paths = append(paths, lp+"/node_modules")
 		}
+		// Add merged overlay if available
+		if _, err := os.Stat("/layers/merged"); err == nil {
+			paths = append(paths, "/layers/merged/node_modules")
+		}
 		env = append(env, "NODE_PATH="+strings.Join(paths, ":"))
 	case "ruby":
 		paths := []string{}
 		for _, lp := range layerPaths {
 			paths = append(paths, lp+"/lib/ruby")
+		}
+		// Add merged overlay if available
+		if _, err := os.Stat("/layers/merged"); err == nil {
+			paths = append(paths, "/layers/merged/lib/ruby")
 		}
 		if len(paths) > 0 {
 			env = append(env, "RUBYLIB="+strings.Join(paths, ":"))
@@ -727,6 +740,10 @@ func appendDependencyEnv(env []string, runtime string) []string {
 		paths := []string{"/code/node_modules"}
 		for _, lp := range layerPaths {
 			paths = append(paths, lp+"/node_modules")
+		}
+		// Add merged overlay if available
+		if _, err := os.Stat("/layers/merged"); err == nil {
+			paths = append(paths, "/layers/merged/node_modules")
 		}
 		env = append(env, "NODE_PATH="+strings.Join(paths, ":"))
 	}
@@ -741,7 +758,28 @@ func appendDependencyEnv(env []string, runtime string) []string {
 		}
 	}
 
+	// Add merged overlay bin to PATH if available
+	if _, err := os.Stat("/layers/merged/bin"); err == nil {
+		for i, kv := range env {
+			if strings.HasPrefix(kv, "PATH=") {
+				env[i] = kv + ":/layers/merged/bin"
+				return env
+			}
+		}
+	}
+
 	return env
+}
+
+func countMountedLayers() int {
+	count := 0
+	for i := 0; i < 6; i++ {
+		if _, err := os.Stat(fmt.Sprintf("/layers/%d", i)); err != nil {
+			break
+		}
+		count++
+	}
+	return count
 }
 
 func ensurePath() {

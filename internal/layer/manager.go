@@ -2,10 +2,13 @@ package layer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -37,8 +40,36 @@ func New(s *store.Store, storageDir string, maxPerFunc int) *Manager {
 	}
 }
 
+// computeContentHash computes a deterministic SHA256 hash of the file contents
+func computeContentHash(files map[string][]byte) string {
+	h := sha256.New()
+	// Sort paths for deterministic hash
+	paths := make([]string, 0, len(files))
+	for p := range files {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	for _, p := range paths {
+		h.Write([]byte(p))
+		h.Write([]byte{0}) // separator
+		h.Write(files[p])
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 // BuildLayer creates a new ext4 image from the provided files
 func (m *Manager) BuildLayer(ctx context.Context, name string, runtime domain.Runtime, files map[string][]byte) (*domain.Layer, error) {
+	contentHash := computeContentHash(files)
+
+	// Check for existing layer with same content
+	existing, err := m.store.GetLayerByContentHash(ctx, contentHash)
+	if err == nil && existing != nil {
+		logging.Op().Info("layer deduplicated", "name", name, "existing", existing.Name, "hash", contentHash[:12])
+		// Return existing layer (caller gets a reference to the same image)
+		return existing, nil
+	}
+
 	id := uuid.New().String()[:12]
 	imagePath := filepath.Join(m.storageDir, id+".ext4")
 
@@ -131,13 +162,14 @@ func (m *Manager) BuildLayer(ctx context.Context, name string, runtime domain.Ru
 	}
 
 	layer := &domain.Layer{
-		ID:        id,
-		Name:      name,
-		Runtime:   runtime,
-		Version:   "1.0",
-		SizeMB:    sizeMB,
-		Files:     fileNames,
-		ImagePath: imagePath,
+		ID:          id,
+		Name:        name,
+		Runtime:     runtime,
+		Version:     "1.0",
+		ContentHash: contentHash,
+		SizeMB:      sizeMB,
+		Files:       fileNames,
+		ImagePath:   imagePath,
 	}
 
 	if err := m.store.SaveLayer(ctx, layer); err != nil {
@@ -173,22 +205,29 @@ func (m *Manager) DeleteLayer(ctx context.Context, id string) error {
 	return m.store.DeleteLayer(ctx, id)
 }
 
-// ValidateFunctionLayers checks layer count and runtime compatibility
+// ValidateFunctionLayers checks layer count, runtime compatibility, and total size
 func (m *Manager) ValidateFunctionLayers(ctx context.Context, funcID string, layerIDs []string, fnRuntime domain.Runtime) error {
 	if len(layerIDs) > m.maxPerFunc {
 		return fmt.Errorf("too many layers: %d (max %d)", len(layerIDs), m.maxPerFunc)
 	}
 
+	// Check total layer size
+	const maxTotalLayerSizeMB = 512
+	var totalSizeMB int
 	for _, lid := range layerIDs {
 		layer, err := m.store.GetLayer(ctx, lid)
 		if err != nil {
 			return fmt.Errorf("layer %s not found: %w", lid, err)
 		}
+		totalSizeMB += layer.SizeMB
 		// Check runtime compatibility - layer runtime should match or be generic
 		if layer.Runtime != "" && layer.Runtime != fnRuntime {
 			return fmt.Errorf("layer %s (runtime %s) incompatible with function runtime %s",
 				layer.Name, layer.Runtime, fnRuntime)
 		}
+	}
+	if totalSizeMB > maxTotalLayerSizeMB {
+		return fmt.Errorf("total layer size %dMB exceeds limit of %dMB", totalSizeMB, maxTotalLayerSizeMB)
 	}
 	return nil
 }
