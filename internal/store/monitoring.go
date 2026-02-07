@@ -215,23 +215,42 @@ func (s *PostgresStore) GetInvocationLog(ctx context.Context, requestID string) 
 	return &log, nil
 }
 
-func (s *PostgresStore) GetFunctionTimeSeries(ctx context.Context, functionID string, hours int) ([]TimeSeriesBucket, error) {
-	if hours <= 0 {
-		hours = 24
+func (s *PostgresStore) GetFunctionTimeSeries(ctx context.Context, functionID string, rangeSeconds, bucketSeconds int) ([]TimeSeriesBucket, error) {
+	if rangeSeconds <= 0 {
+		rangeSeconds = 3600
+	}
+	if bucketSeconds <= 0 {
+		bucketSeconds = 60
 	}
 
 	rows, err := s.pool.Query(ctx, `
+		WITH buckets AS (
+			SELECT generate_series(
+				to_timestamp(floor(extract(epoch from NOW() - make_interval(secs => $2::double precision)) / $3) * $3),
+				to_timestamp(floor(extract(epoch from NOW()) / $3) * $3),
+				make_interval(secs => $3::double precision)
+			) AS bucket
+		),
+		data AS (
+			SELECT
+				to_timestamp(floor(extract(epoch from created_at) / $3) * $3) AS bucket,
+				COUNT(*) AS invocations,
+				COUNT(*) FILTER (WHERE NOT success) AS errors,
+				AVG(duration_ms) AS avg_duration
+			FROM invocation_logs
+			WHERE function_id = $1
+			  AND created_at >= NOW() - make_interval(secs => $2::double precision)
+			GROUP BY bucket
+		)
 		SELECT
-			date_trunc('minute', created_at) AS bucket,
-			COUNT(*) AS invocations,
-			COUNT(*) FILTER (WHERE NOT success) AS errors,
-			AVG(duration_ms) AS avg_duration
-		FROM invocation_logs
-		WHERE function_id = $1
-		  AND created_at >= NOW() - INTERVAL '1 hour' * $2
-		GROUP BY bucket
-		ORDER BY bucket ASC
-	`, functionID, hours)
+			b.bucket,
+			COALESCE(d.invocations, 0) AS invocations,
+			COALESCE(d.errors, 0) AS errors,
+			COALESCE(d.avg_duration, 0) AS avg_duration
+		FROM buckets b
+		LEFT JOIN data d ON b.bucket = d.bucket
+		ORDER BY b.bucket ASC
+	`, functionID, rangeSeconds, bucketSeconds)
 	if err != nil {
 		return nil, fmt.Errorf("get function time series: %w", err)
 	}
@@ -251,22 +270,41 @@ func (s *PostgresStore) GetFunctionTimeSeries(ctx context.Context, functionID st
 	return buckets, nil
 }
 
-func (s *PostgresStore) GetGlobalTimeSeries(ctx context.Context, hours int) ([]TimeSeriesBucket, error) {
-	if hours <= 0 {
-		hours = 24
+func (s *PostgresStore) GetGlobalTimeSeries(ctx context.Context, rangeSeconds, bucketSeconds int) ([]TimeSeriesBucket, error) {
+	if rangeSeconds <= 0 {
+		rangeSeconds = 3600
+	}
+	if bucketSeconds <= 0 {
+		bucketSeconds = 60
 	}
 
 	rows, err := s.pool.Query(ctx, `
+		WITH buckets AS (
+			SELECT generate_series(
+				to_timestamp(floor(extract(epoch from NOW() - make_interval(secs => $1::double precision)) / $2) * $2),
+				to_timestamp(floor(extract(epoch from NOW()) / $2) * $2),
+				make_interval(secs => $2::double precision)
+			) AS bucket
+		),
+		data AS (
+			SELECT
+				to_timestamp(floor(extract(epoch from created_at) / $2) * $2) AS bucket,
+				COUNT(*) AS invocations,
+				COUNT(*) FILTER (WHERE NOT success) AS errors,
+				AVG(duration_ms) AS avg_duration
+			FROM invocation_logs
+			WHERE created_at >= NOW() - make_interval(secs => $1::double precision)
+			GROUP BY bucket
+		)
 		SELECT
-			date_trunc('minute', created_at) AS bucket,
-			COUNT(*) AS invocations,
-			COUNT(*) FILTER (WHERE NOT success) AS errors,
-			AVG(duration_ms) AS avg_duration
-		FROM invocation_logs
-		WHERE created_at >= NOW() - INTERVAL '1 hour' * $1
-		GROUP BY bucket
-		ORDER BY bucket ASC
-	`, hours)
+			b.bucket,
+			COALESCE(d.invocations, 0) AS invocations,
+			COALESCE(d.errors, 0) AS errors,
+			COALESCE(d.avg_duration, 0) AS avg_duration
+		FROM buckets b
+		LEFT JOIN data d ON b.bucket = d.bucket
+		ORDER BY b.bucket ASC
+	`, rangeSeconds, bucketSeconds)
 	if err != nil {
 		return nil, fmt.Errorf("get global time series: %w", err)
 	}

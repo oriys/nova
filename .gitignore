@@ -28,6 +28,9 @@ Thumbs.db
 
 # Test results
 lumen/test-results/
+test-results/
+lumen/e2e/
+lumen/playwright.config.ts
 
 # External repos
 # firecracker/

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/oriys/nova/internal/executor"
@@ -13,7 +15,45 @@ import (
 	"github.com/oriys/nova/internal/store"
 )
 
-const defaultTimeSeriesHours = 1
+const (
+	defaultRangeSeconds = 3600 // 1 hour
+	maxDataPoints       = 30
+)
+
+// parseRangeParam parses a range string like "1m", "5m", "1h", "24h" into
+// (rangeSeconds, bucketSeconds). bucketSeconds = rangeSeconds / maxDataPoints
+// rounded up to at least 1 second.
+func parseRangeParam(raw string) (int, int) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return defaultRangeSeconds, defaultRangeSeconds / maxDataPoints
+	}
+
+	unit := raw[len(raw)-1]
+	numStr := raw[:len(raw)-1]
+	num, err := strconv.Atoi(numStr)
+	if err != nil || num <= 0 {
+		return defaultRangeSeconds, defaultRangeSeconds / maxDataPoints
+	}
+
+	var rangeSeconds int
+	switch unit {
+	case 'm':
+		rangeSeconds = num * 60
+	case 'h':
+		rangeSeconds = num * 3600
+	case 'd':
+		rangeSeconds = num * 86400
+	default:
+		return defaultRangeSeconds, defaultRangeSeconds / maxDataPoints
+	}
+
+	bucketSeconds := rangeSeconds / maxDataPoints
+	if bucketSeconds < 1 {
+		bucketSeconds = 1
+	}
+	return rangeSeconds, bucketSeconds
+}
 
 // Handler handles data plane HTTP requests (invocations and observability).
 type Handler struct {
@@ -254,7 +294,8 @@ func (h *Handler) FunctionMetrics(w http.ResponseWriter, r *http.Request) {
 	poolStats := h.Pool.FunctionStats(fn.ID)
 
 	// Get minute-level time series data for recent window.
-	timeSeries, err := h.Store.GetFunctionTimeSeries(r.Context(), fn.ID, defaultTimeSeriesHours)
+	rangeSec, bucketSec := parseRangeParam(r.URL.Query().Get("range"))
+	timeSeries, err := h.Store.GetFunctionTimeSeries(r.Context(), fn.ID, rangeSec, bucketSec)
 	if err != nil {
 		timeSeries = []store.TimeSeriesBucket{}
 	}
@@ -271,9 +312,10 @@ func (h *Handler) FunctionMetrics(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
-// GlobalTimeSeries handles GET /metrics/timeseries
+// GlobalTimeSeries handles GET /metrics/timeseries?range=1h
 func (h *Handler) GlobalTimeSeries(w http.ResponseWriter, r *http.Request) {
-	timeSeries, err := h.Store.GetGlobalTimeSeries(r.Context(), defaultTimeSeriesHours)
+	rangeSec, bucketSec := parseRangeParam(r.URL.Query().Get("range"))
+	timeSeries, err := h.Store.GetGlobalTimeSeries(r.Context(), rangeSec, bucketSec)
 	if err != nil {
 		timeSeries = []store.TimeSeriesBucket{}
 	}
