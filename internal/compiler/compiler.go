@@ -515,7 +515,8 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 	case domain.RuntimeGo:
 		return "golang:1.23-alpine", "cd /work && go mod tidy && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o handler ."
 	case domain.RuntimeRust:
-		return "rust:1.84-alpine", "cd /work && RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target x86_64-unknown-linux-musl && cp target/x86_64-unknown-linux-musl/release/handler /work/handler"
+		return "rust:1.84-alpine", "apk add --no-cache musl-dev gcc && cd /work && RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target x86_64-unknown-linux-musl &
+     cp target/x86_64-unknown-linux-musl/release/handler /work/handler"
 	case domain.RuntimeJava:
 		return "eclipse-temurin:21-jdk", "cd /work && javac Main.java Handler.java && jar cfe handler.jar Main *.class && cp handler.jar handler"
 	case domain.RuntimeKotlin:
