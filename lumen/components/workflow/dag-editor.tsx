@@ -48,12 +48,6 @@ interface EditorNodeData {
   retryMaxBackoffMs: number
 }
 
-let nodeCounter = 0
-
-function makeNodeId() {
-  return `node-${Date.now()}-${++nodeCounter}`
-}
-
 function editorToFlowNodes(editorNodes: EditorNodeData[], layout: LayoutMap, selectedId?: string, onFunctionClick?: (fn: string) => void): Node<WorkflowNodeData>[] {
   return editorNodes.map((n) => ({
     id: n.nodeKey,
@@ -169,7 +163,6 @@ export function DagEditor({ functions, title, initialDefinition, onSave, onCance
   }, [])
 
   const handleAddNode = useCallback(() => {
-    const id = makeNodeId()
     const key = `step${editorNodes.length + 1}`
     const newNode: EditorNodeData = {
       nodeKey: key,

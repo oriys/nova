@@ -78,7 +78,7 @@ export function validateDAG(
     if (!adjacency[edge.from]) {
       return { valid: false, message: `Unknown node: ${edge.from}` }
     }
-    if (!inDegree.hasOwnProperty(edge.to)) {
+    if (!Object.prototype.hasOwnProperty.call(inDegree, edge.to)) {
       return { valid: false, message: `Unknown node: ${edge.to}` }
     }
     adjacency[edge.from].push(edge.to)

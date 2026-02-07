@@ -32,7 +32,7 @@ import { DagViewer } from "@/components/workflow/dag-viewer"
 import { DagEditor } from "@/components/workflow/dag-editor"
 import { CodeDisplay } from "@/components/code-editor"
 import type { LayoutMap } from "@/components/workflow/dag-layout"
-import { Play, RefreshCw, ArrowLeft, Pencil, Eye, X, ExternalLink, Loader2 } from "lucide-react"
+import { Play, RefreshCw, ArrowLeft, Pencil, X, ExternalLink, Loader2 } from "lucide-react"
 
 export default function WorkflowDetailPage() {
   const params = useParams()

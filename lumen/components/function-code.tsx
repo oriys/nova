@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { CodeEditor, CodeDisplay } from "@/components/code-editor"
+import { CodeEditor } from "@/components/code-editor"
 import { FunctionData } from "@/lib/types"
 import { functionsApi, CompileStatus } from "@/lib/api"
 import { Copy, Check, Download, Save, Loader2, AlertCircle } from "lucide-react"

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { StatsCard } from "@/components/stats-card"
-import { DashboardCharts, TimeSeriesData } from "@/components/dashboard-charts"
+import { DashboardCharts, TimeSeriesData, type TimeRange } from "@/components/dashboard-charts"
 import { ActiveFunctionsTable } from "@/components/active-functions-table"
 import { RecentLogs } from "@/components/recent-logs"
 import { Activity, Zap, AlertTriangle, Clock, RefreshCw } from "lucide-react"
@@ -24,11 +24,12 @@ export default function DashboardPage() {
     failed: number
     avgLatency: number
   }>({ total: 0, success: 0, failed: 0, avgLatency: 0 })
-  const [loading, setLoading] = useState(true)
+  const [, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [timeRange, setTimeRange] = useState<TimeRange>("1h")
 
-  const fetchData = useCallback(async (isRefresh = false) => {
+  const fetchData = useCallback(async (isRefresh = false, range?: TimeRange) => {
     try {
       if (isRefresh) {
         setRefreshing(true)
@@ -37,11 +38,13 @@ export default function DashboardPage() {
       }
       setError(null)
 
+      const currentRange = range || timeRange
+
       // Fetch functions, metrics, and time-series in parallel
       const [funcs, metrics, timeSeriesData] = await Promise.all([
         functionsApi.list(),
         metricsApi.global(),
-        metricsApi.timeseries().catch(() => []),
+        metricsApi.timeseries(currentRange).catch(() => []),
       ])
 
       // Transform functions with their metrics
@@ -90,13 +93,18 @@ export default function DashboardPage() {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [])
+  }, [timeRange])
 
   useEffect(() => {
     fetchData(false)
   }, [fetchData])
 
   const { enabled: autoRefresh, toggle: toggleAutoRefresh } = useAutoRefresh("dashboard", () => fetchData(true), 30000)
+
+  const handleRangeChange = useCallback((range: TimeRange) => {
+    setTimeRange(range)
+    fetchData(true, range)
+  }, [fetchData])
 
   const totalInvocations = globalMetrics.total
   const totalErrors = globalMetrics.failed
@@ -178,7 +186,11 @@ export default function DashboardPage() {
         </div>
 
         {/* Charts */}
-        <DashboardCharts data={timeSeries} />
+        <DashboardCharts
+          data={timeSeries}
+          range={timeRange}
+          onRangeChange={handleRangeChange}
+        />
 
         {/* Tables */}
         <div className="grid gap-6 lg:grid-cols-2">
