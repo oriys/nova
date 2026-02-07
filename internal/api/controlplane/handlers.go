@@ -9,6 +9,7 @@ import (
 	"github.com/oriys/nova/internal/backend"
 	"github.com/oriys/nova/internal/compiler"
 	"github.com/oriys/nova/internal/firecracker"
+	"github.com/oriys/nova/internal/layer"
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/scheduler"
 	"github.com/oriys/nova/internal/secrets"
@@ -30,6 +31,8 @@ type Handler struct {
 	SecretsStore    *secrets.Store
 	Scheduler       *scheduler.Scheduler
 	RootfsDir       string // Directory where rootfs ext4 images are stored
+	GatewayEnabled  bool   // Whether gateway route management is enabled
+	LayerManager    *layer.Manager // Optional: for shared dependency layers
 }
 
 // RegisterRoutes registers all control plane routes on the given mux.
@@ -65,6 +68,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /functions/{name}/snapshot", h.CreateSnapshot)
 	mux.HandleFunc("DELETE /functions/{name}/snapshot", h.DeleteSnapshot)
 
+	// Auto-scaling
+	mux.HandleFunc("PUT /functions/{name}/scaling", h.SetScalingPolicy)
+	mux.HandleFunc("GET /functions/{name}/scaling", h.GetScalingPolicy)
+	mux.HandleFunc("DELETE /functions/{name}/scaling", h.DeleteScalingPolicy)
+
 	// Workflows
 	h.RegisterWorkflowRoutes(mux)
 
@@ -83,6 +91,22 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Schedules
 	schedHandler := &ScheduleHandler{Store: h.Store, Scheduler: h.Scheduler}
 	schedHandler.RegisterRoutes(mux)
+
+	// Gateway routes
+	if h.GatewayEnabled {
+		gwHandler := &GatewayHandler{Store: h.Store}
+		gwHandler.RegisterRoutes(mux)
+	}
+
+	// Layers
+	if h.LayerManager != nil {
+		mux.HandleFunc("POST /layers", h.CreateLayer)
+		mux.HandleFunc("GET /layers", h.ListLayers)
+		mux.HandleFunc("GET /layers/{name}", h.GetLayer)
+		mux.HandleFunc("DELETE /layers/{name}", h.DeleteLayer)
+		mux.HandleFunc("PUT /functions/{name}/layers", h.SetFunctionLayers)
+		mux.HandleFunc("GET /functions/{name}/layers", h.GetFunctionLayers)
+	}
 }
 
 // ListFunctionVersions returns all versions of a function.

@@ -3,15 +3,20 @@ package api
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/oriys/nova/internal/api/controlplane"
 	"github.com/oriys/nova/internal/api/dataplane"
 	"github.com/oriys/nova/internal/auth"
+	"github.com/oriys/nova/internal/authz"
 	"github.com/oriys/nova/internal/backend"
 	"github.com/oriys/nova/internal/compiler"
 	"github.com/oriys/nova/internal/config"
+	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/firecracker"
+	"github.com/oriys/nova/internal/gateway"
+	"github.com/oriys/nova/internal/layer"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/observability"
 	"github.com/oriys/nova/internal/pool"
@@ -32,11 +37,13 @@ type ServerConfig struct {
 	FCAdapter    *firecracker.Adapter // Optional: for Firecracker-specific features (snapshots)
 	AuthCfg      *config.AuthConfig
 	RateLimitCfg    *config.RateLimitConfig
+	GatewayCfg      *config.GatewayConfig
 	WorkflowService *workflow.Service
 	APIKeyManager   *auth.APIKeyManager
 	SecretsStore    *secrets.Store
 	Scheduler       *scheduler.Scheduler
 	RootfsDir       string
+	LayerManager    *layer.Manager
 }
 
 // StartHTTPServer creates and starts the HTTP server with control plane and data plane handlers.
@@ -48,6 +55,8 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 
 	// Create services
 	funcService := service.NewFunctionService(cfg.Store, comp)
+
+	gatewayEnabled := cfg.GatewayCfg != nil && cfg.GatewayCfg.Enabled
 
 	// Register control plane routes
 	cpHandler := &controlplane.Handler{
@@ -62,6 +71,8 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 		SecretsStore:    cfg.SecretsStore,
 		Scheduler:       cfg.Scheduler,
 		RootfsDir:       cfg.RootfsDir,
+		GatewayEnabled:  gatewayEnabled,
+		LayerManager:    cfg.LayerManager,
 	}
 	cpHandler.RegisterRoutes(mux)
 
@@ -105,6 +116,31 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 			handler = auth.Middleware(authenticators, cfg.AuthCfg.PublicPaths)(handler)
 			logging.Op().Info("authentication enabled", "public_paths", cfg.AuthCfg.PublicPaths)
 		}
+
+		// Add authorization middleware
+		if cfg.AuthCfg.Authorization.Enabled {
+			defaultRole := domain.Role(cfg.AuthCfg.Authorization.DefaultRole)
+			authorizer := authz.New(defaultRole)
+			handler = authz.Middleware(authorizer)(handler)
+			logging.Op().Info("authorization enabled", "default_role", cfg.AuthCfg.Authorization.DefaultRole)
+		}
+	}
+
+	// Set up gateway host router if enabled
+	if gatewayEnabled && cfg.Exec != nil {
+		var authenticators []auth.Authenticator
+		if cfg.AuthCfg != nil && cfg.AuthCfg.Enabled {
+			authenticators = buildAuthenticators(cfg.AuthCfg, cfg.Store)
+		}
+		gw := gateway.New(cfg.Store, cfg.Exec, authenticators)
+		if err := gw.ReloadRoutes(context.Background()); err != nil {
+			logging.Op().Warn("failed to load gateway routes", "error", err)
+		}
+		handler = &hostRouter{
+			gateway:    gw,
+			defaultMux: handler,
+		}
+		logging.Op().Info("gateway enabled")
 	}
 
 	server := &http.Server{
@@ -166,10 +202,12 @@ type apiKeyStoreAdapter struct {
 }
 
 func (a *apiKeyStoreAdapter) SaveAPIKey(ctx context.Context, key *auth.APIKey) error {
+	permissions, _ := auth.MarshalPolicies(key.Policies)
 	return a.s.SaveAPIKey(ctx, &store.APIKeyRecord{
 		Name: key.Name, KeyHash: key.KeyHash, Tier: key.Tier,
 		Enabled: key.Enabled, ExpiresAt: key.ExpiresAt,
-		CreatedAt: key.CreatedAt, UpdatedAt: key.UpdatedAt,
+		Permissions: permissions,
+		CreatedAt:   key.CreatedAt, UpdatedAt: key.UpdatedAt,
 	})
 }
 
@@ -178,9 +216,11 @@ func (a *apiKeyStoreAdapter) GetAPIKeyByHash(ctx context.Context, keyHash string
 	if err != nil {
 		return nil, err
 	}
+	policies, _ := auth.UnmarshalPolicies(rec.Permissions)
 	return &auth.APIKey{
 		Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
 		Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
+		Policies:  policies,
 		CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,
 	}, nil
 }
@@ -190,9 +230,11 @@ func (a *apiKeyStoreAdapter) GetAPIKeyByName(ctx context.Context, name string) (
 	if err != nil {
 		return nil, err
 	}
+	policies, _ := auth.UnmarshalPolicies(rec.Permissions)
 	return &auth.APIKey{
 		Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
 		Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
+		Policies:  policies,
 		CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,
 	}, nil
 }
@@ -204,9 +246,11 @@ func (a *apiKeyStoreAdapter) ListAPIKeys(ctx context.Context) ([]*auth.APIKey, e
 	}
 	keys := make([]*auth.APIKey, len(recs))
 	for i, rec := range recs {
+		policies, _ := auth.UnmarshalPolicies(rec.Permissions)
 		keys[i] = &auth.APIKey{
 			Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
 			Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
+			Policies:  policies,
 			CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,
 		}
 	}
@@ -215,4 +259,29 @@ func (a *apiKeyStoreAdapter) ListAPIKeys(ctx context.Context) ([]*auth.APIKey, e
 
 func (a *apiKeyStoreAdapter) DeleteAPIKey(ctx context.Context, name string) error {
 	return a.s.DeleteAPIKey(ctx, name)
+}
+
+// hostRouter routes requests to the gateway for known custom domains,
+// and falls back to the default mux for all other traffic.
+type hostRouter struct {
+	gateway    *gateway.Gateway
+	defaultMux http.Handler
+}
+
+func (h *hostRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	host := r.Host
+	// Strip port
+	if idx := strings.LastIndex(host, ":"); idx > 0 {
+		host = host[:idx]
+	}
+	host = strings.ToLower(host)
+
+	// Check if this host has gateway routes
+	domains := h.gateway.KnownDomains()
+	if _, ok := domains[host]; ok {
+		h.gateway.ServeHTTP(w, r)
+		return
+	}
+
+	h.defaultMux.ServeHTTP(w, r)
 }

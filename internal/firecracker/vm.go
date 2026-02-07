@@ -113,6 +113,7 @@ type VM struct {
 	TapDevice         string // TAP device name (e.g., "nova-abc123")
 	GuestIP           string // IP assigned to guest (e.g., "172.30.0.2")
 	GuestMAC          string // MAC address for guest
+	NetNS             string // Network namespace name (empty = no netns isolation)
 	Cmd               *exec.Cmd
 	DockerContainerID string // For Docker backend
 	AssignedPort      int    // For Docker backend (host port mapped to agent)
@@ -407,20 +408,43 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 		vm.State = VMStateStopped
 		return nil, fmt.Errorf("ensure bridge: %w", err)
 	}
-	tap, err := m.createTAP(vmID)
-	if err != nil {
-		vm.State = VMStateStopped
-		return nil, fmt.Errorf("create tap: %w", err)
+
+	useNetNS := fn.NetworkPolicy != nil && fn.NetworkPolicy.IsolationMode != "" && fn.NetworkPolicy.IsolationMode != "none"
+	if useNetNS {
+		ip, err := m.allocateIP()
+		if err != nil {
+			vm.State = VMStateStopped
+			return nil, err
+		}
+		vm.GuestIP = ip
+		vm.GuestMAC = generateMAC(vmID)
+		if err := m.SetupNetNS(vm, m.bridgeGatewayIP()); err != nil {
+			vm.State = VMStateStopped
+			m.releaseIP(vm.GuestIP)
+			return nil, fmt.Errorf("setup netns: %w", err)
+		}
+		if err := m.ApplyEgressRules(vm.NetNS, fn.NetworkPolicy); err != nil {
+			vm.State = VMStateStopped
+			CleanupNetNS(vm.ID)
+			m.releaseIP(vm.GuestIP)
+			return nil, fmt.Errorf("apply egress rules: %w", err)
+		}
+	} else {
+		tap, err := m.createTAP(vmID)
+		if err != nil {
+			vm.State = VMStateStopped
+			return nil, fmt.Errorf("create tap: %w", err)
+		}
+		vm.TapDevice = tap
+		ip, err := m.allocateIP()
+		if err != nil {
+			vm.State = VMStateStopped
+			deleteTAP(vm.TapDevice)
+			return nil, err
+		}
+		vm.GuestIP = ip
+		vm.GuestMAC = generateMAC(vmID)
 	}
-	vm.TapDevice = tap
-	ip, err := m.allocateIP()
-	if err != nil {
-		vm.State = VMStateStopped
-		deleteTAP(vm.TapDevice)
-		return nil, err
-	}
-	vm.GuestIP = ip
-	vm.GuestMAC = generateMAC(vmID)
 
 	// Check for snapshot
 	snapshotPath := filepath.Join(m.config.SnapshotDir, fn.ID+".snap")
@@ -443,9 +467,17 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 	// and use API to configure/load.
 	// Use exec.Command (not CommandContext) so the process survives beyond
 	// the HTTP request that created it.
-	cmd := exec.Command(m.config.FirecrackerBin,
-		"--api-sock", vm.SocketPath,
-	)
+	var cmd *exec.Cmd
+	if vm.NetNS != "" {
+		cmd = exec.Command("ip", "netns", "exec", vm.NetNS,
+			m.config.FirecrackerBin,
+			"--api-sock", vm.SocketPath,
+		)
+	} else {
+		cmd = exec.Command(m.config.FirecrackerBin,
+			"--api-sock", vm.SocketPath,
+		)
+	}
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -496,7 +528,12 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 				vm.State = VMStateStopped
 				return nil, fmt.Errorf("create log file for fresh boot: %w", err2)
 			}
-			cmd2 := exec.Command(m.config.FirecrackerBin, "--api-sock", vm.SocketPath)
+			var cmd2 *exec.Cmd
+			if vm.NetNS != "" {
+				cmd2 = exec.Command("ip", "netns", "exec", vm.NetNS, m.config.FirecrackerBin, "--api-sock", vm.SocketPath)
+			} else {
+				cmd2 = exec.Command(m.config.FirecrackerBin, "--api-sock", vm.SocketPath)
+			}
 			cmd2.Stdout = logFile2
 			cmd2.Stderr = logFile2
 			cmd2.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -621,20 +658,43 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 		vm.State = VMStateStopped
 		return nil, fmt.Errorf("ensure bridge: %w", err)
 	}
-	tap, err := m.createTAP(vmID)
-	if err != nil {
-		vm.State = VMStateStopped
-		return nil, fmt.Errorf("create tap: %w", err)
+
+	useNetNS := fn.NetworkPolicy != nil && fn.NetworkPolicy.IsolationMode != "" && fn.NetworkPolicy.IsolationMode != "none"
+	if useNetNS {
+		ip, err := m.allocateIP()
+		if err != nil {
+			vm.State = VMStateStopped
+			return nil, err
+		}
+		vm.GuestIP = ip
+		vm.GuestMAC = generateMAC(vmID)
+		if err := m.SetupNetNS(vm, m.bridgeGatewayIP()); err != nil {
+			vm.State = VMStateStopped
+			m.releaseIP(vm.GuestIP)
+			return nil, fmt.Errorf("setup netns: %w", err)
+		}
+		if err := m.ApplyEgressRules(vm.NetNS, fn.NetworkPolicy); err != nil {
+			vm.State = VMStateStopped
+			CleanupNetNS(vm.ID)
+			m.releaseIP(vm.GuestIP)
+			return nil, fmt.Errorf("apply egress rules: %w", err)
+		}
+	} else {
+		tap, err := m.createTAP(vmID)
+		if err != nil {
+			vm.State = VMStateStopped
+			return nil, fmt.Errorf("create tap: %w", err)
+		}
+		vm.TapDevice = tap
+		ip, err := m.allocateIP()
+		if err != nil {
+			vm.State = VMStateStopped
+			deleteTAP(vm.TapDevice)
+			return nil, err
+		}
+		vm.GuestIP = ip
+		vm.GuestMAC = generateMAC(vmID)
 	}
-	vm.TapDevice = tap
-	ip, err := m.allocateIP()
-	if err != nil {
-		vm.State = VMStateStopped
-		deleteTAP(vm.TapDevice)
-		return nil, err
-	}
-	vm.GuestIP = ip
-	vm.GuestMAC = generateMAC(vmID)
 
 	// Note: snapshots not supported for multi-file VMs initially
 
@@ -644,9 +704,17 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 		return nil, fmt.Errorf("create log file: %w", err)
 	}
 
-	cmd := exec.Command(m.config.FirecrackerBin,
-		"--api-sock", vm.SocketPath,
-	)
+	var cmd *exec.Cmd
+	if vm.NetNS != "" {
+		cmd = exec.Command("ip", "netns", "exec", vm.NetNS,
+			m.config.FirecrackerBin,
+			"--api-sock", vm.SocketPath,
+		)
+	} else {
+		cmd = exec.Command(m.config.FirecrackerBin,
+			"--api-sock", vm.SocketPath,
+		)
+	}
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -860,6 +928,21 @@ func (m *Manager) apiBoot(ctx context.Context, vm *VM, rootfs, codeDrive string,
 	}
 	if err := m.apiCall(ctx, vm, "PUT", "/drives/code", code); err != nil {
 		return fmt.Errorf("drive code: %w", err)
+	}
+
+	// Layer drives (read-only shared dependency images)
+	for i, layerPath := range fn.LayerPaths {
+		driveID := fmt.Sprintf("layer%d", i)
+		layerDrive := map[string]interface{}{
+			"drive_id":       driveID,
+			"path_on_host":   layerPath,
+			"is_root_device": false,
+			"is_read_only":   true,
+			"io_engine":      "Async",
+		}
+		if err := m.apiCall(ctx, vm, "PUT", "/drives/"+driveID, layerDrive); err != nil {
+			return fmt.Errorf("drive %s: %w", driveID, err)
+		}
 	}
 
 	// 3. Network interface
@@ -1535,7 +1618,11 @@ func (m *Manager) monitorProcess(vm *VM) {
 
 		// Clean up per-VM files
 		removeSocketClient(vm.SocketPath)
-		deleteTAP(vm.TapDevice)
+		if vm.NetNS != "" {
+			CleanupNetNS(vm.ID)
+		} else {
+			deleteTAP(vm.TapDevice)
+		}
 		os.Remove(vm.SocketPath)
 		os.Remove(vm.VsockPath)
 		if !vm.PreserveCodeDrive {
@@ -1595,7 +1682,11 @@ func (m *Manager) StopVM(vmID string) error {
 
 	// Cleanup per-VM files
 	removeSocketClient(vm.SocketPath)
-	deleteTAP(vm.TapDevice)
+	if vm.NetNS != "" {
+		CleanupNetNS(vm.ID)
+	} else {
+		deleteTAP(vm.TapDevice)
+	}
 	os.Remove(vm.SocketPath)
 	os.Remove(vm.VsockPath)
 	if !vm.PreserveCodeDrive {
@@ -1731,6 +1822,7 @@ type InitPayload struct {
 	FunctionVersion int               `json:"function_version,omitempty"`
 	MemoryMB        int               `json:"memory_mb,omitempty"`
 	TimeoutS        int               `json:"timeout_s,omitempty"`
+	LayerCount      int               `json:"layer_count,omitempty"`
 }
 
 type ExecPayload struct {
@@ -1902,6 +1994,7 @@ func (c *VsockClient) Init(fn *domain.Function) error {
 		FunctionVersion: fn.Version,
 		MemoryMB:        fn.MemoryMB,
 		TimeoutS:        fn.TimeoutS,
+		LayerCount:      len(fn.LayerPaths),
 	})
 	c.initPayload = payload
 	if err := c.redialAndInitLocked(5 * time.Second); err != nil {

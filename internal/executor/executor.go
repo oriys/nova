@@ -110,6 +110,18 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		fn.EnvVars = resolved
 	}
 
+	// Resolve layer paths
+	if len(fn.Layers) > 0 {
+		layers, err := e.store.GetFunctionLayers(ctx, fn.ID)
+		if err != nil {
+			logging.Op().Warn("failed to resolve layers", "function", fn.Name, "error", err)
+		} else {
+			for _, l := range layers {
+				fn.LayerPaths = append(fn.LayerPaths, l.ImagePath)
+			}
+		}
+	}
+
 	// Fetch code content from store
 	codeRecord, err := e.store.GetFunctionCode(ctx, fn.ID)
 	if err != nil {

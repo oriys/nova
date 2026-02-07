@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -10,13 +11,14 @@ import (
 
 // APIKeyRecord represents an API key in the database
 type APIKeyRecord struct {
-	Name      string     `json:"name"`
-	KeyHash   string     `json:"key_hash"`
-	Tier      string     `json:"tier"`
-	Enabled   bool       `json:"enabled"`
-	ExpiresAt *time.Time `json:"expires_at,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
+	Name        string          `json:"name"`
+	KeyHash     string          `json:"key_hash"`
+	Tier        string          `json:"tier"`
+	Enabled     bool            `json:"enabled"`
+	ExpiresAt   *time.Time      `json:"expires_at,omitempty"`
+	Permissions json.RawMessage `json:"permissions,omitempty"` // JSONB policies
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
 }
 
 // RateLimitBucket represents a token bucket for rate limiting
@@ -28,16 +30,21 @@ type RateLimitBucket struct {
 
 // SaveAPIKey creates or updates an API key
 func (s *PostgresStore) SaveAPIKey(ctx context.Context, key *APIKeyRecord) error {
+	permissions := key.Permissions
+	if len(permissions) == 0 {
+		permissions = json.RawMessage("[]")
+	}
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO api_keys (name, key_hash, tier, enabled, expires_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO api_keys (name, key_hash, tier, enabled, expires_at, permissions, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (name) DO UPDATE SET
 			key_hash = EXCLUDED.key_hash,
 			tier = EXCLUDED.tier,
 			enabled = EXCLUDED.enabled,
 			expires_at = EXCLUDED.expires_at,
+			permissions = EXCLUDED.permissions,
 			updated_at = NOW()
-	`, key.Name, key.KeyHash, key.Tier, key.Enabled, key.ExpiresAt, key.CreatedAt, key.UpdatedAt)
+	`, key.Name, key.KeyHash, key.Tier, key.Enabled, key.ExpiresAt, permissions, key.CreatedAt, key.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("save api key: %w", err)
 	}
@@ -48,9 +55,9 @@ func (s *PostgresStore) SaveAPIKey(ctx context.Context, key *APIKeyRecord) error
 func (s *PostgresStore) GetAPIKeyByHash(ctx context.Context, keyHash string) (*APIKeyRecord, error) {
 	var key APIKeyRecord
 	err := s.pool.QueryRow(ctx, `
-		SELECT name, key_hash, tier, enabled, expires_at, created_at, updated_at
+		SELECT name, key_hash, tier, enabled, expires_at, COALESCE(permissions, '[]'::jsonb), created_at, updated_at
 		FROM api_keys WHERE key_hash = $1
-	`, keyHash).Scan(&key.Name, &key.KeyHash, &key.Tier, &key.Enabled, &key.ExpiresAt, &key.CreatedAt, &key.UpdatedAt)
+	`, keyHash).Scan(&key.Name, &key.KeyHash, &key.Tier, &key.Enabled, &key.ExpiresAt, &key.Permissions, &key.CreatedAt, &key.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -64,9 +71,9 @@ func (s *PostgresStore) GetAPIKeyByHash(ctx context.Context, keyHash string) (*A
 func (s *PostgresStore) GetAPIKeyByName(ctx context.Context, name string) (*APIKeyRecord, error) {
 	var key APIKeyRecord
 	err := s.pool.QueryRow(ctx, `
-		SELECT name, key_hash, tier, enabled, expires_at, created_at, updated_at
+		SELECT name, key_hash, tier, enabled, expires_at, COALESCE(permissions, '[]'::jsonb), created_at, updated_at
 		FROM api_keys WHERE name = $1
-	`, name).Scan(&key.Name, &key.KeyHash, &key.Tier, &key.Enabled, &key.ExpiresAt, &key.CreatedAt, &key.UpdatedAt)
+	`, name).Scan(&key.Name, &key.KeyHash, &key.Tier, &key.Enabled, &key.ExpiresAt, &key.Permissions, &key.CreatedAt, &key.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("api key not found: %s", name)
 	}
@@ -79,7 +86,7 @@ func (s *PostgresStore) GetAPIKeyByName(ctx context.Context, name string) (*APIK
 // ListAPIKeys returns all API keys
 func (s *PostgresStore) ListAPIKeys(ctx context.Context) ([]*APIKeyRecord, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT name, key_hash, tier, enabled, expires_at, created_at, updated_at
+		SELECT name, key_hash, tier, enabled, expires_at, COALESCE(permissions, '[]'::jsonb), created_at, updated_at
 		FROM api_keys ORDER BY name
 	`)
 	if err != nil {
@@ -90,7 +97,7 @@ func (s *PostgresStore) ListAPIKeys(ctx context.Context) ([]*APIKeyRecord, error
 	var keys []*APIKeyRecord
 	for rows.Next() {
 		var key APIKeyRecord
-		if err := rows.Scan(&key.Name, &key.KeyHash, &key.Tier, &key.Enabled, &key.ExpiresAt, &key.CreatedAt, &key.UpdatedAt); err != nil {
+		if err := rows.Scan(&key.Name, &key.KeyHash, &key.Tier, &key.Enabled, &key.ExpiresAt, &key.Permissions, &key.CreatedAt, &key.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan api key: %w", err)
 		}
 		keys = append(keys, &key)

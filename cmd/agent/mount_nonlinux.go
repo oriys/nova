@@ -10,3 +10,7 @@ func mountCodeDrive() {
 
 func remountCodeDriveRW() error { return nil }
 func remountCodeDriveRO() error { return nil }
+
+func mountLayerDrives() {
+	fmt.Println("[agent] Non-linux platform, skipping layer drive mount")
+}

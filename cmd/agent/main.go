@@ -77,6 +77,7 @@ type InitPayload struct {
 	FunctionVersion int               `json:"function_version,omitempty"`
 	MemoryMB        int               `json:"memory_mb,omitempty"`
 	TimeoutS        int               `json:"timeout_s,omitempty"`
+	LayerCount      int               `json:"layer_count,omitempty"`
 }
 
 type ExecPayload struct {
@@ -114,6 +115,7 @@ func main() {
 
 	ensurePath()
 	mountCodeDrive()
+	mountLayerDrives()
 
 	listener, err := listen(VsockPort)
 	if err != nil {
@@ -688,21 +690,57 @@ func defaultEnv() []string {
 
 // appendDependencyEnv adds runtime-specific environment variables for dependency paths
 func appendDependencyEnv(env []string, runtime string) []string {
+	// Collect mounted layer paths
+	var layerPaths []string
+	for i := 0; i < 6; i++ {
+		mountPoint := fmt.Sprintf("/layers/%d", i)
+		if _, err := os.Stat(mountPoint); err != nil {
+			break
+		}
+		layerPaths = append(layerPaths, mountPoint)
+	}
+
 	switch runtime {
 	case "python":
-		// Python looks for modules in PYTHONPATH
-		// /code/deps is where pip install -t puts packages
-		env = append(env, "PYTHONPATH=/code/deps:/code")
+		paths := []string{"/code/deps", "/code"}
+		for _, lp := range layerPaths {
+			paths = append(paths, lp+"/lib/python3/site-packages")
+		}
+		env = append(env, "PYTHONPATH="+strings.Join(paths, ":"))
 	case "node":
-		// Node.js looks for modules in NODE_PATH
-		env = append(env, "NODE_PATH=/code/node_modules")
+		paths := []string{"/code/node_modules"}
+		for _, lp := range layerPaths {
+			paths = append(paths, lp+"/node_modules")
+		}
+		env = append(env, "NODE_PATH="+strings.Join(paths, ":"))
+	case "ruby":
+		paths := []string{}
+		for _, lp := range layerPaths {
+			paths = append(paths, lp+"/lib/ruby")
+		}
+		if len(paths) > 0 {
+			env = append(env, "RUBYLIB="+strings.Join(paths, ":"))
+		}
 	case "deno":
-		// Deno can use DENO_DIR for cached modules
 		env = append(env, "DENO_DIR=/code/.deno")
 	case "bun":
-		// Bun uses NODE_PATH like Node
-		env = append(env, "NODE_PATH=/code/node_modules")
+		paths := []string{"/code/node_modules"}
+		for _, lp := range layerPaths {
+			paths = append(paths, lp+"/node_modules")
+		}
+		env = append(env, "NODE_PATH="+strings.Join(paths, ":"))
 	}
+
+	// Add layer paths to generic PATH for compiled binaries
+	if len(layerPaths) > 0 {
+		for _, kv := range env {
+			if strings.HasPrefix(kv, "PATH=") {
+				// Already has PATH, append layer paths
+				return env
+			}
+		}
+	}
+
 	return env
 }
 

@@ -4,14 +4,17 @@ import (
 	"context"
 	"net/http"
 	"strings"
+
+	"github.com/oriys/nova/internal/domain"
 )
 
 // Identity represents an authenticated identity
 type Identity struct {
-	Subject string         // "user:xxx" or "apikey:name"
-	KeyName string         // API Key name (empty for JWT auth)
-	Tier    string         // Rate limit tier: "default", "premium", etc.
-	Claims  map[string]any // JWT claims or API key metadata
+	Subject  string                 // "user:xxx" or "apikey:name"
+	KeyName  string                 // API Key name (empty for JWT auth)
+	Tier     string                 // Rate limit tier: "default", "premium", etc.
+	Claims   map[string]any         // JWT claims or API key metadata
+	Policies []domain.PolicyBinding // Authorization policies (from API key or JWT)
 }
 
 // contextKey is used for storing Identity in context

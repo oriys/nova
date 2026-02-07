@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/oriys/nova/internal/auth"
+	"github.com/oriys/nova/internal/domain"
 )
 
 // APIKeyHandler handles API key management endpoints.
@@ -21,8 +22,9 @@ func (h *APIKeyHandler) RegisterRoutes(mux *http.ServeMux) {
 
 func (h *APIKeyHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name string `json:"name"`
-		Tier string `json:"tier"`
+		Name        string                 `json:"name"`
+		Tier        string                 `json:"tier"`
+		Permissions []domain.PolicyBinding `json:"permissions"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -33,7 +35,7 @@ func (h *APIKeyHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key, err := h.Manager.Create(r.Context(), req.Name, req.Tier)
+	key, err := h.Manager.Create(r.Context(), req.Name, req.Tier, req.Permissions)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
@@ -46,10 +48,11 @@ func (h *APIKeyHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]string{
-		"name": req.Name,
-		"key":  key,
-		"tier": tier,
+	json.NewEncoder(w).Encode(map[string]any{
+		"name":        req.Name,
+		"key":         key,
+		"tier":        tier,
+		"permissions": req.Permissions,
 	})
 }
 
@@ -61,19 +64,21 @@ func (h *APIKeyHandler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type apiKeyResponse struct {
-		Name      string `json:"name"`
-		Tier      string `json:"tier"`
-		Enabled   bool   `json:"enabled"`
-		CreatedAt string `json:"created_at"`
+		Name        string                 `json:"name"`
+		Tier        string                 `json:"tier"`
+		Enabled     bool                   `json:"enabled"`
+		Permissions []domain.PolicyBinding `json:"permissions"`
+		CreatedAt   string                 `json:"created_at"`
 	}
 
 	result := make([]apiKeyResponse, len(keys))
 	for i, k := range keys {
 		result[i] = apiKeyResponse{
-			Name:      k.Name,
-			Tier:      k.Tier,
-			Enabled:   k.Enabled,
-			CreatedAt: k.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			Name:        k.Name,
+			Tier:        k.Tier,
+			Enabled:     k.Enabled,
+			Permissions: k.Policies,
+			CreatedAt:   k.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		}
 	}
 
@@ -105,20 +110,30 @@ func (h *APIKeyHandler) ToggleAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Enabled bool `json:"enabled"`
+		Enabled     *bool                  `json:"enabled"`
+		Permissions *[]domain.PolicyBinding `json:"permissions"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if req.Enabled {
-		if err := h.Manager.Enable(r.Context(), name); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+	if req.Enabled != nil {
+		if *req.Enabled {
+			if err := h.Manager.Enable(r.Context(), name); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			if err := h.Manager.Revoke(r.Context(), name); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
-	} else {
-		if err := h.Manager.Revoke(r.Context(), name); err != nil {
+	}
+
+	if req.Permissions != nil {
+		if err := h.Manager.UpdatePolicies(r.Context(), name, *req.Permissions); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -126,7 +141,7 @@ func (h *APIKeyHandler) ToggleAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"name":    name,
-		"enabled": req.Enabled,
+		"name":   name,
+		"status": "updated",
 	})
 }

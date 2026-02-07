@@ -32,6 +32,10 @@ type PrometheusMetrics struct {
 	vmPool         *prometheus.GaugeVec
 	poolUtilization *prometheus.GaugeVec
 	activeRequests  prometheus.Gauge
+
+	// Autoscaling
+	autoscaleDesiredReplicas *prometheus.GaugeVec
+	autoscaleDecisionsTotal  *prometheus.CounterVec
 }
 
 // Default histogram buckets for invocation duration (in milliseconds)
@@ -175,6 +179,24 @@ func InitPrometheus(namespace string, buckets []float64) {
 				Help:      "Number of currently active invocation requests",
 			},
 		),
+
+		autoscaleDesiredReplicas: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "autoscale_desired_replicas",
+				Help:      "Current desired replica count set by autoscaler",
+			},
+			[]string{"function"},
+		),
+
+		autoscaleDecisionsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "autoscale_decisions_total",
+				Help:      "Total auto-scaling decisions",
+			},
+			[]string{"function", "direction"},
+		),
 	}
 
 	pm.uptime = prometheus.NewGaugeFunc(
@@ -204,6 +226,8 @@ func InitPrometheus(namespace string, buckets []float64) {
 		pm.vmPool,
 		pm.poolUtilization,
 		pm.activeRequests,
+		pm.autoscaleDesiredReplicas,
+		pm.autoscaleDecisionsTotal,
 	)
 
 	promMetrics = pm
@@ -342,4 +366,20 @@ func PrometheusRegistry() *prometheus.Registry {
 		return nil
 	}
 	return promMetrics.registry
+}
+
+// SetAutoscaleDesiredReplicas sets the desired replica gauge
+func SetAutoscaleDesiredReplicas(funcName string, desired int) {
+	if promMetrics == nil {
+		return
+	}
+	promMetrics.autoscaleDesiredReplicas.WithLabelValues(funcName).Set(float64(desired))
+}
+
+// RecordAutoscaleDecision records an autoscale decision
+func RecordAutoscaleDecision(funcName, direction string) {
+	if promMetrics == nil {
+		return
+	}
+	promMetrics.autoscaleDecisionsTotal.WithLabelValues(funcName, direction).Inc()
 }

@@ -18,6 +18,8 @@ type FunctionUpdate struct {
 	InstanceConcurrency *int
 	Mode                *domain.ExecutionMode
 	Limits              *domain.ResourceLimits
+	NetworkPolicy       *domain.NetworkPolicy
+	AutoScalePolicy     *domain.AutoScalePolicy
 	EnvVars             map[string]string
 	MergeEnvVars        bool
 }
@@ -93,6 +95,25 @@ type MetadataStore interface {
 	ListFunctionFiles(ctx context.Context, funcID string) ([]FunctionFileInfo, error)
 	DeleteFunctionFiles(ctx context.Context, funcID string) error
 	HasFunctionFiles(ctx context.Context, funcID string) (bool, error)
+
+	// Gateway routes
+	SaveGatewayRoute(ctx context.Context, route *domain.GatewayRoute) error
+	GetGatewayRoute(ctx context.Context, id string) (*domain.GatewayRoute, error)
+	GetRouteByDomainPath(ctx context.Context, domain, path string) (*domain.GatewayRoute, error)
+	ListGatewayRoutes(ctx context.Context) ([]*domain.GatewayRoute, error)
+	ListRoutesByDomain(ctx context.Context, domain string) ([]*domain.GatewayRoute, error)
+	DeleteGatewayRoute(ctx context.Context, id string) error
+	UpdateGatewayRoute(ctx context.Context, id string, route *domain.GatewayRoute) error
+
+	// Layers
+	SaveLayer(ctx context.Context, layer *domain.Layer) error
+	GetLayer(ctx context.Context, id string) (*domain.Layer, error)
+	GetLayerByName(ctx context.Context, name string) (*domain.Layer, error)
+	ListLayers(ctx context.Context) ([]*domain.Layer, error)
+	DeleteLayer(ctx context.Context, id string) error
+	SetFunctionLayers(ctx context.Context, funcID string, layerIDs []string) error
+	GetFunctionLayers(ctx context.Context, funcID string) ([]*domain.Layer, error)
+	ListFunctionsByLayer(ctx context.Context, layerID string) ([]string, error)
 }
 
 // Store wraps the MetadataStore, WorkflowStore, and ScheduleStore (Postgres) for all persistence.

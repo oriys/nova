@@ -28,6 +28,40 @@ export interface FunctionData {
   compileStatus?: CompileStatus;
   compileError?: string;
   limits?: ResourceLimits;
+  networkPolicy?: NetworkPolicy;
+}
+
+export interface NetworkPolicy {
+  isolation_mode?: string;
+  egress_rules?: EgressRule[];
+  allowed_functions?: string[];
+  deny_external_access?: boolean;
+}
+
+export interface EgressRule {
+  host: string;
+  port?: number;
+  protocol?: string;
+}
+
+export interface GatewayRoute {
+  id: string;
+  domain: string;
+  path: string;
+  methods?: string[];
+  function_name: string;
+  auth_strategy: string;
+  auth_config?: Record<string, string>;
+  request_schema?: unknown;
+  rate_limit?: RouteRateLimit;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RouteRateLimit {
+  requests_per_second: number;
+  burst_size: number;
 }
 
 export interface LogEntry {

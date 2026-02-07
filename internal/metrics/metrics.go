@@ -226,6 +226,14 @@ func (m *Metrics) getFunctionMetrics(funcID string) *FunctionMetrics {
 	return actual.(*FunctionMetrics)
 }
 
+// GetFunctionMetrics returns the metrics for a specific function (or nil if none recorded yet)
+func (m *Metrics) GetFunctionMetrics(funcID string) *FunctionMetrics {
+	if v, ok := m.funcMetrics.Load(funcID); ok {
+		return v.(*FunctionMetrics)
+	}
+	return nil
+}
+
 // Snapshot returns a point-in-time snapshot of all metrics
 func (m *Metrics) Snapshot() map[string]interface{} {
 	total := m.TotalInvocations.Load()

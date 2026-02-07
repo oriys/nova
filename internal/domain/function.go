@@ -76,6 +76,53 @@ type ResourceLimits struct {
 	NetTxBandwidth int64 `json:"net_tx_bandwidth,omitempty"` // Max network TX bytes/s (0 = unlimited)
 }
 
+// NetworkPolicy defines network isolation rules for a function's VMs
+type NetworkPolicy struct {
+	IsolationMode    string       `json:"isolation_mode,omitempty"`    // "none" (default), "egress-only", "strict"
+	EgressRules      []EgressRule `json:"egress_rules,omitempty"`      // Allowed outbound targets
+	AllowedFunctions []string     `json:"allowed_functions,omitempty"` // Functions allowed to communicate with
+	DenyExternalAccess bool       `json:"deny_external_access,omitempty"` // Block non-RFC1918 destinations
+}
+
+// EgressRule defines an allowed outbound network target
+type EgressRule struct {
+	Host     string `json:"host"`               // IP, CIDR, or hostname
+	Port     int    `json:"port,omitempty"`      // 0 = any port
+	Protocol string `json:"protocol,omitempty"`  // "tcp", "udp", empty = tcp
+}
+
+// ScaleThresholds defines metrics thresholds that trigger scaling actions
+type ScaleThresholds struct {
+	QueueDepth   int     `json:"queue_depth,omitempty"`    // waiters > N triggers action
+	AvgLatencyMs int64   `json:"avg_latency_ms,omitempty"` // avg latency threshold
+	ColdStartPct float64 `json:"cold_start_pct,omitempty"` // cold start % threshold (0-100)
+	IdlePct      float64 `json:"idle_pct,omitempty"`       // idle VM % (for scale-down)
+}
+
+// AutoScalePolicy defines auto-scaling behavior for a function
+type AutoScalePolicy struct {
+	Enabled             bool            `json:"enabled"`
+	MinReplicas         int             `json:"min_replicas"`
+	MaxReplicas         int             `json:"max_replicas"`
+	ScaleUpThresholds   ScaleThresholds `json:"scale_up_thresholds"`
+	ScaleDownThresholds ScaleThresholds `json:"scale_down_thresholds"`
+	CooldownScaleUpS    int             `json:"cooldown_scale_up_s"`
+	CooldownScaleDownS  int             `json:"cooldown_scale_down_s"`
+}
+
+// Layer represents a shared dependency layer that can be mounted as a read-only drive
+type Layer struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Runtime   Runtime   `json:"runtime"`
+	Version   string    `json:"version"`
+	SizeMB    int       `json:"size_mb"`
+	Files     []string  `json:"files"`
+	ImagePath string    `json:"image_path"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type Function struct {
 	ID                  string            `json:"id"`
 	Name                string            `json:"name"`
@@ -89,6 +136,10 @@ type Function struct {
 	InstanceConcurrency int               `json:"instance_concurrency,omitempty"` // Max in-flight requests per instance
 	Mode                ExecutionMode     `json:"mode,omitempty"`                 // "process" or "persistent"
 	Limits              *ResourceLimits   `json:"limits,omitempty"`
+	NetworkPolicy       *NetworkPolicy    `json:"network_policy,omitempty"`
+	AutoScalePolicy     *AutoScalePolicy  `json:"auto_scale_policy,omitempty"`
+	Layers              []string          `json:"layers,omitempty"`  // layer IDs (max 6)
+	LayerPaths          []string          `json:"-"`                 // resolved at invocation time
 	EnvVars             map[string]string `json:"env_vars,omitempty"`
 	CreatedAt           time.Time         `json:"created_at"`
 	UpdatedAt           time.Time         `json:"updated_at"`

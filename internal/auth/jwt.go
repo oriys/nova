@@ -14,6 +14,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/oriys/nova/internal/domain"
 )
 
 // JWTAuthenticator validates JWT tokens
@@ -95,9 +97,10 @@ func (a *JWTAuthenticator) Authenticate(r *http.Request) *Identity {
 	}
 
 	return &Identity{
-		Subject: "user:" + subject,
-		Tier:    tier,
-		Claims:  claims,
+		Subject:  "user:" + subject,
+		Tier:     tier,
+		Claims:   claims,
+		Policies: extractPoliciesFromClaims(claims),
 	}
 }
 
@@ -249,4 +252,30 @@ func loadRSAPublicKey(path string) (*rsa.PublicKey, error) {
 	}
 
 	return rsaPub, nil
+}
+
+// extractPoliciesFromClaims builds PolicyBindings from JWT claims.
+// Supports "role" claim (string) and "policies" claim (array of PolicyBinding).
+func extractPoliciesFromClaims(claims map[string]any) []domain.PolicyBinding {
+	var policies []domain.PolicyBinding
+
+	// Check for "role" claim (simple role assignment)
+	if role, ok := claims["role"].(string); ok {
+		r := domain.Role(role)
+		if domain.ValidRole(r) {
+			policies = append(policies, domain.PolicyBinding{Role: r})
+		}
+	}
+
+	// Check for "policies" claim (detailed policies)
+	if rawPolicies, ok := claims["policies"]; ok {
+		if data, err := json.Marshal(rawPolicies); err == nil {
+			var claimPolicies []domain.PolicyBinding
+			if err := json.Unmarshal(data, &claimPolicies); err == nil {
+				policies = append(policies, claimPolicies...)
+			}
+		}
+	}
+
+	return policies
 }

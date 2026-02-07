@@ -123,6 +123,7 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash)`,
+		`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'`,
 		`CREATE TABLE IF NOT EXISTS secrets (
 			name TEXT PRIMARY KEY,
 			value TEXT NOT NULL,
@@ -252,6 +253,39 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_schedules_function ON schedules(function_name)`,
+
+		// Gateway routes table
+		`CREATE TABLE IF NOT EXISTS gateway_routes (
+			id TEXT PRIMARY KEY,
+			domain TEXT NOT NULL DEFAULT '',
+			path TEXT NOT NULL,
+			function_name TEXT NOT NULL,
+			data JSONB NOT NULL,
+			enabled BOOLEAN DEFAULT TRUE,
+			created_at TIMESTAMPTZ DEFAULT NOW(),
+			updated_at TIMESTAMPTZ DEFAULT NOW(),
+			UNIQUE(domain, path)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_gateway_routes_domain ON gateway_routes(domain)`,
+
+		// Layers tables
+		`CREATE TABLE IF NOT EXISTS layers (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL UNIQUE,
+			runtime TEXT NOT NULL,
+			version TEXT NOT NULL DEFAULT '1.0',
+			size_mb INTEGER NOT NULL DEFAULT 0,
+			files TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+			image_path TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE TABLE IF NOT EXISTS function_layers (
+			function_id TEXT NOT NULL,
+			layer_id TEXT NOT NULL,
+			position INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (function_id, layer_id)
+		)`,
 	}
 
 	for _, stmt := range stmts {

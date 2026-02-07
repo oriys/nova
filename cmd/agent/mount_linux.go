@@ -67,3 +67,39 @@ func mountCodeDrive() {
 	fmt.Fprintf(os.Stderr, "[agent] Mount /dev/vdb timed out: %v\n", lastErr)
 	os.Exit(1)
 }
+
+// mountLayerDrives mounts shared dependency layer drives at /layers/0, /layers/1, etc.
+// Layers are on /dev/vdc through /dev/vdh (up to 6 layers).
+func mountLayerDrives() {
+	if os.Getenv("NOVA_SKIP_MOUNT") == "true" {
+		return
+	}
+
+	// Probe /dev/vdc through /dev/vdh for layer drives
+	devices := []string{"/dev/vdc", "/dev/vdd", "/dev/vde", "/dev/vdf", "/dev/vdg", "/dev/vdh"}
+	mounted := 0
+
+	for i, dev := range devices {
+		if _, err := os.Stat(dev); err != nil {
+			break // No more layer devices
+		}
+
+		mountPoint := fmt.Sprintf("/layers/%d", i)
+		_ = os.MkdirAll(mountPoint, 0755)
+
+		err := unix.Mount(dev, mountPoint, "ext4", unix.MS_RDONLY, "")
+		if err != nil {
+			if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ENXIO) {
+				break // Device doesn't exist
+			}
+			fmt.Fprintf(os.Stderr, "[agent] Mount layer %s: %v\n", dev, err)
+			continue
+		}
+		mounted++
+		fmt.Printf("[agent] Mounted layer drive %s at %s\n", dev, mountPoint)
+	}
+
+	if mounted > 0 {
+		fmt.Printf("[agent] Mounted %d layer drives\n", mounted)
+	}
+}

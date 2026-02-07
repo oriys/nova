@@ -6,20 +6,24 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/oriys/nova/internal/domain"
 )
 
 // APIKey represents a stored API key
 type APIKey struct {
-	Name      string     `json:"name"`
-	KeyHash   string     `json:"key_hash"`   // SHA256 hash of the key
-	Tier      string     `json:"tier"`       // Rate limit tier
-	Enabled   bool       `json:"enabled"`    // Whether the key is active
-	ExpiresAt *time.Time `json:"expires_at"` // Optional expiration
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
+	Name      string                 `json:"name"`
+	KeyHash   string                 `json:"key_hash"`   // SHA256 hash of the key
+	Tier      string                 `json:"tier"`       // Rate limit tier
+	Enabled   bool                   `json:"enabled"`    // Whether the key is active
+	ExpiresAt *time.Time             `json:"expires_at"` // Optional expiration
+	Policies  []domain.PolicyBinding `json:"policies"`   // Authorization policies
+	CreatedAt time.Time              `json:"created_at"`
+	UpdatedAt time.Time              `json:"updated_at"`
 }
 
 // APIKeyStore interface for API key operations
@@ -139,10 +143,11 @@ func (a *APIKeyAuthenticator) checkStoreKey(ctx context.Context, keyHash string)
 	}
 
 	return &Identity{
-		Subject: "apikey:" + apiKey.Name,
-		KeyName: apiKey.Name,
-		Tier:    tier,
-		Claims:  map[string]any{"source": "postgres"},
+		Subject:  "apikey:" + apiKey.Name,
+		KeyName:  apiKey.Name,
+		Tier:     tier,
+		Claims:   map[string]any{"source": "postgres"},
+		Policies: apiKey.Policies,
 	}
 }
 
@@ -163,7 +168,7 @@ func NewAPIKeyManager(store APIKeyStore) *APIKeyManager {
 }
 
 // Create creates a new API key and returns the plaintext key
-func (m *APIKeyManager) Create(ctx context.Context, name, tier string) (string, error) {
+func (m *APIKeyManager) Create(ctx context.Context, name, tier string, policies []domain.PolicyBinding) (string, error) {
 	// Check if name already exists
 	existing, _ := m.store.GetAPIKeyByName(ctx, name)
 	if existing != nil {
@@ -183,6 +188,7 @@ func (m *APIKeyManager) Create(ctx context.Context, name, tier string) (string, 
 		KeyHash:   keyHash,
 		Tier:      tier,
 		Enabled:   true,
+		Policies:  policies,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -233,6 +239,37 @@ func (m *APIKeyManager) Enable(ctx context.Context, name string) error {
 // Delete removes an API key
 func (m *APIKeyManager) Delete(ctx context.Context, name string) error {
 	return m.store.DeleteAPIKey(ctx, name)
+}
+
+// UpdatePolicies updates the authorization policies for an API key
+func (m *APIKeyManager) UpdatePolicies(ctx context.Context, name string, policies []domain.PolicyBinding) error {
+	apiKey, err := m.store.GetAPIKeyByName(ctx, name)
+	if err != nil {
+		return err
+	}
+	apiKey.Policies = policies
+	apiKey.UpdatedAt = time.Now()
+	return m.store.SaveAPIKey(ctx, apiKey)
+}
+
+// MarshalPolicies serializes policies to JSON
+func MarshalPolicies(policies []domain.PolicyBinding) (json.RawMessage, error) {
+	if len(policies) == 0 {
+		return json.RawMessage("[]"), nil
+	}
+	return json.Marshal(policies)
+}
+
+// UnmarshalPolicies deserializes policies from JSON
+func UnmarshalPolicies(data json.RawMessage) ([]domain.PolicyBinding, error) {
+	if len(data) == 0 || string(data) == "null" {
+		return nil, nil
+	}
+	var policies []domain.PolicyBinding
+	if err := json.Unmarshal(data, &policies); err != nil {
+		return nil, err
+	}
+	return policies, nil
 }
 
 // generateAPIKey creates a random API key with sk_ prefix

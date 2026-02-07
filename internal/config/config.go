@@ -85,10 +85,17 @@ type GRPCConfig struct {
 
 // AuthConfig holds authentication settings
 type AuthConfig struct {
-	Enabled     bool         `json:"enabled"`      // Default: false
-	JWT         JWTConfig    `json:"jwt"`          // JWT authentication settings
-	APIKeys     APIKeyConfig `json:"api_keys"`     // API Key authentication settings
-	PublicPaths []string     `json:"public_paths"` // Paths that skip authentication
+	Enabled       bool         `json:"enabled"`       // Default: false
+	JWT           JWTConfig    `json:"jwt"`           // JWT authentication settings
+	APIKeys       APIKeyConfig `json:"api_keys"`      // API Key authentication settings
+	PublicPaths   []string     `json:"public_paths"`  // Paths that skip authentication
+	Authorization AuthzConfig  `json:"authorization"` // Authorization settings
+}
+
+// AuthzConfig holds authorization (RBAC) settings
+type AuthzConfig struct {
+	Enabled     bool   `json:"enabled"`      // Default: false
+	DefaultRole string `json:"default_role"` // Default role for identities without explicit policies
 }
 
 // JWTConfig holds JWT authentication settings
@@ -133,19 +140,48 @@ type SecretsConfig struct {
 	MasterKeyFile string `json:"master_key_file"` // Path to file containing master key
 }
 
+// NetworkPolicyConfig holds network isolation settings
+type NetworkPolicyConfig struct {
+	Enabled          bool   `json:"enabled"`           // Global enable/disable for network policies
+	DefaultIsolation string `json:"default_isolation"` // Default isolation mode: "none", "egress-only", "strict"
+}
+
+// GatewayConfig holds API gateway settings
+type GatewayConfig struct {
+	Enabled        bool     `json:"enabled"`         // Enable gateway routing
+	AllowedDomains []string `json:"allowed_domains"` // Allowed custom domains
+}
+
+// LayerConfig holds shared dependency layer settings
+type LayerConfig struct {
+	Enabled    bool   `json:"enabled"`
+	StorageDir string `json:"storage_dir"` // default /opt/nova/layers
+	MaxPerFunc int    `json:"max_per_func"` // default 6
+}
+
+// AutoScaleConfig holds auto-scaling settings
+type AutoScaleConfig struct {
+	Enabled  bool          `json:"enabled"`
+	Interval time.Duration `json:"interval"` // default 10s
+}
+
 // Config is the central configuration struct embedding all component configs
 type Config struct {
-	Firecracker   firecracker.Config  `json:"firecracker"`
-	Docker        docker.Config       `json:"docker"`
-	Postgres      PostgresConfig      `json:"postgres"`
-	Pool          PoolConfig          `json:"pool"`
-	Executor      ExecutorConfig      `json:"executor"`
-	Daemon        DaemonConfig        `json:"daemon"`
-	Observability ObservabilityConfig `json:"observability"`
-	GRPC          GRPCConfig          `json:"grpc"`
-	Auth          AuthConfig          `json:"auth"`
-	RateLimit     RateLimitConfig     `json:"rate_limit"`
-	Secrets       SecretsConfig       `json:"secrets"`
+	Firecracker   firecracker.Config    `json:"firecracker"`
+	Docker        docker.Config         `json:"docker"`
+	Postgres      PostgresConfig        `json:"postgres"`
+	Pool          PoolConfig            `json:"pool"`
+	Executor      ExecutorConfig        `json:"executor"`
+	Daemon        DaemonConfig          `json:"daemon"`
+	Observability ObservabilityConfig   `json:"observability"`
+	GRPC          GRPCConfig            `json:"grpc"`
+	Auth          AuthConfig            `json:"auth"`
+	RateLimit     RateLimitConfig       `json:"rate_limit"`
+	Secrets       SecretsConfig         `json:"secrets"`
+	NetworkPolicy NetworkPolicyConfig   `json:"network_policy"`
+	Gateway       GatewayConfig         `json:"gateway"`
+	AutoScale     AutoScaleConfig       `json:"auto_scale"`
+	Layers        LayerConfig           `json:"layers"`
 }
 
 // DefaultConfig returns a Config with sensible defaults
@@ -229,6 +265,22 @@ func DefaultConfig() *Config {
 		},
 		Secrets: SecretsConfig{
 			Enabled: false,
+		},
+		NetworkPolicy: NetworkPolicyConfig{
+			Enabled:          false,
+			DefaultIsolation: "none",
+		},
+		Gateway: GatewayConfig{
+			Enabled: false,
+		},
+		AutoScale: AutoScaleConfig{
+			Enabled:  false,
+			Interval: 10 * time.Second,
+		},
+		Layers: LayerConfig{
+			Enabled:    false,
+			StorageDir: "/opt/nova/layers",
+			MaxPerFunc: 6,
 		},
 	}
 }
@@ -354,6 +406,14 @@ func LoadFromEnv(cfg *Config) {
 		cfg.Auth.APIKeys.Enabled = parseBool(v)
 	}
 
+	// Authorization overrides
+	if v := os.Getenv("NOVA_AUTHZ_ENABLED"); v != "" {
+		cfg.Auth.Authorization.Enabled = parseBool(v)
+	}
+	if v := os.Getenv("NOVA_AUTHZ_DEFAULT_ROLE"); v != "" {
+		cfg.Auth.Authorization.DefaultRole = v
+	}
+
 	// Rate limit overrides
 	if v := os.Getenv("NOVA_RATELIMIT_ENABLED"); v != "" {
 		cfg.RateLimit.Enabled = parseBool(v)
@@ -379,6 +439,42 @@ func LoadFromEnv(cfg *Config) {
 	}
 	if v := os.Getenv("NOVA_MASTER_KEY_FILE"); v != "" {
 		cfg.Secrets.MasterKeyFile = v
+	}
+
+	// Network policy overrides
+	if v := os.Getenv("NOVA_NETPOLICY_ENABLED"); v != "" {
+		cfg.NetworkPolicy.Enabled = parseBool(v)
+	}
+	if v := os.Getenv("NOVA_NETPOLICY_DEFAULT_ISOLATION"); v != "" {
+		cfg.NetworkPolicy.DefaultIsolation = v
+	}
+
+	// Gateway overrides
+	if v := os.Getenv("NOVA_GATEWAY_ENABLED"); v != "" {
+		cfg.Gateway.Enabled = parseBool(v)
+	}
+
+	// AutoScale overrides
+	if v := os.Getenv("NOVA_AUTOSCALE_ENABLED"); v != "" {
+		cfg.AutoScale.Enabled = parseBool(v)
+	}
+	if v := os.Getenv("NOVA_AUTOSCALE_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.AutoScale.Interval = d
+		}
+	}
+
+	// Layers overrides
+	if v := os.Getenv("NOVA_LAYERS_ENABLED"); v != "" {
+		cfg.Layers.Enabled = parseBool(v)
+	}
+	if v := os.Getenv("NOVA_LAYERS_STORAGE_DIR"); v != "" {
+		cfg.Layers.StorageDir = v
+	}
+	if v := os.Getenv("NOVA_LAYERS_MAX_PER_FUNC"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Layers.MaxPerFunc = n
+		}
 	}
 
 	// Firecracker VM overrides

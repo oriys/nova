@@ -39,12 +39,13 @@ type PooledVM struct {
 
 // functionPool holds VMs for a single function with its own lock
 type functionPool struct {
-	vms         []*PooledVM
-	mu          sync.Mutex
-	maxReplicas atomic.Int32 // max concurrent VMs (0 = unlimited)
-	waiters     int          // number of goroutines waiting for a VM
-	cond        *sync.Cond   // condition variable for waiting
-	codeHash    atomic.Value // string: hash of code when VMs were created
+	vms             []*PooledVM
+	mu              sync.Mutex
+	maxReplicas     atomic.Int32 // max concurrent VMs (0 = unlimited)
+	waiters         int          // number of goroutines waiting for a VM
+	cond            *sync.Cond   // condition variable for waiting
+	codeHash        atomic.Value // string: hash of code when VMs were created
+	desiredReplicas atomic.Int32 // desired replica count set by autoscaler
 }
 
 // SnapshotCallback is called after a cold start to create a snapshot
@@ -153,7 +154,7 @@ func (p *Pool) cleanupExpired() {
 		fp.mu.Lock()
 		minReplicas := 0
 		if len(fp.vms) > 0 {
-			minReplicas = fp.vms[0].Function.MinReplicas
+			minReplicas = max(fp.vms[0].Function.MinReplicas, int(fp.desiredReplicas.Load()))
 		}
 
 		activeCount := len(fp.vms)
@@ -203,7 +204,7 @@ func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function, codeContent
 	currentCount := len(fp.vms)
 	fp.mu.Unlock()
 
-	needed := fn.MinReplicas - currentCount
+	needed := max(fn.MinReplicas, int(fp.desiredReplicas.Load())) - currentCount
 	if needed <= 0 {
 		return nil
 	}
@@ -805,6 +806,42 @@ func (p *Pool) Shutdown() {
 	case <-time.After(10 * time.Second):
 		logging.Op().Warn("pool shutdown timed out after 10s")
 	}
+}
+
+// QueueDepth returns the number of goroutines waiting for a VM for the given function
+func (p *Pool) QueueDepth(funcID string) int {
+	if value, ok := p.pools.Load(funcID); ok {
+		fp := value.(*functionPool)
+		fp.mu.Lock()
+		depth := fp.waiters
+		fp.mu.Unlock()
+		return depth
+	}
+	return 0
+}
+
+// SetDesiredReplicas sets the autoscaler-driven desired replica count for a function
+func (p *Pool) SetDesiredReplicas(funcID string, desired int) {
+	fp := p.getOrCreatePool(funcID)
+	fp.desiredReplicas.Store(int32(desired))
+}
+
+// FunctionPoolStats returns total, busy, and idle VM counts for a function
+func (p *Pool) FunctionPoolStats(funcID string) (total, busy, idle int) {
+	if value, ok := p.pools.Load(funcID); ok {
+		fp := value.(*functionPool)
+		fp.mu.Lock()
+		total = len(fp.vms)
+		for _, pvm := range fp.vms {
+			if pvm.inflight > 0 {
+				busy++
+			} else {
+				idle++
+			}
+		}
+		fp.mu.Unlock()
+	}
+	return
 }
 
 // healthCheckLoop periodically pings idle VMs and evicts unresponsive ones

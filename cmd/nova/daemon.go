@@ -11,12 +11,14 @@ import (
 
 	"github.com/oriys/nova/internal/api"
 	"github.com/oriys/nova/internal/auth"
+	"github.com/oriys/nova/internal/autoscaler"
 	"github.com/oriys/nova/internal/backend"
 	"github.com/oriys/nova/internal/config"
 	"github.com/oriys/nova/internal/docker"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/firecracker"
 	novagrpc "github.com/oriys/nova/internal/grpc"
+	"github.com/oriys/nova/internal/layer"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/observability"
@@ -138,6 +140,18 @@ func daemonCmd() *cobra.Command {
 				})
 			}
 
+			if cfg.AutoScale.Enabled {
+				as := autoscaler.New(p, s, cfg.AutoScale.Interval)
+				as.Start()
+				defer as.Stop()
+			}
+
+			var layerManager *layer.Manager
+			if cfg.Layers.Enabled {
+				layerManager = layer.New(s, cfg.Layers.StorageDir, cfg.Layers.MaxPerFunc)
+				logging.Op().Info("shared dependency layers enabled", "storage_dir", cfg.Layers.StorageDir)
+			}
+
 			var secretsResolver *secrets.Resolver
 			var secretsStore *secrets.Store
 			if cfg.Secrets.Enabled || cfg.Secrets.MasterKey != "" || cfg.Secrets.MasterKeyFile != "" {
@@ -194,11 +208,13 @@ func daemonCmd() *cobra.Command {
 					FCAdapter:       fcAdapter,
 					AuthCfg:         &cfg.Auth,
 					RateLimitCfg:    &cfg.RateLimit,
+					GatewayCfg:      &cfg.Gateway,
 					WorkflowService: wfService,
 					APIKeyManager:   apiKeyManager,
 					SecretsStore:    secretsStore,
 					Scheduler:       sched,
 					RootfsDir:       cfg.Firecracker.RootfsDir,
+					LayerManager:    layerManager,
 				})
 				logging.Op().Info("HTTP API started", "addr", cfg.Daemon.HTTPAddr)
 			}
