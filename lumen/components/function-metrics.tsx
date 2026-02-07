@@ -134,41 +134,42 @@ export function FunctionMetrics({ func: fn, metrics }: FunctionMetricsProps) {
               <h3 className="text-sm font-semibold text-card-foreground">
                 Invocations
               </h3>
-              <p className="text-xs text-muted-foreground">Last 24 hours</p>
+              <p className="text-xs text-muted-foreground">Last 60 minutes</p>
             </div>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={invocationData}>
                   <defs>
                     <linearGradient id="invGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="oklch(0.55 0.18 250)" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="oklch(0.55 0.18 250)" stopOpacity={0} />
+                      <stop offset="5%" stopColor="var(--foreground)" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="var(--foreground)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.90 0 0)" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis
                     dataKey="time"
-                    tick={{ fontSize: 11, fill: "oklch(0.45 0 0)" }}
-                    axisLine={{ stroke: "oklch(0.90 0 0)" }}
+                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                    axisLine={{ stroke: "var(--border)" }}
                     tickLine={false}
                   />
                   <YAxis
-                    tick={{ fontSize: 11, fill: "oklch(0.45 0 0)" }}
+                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                     axisLine={false}
                     tickLine={false}
                   />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "oklch(1 0 0)",
-                      border: "1px solid oklch(0.90 0 0)",
+                      backgroundColor: "var(--popover)",
+                      border: "1px solid var(--border)",
                       borderRadius: "8px",
                       fontSize: "12px",
+                      color: "var(--popover-foreground)",
                     }}
                   />
                   <Area
                     type="monotone"
                     dataKey="value"
-                    stroke="oklch(0.55 0.18 250)"
+                    stroke="var(--foreground)"
                     strokeWidth={2}
                     fill="url(#invGradient)"
                     name="Invocations"
@@ -184,35 +185,36 @@ export function FunctionMetrics({ func: fn, metrics }: FunctionMetricsProps) {
               <h3 className="text-sm font-semibold text-card-foreground">
                 Execution Time
               </h3>
-              <p className="text-xs text-muted-foreground">Last 24 hours</p>
+              <p className="text-xs text-muted-foreground">Last 60 minutes</p>
             </div>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={durationData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.90 0 0)" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis
                     dataKey="time"
-                    tick={{ fontSize: 11, fill: "oklch(0.45 0 0)" }}
-                    axisLine={{ stroke: "oklch(0.90 0 0)" }}
+                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                    axisLine={{ stroke: "var(--border)" }}
                     tickLine={false}
                   />
                   <YAxis
-                    tick={{ fontSize: 11, fill: "oklch(0.45 0 0)" }}
+                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                     axisLine={false}
                     tickLine={false}
                   />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "oklch(1 0 0)",
-                      border: "1px solid oklch(0.90 0 0)",
+                      backgroundColor: "var(--popover)",
+                      border: "1px solid var(--border)",
                       borderRadius: "8px",
                       fontSize: "12px",
+                      color: "var(--popover-foreground)",
                     }}
                   />
                   <Line
                     type="monotone"
                     dataKey="avgDuration"
-                    stroke="oklch(0.55 0.18 250)"
+                    stroke="var(--foreground)"
                     strokeWidth={2}
                     dot={false}
                     name="Avg (ms)"

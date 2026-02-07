@@ -1,7 +1,7 @@
 // Frontend types and transformers
 // Converts between nova backend types and lumen display types
 
-import type { NovaFunction, LogEntry as ApiLogEntry, FunctionMetrics, Runtime, CompileStatus } from "./api";
+import type { NovaFunction, LogEntry as ApiLogEntry, FunctionMetrics, Runtime, CompileStatus, ResourceLimits } from "./api";
 
 // Frontend display types
 export interface FunctionData {
@@ -27,6 +27,7 @@ export interface FunctionData {
   envVars?: Record<string, string>;
   compileStatus?: CompileStatus;
   compileError?: string;
+  limits?: ResourceLimits;
 }
 
 export interface LogEntry {
@@ -119,6 +120,7 @@ export function transformFunction(
     envVars: fn.env_vars,
     compileStatus: fn.compile_status,
     compileError: fn.compile_error,
+    limits: fn.limits,
   };
 }
 

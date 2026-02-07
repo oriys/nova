@@ -13,6 +13,8 @@ import (
 	"github.com/oriys/nova/internal/store"
 )
 
+const defaultTimeSeriesHours = 1
+
 // Handler handles data plane HTTP requests (invocations and observability).
 type Handler struct {
 	Store *store.Store
@@ -251,8 +253,8 @@ func (h *Handler) FunctionMetrics(w http.ResponseWriter, r *http.Request) {
 	// Get pool stats for this function
 	poolStats := h.Pool.FunctionStats(fn.ID)
 
-	// Get time series data from Postgres
-	timeSeries, err := h.Store.GetFunctionTimeSeries(r.Context(), fn.ID, 24)
+	// Get minute-level time series data for recent window.
+	timeSeries, err := h.Store.GetFunctionTimeSeries(r.Context(), fn.ID, defaultTimeSeriesHours)
 	if err != nil {
 		timeSeries = []store.TimeSeriesBucket{}
 	}
@@ -271,7 +273,7 @@ func (h *Handler) FunctionMetrics(w http.ResponseWriter, r *http.Request) {
 
 // GlobalTimeSeries handles GET /metrics/timeseries
 func (h *Handler) GlobalTimeSeries(w http.ResponseWriter, r *http.Request) {
-	timeSeries, err := h.Store.GetGlobalTimeSeries(r.Context(), 24)
+	timeSeries, err := h.Store.GetGlobalTimeSeries(r.Context(), defaultTimeSeriesHours)
 	if err != nil {
 		timeSeries = []store.TimeSeriesBucket{}
 	}

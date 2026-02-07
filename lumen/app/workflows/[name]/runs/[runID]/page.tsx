@@ -7,8 +7,15 @@ import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { workflowsApi, type WorkflowRun, type RunNode } from "@/lib/api"
-import { RefreshCw, ArrowLeft } from "lucide-react"
+import { workflowsApi, functionsApi, type WorkflowRun, type WorkflowVersion, type RunNode } from "@/lib/api"
+import { DagRunViewer } from "@/components/workflow/dag-run-viewer"
+import { CodeDisplay } from "@/components/code-editor"
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { RefreshCw, ArrowLeft, X, ExternalLink, Loader2 } from "lucide-react"
 
 export default function RunDetailPage() {
   const params = useParams()
@@ -16,8 +23,36 @@ export default function RunDetailPage() {
   const runID = params.runID as string
 
   const [run, setRun] = useState<WorkflowRun | null>(null)
+  const [version, setVersion] = useState<WorkflowVersion | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Function code viewer
+  const [codeViewFn, setCodeViewFn] = useState<string | null>(null)
+  const [codeViewData, setCodeViewData] = useState<{ code: string; runtime: string } | null>(null)
+  const [codeViewLoading, setCodeViewLoading] = useState(false)
+  const [codeViewError, setCodeViewError] = useState<string | null>(null)
+
+  const handleFunctionClick = useCallback(async (fnName: string) => {
+    setCodeViewFn(fnName)
+    setCodeViewData(null)
+    setCodeViewError(null)
+    setCodeViewLoading(true)
+    try {
+      const [fn, codeResp] = await Promise.all([
+        functionsApi.get(fnName),
+        functionsApi.getCode(fnName),
+      ])
+      setCodeViewData({
+        code: codeResp.source_code || "// No source code available",
+        runtime: fn.runtime,
+      })
+    } catch (err) {
+      setCodeViewError(err instanceof Error ? err.message : "Failed to load source code")
+    } finally {
+      setCodeViewLoading(false)
+    }
+  }, [])
 
   const fetchData = useCallback(async () => {
     try {
@@ -25,13 +60,22 @@ export default function RunDetailPage() {
       setError(null)
       const r = await workflowsApi.getRun(name, runID)
       setRun(r)
+      // Fetch version for DAG edge structure (only once or when version changes)
+      if (r.version && (!version || version.version !== r.version)) {
+        try {
+          const v = await workflowsApi.getVersion(name, r.version)
+          setVersion(v)
+        } catch {
+          // Version fetch is optional — viewer degrades gracefully
+        }
+      }
     } catch (err) {
       console.error("Failed to fetch run:", err)
       setError(err instanceof Error ? err.message : "Failed to load run")
     } finally {
       setLoading(false)
     }
-  }, [name, runID])
+  }, [name, runID, version])
 
   useEffect(() => {
     fetchData()
@@ -134,6 +178,18 @@ export default function RunDetailPage() {
               </div>
             )}
 
+            {version && (
+              <div>
+                <div className="mb-2">
+                  <h3 className="font-medium text-foreground">DAG Visualization</h3>
+                  {run.status === "running" && (
+                    <p className="text-xs text-muted-foreground">Auto-refreshing every 2s</p>
+                  )}
+                </div>
+                <DagRunViewer version={version} run={run} onFunctionClick={handleFunctionClick} />
+              </div>
+            )}
+
             <div className="rounded-lg border border-border bg-card">
               <div className="px-4 py-3 border-b border-border">
                 <h3 className="font-medium text-foreground">Node Status</h3>
@@ -212,6 +268,49 @@ export default function RunDetailPage() {
         {loading && !run && (
           <div className="text-center text-muted-foreground py-8">Loading...</div>
         )}
+
+        {/* Function Code Viewer Dialog */}
+        <Dialog open={!!codeViewFn} onOpenChange={(open) => { if (!open) setCodeViewFn(null) }}>
+          <DialogContent className="max-w-3xl w-full max-h-[80vh] p-0 gap-0 flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <DialogTitle className="font-mono text-sm truncate">{codeViewFn}</DialogTitle>
+                {codeViewData?.runtime && (
+                  <Badge variant="secondary" className="shrink-0">{codeViewData.runtime}</Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Link href={`/functions/${encodeURIComponent(codeViewFn || "")}`} target="_blank">
+                  <Button variant="ghost" size="sm">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Button>
+                </Link>
+                <Button variant="ghost" size="sm" onClick={() => setCodeViewFn(null)}>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+            <div className="flex-1 min-h-0 overflow-auto">
+              {codeViewLoading && (
+                <div className="flex items-center justify-center py-12 text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Loading source code...
+                </div>
+              )}
+              {codeViewError && (
+                <div className="px-4 py-8 text-center text-destructive text-sm">{codeViewError}</div>
+              )}
+              {codeViewData && (
+                <CodeDisplay
+                  code={codeViewData.code}
+                  runtime={codeViewData.runtime}
+                  maxHeight="calc(80vh - 56px)"
+                  showLineNumbers
+                />
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   )

@@ -63,46 +63,47 @@ export function DashboardCharts({ data, loading }: DashboardChartsProps) {
           <h3 className="text-sm font-semibold text-card-foreground">
             Function Invocations
           </h3>
-          <p className="text-xs text-muted-foreground">Last 24 hours</p>
+          <p className="text-xs text-muted-foreground">Last 60 minutes</p>
         </div>
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={formattedData}>
               <defs>
                 <linearGradient id="invocationsGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="oklch(0.55 0.18 250)" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="oklch(0.55 0.18 250)" stopOpacity={0} />
+                  <stop offset="5%" stopColor="var(--foreground)" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="var(--foreground)" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="errorsGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="oklch(0.55 0.18 25)" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="oklch(0.55 0.18 25)" stopOpacity={0} />
+                  <stop offset="5%" stopColor="var(--destructive)" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="var(--destructive)" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.90 0 0)" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
               <XAxis
                 dataKey="time"
-                tick={{ fontSize: 11, fill: "oklch(0.45 0 0)" }}
-                axisLine={{ stroke: "oklch(0.90 0 0)" }}
+                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                axisLine={{ stroke: "var(--border)" }}
                 tickLine={false}
                 interval="preserveStartEnd"
               />
               <YAxis
-                tick={{ fontSize: 11, fill: "oklch(0.45 0 0)" }}
+                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                 axisLine={false}
                 tickLine={false}
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "oklch(1 0 0)",
-                  border: "1px solid oklch(0.90 0 0)",
+                  backgroundColor: "var(--popover)",
+                  border: "1px solid var(--border)",
                   borderRadius: "8px",
                   fontSize: "12px",
+                  color: "var(--popover-foreground)",
                 }}
               />
               <Area
                 type="monotone"
                 dataKey="invocations"
-                stroke="oklch(0.55 0.18 250)"
+                stroke="var(--foreground)"
                 strokeWidth={2}
                 fill="url(#invocationsGradient)"
                 name="Invocations"
@@ -110,7 +111,7 @@ export function DashboardCharts({ data, loading }: DashboardChartsProps) {
               <Area
                 type="monotone"
                 dataKey="errors"
-                stroke="oklch(0.55 0.18 25)"
+                stroke="var(--destructive)"
                 strokeWidth={2}
                 fill="url(#errorsGradient)"
                 name="Errors"
@@ -126,36 +127,38 @@ export function DashboardCharts({ data, loading }: DashboardChartsProps) {
           <h3 className="text-sm font-semibold text-card-foreground">
             Avg Execution Time (ms)
           </h3>
-          <p className="text-xs text-muted-foreground">Last 24 hours</p>
+          <p className="text-xs text-muted-foreground">Last 60 minutes</p>
         </div>
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={formattedData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.90 0 0)" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
               <XAxis
                 dataKey="time"
-                tick={{ fontSize: 11, fill: "oklch(0.45 0 0)" }}
-                axisLine={{ stroke: "oklch(0.90 0 0)" }}
+                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                axisLine={{ stroke: "var(--border)" }}
                 tickLine={false}
                 interval="preserveStartEnd"
               />
               <YAxis
-                tick={{ fontSize: 11, fill: "oklch(0.45 0 0)" }}
+                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                 axisLine={false}
                 tickLine={false}
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "oklch(1 0 0)",
-                  border: "1px solid oklch(0.90 0 0)",
+                  backgroundColor: "var(--popover)",
+                  border: "1px solid var(--border)",
                   borderRadius: "8px",
                   fontSize: "12px",
+                  color: "var(--popover-foreground)",
                 }}
                 formatter={(value: number) => [`${Math.round(value)}ms`, "Avg Duration"]}
               />
               <Bar
                 dataKey="avgDuration"
-                fill="oklch(0.55 0.18 250)"
+                fill="var(--foreground)"
+                fillOpacity={0.8}
                 radius={[4, 4, 0, 0]}
                 name="Avg Duration"
               />

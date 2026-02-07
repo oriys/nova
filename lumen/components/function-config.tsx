@@ -21,7 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { FunctionData } from "@/lib/types"
-import { functionsApi, snapshotsApi } from "@/lib/api"
+import { functionsApi, snapshotsApi, type ResourceLimits } from "@/lib/api"
 import { Save, Plus, Trash2, Eye, EyeOff, Key, Loader2, Camera, AlertTriangle } from "lucide-react"
 
 interface FunctionConfigProps {
@@ -36,6 +36,13 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
   const [handler, setHandler] = useState(func.handler)
   const [saving, setSaving] = useState(false)
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({})
+
+  // Resource limits state
+  const [vcpus, setVcpus] = useState((func.limits?.vcpus || 1).toString())
+  const [diskIops, setDiskIops] = useState((func.limits?.disk_iops || 0).toString())
+  const [diskBandwidth, setDiskBandwidth] = useState((func.limits?.disk_bandwidth || 0).toString())
+  const [netRx, setNetRx] = useState((func.limits?.net_rx_bandwidth || 0).toString())
+  const [netTx, setNetTx] = useState((func.limits?.net_tx_bandwidth || 0).toString())
 
   // Environment variables state
   const [envVarsState, setEnvVarsState] = useState<Record<string, string>>(func.envVars || {})
@@ -70,10 +77,18 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
   const handleSave = async () => {
     try {
       setSaving(true)
+      const limits: ResourceLimits = {
+        vcpus: parseInt(vcpus) || 1,
+        disk_iops: parseInt(diskIops) || 0,
+        disk_bandwidth: parseInt(diskBandwidth) || 0,
+        net_rx_bandwidth: parseInt(netRx) || 0,
+        net_tx_bandwidth: parseInt(netTx) || 0,
+      }
       await functionsApi.update(func.name, {
         handler,
         memory_mb: parseInt(memory),
         timeout_s: parseInt(timeout),
+        limits,
       })
       onUpdate?.()
     } catch (err) {
@@ -213,17 +228,106 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
             </p>
           </div>
         </div>
+      </div>
 
-        <div className="mt-6 flex justify-end">
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="mr-2 h-4 w-4" />
-            )}
-            Save Changes
-          </Button>
+      {/* Resource Limits */}
+      <div className="rounded-xl border border-border bg-card p-6">
+        <h3 className="text-lg font-semibold text-card-foreground mb-1">
+          Resource Limits
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Configure CPU, disk I/O, and network bandwidth for the VM. Set to 0 for unlimited.
+        </p>
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor="vcpus">vCPUs</Label>
+            <Select value={vcpus} onValueChange={setVcpus}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[1, 2, 4, 8, 16, 32].map((v) => (
+                  <SelectItem key={v} value={v.toString()}>{v} vCPU{v > 1 ? "s" : ""}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Virtual CPU cores allocated
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="diskIops">Disk IOPS</Label>
+            <Input
+              id="diskIops"
+              type="number"
+              min="0"
+              value={diskIops}
+              onChange={(e) => setDiskIops(e.target.value)}
+              placeholder="0 = unlimited"
+            />
+            <p className="text-xs text-muted-foreground">
+              Max disk I/O operations per second
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="diskBandwidth">Disk Bandwidth (bytes/s)</Label>
+            <Input
+              id="diskBandwidth"
+              type="number"
+              min="0"
+              value={diskBandwidth}
+              onChange={(e) => setDiskBandwidth(e.target.value)}
+              placeholder="0 = unlimited"
+            />
+            <p className="text-xs text-muted-foreground">
+              Max disk throughput in bytes per second
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="netRx">Network RX Bandwidth (bytes/s)</Label>
+            <Input
+              id="netRx"
+              type="number"
+              min="0"
+              value={netRx}
+              onChange={(e) => setNetRx(e.target.value)}
+              placeholder="0 = unlimited"
+            />
+            <p className="text-xs text-muted-foreground">
+              Max inbound network throughput
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="netTx">Network TX Bandwidth (bytes/s)</Label>
+            <Input
+              id="netTx"
+              type="number"
+              min="0"
+              value={netTx}
+              onChange={(e) => setNetTx(e.target.value)}
+              placeholder="0 = unlimited"
+            />
+            <p className="text-xs text-muted-foreground">
+              Max outbound network throughput
+            </p>
+          </div>
         </div>
+      </div>
+
+      {/* Save button for General + Resource settings */}
+      <div className="flex justify-end">
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="mr-2 h-4 w-4" />
+          )}
+          Save Changes
+        </Button>
       </div>
 
       {/* Environment Variables */}

@@ -137,6 +137,71 @@
   }
 }
 
+/* xyflow overrides */
+.react-flow__background {
+  background-color: var(--background) !important;
+}
+.react-flow__controls button {
+  background-color: var(--card) !important;
+  border-color: var(--border) !important;
+  color: var(--foreground) !important;
+  fill: var(--foreground) !important;
+}
+.react-flow__controls button:hover {
+  background-color: var(--accent) !important;
+}
+.react-flow__minimap {
+  background-color: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important;
+}
+.react-flow__minimap-mask {
+  fill: var(--muted) !important;
+  opacity: 0.5 !important;
+}
+.react-flow__minimap-node {
+  fill: var(--muted-foreground) !important;
+}
+.react-flow__edge-path {
+  stroke: var(--muted-foreground) !important;
+  stroke-width: 2 !important;
+}
+.react-flow__connection-path {
+  stroke: var(--ring) !important;
+  stroke-width: 2 !important;
+}
+
+/* Node pulse animation for running state */
+@keyframes wf-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.62 0.19 250 / 0.4); }
+  50% { box-shadow: 0 0 0 6px oklch(0.62 0.19 250 / 0); }
+}
+.wf-node-pulse {
+  animation: wf-pulse 2s ease-in-out infinite;
+}
+
+/* Skipped node striped background */
+.wf-node-skipped {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 4px,
+    var(--muted) 4px,
+    var(--muted) 8px
+  );
+}
+
+/* Animated edge dash flow */
+@keyframes wf-edge-flow {
+  from { stroke-dashoffset: 24; }
+  to { stroke-dashoffset: 0; }
+}
+.wf-edge-animated path.react-flow__edge-path {
+  stroke-dasharray: 6 4 !important;
+  animation: wf-edge-flow 0.6s linear infinite !important;
+  stroke: oklch(0.62 0.19 250) !important;
+}
+
 /* Circular reveal theme transition */
 ::view-transition-old(root),
 ::view-transition-new(root) {

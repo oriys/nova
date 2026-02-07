@@ -311,7 +311,7 @@ func (s *PostgresStore) GetRun(ctx context.Context, id string) (*domain.Workflow
 	r := &domain.WorkflowRun{}
 	err := s.pool.QueryRow(ctx,
 		`SELECT r.id, r.workflow_id, w.name, r.version_id, v.version, r.status, r.trigger_type,
-		        r.input, r.output, r.error_message, r.started_at, r.finished_at, r.created_at
+		        r.input, r.output, COALESCE(r.error_message, ''), r.started_at, r.finished_at, r.created_at
 		 FROM dag_runs r
 		 JOIN dag_workflows w ON w.id = r.workflow_id
 		 JOIN dag_workflow_versions v ON v.id = r.version_id
@@ -327,7 +327,7 @@ func (s *PostgresStore) GetRun(ctx context.Context, id string) (*domain.Workflow
 func (s *PostgresStore) ListRuns(ctx context.Context, workflowID string) ([]*domain.WorkflowRun, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT r.id, r.workflow_id, w.name, r.version_id, v.version, r.status, r.trigger_type,
-		        r.input, r.output, r.error_message, r.started_at, r.finished_at, r.created_at
+		        r.input, r.output, COALESCE(r.error_message, ''), r.started_at, r.finished_at, r.created_at
 		 FROM dag_runs r
 		 JOIN dag_workflows w ON w.id = r.workflow_id
 		 JOIN dag_workflow_versions v ON v.id = r.version_id
@@ -386,7 +386,7 @@ func (s *PostgresStore) CreateRunNodes(ctx context.Context, nodes []domain.RunNo
 func (s *PostgresStore) GetRunNodes(ctx context.Context, runID string) ([]domain.RunNode, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, run_id, node_id, node_key, function_name, status, unresolved_deps,
-		        attempt, input, output, error_message, lease_owner, lease_expires_at,
+		        attempt, input, output, COALESCE(error_message, ''), COALESCE(lease_owner, ''), lease_expires_at,
 		        started_at, finished_at, created_at
 		 FROM dag_run_nodes WHERE run_id = $1 ORDER BY created_at`, runID)
 	if err != nil {
@@ -425,7 +425,7 @@ func (s *PostgresStore) AcquireReadyNode(ctx context.Context, leaseOwner string,
 			LIMIT 1
 		 )
 		 RETURNING id, run_id, node_id, node_key, function_name, status, unresolved_deps,
-		           attempt, input, output, error_message, lease_owner, lease_expires_at,
+		           attempt, input, output, COALESCE(error_message, ''), COALESCE(lease_owner, ''), lease_expires_at,
 		           started_at, finished_at, created_at`,
 		leaseOwner, leaseExpires, now).
 		Scan(&n.ID, &n.RunID, &n.NodeID, &n.NodeKey, &n.FunctionName,
@@ -487,7 +487,7 @@ func (s *PostgresStore) UpdateNodeAttempt(ctx context.Context, a *domain.NodeAtt
 
 func (s *PostgresStore) GetNodeAttempts(ctx context.Context, runNodeID string) ([]domain.NodeAttempt, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, run_node_id, attempt, status, input, output, error, duration_ms, started_at, finished_at
+		`SELECT id, run_node_id, attempt, status, input, output, COALESCE(error, ''), duration_ms, started_at, finished_at
 		 FROM dag_node_attempts WHERE run_node_id = $1 ORDER BY attempt`, runNodeID)
 	if err != nil {
 		return nil, err
