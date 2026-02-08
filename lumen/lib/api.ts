@@ -1,5 +1,6 @@
 // nova API client
 // Connects to the nova backend at /api (proxied via Next.js rewrites)
+import { getTenantScopeHeaders } from "@/lib/tenant-scope";
 
 const API_BASE = "/api";
 
@@ -385,12 +386,17 @@ async function request<T>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
+  const headers = new Headers(options?.headers);
+  if (!(options?.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const tenantHeaders = getTenantScopeHeaders();
+  headers.set("X-Nova-Tenant", tenantHeaders["X-Nova-Tenant"]);
+  headers.set("X-Nova-Namespace", tenantHeaders["X-Nova-Namespace"]);
+
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
+    headers,
   });
 
   if (!response.ok) {
@@ -726,9 +732,14 @@ export const runtimesApi = {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("metadata", JSON.stringify(metadata));
+    const headers = new Headers();
+    const tenantHeaders = getTenantScopeHeaders();
+    headers.set("X-Nova-Tenant", tenantHeaders["X-Nova-Tenant"]);
+    headers.set("X-Nova-Namespace", tenantHeaders["X-Nova-Namespace"]);
 
     const response = await fetch(`${API_BASE}/runtimes/upload`, {
       method: "POST",
+      headers,
       body: formData,
     });
 
