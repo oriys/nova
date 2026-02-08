@@ -15,6 +15,7 @@ import (
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/logging"
+	"github.com/oriys/nova/internal/store"
 )
 
 // GatewayStore is the interface the gateway needs from the store
@@ -46,9 +47,9 @@ type paramRoute struct {
 }
 
 type rateLimiter struct {
-	mu        sync.Mutex
-	tokens    float64
-	maxTokens float64
+	mu         sync.Mutex
+	tokens     float64
+	maxTokens  float64
 	refillRate float64
 	lastRefill time.Time
 }
@@ -307,9 +308,7 @@ func (g *Gateway) authenticateRequest(route *domain.GatewayRoute, w http.Respons
 	case "inherit":
 		for _, authenticator := range g.authenticators {
 			if id := authenticator.Authenticate(r); id != nil {
-				ctx := auth.WithIdentity(r.Context(), id)
-				*r = *r.WithContext(ctx)
-				return nil
+				return bindGatewayIdentityScope(w, r, id)
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -335,9 +334,7 @@ func (g *Gateway) authenticateRequest(route *domain.GatewayRoute, w http.Respons
 		// Delegate to existing API key authenticators
 		for _, authenticator := range g.authenticators {
 			if id := authenticator.Authenticate(r); id != nil {
-				ctx := auth.WithIdentity(r.Context(), id)
-				*r = *r.WithContext(ctx)
-				return nil
+				return bindGatewayIdentityScope(w, r, id)
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -356,9 +353,7 @@ func (g *Gateway) authenticateRequest(route *domain.GatewayRoute, w http.Respons
 		}
 		for _, authenticator := range g.authenticators {
 			if id := authenticator.Authenticate(r); id != nil {
-				ctx := auth.WithIdentity(r.Context(), id)
-				*r = *r.WithContext(ctx)
-				return nil
+				return bindGatewayIdentityScope(w, r, id)
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -368,6 +363,72 @@ func (g *Gateway) authenticateRequest(route *domain.GatewayRoute, w http.Respons
 	}
 
 	return nil
+}
+
+func bindGatewayIdentityScope(w http.ResponseWriter, r *http.Request, identity *auth.Identity) error {
+	requestedTenant, requestedNamespace, explicit, err := gatewayScopeFromHeaders(r)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"tenant_scope_error","message":"invalid tenant scope headers"}`))
+		return errUnauthorized
+	}
+
+	effectiveTenant := requestedTenant
+	effectiveNamespace := requestedNamespace
+
+	if identity != nil && identity.ScopeRestricted() {
+		if !explicit {
+			primary, ok := identity.PrimaryScope()
+			if !ok {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				w.Write([]byte(`{"error":"forbidden","message":"tenant scope is required"}`))
+				return errUnauthorized
+			}
+			if primary.TenantID == "*" || primary.Namespace == "*" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"error":"tenant_scope_error","message":"explicit X-Nova-Tenant and X-Nova-Namespace headers are required"}`))
+				return errUnauthorized
+			}
+			effectiveTenant = primary.TenantID
+			effectiveNamespace = primary.Namespace
+		}
+
+		if !identity.AllowsScope(effectiveTenant, effectiveNamespace) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"error":"forbidden","message":"tenant scope is not allowed for this identity"}`))
+			return errUnauthorized
+		}
+	}
+
+	ctx := auth.WithIdentity(r.Context(), identity)
+	ctx = store.WithTenantScope(ctx, effectiveTenant, effectiveNamespace)
+	*r = *r.WithContext(ctx)
+	return nil
+}
+
+func gatewayScopeFromHeaders(r *http.Request) (tenantID string, namespace string, explicit bool, err error) {
+	tenantID = strings.TrimSpace(r.Header.Get("X-Nova-Tenant"))
+	namespace = strings.TrimSpace(r.Header.Get("X-Nova-Namespace"))
+
+	if tenantID == "" && namespace == "" {
+		return "", "", false, nil
+	}
+	explicit = true
+
+	if tenantID == "" {
+		tenantID = store.DefaultTenantID
+	}
+	if namespace == "" {
+		namespace = store.DefaultNamespace
+	}
+	if !store.IsValidTenantScopePart(tenantID) || !store.IsValidTenantScopePart(namespace) {
+		return "", "", true, fmt.Errorf("invalid tenant scope headers")
+	}
+	return tenantID, namespace, true, nil
 }
 
 func (g *Gateway) getOrCreateLimiter(route *domain.GatewayRoute) *rateLimiter {
