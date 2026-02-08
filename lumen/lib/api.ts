@@ -210,6 +210,8 @@ export interface EventTopic {
   updated_at: string;
 }
 
+export type EventSubscriptionType = "function" | "webhook";
+
 export interface EventSubscription {
   id: string;
   topic_id: string;
@@ -234,6 +236,15 @@ export interface EventSubscription {
   oldest_unacked_age_s?: number;
   created_at: string;
   updated_at: string;
+  // Webhook fields
+  type: EventSubscriptionType;
+  webhook_url?: string;
+  webhook_method?: string;
+  webhook_headers?: Record<string, string>;
+  webhook_signing_secret?: string;
+  webhook_timeout_ms?: number;
+  transform_function_id?: string;
+  transform_function_name?: string;
 }
 
 export interface EventMessage {
@@ -283,6 +294,13 @@ export interface EventDelivery {
   completed_at?: string;
   created_at: string;
   updated_at: string;
+  // Webhook fields
+  subscription_type: EventSubscriptionType;
+  webhook_url?: string;
+  webhook_method?: string;
+  webhook_timeout_ms?: number;
+  transform_function_id?: string;
+  transform_function_name?: string;
 }
 
 export interface EventOutboxJob {
@@ -745,7 +763,17 @@ export const eventsApi = {
     data: {
       name: string;
       consumer_group?: string;
-      function_name: string;
+      type?: EventSubscriptionType;
+      // Function fields
+      function_name?: string;
+      // Webhook fields
+      webhook_url?: string;
+      webhook_method?: string;
+      webhook_headers?: Record<string, string>;
+      webhook_signing_secret?: string;
+      webhook_timeout_ms?: number;
+      transform_function_name?: string;
+      // Common fields
       enabled?: boolean;
       max_attempts?: number;
       backoff_base_ms?: number;

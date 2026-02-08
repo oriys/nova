@@ -111,6 +111,7 @@ func (w *WorkerPool) poll(workerID string) {
 		return
 	}
 
+	// Inbox deduplication (common for both function and webhook deliveries)
 	inboxRec, deduplicated, err := w.store.PrepareEventInbox(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID)
 	if err != nil {
 		logging.Op().Error("prepare event inbox failed", "delivery", delivery.ID, "error", err)
@@ -137,6 +138,17 @@ func (w *WorkerPool) poll(workerID string) {
 		return
 	}
 
+	// Branch on subscription type
+	switch delivery.SubscriptionType {
+	case store.EventSubscriptionTypeWebhook:
+		w.processWebhookDelivery(delivery)
+	default:
+		w.processFunctionDelivery(delivery)
+	}
+}
+
+// processFunctionDelivery handles function-type subscriptions (existing behavior).
+func (w *WorkerPool) processFunctionDelivery(delivery *store.EventDelivery) {
 	payload, err := buildEventInvocationPayload(delivery)
 	if err != nil {
 		if markInboxErr := w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, "serialize payload: "+err.Error()); markInboxErr != nil {
@@ -180,6 +192,85 @@ func (w *WorkerPool) poll(workerID string) {
 		logging.Op().Error("mark event inbox failed", "delivery", delivery.ID, "error", err)
 	}
 	w.retryOrDLQ(delivery, errMsg)
+}
+
+// processWebhookDelivery handles webhook-type subscriptions.
+// Optionally invokes a transform function, then delivers via HTTP with signing and ACL enforcement.
+func (w *WorkerPool) processWebhookDelivery(delivery *store.EventDelivery) {
+	payload := delivery.Payload
+	if len(payload) == 0 {
+		payload = json.RawMessage(`{}`)
+	}
+
+	// Optional: invoke transform function to shape the payload before webhook delivery
+	if delivery.TransformFunctionName != "" {
+		transformInput, err := buildEventInvocationPayload(delivery)
+		if err != nil {
+			w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, "build transform payload: "+err.Error())
+			w.retryOrDLQ(delivery, "build transform payload: "+err.Error())
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), w.cfg.InvokeTimeout)
+		ctx = store.WithTenantScope(ctx, delivery.TenantID, delivery.Namespace)
+
+		resp, err := w.exec.Invoke(ctx, delivery.TransformFunctionName, transformInput)
+		cancel()
+
+		if err != nil {
+			w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, "transform function: "+err.Error())
+			w.retryOrDLQ(delivery, "transform function: "+err.Error())
+			return
+		}
+		if resp == nil {
+			w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, "transform function returned nil")
+			w.retryOrDLQ(delivery, "transform function returned nil response")
+			return
+		}
+		if resp.Error != "" {
+			w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, "transform function: "+resp.Error)
+			w.retryOrDLQ(delivery, "transform function error: "+resp.Error)
+			return
+		}
+		payload = resp.Output
+	}
+
+	// Deliver via HTTP
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(delivery.WebhookTimeoutMS)*time.Millisecond+5*time.Second)
+	defer cancel()
+
+	result, durationMS, err := w.deliverWebhook(ctx, delivery, payload)
+
+	// Build output JSON for audit trail
+	var outputJSON json.RawMessage
+	if result != nil {
+		outputJSON, _ = json.Marshal(result)
+	}
+
+	if err != nil {
+		errMsg := err.Error()
+		if markErr := w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, errMsg); markErr != nil {
+			logging.Op().Error("mark event inbox failed for webhook", "delivery", delivery.ID, "error", markErr)
+		}
+		w.retryOrDLQ(delivery, errMsg)
+		logging.Op().Warn("webhook delivery failed", "delivery", delivery.ID, "topic", delivery.TopicName, "subscription", delivery.SubscriptionName,
+			"url", delivery.WebhookURL, "attempt", delivery.Attempt, "duration_ms", durationMS, "error", errMsg)
+		return
+	}
+
+	// Success
+	if err := w.store.MarkEventInboxSucceeded(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, "", outputJSON, durationMS, false); err != nil {
+		logging.Op().Error("mark event inbox succeeded failed for webhook", "delivery", delivery.ID, "error", err)
+		w.retryOrDLQ(delivery, "mark inbox success: "+err.Error())
+		return
+	}
+	if err := w.store.MarkEventDeliverySucceeded(context.Background(), delivery.ID, "", outputJSON, durationMS, false); err != nil {
+		logging.Op().Error("mark event delivery succeeded failed for webhook", "delivery", delivery.ID, "error", err)
+		w.retryOrDLQ(delivery, "mark delivery success: "+err.Error())
+		return
+	}
+	logging.Op().Debug("webhook delivery succeeded", "delivery", delivery.ID, "topic", delivery.TopicName, "subscription", delivery.SubscriptionName,
+		"url", delivery.WebhookURL, "attempt", delivery.Attempt, "duration_ms", durationMS)
 }
 
 func (w *WorkerPool) retryOrDLQ(delivery *store.EventDelivery, errMsg string) {

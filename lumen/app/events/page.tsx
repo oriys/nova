@@ -64,12 +64,20 @@ export default function EventsPage() {
 
   const [newSubName, setNewSubName] = useState("")
   const [newSubGroup, setNewSubGroup] = useState("")
+  const [newSubType, setNewSubType] = useState<"function" | "webhook">("function")
   const [newSubFunction, setNewSubFunction] = useState("")
   const [newSubMaxAttempts, setNewSubMaxAttempts] = useState("3")
   const [newSubBackoffBase, setNewSubBackoffBase] = useState("1000")
   const [newSubBackoffMax, setNewSubBackoffMax] = useState("60000")
   const [newSubMaxInflight, setNewSubMaxInflight] = useState("0")
   const [newSubRateLimitPerS, setNewSubRateLimitPerS] = useState("0")
+  // Webhook fields
+  const [newSubWebhookURL, setNewSubWebhookURL] = useState("")
+  const [newSubWebhookMethod, setNewSubWebhookMethod] = useState("POST")
+  const [newSubWebhookHeaders, setNewSubWebhookHeaders] = useState("{}")
+  const [newSubWebhookSecret, setNewSubWebhookSecret] = useState("")
+  const [newSubWebhookTimeout, setNewSubWebhookTimeout] = useState("30000")
+  const [newSubTransformFn, setNewSubTransformFn] = useState("")
 
   const [publishPayload, setPublishPayload] = useState("{}")
   const [publishHeaders, setPublishHeaders] = useState("{}")
@@ -268,25 +276,58 @@ export default function EventsPage() {
       alert("Subscription name is required")
       return
     }
-    if (!newSubFunction) {
+    if (newSubType === "function" && !newSubFunction) {
       alert("Select a function")
+      return
+    }
+    if (newSubType === "webhook" && !newSubWebhookURL.trim()) {
+      alert("Webhook URL is required")
       return
     }
 
     try {
       setBusy(true)
-      await eventsApi.createSubscription(selectedTopicName, {
+      const base = {
         name: newSubName.trim(),
         consumer_group: newSubGroup.trim() || undefined,
-        function_name: newSubFunction,
+        type: newSubType as "function" | "webhook",
         max_attempts: Math.max(1, Number(newSubMaxAttempts) || 3),
         backoff_base_ms: Math.max(1, Number(newSubBackoffBase) || 1000),
         backoff_max_ms: Math.max(1, Number(newSubBackoffMax) || 60000),
         max_inflight: Math.max(0, Number(newSubMaxInflight) || 0),
         rate_limit_per_sec: Math.max(0, Number(newSubRateLimitPerS) || 0),
-      })
+      }
+
+      if (newSubType === "function") {
+        await eventsApi.createSubscription(selectedTopicName, {
+          ...base,
+          function_name: newSubFunction,
+        })
+      } else {
+        let webhookHeaders: Record<string, string> | undefined
+        try {
+          const parsed = JSON.parse(newSubWebhookHeaders)
+          if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+            webhookHeaders = parsed
+          }
+        } catch { /* ignore invalid JSON */ }
+
+        await eventsApi.createSubscription(selectedTopicName, {
+          ...base,
+          webhook_url: newSubWebhookURL.trim(),
+          webhook_method: newSubWebhookMethod || "POST",
+          webhook_headers: webhookHeaders,
+          webhook_signing_secret: newSubWebhookSecret || undefined,
+          webhook_timeout_ms: Math.max(1000, Number(newSubWebhookTimeout) || 30000),
+          transform_function_name: newSubTransformFn || undefined,
+        })
+      }
+
       setNewSubName("")
       setNewSubGroup("")
+      setNewSubWebhookURL("")
+      setNewSubWebhookSecret("")
+      setNewSubTransformFn("")
       setNewSubMaxInflight("0")
       setNewSubRateLimitPerS("0")
       await fetchTopicDetails(selectedTopicName)
@@ -655,18 +696,74 @@ export default function EventsPage() {
                       value={newSubGroup}
                       onChange={(e) => setNewSubGroup(e.target.value)}
                     />
-                    <Select value={newSubFunction} onValueChange={setNewSubFunction}>
+                    <Select value={newSubType} onValueChange={(v) => setNewSubType(v as "function" | "webhook")}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select function" />
+                        <SelectValue placeholder="Type" />
                       </SelectTrigger>
                       <SelectContent>
-                        {functions.map((fn) => (
-                          <SelectItem key={fn.id} value={fn.name}>
-                            {fn.name}
-                          </SelectItem>
-                        ))}
+                        <SelectItem value="function">Function</SelectItem>
+                        <SelectItem value="webhook">Webhook</SelectItem>
                       </SelectContent>
                     </Select>
+                    {newSubType === "function" ? (
+                      <Select value={newSubFunction} onValueChange={setNewSubFunction}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select function" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {functions.map((fn) => (
+                            <SelectItem key={fn.id} value={fn.name}>
+                              {fn.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        placeholder="webhook URL (https://...)"
+                        value={newSubWebhookURL}
+                        onChange={(e) => setNewSubWebhookURL(e.target.value)}
+                      />
+                    )}
+                    {newSubType === "webhook" && (
+                      <>
+                        <Select value={newSubWebhookMethod} onValueChange={setNewSubWebhookMethod}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Method" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="POST">POST</SelectItem>
+                            <SelectItem value="PUT">PUT</SelectItem>
+                            <SelectItem value="PATCH">PATCH</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          placeholder="signing secret (optional)"
+                          value={newSubWebhookSecret}
+                          onChange={(e) => setNewSubWebhookSecret(e.target.value)}
+                        />
+                        <Input
+                          type="number"
+                          min={1000}
+                          placeholder="timeout ms"
+                          value={newSubWebhookTimeout}
+                          onChange={(e) => setNewSubWebhookTimeout(e.target.value)}
+                        />
+                        <Select value={newSubTransformFn} onValueChange={setNewSubTransformFn}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Transform fn (optional)" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">None</SelectItem>
+                            {functions.map((fn) => (
+                              <SelectItem key={fn.id} value={fn.name}>
+                                {fn.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </>
+                    )}
                     <Input
                       type="number"
                       min={1}
@@ -704,7 +801,7 @@ export default function EventsPage() {
                     />
                   </div>
 
-                  <Button onClick={handleCreateSubscription} disabled={busy || !newSubName.trim() || !newSubFunction}>
+                  <Button onClick={handleCreateSubscription} disabled={busy || !newSubName.trim() || (newSubType === "function" ? !newSubFunction : !newSubWebhookURL.trim())}>
                     <Plus className="mr-2 h-4 w-4" />
                     Add Subscription
                   </Button>
@@ -714,8 +811,8 @@ export default function EventsPage() {
                       <thead>
                         <tr className="border-b border-border">
                           <th className="px-3 py-2 text-left font-medium text-muted-foreground">Name</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Consumer Group</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Function</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Type</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Target</th>
                           <th className="px-3 py-2 text-left font-medium text-muted-foreground">Cursor</th>
                           <th className="px-3 py-2 text-left font-medium text-muted-foreground">Lag</th>
                           <th className="px-3 py-2 text-left font-medium text-muted-foreground">Backlog</th>
@@ -745,8 +842,13 @@ export default function EventsPage() {
                                     {sub.name}
                                   </button>
                                 </td>
-                                <td className="px-3 py-2 text-muted-foreground">{sub.consumer_group}</td>
-                                <td className="px-3 py-2 text-muted-foreground">{sub.function_name}</td>
+                                <td className="px-3 py-2">
+                                  <Badge variant="outline">{sub.type || "function"}</Badge>
+                                </td>
+                                <td className="px-3 py-2 text-muted-foreground text-xs max-w-[200px] truncate" title={sub.type === "webhook" ? sub.webhook_url : sub.function_name}>
+                                  {sub.type === "webhook" ? sub.webhook_url : sub.function_name}
+                                  {sub.type === "webhook" && sub.transform_function_name ? ` (transform: ${sub.transform_function_name})` : ""}
+                                </td>
                                 <td className="px-3 py-2 text-muted-foreground">{sub.last_acked_sequence}</td>
                                 <td className="px-3 py-2 text-muted-foreground">{sub.lag}</td>
                                 <td className="px-3 py-2 text-muted-foreground">

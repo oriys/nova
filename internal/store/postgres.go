@@ -351,6 +351,20 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_inbox_delivery ON event_inbox(delivery_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_inbox_status_updated ON event_inbox(status, updated_at DESC)`,
+
+		// Webhook subscription support
+		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'function'`,
+		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS webhook_url TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS webhook_method TEXT NOT NULL DEFAULT 'POST'`,
+		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS webhook_headers JSONB NOT NULL DEFAULT '{}'::jsonb`,
+		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS webhook_signing_secret TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS webhook_timeout_ms INTEGER NOT NULL DEFAULT 30000`,
+		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS transform_function_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS transform_function_name TEXT NOT NULL DEFAULT ''`,
+		// Relax function FK constraints for webhook subscriptions (function_id may be empty)
+		`ALTER TABLE event_subscriptions DROP CONSTRAINT IF EXISTS event_subscriptions_function_id_fkey`,
+		`ALTER TABLE event_deliveries DROP CONSTRAINT IF EXISTS event_deliveries_function_id_fkey`,
+
 		`CREATE TABLE IF NOT EXISTS runtimes (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,

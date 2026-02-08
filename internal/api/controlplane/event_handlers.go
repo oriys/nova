@@ -27,13 +27,28 @@ type publishEventRequest struct {
 type createEventSubscriptionRequest struct {
 	Name          string `json:"name"`
 	ConsumerGroup string `json:"consumer_group"`
-	FunctionName  string `json:"function_name"`
 	Enabled       *bool  `json:"enabled,omitempty"`
 	MaxAttempts   int    `json:"max_attempts,omitempty"`
 	BackoffBaseMS int    `json:"backoff_base_ms,omitempty"`
 	BackoffMaxMS  int    `json:"backoff_max_ms,omitempty"`
 	MaxInflight   int    `json:"max_inflight,omitempty"`
 	RateLimitPerS int    `json:"rate_limit_per_sec,omitempty"`
+
+	// Subscription type: "function" (default) or "webhook"
+	Type string `json:"type,omitempty"`
+
+	// Function fields (required when type=function)
+	FunctionName string `json:"function_name"`
+
+	// Webhook fields (required when type=webhook)
+	WebhookURL           string          `json:"webhook_url,omitempty"`
+	WebhookMethod        string          `json:"webhook_method,omitempty"`
+	WebhookHeaders       json.RawMessage `json:"webhook_headers,omitempty"`
+	WebhookSigningSecret string          `json:"webhook_signing_secret,omitempty"`
+	WebhookTimeoutMS     int             `json:"webhook_timeout_ms,omitempty"`
+
+	// Transform function: invoked before webhook delivery to transform payload
+	TransformFunctionName string `json:"transform_function_name,omitempty"`
 }
 
 type updateEventSubscriptionRequest struct {
@@ -46,6 +61,16 @@ type updateEventSubscriptionRequest struct {
 	BackoffMaxMS  *int    `json:"backoff_max_ms,omitempty"`
 	MaxInflight   *int    `json:"max_inflight,omitempty"`
 	RateLimitPerS *int    `json:"rate_limit_per_sec,omitempty"`
+
+	// Webhook fields
+	WebhookURL           *string         `json:"webhook_url,omitempty"`
+	WebhookMethod        *string         `json:"webhook_method,omitempty"`
+	WebhookHeaders       json.RawMessage `json:"webhook_headers,omitempty"`
+	WebhookSigningSecret *string         `json:"webhook_signing_secret,omitempty"`
+	WebhookTimeoutMS     *int            `json:"webhook_timeout_ms,omitempty"`
+
+	// Transform function
+	TransformFunctionName *string `json:"transform_function_name,omitempty"`
 }
 
 type replayEventSubscriptionRequest struct {
@@ -321,22 +346,60 @@ func (h *Handler) CreateEventSubscription(w http.ResponseWriter, r *http.Request
 		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
 		return
 	}
-	if strings.TrimSpace(req.FunctionName) == "" {
-		http.Error(w, "function_name is required", http.StatusBadRequest)
-		return
-	}
 	if strings.TrimSpace(req.Name) == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
 	}
 
-	fn, err := h.Store.GetFunctionByName(r.Context(), req.FunctionName)
-	if err != nil {
-		http.Error(w, "function not found: "+req.FunctionName, http.StatusNotFound)
+	subType := strings.TrimSpace(req.Type)
+	if subType == "" {
+		subType = string(store.EventSubscriptionTypeFunction)
+	}
+
+	var sub *store.EventSubscription
+
+	switch store.EventSubscriptionType(subType) {
+	case store.EventSubscriptionTypeFunction:
+		if strings.TrimSpace(req.FunctionName) == "" {
+			http.Error(w, "function_name is required for function subscriptions", http.StatusBadRequest)
+			return
+		}
+		fn, err := h.Store.GetFunctionByName(r.Context(), req.FunctionName)
+		if err != nil {
+			http.Error(w, "function not found: "+req.FunctionName, http.StatusNotFound)
+			return
+		}
+		sub = store.NewEventSubscription(topic.ID, topic.Name, req.Name, req.ConsumerGroup, fn.ID, fn.Name)
+
+	case store.EventSubscriptionTypeWebhook:
+		if strings.TrimSpace(req.WebhookURL) == "" {
+			http.Error(w, "webhook_url is required for webhook subscriptions", http.StatusBadRequest)
+			return
+		}
+		sub = store.NewWebhookSubscription(topic.ID, topic.Name, req.Name, req.ConsumerGroup, req.WebhookURL, req.WebhookMethod)
+		if len(req.WebhookHeaders) > 0 {
+			sub.WebhookHeaders = req.WebhookHeaders
+		}
+		sub.WebhookSigningSecret = req.WebhookSigningSecret
+		if req.WebhookTimeoutMS > 0 {
+			sub.WebhookTimeoutMS = req.WebhookTimeoutMS
+		}
+		// Resolve optional transform function
+		if strings.TrimSpace(req.TransformFunctionName) != "" {
+			tfn, err := h.Store.GetFunctionByName(r.Context(), req.TransformFunctionName)
+			if err != nil {
+				http.Error(w, "transform function not found: "+req.TransformFunctionName, http.StatusNotFound)
+				return
+			}
+			sub.TransformFunctionID = tfn.ID
+			sub.TransformFunctionName = tfn.Name
+		}
+
+	default:
+		http.Error(w, "invalid type: must be 'function' or 'webhook'", http.StatusBadRequest)
 		return
 	}
 
-	sub := store.NewEventSubscription(topic.ID, topic.Name, req.Name, req.ConsumerGroup, fn.ID, fn.Name)
 	if req.Enabled != nil {
 		sub.Enabled = *req.Enabled
 	}
@@ -424,6 +487,12 @@ func (h *Handler) UpdateEventSubscription(w http.ResponseWriter, r *http.Request
 		BackoffMaxMS:  req.BackoffMaxMS,
 		MaxInflight:   req.MaxInflight,
 		RateLimitPerS: req.RateLimitPerS,
+		// Webhook fields
+		WebhookURL:           req.WebhookURL,
+		WebhookMethod:        req.WebhookMethod,
+		WebhookHeaders:       req.WebhookHeaders,
+		WebhookSigningSecret: req.WebhookSigningSecret,
+		WebhookTimeoutMS:     req.WebhookTimeoutMS,
 	}
 
 	if req.FunctionName != nil {
@@ -439,6 +508,25 @@ func (h *Handler) UpdateEventSubscription(w http.ResponseWriter, r *http.Request
 		}
 		update.FunctionName = &fn.Name
 		update.FunctionID = &fn.ID
+	}
+
+	// Resolve transform function
+	if req.TransformFunctionName != nil {
+		tfnName := strings.TrimSpace(*req.TransformFunctionName)
+		if tfnName == "" {
+			// Clear transform function
+			empty := ""
+			update.TransformFunctionID = &empty
+			update.TransformFunctionName = &empty
+		} else {
+			tfn, err := h.Store.GetFunctionByName(r.Context(), tfnName)
+			if err != nil {
+				http.Error(w, "transform function not found: "+tfnName, http.StatusNotFound)
+				return
+			}
+			update.TransformFunctionID = &tfn.ID
+			update.TransformFunctionName = &tfn.Name
+		}
 	}
 
 	sub, err := h.Store.UpdateEventSubscription(r.Context(), id, update)
