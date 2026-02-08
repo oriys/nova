@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { usePathname, useRouter } from "next/navigation"
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
 import { Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -26,6 +27,13 @@ export interface DocsNavItem {
 export interface DocsNavGroup {
   title: string
   items: DocsNavItem[]
+}
+
+interface DocsSearchItem {
+  label: string
+  href: string
+  context: string
+  keywords: string
 }
 
 interface DocsShellProps {
@@ -75,13 +83,188 @@ function isNavChildActive(href: string, activeHref?: string): boolean {
   return activeHref === href || activeHref.startsWith(`${href}/`)
 }
 
+function normalizeSearchText(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+function buildSearchItems(navGroups: DocsNavGroup[], toc: TocItem[], pathname: string): DocsSearchItem[] {
+  const baseItems: DocsSearchItem[] = []
+
+  for (const group of navGroups) {
+    for (const item of group.items) {
+      baseItems.push({
+        label: item.label,
+        href: item.href,
+        context: group.title,
+        keywords: `${group.title} ${item.label} ${item.href}`,
+      })
+
+      for (const child of item.children ?? []) {
+        baseItems.push({
+          label: child.label,
+          href: child.href,
+          context: `${group.title} / ${item.label}`,
+          keywords: `${group.title} ${item.label} ${child.label} ${child.href}`,
+        })
+      }
+    }
+  }
+
+  for (const item of toc) {
+    baseItems.push({
+      label: item.label,
+      href: `${pathname}#${item.id}`,
+      context: "On This Page",
+      keywords: `section ${item.label} ${item.id}`,
+    })
+  }
+
+  const deduped = new Map<string, DocsSearchItem>()
+  for (const item of baseItems) {
+    const key = `${item.href}::${item.label}`
+    if (!deduped.has(key)) {
+      deduped.set(key, item)
+    }
+  }
+
+  return Array.from(deduped.values())
+}
+
+function scoreSearchItem(item: DocsSearchItem, query: string): number {
+  const label = item.label.toLowerCase()
+  const keywords = item.keywords.toLowerCase()
+
+  if (label === query) return 500
+  if (label.startsWith(query)) return 400
+  if (label.includes(query)) return 300
+
+  const parts = query.split(/\s+/).filter(Boolean)
+  if (parts.length > 1 && parts.every((part) => keywords.includes(part))) {
+    return 250
+  }
+
+  if (keywords.includes(query)) return 200
+  return 0
+}
+
 export function DocsShell({ current, activeHref, title, description, toc, navGroups, children }: DocsShellProps) {
   const [activeTocId, setActiveTocId] = useState<string>(toc[0]?.id ?? "")
+  const [searchValue, setSearchValue] = useState("")
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [activeSearchIndex, setActiveSearchIndex] = useState(0)
+  const searchContainerRef = useRef<HTMLDivElement>(null)
+  const pathname = usePathname() || "/docs"
+  const router = useRouter()
   const resolvedNavGroups = navGroups ?? defaultDocsNavGroups
+
+  const normalizedSearch = normalizeSearchText(searchValue)
+
+  const searchItems = useMemo(
+    () => buildSearchItems(resolvedNavGroups, toc, pathname),
+    [resolvedNavGroups, toc, pathname]
+  )
+
+  const searchResults = useMemo(() => {
+    if (!normalizedSearch) {
+      return []
+    }
+
+    return searchItems
+      .map((item) => ({
+        item,
+        score: scoreSearchItem(item, normalizedSearch),
+      }))
+      .filter((entry) => entry.score > 0)
+      .sort((left, right) => {
+        if (left.score !== right.score) {
+          return right.score - left.score
+        }
+        return left.item.label.localeCompare(right.item.label)
+      })
+      .slice(0, 8)
+      .map((entry) => entry.item)
+  }, [normalizedSearch, searchItems])
+
+  const showSearchMenu = isSearchOpen && normalizedSearch.length > 0
+
+  const jumpToSearchResult = (href: string) => {
+    setSearchValue("")
+    setIsSearchOpen(false)
+    setActiveSearchIndex(0)
+    router.push(href)
+  }
+
+  const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      setIsSearchOpen(false)
+      return
+    }
+
+    if (!showSearchMenu || searchResults.length === 0) {
+      return
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault()
+      setActiveSearchIndex((prev) => (prev + 1) % searchResults.length)
+      return
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault()
+      setActiveSearchIndex((prev) => (prev - 1 + searchResults.length) % searchResults.length)
+      return
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault()
+      const target = searchResults[activeSearchIndex] ?? searchResults[0]
+      if (target) {
+        jumpToSearchResult(target.href)
+      }
+    }
+  }
 
   useEffect(() => {
     setActiveTocId(toc[0]?.id ?? "")
   }, [toc])
+
+  useEffect(() => {
+    setActiveSearchIndex(0)
+  }, [normalizedSearch])
+
+  useEffect(() => {
+    if (activeSearchIndex < searchResults.length) {
+      return
+    }
+    setActiveSearchIndex(0)
+  }, [activeSearchIndex, searchResults.length])
+
+  useEffect(() => {
+    if (!isSearchOpen) {
+      return
+    }
+
+    const onMouseDown = (event: MouseEvent) => {
+      if (!(event.target instanceof Node)) {
+        return
+      }
+      if (!searchContainerRef.current?.contains(event.target)) {
+        setIsSearchOpen(false)
+      }
+    }
+
+    document.addEventListener("mousedown", onMouseDown)
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown)
+    }
+  }, [isSearchOpen])
+
+  useEffect(() => {
+    setIsSearchOpen(false)
+    setSearchValue("")
+    setActiveSearchIndex(0)
+  }, [pathname])
 
   useEffect(() => {
     if (typeof window === "undefined" || toc.length === 0) {
@@ -153,13 +336,50 @@ export function DocsShell({ current, activeHref, title, description, toc, navGro
             </Link>
           </div>
 
-          <div className="relative hidden lg:block">
+          <div ref={searchContainerRef} className="relative hidden lg:block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Search documentation..."
               className="h-9 w-72 border-border bg-background pl-9"
-              readOnly
+              value={searchValue}
+              onChange={(event) => {
+                setSearchValue(event.currentTarget.value)
+                setIsSearchOpen(true)
+              }}
+              onFocus={() => setIsSearchOpen(true)}
+              onKeyDown={handleSearchKeyDown}
+              aria-label="Search documentation"
+              aria-expanded={showSearchMenu}
+              aria-controls="docs-search-results"
             />
+            {showSearchMenu && (
+              <div className="absolute right-0 top-11 z-50 w-[26rem] overflow-hidden rounded-md border border-border bg-background shadow-lg">
+                {searchResults.length > 0 ? (
+                  <ul id="docs-search-results" role="listbox" className="max-h-80 overflow-y-auto py-1">
+                    {searchResults.map((result, index) => (
+                      <li key={`${result.href}-${result.label}`}>
+                        <button
+                          type="button"
+                          className={cn(
+                            "w-full px-3 py-2 text-left transition-colors",
+                            index === activeSearchIndex ? "bg-muted" : "hover:bg-muted/60"
+                          )}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => jumpToSearchResult(result.href)}
+                        >
+                          <p className="truncate text-sm font-medium text-foreground">{result.label}</p>
+                          <p className="truncate text-xs text-muted-foreground">{result.context}</p>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="px-3 py-2 text-sm text-muted-foreground">
+                    No matches for <span className="font-medium text-foreground">{searchValue.trim()}</span>
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <div className="h-px w-full bg-gradient-to-r from-border/15 via-border to-border/15" />
