@@ -6,6 +6,8 @@ BINARY_DIR   := bin
 NOVA_BIN     := $(BINARY_DIR)/nova
 NOVA_LINUX   := $(BINARY_DIR)/nova-linux
 AGENT_BIN    := $(BINARY_DIR)/nova-agent
+ATLAS_BIN    := $(BINARY_DIR)/atlas
+ATLAS_LINUX  := $(BINARY_DIR)/atlas-linux
 SERVER       ?= user@server
 PREFIX       ?= nova-runtime
 
@@ -71,11 +73,43 @@ rootfs: download-assets  ## Build rootfs images using Docker
 download-assets:  ## Download large assets (Firecracker binary, kernel, etc.)
 	./scripts/download_assets.sh
 
+# ─── Orbit CLI ───────────────────────────────────────────────────────────────
+
+.PHONY: orbit orbit-release orbit-clean
+
+orbit:  ## Build Orbit CLI (debug)
+	cd orbit && cargo build
+
+orbit-release:  ## Build Orbit CLI (release)
+	cd orbit && cargo build --release
+
+orbit-clean:  ## Clean Orbit build artifacts
+	cd orbit && cargo clean
+
+# ─── Atlas MCP Server ────────────────────────────────────────────────────────
+
+.PHONY: atlas atlas-linux atlas-clean
+
+atlas: $(ATLAS_BIN)  ## Build Atlas MCP server
+
+atlas-linux: $(ATLAS_LINUX)  ## Cross-compile Atlas for linux/amd64
+
+atlas-clean:  ## Clean Atlas build artifacts
+	rm -f $(ATLAS_BIN) $(ATLAS_LINUX)
+
+$(ATLAS_BIN): atlas/*.go
+	@mkdir -p $(BINARY_DIR)
+	cd atlas && CGO_ENABLED=0 go build -o ../$(ATLAS_BIN) .
+
+$(ATLAS_LINUX): atlas/*.go
+	@mkdir -p $(BINARY_DIR)
+	cd atlas && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../$(ATLAS_LINUX) .
+
 # ─── All ──────────────────────────────────────────────────────────────────────
 
 .PHONY: all
 
-all: build frontend docker-backend docker-frontend docker-runtimes  ## Build everything (backend + frontend + Docker images)
+all: build orbit atlas frontend docker-backend docker-frontend docker-runtimes  ## Build everything (backend + frontend + CLI + MCP + Docker images)
 
 # ─── Dev Environment ──────────────────────────────────────────────────────────
 
@@ -123,7 +157,7 @@ demo-delete:  ## Delete hello-python function
 clean:  ## Remove bin/ directory
 	rm -rf $(BINARY_DIR)
 
-clean-all: clean  ## Remove bin/ + assets/ + lumen build artifacts
+clean-all: clean orbit-clean atlas-clean  ## Remove bin/ + assets/ + lumen + orbit + atlas build artifacts
 	rm -rf assets/
 	rm -rf lumen/.next lumen/node_modules
 
