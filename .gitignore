@@ -39,3 +39,6 @@ lumen/playwright.config.ts
 assets/kernel/
 assets/rootfs/*.ext4
 assets/downloads/
+
+# Rust
+orbit/target/

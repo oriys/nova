@@ -1,0 +1,21 @@
+[package]
+name = "orbit"
+version = "0.1.0"
+edition = "2024"
+description = "CLI for the Nova serverless platform"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "native-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+tokio = { version = "1", features = ["full"] }
+comfy-table = "7"
+toml = "0.9"
+dirs = "6"
+colored = "3"
+indicatif = "0.18"
+anyhow = "1"
+thiserror = "2"
+chrono = { version = "0.4", features = ["serde"] }
