@@ -109,8 +109,8 @@ func Parse(r io.Reader, baseDir string) (*MultiSpec, error) {
 
 // Validate validates a function spec
 func (s *FunctionSpec) Validate() error {
-	if s.Name == "" {
-		return fmt.Errorf("name is required")
+	if err := domain.ValidateFunctionName(s.Name); err != nil {
+		return err
 	}
 	if s.Runtime == "" {
 		return fmt.Errorf("runtime is required")
