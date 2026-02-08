@@ -12,6 +12,7 @@ import { FunctionMetrics } from "@/components/function-metrics"
 import { FunctionCode } from "@/components/function-code"
 import { FunctionLogs } from "@/components/function-logs"
 import { FunctionConfig } from "@/components/function-config"
+import { InvocationHeatmap } from "@/components/invocation-heatmap"
 import {
   Dialog,
   DialogContent,
@@ -30,6 +31,7 @@ import {
   Loader2,
   Plus,
   Trash2,
+  Pencil,
   ToggleLeft,
   ToggleRight,
 } from "lucide-react"
@@ -57,6 +59,9 @@ export default function FunctionDetailPage({
   const [newCron, setNewCron] = useState("")
   const [newSchedInput, setNewSchedInput] = useState("")
   const [creatingSchedule, setCreatingSchedule] = useState(false)
+  const [editingSchedule, setEditingSchedule] = useState<ScheduleEntry | null>(null)
+  const [editCron, setEditCron] = useState("")
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
@@ -255,69 +260,21 @@ export default function FunctionDetailPage({
       <div className="p-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsContent value="overview" className="mt-0 space-y-6">
-            <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-lg font-semibold text-foreground">
-                    Invoke function
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    Provide a JSON payload to test your function and inspect the result.
-                  </p>
-                </div>
-                <Button onClick={handleInvoke} disabled={invoking} size="sm">
-                  {invoking ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Play className="mr-2 h-4 w-4" />
-                  )}
-                  Invoke
-                </Button>
-              </div>
-
-              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                <div className="space-y-2">
-                  <div className="text-sm font-medium text-foreground">Input</div>
-                  <Textarea
-                    value={invokeInput}
-                    onChange={(event) => setInvokeInput(event.target.value)}
-                    className="min-h-[160px] font-mono text-xs"
-                    placeholder='{\n  "key": "value"\n}'
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Payload must be valid JSON. Leave empty to send an empty object.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-foreground">Output</span>
-                    {invokeMeta && (
-                      <span className="text-xs text-muted-foreground">{invokeMeta}</span>
-                    )}
-                  </div>
-                  <div className="min-h-[160px] rounded-md border border-border bg-muted/30 p-3">
-                    {invokeOutput ? (
-                      <pre className="whitespace-pre-wrap text-xs text-foreground">
-                        {invokeOutput}
-                      </pre>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        No output yet. Invoke the function to see results.
-                      </p>
-                    )}
-                  </div>
-                  {invokeError && (
-                    <p className="text-xs text-destructive">{invokeError}</p>
-                  )}
-                </div>
-              </div>
-            </section>
             <FunctionMetrics func={func} metrics={metrics} />
+            <InvocationHeatmap functionName={func.name} />
           </TabsContent>
 
           <TabsContent value="code" className="mt-0">
-            <FunctionCode func={func} />
+            <FunctionCode
+              func={func}
+              invokeInput={invokeInput}
+              onInvokeInputChange={setInvokeInput}
+              invokeOutput={invokeOutput}
+              invokeError={invokeError}
+              invokeMeta={invokeMeta}
+              invoking={invoking}
+              onInvoke={handleInvoke}
+            />
           </TabsContent>
 
           <TabsContent value="logs" className="mt-0">
@@ -398,9 +355,31 @@ export default function FunctionDetailPage({
                         onChange={(e) => setNewCron(e.target.value)}
                         placeholder="@every 5m"
                       />
-                      <p className="text-xs text-muted-foreground">
-                        Examples: <code>@every 1m</code>, <code>@hourly</code>, <code>@daily</code>, <code>0 */5 * * *</code>
-                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { label: "Every 1m", value: "@every 1m" },
+                          { label: "Every 5m", value: "@every 5m" },
+                          { label: "Every 15m", value: "*/15 * * * *" },
+                          { label: "Every 30m", value: "*/30 * * * *" },
+                          { label: "Hourly", value: "@hourly" },
+                          { label: "Daily", value: "@daily" },
+                          { label: "Weekly", value: "@weekly" },
+                        ].map((preset) => (
+                          <button
+                            key={preset.value}
+                            type="button"
+                            className={cn(
+                              "px-2 py-0.5 rounded text-xs border transition-colors",
+                              newCron === preset.value
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                            )}
+                            onClick={() => setNewCron(preset.value)}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Input (optional JSON)</label>
@@ -436,6 +415,71 @@ export default function FunctionDetailPage({
                       disabled={creatingSchedule || !newCron.trim()}
                     >
                       {creatingSchedule ? "Creating..." : "Create"}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+
+              {/* Edit Schedule Dialog */}
+              <Dialog open={editDialogOpen} onOpenChange={(open) => {
+                setEditDialogOpen(open)
+                if (!open) setEditingSchedule(null)
+              }}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Edit Schedule</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Cron Expression</label>
+                      <Input
+                        value={editCron}
+                        onChange={(e) => setEditCron(e.target.value)}
+                        placeholder="@every 5m"
+                      />
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { label: "Every 1m", value: "@every 1m" },
+                          { label: "Every 5m", value: "@every 5m" },
+                          { label: "Every 15m", value: "*/15 * * * *" },
+                          { label: "Every 30m", value: "*/30 * * * *" },
+                          { label: "Hourly", value: "@hourly" },
+                          { label: "Daily", value: "@daily" },
+                          { label: "Weekly", value: "@weekly" },
+                        ].map((preset) => (
+                          <button
+                            key={preset.value}
+                            type="button"
+                            className={cn(
+                              "px-2 py-0.5 rounded text-xs border transition-colors",
+                              editCron === preset.value
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                            )}
+                            onClick={() => setEditCron(preset.value)}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <Button
+                      className="w-full"
+                      onClick={async () => {
+                        if (!func || !editingSchedule || !editCron.trim()) return
+                        try {
+                          await schedulesApi.updateCron(func.name, editingSchedule.id, editCron.trim())
+                          setEditDialogOpen(false)
+                          setEditingSchedule(null)
+                          const updated = await schedulesApi.list(func.name)
+                          setSchedules(updated || [])
+                        } catch (err) {
+                          console.error("Failed to update schedule:", err)
+                        }
+                      }}
+                      disabled={!editCron.trim() || editCron.trim() === editingSchedule?.cron_expression}
+                    >
+                      Save
                     </Button>
                   </div>
                 </DialogContent>
@@ -487,6 +531,18 @@ export default function FunctionDetailPage({
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setEditingSchedule(s)
+                                setEditCron(s.cron_expression)
+                                setEditDialogOpen(true)
+                              }}
+                              title="Edit"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
                             <Button
                               variant="ghost"
                               size="sm"

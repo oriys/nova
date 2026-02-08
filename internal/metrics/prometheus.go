@@ -28,14 +28,20 @@ type PrometheusMetrics struct {
 	vsockLatency        *prometheus.HistogramVec
 
 	// Gauges
-	uptime         prometheus.GaugeFunc
-	vmPool         *prometheus.GaugeVec
+	uptime          prometheus.GaugeFunc
+	vmPool          *prometheus.GaugeVec
 	poolUtilization *prometheus.GaugeVec
 	activeRequests  prometheus.Gauge
 
 	// Autoscaling
 	autoscaleDesiredReplicas *prometheus.GaugeVec
 	autoscaleDecisionsTotal  *prometheus.CounterVec
+
+	// Admission control
+	admissionTotal *prometheus.CounterVec
+	shedTotal      *prometheus.CounterVec
+	queueDepth     *prometheus.GaugeVec
+	queueWaitMs    *prometheus.GaugeVec
 }
 
 // Default histogram buckets for invocation duration (in milliseconds)
@@ -197,6 +203,42 @@ func InitPrometheus(namespace string, buckets []float64) {
 			},
 			[]string{"function", "direction"},
 		),
+
+		admissionTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "admission_total",
+				Help:      "Admission decisions by result and reason",
+			},
+			[]string{"function", "result", "reason"},
+		),
+
+		shedTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "shed_total",
+				Help:      "Load shedding events",
+			},
+			[]string{"function", "reason"},
+		),
+
+		queueDepth: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "queue_depth",
+				Help:      "Current queue depth by function",
+			},
+			[]string{"function"},
+		),
+
+		queueWaitMs: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "queue_wait_milliseconds",
+				Help:      "Last observed queue wait in milliseconds by function",
+			},
+			[]string{"function"},
+		),
 	}
 
 	pm.uptime = prometheus.NewGaugeFunc(
@@ -228,6 +270,10 @@ func InitPrometheus(namespace string, buckets []float64) {
 		pm.activeRequests,
 		pm.autoscaleDesiredReplicas,
 		pm.autoscaleDecisionsTotal,
+		pm.admissionTotal,
+		pm.shedTotal,
+		pm.queueDepth,
+		pm.queueWaitMs,
 	)
 
 	promMetrics = pm
@@ -382,4 +428,36 @@ func RecordAutoscaleDecision(funcName, direction string) {
 		return
 	}
 	promMetrics.autoscaleDecisionsTotal.WithLabelValues(funcName, direction).Inc()
+}
+
+// RecordAdmissionResult records request admission/rejection decisions.
+func RecordAdmissionResult(funcName, result, reason string) {
+	if promMetrics == nil {
+		return
+	}
+	promMetrics.admissionTotal.WithLabelValues(funcName, result, reason).Inc()
+}
+
+// RecordShed records load-shedding events for a function.
+func RecordShed(funcName, reason string) {
+	if promMetrics == nil {
+		return
+	}
+	promMetrics.shedTotal.WithLabelValues(funcName, reason).Inc()
+}
+
+// SetQueueDepth sets the queue depth gauge for a function.
+func SetQueueDepth(funcName string, depth int) {
+	if promMetrics == nil {
+		return
+	}
+	promMetrics.queueDepth.WithLabelValues(funcName).Set(float64(depth))
+}
+
+// SetQueueWaitMs sets the latest queue wait duration gauge for a function.
+func SetQueueWaitMs(funcName string, waitMs int64) {
+	if promMetrics == nil {
+		return
+	}
+	promMetrics.queueWaitMs.WithLabelValues(funcName).Set(float64(waitMs))
 }

@@ -57,6 +57,8 @@ func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 		"instance_concurrency": fn.InstanceConcurrency,
 		"env_vars":             fn.EnvVars,
 		"limits":               fn.Limits,
+		"auto_scale_policy":    fn.AutoScalePolicy,
+		"capacity_policy":      fn.CapacityPolicy,
 		"created_at":           fn.CreatedAt,
 		"updated_at":           fn.UpdatedAt,
 		"compile_status":       compileStatus,

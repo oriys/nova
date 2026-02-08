@@ -28,6 +28,21 @@ func (h *Handler) SetScalingPolicy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "max_replicas must be >= min_replicas", http.StatusBadRequest)
 		return
 	}
+	if policy.TargetUtilization < 0 || policy.TargetUtilization > 1 {
+		http.Error(w, "target_utilization must be between 0 and 1", http.StatusBadRequest)
+		return
+	}
+	if policy.CooldownScaleUpS < 0 || policy.CooldownScaleDownS < 0 {
+		http.Error(w, "cooldown values must be >= 0", http.StatusBadRequest)
+		return
+	}
+	if policy.ScaleDownStep < 0 || policy.ScaleUpStepMax < 0 || policy.ScaleDownStabilizationS < 0 || policy.MinSampleCount < 0 {
+		http.Error(w, "step/stabilization/sample values must be >= 0", http.StatusBadRequest)
+		return
+	}
+	if policy.TargetUtilization == 0 {
+		policy.TargetUtilization = 0.7
+	}
 
 	updated, err := h.Store.UpdateFunction(r.Context(), fn.Name, &store.FunctionUpdate{
 		AutoScalePolicy: &policy,

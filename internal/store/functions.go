@@ -149,6 +149,9 @@ func (s *PostgresStore) UpdateFunction(ctx context.Context, name string, update 
 	if update.AutoScalePolicy != nil {
 		fn.AutoScalePolicy = update.AutoScalePolicy
 	}
+	if update.CapacityPolicy != nil {
+		fn.CapacityPolicy = update.CapacityPolicy
+	}
 	if update.EnvVars != nil {
 		if update.MergeEnvVars && fn.EnvVars != nil {
 			for k, v := range update.EnvVars {

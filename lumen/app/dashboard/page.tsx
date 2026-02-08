@@ -13,6 +13,7 @@ import { functionsApi, metricsApi } from "@/lib/api"
 import { transformFunction, transformLog, FunctionData, LogEntry } from "@/lib/types"
 import { useAutoRefresh } from "@/lib/use-auto-refresh"
 import { cn } from "@/lib/utils"
+import { GlobalHeatmap } from "@/components/global-heatmap"
 
 export default function DashboardPage() {
   const [functions, setFunctions] = useState<FunctionData[]>([])
@@ -191,6 +192,9 @@ export default function DashboardPage() {
           range={timeRange}
           onRangeChange={handleRangeChange}
         />
+
+        {/* Heatmap */}
+        <GlobalHeatmap />
 
         {/* Tables */}
         <div className="grid gap-6 lg:grid-cols-2">

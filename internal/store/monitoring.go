@@ -270,6 +270,97 @@ func (s *PostgresStore) GetFunctionTimeSeries(ctx context.Context, functionID st
 	return buckets, nil
 }
 
+// DailyCount represents a single day's invocation count for heatmaps.
+type DailyCount struct {
+	Date        string `json:"date"`
+	Invocations int64  `json:"invocations"`
+}
+
+func (s *PostgresStore) GetFunctionDailyHeatmap(ctx context.Context, functionID string, weeks int) ([]DailyCount, error) {
+	if weeks <= 0 {
+		weeks = 52
+	}
+	days := weeks * 7
+
+	rows, err := s.pool.Query(ctx, `
+		WITH days AS (
+			SELECT generate_series(
+				(CURRENT_DATE - make_interval(days => $2))::date,
+				CURRENT_DATE,
+				'1 day'::interval
+			)::date AS day
+		)
+		SELECT
+			d.day::text,
+			COALESCE(COUNT(l.id), 0) AS invocations
+		FROM days d
+		LEFT JOIN invocation_logs l
+			ON l.function_id = $1
+			AND l.created_at::date = d.day
+		GROUP BY d.day
+		ORDER BY d.day ASC
+	`, functionID, days)
+	if err != nil {
+		return nil, fmt.Errorf("get function daily heatmap: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]DailyCount, 0, days+1)
+	for rows.Next() {
+		var dc DailyCount
+		if err := rows.Scan(&dc.Date, &dc.Invocations); err != nil {
+			return nil, fmt.Errorf("scan daily heatmap: %w", err)
+		}
+		result = append(result, dc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get function daily heatmap rows: %w", err)
+	}
+	return result, nil
+}
+
+func (s *PostgresStore) GetGlobalDailyHeatmap(ctx context.Context, weeks int) ([]DailyCount, error) {
+	if weeks <= 0 {
+		weeks = 52
+	}
+	days := weeks * 7
+
+	rows, err := s.pool.Query(ctx, `
+		WITH days AS (
+			SELECT generate_series(
+				(CURRENT_DATE - make_interval(days => $1))::date,
+				CURRENT_DATE,
+				'1 day'::interval
+			)::date AS day
+		)
+		SELECT
+			d.day::text,
+			COALESCE(COUNT(l.id), 0) AS invocations
+		FROM days d
+		LEFT JOIN invocation_logs l
+			ON l.created_at::date = d.day
+		GROUP BY d.day
+		ORDER BY d.day ASC
+	`, days)
+	if err != nil {
+		return nil, fmt.Errorf("get global daily heatmap: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]DailyCount, 0, days+1)
+	for rows.Next() {
+		var dc DailyCount
+		if err := rows.Scan(&dc.Date, &dc.Invocations); err != nil {
+			return nil, fmt.Errorf("scan global daily heatmap: %w", err)
+		}
+		result = append(result, dc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get global daily heatmap rows: %w", err)
+	}
+	return result, nil
+}
+
 func (s *PostgresStore) GetGlobalTimeSeries(ctx context.Context, rangeSeconds, bucketSeconds int) ([]TimeSeriesBucket, error) {
 	if rangeSeconds <= 0 {
 		rangeSeconds = 3600

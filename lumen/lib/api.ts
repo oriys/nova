@@ -279,6 +279,9 @@ export const functionsApi = {
 
   getVersion: (name: string, version: number) =>
     request<FunctionVersionEntry>(`/functions/${encodeURIComponent(name)}/versions/${version}`),
+
+  heatmap: (name: string, weeks: number = 52) =>
+    request<HeatmapPoint[]>(`/functions/${encodeURIComponent(name)}/heatmap?weeks=${weeks}`),
 };
 
 // Runtimes API
@@ -322,11 +325,18 @@ export interface TimeSeriesPoint {
   avg_duration: number;
 }
 
+export interface HeatmapPoint {
+  date: string;
+  invocations: number;
+}
+
 // Metrics API
 export const metricsApi = {
   global: () => request<GlobalMetrics>("/metrics"),
   timeseries: (range?: string) =>
     request<TimeSeriesPoint[]>(`/metrics/timeseries${range ? `?range=${range}` : ""}`),
+  heatmap: (weeks: number = 52) =>
+    request<HeatmapPoint[]>(`/metrics/heatmap?weeks=${weeks}`),
   stats: () => request<Record<string, unknown>>("/stats"),
 };
 
@@ -625,9 +635,15 @@ export const schedulesApi = {
     }),
 
   toggle: (functionName: string, id: string, enabled: boolean) =>
-    request<{ id: string; enabled: boolean }>(`/functions/${encodeURIComponent(functionName)}/schedules/${encodeURIComponent(id)}`, {
+    request<ScheduleEntry>(`/functions/${encodeURIComponent(functionName)}/schedules/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: JSON.stringify({ enabled }),
+    }),
+
+  updateCron: (functionName: string, id: string, cronExpression: string) =>
+    request<ScheduleEntry>(`/functions/${encodeURIComponent(functionName)}/schedules/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ cron_expression: cronExpression }),
     }),
 };
 

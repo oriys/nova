@@ -3,12 +3,14 @@ package dataplane
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/pool"
@@ -81,11 +83,18 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /invocations", h.ListAllInvocations)
 	mux.HandleFunc("GET /functions/{name}/logs", h.Logs)
 	mux.HandleFunc("GET /functions/{name}/metrics", h.FunctionMetrics)
+	mux.HandleFunc("GET /functions/{name}/heatmap", h.FunctionHeatmap)
+	mux.HandleFunc("GET /metrics/heatmap", h.GlobalHeatmap)
 }
 
 // InvokeFunction handles POST /functions/{name}/invoke
 func (h *Handler) InvokeFunction(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
 
 	var payload json.RawMessage
 	if r.ContentLength > 0 {
@@ -97,14 +106,65 @@ func (h *Handler) InvokeFunction(w http.ResponseWriter, r *http.Request) {
 		payload = json.RawMessage("{}")
 	}
 
+	metrics.SetQueueDepth(fn.Name, h.Pool.QueueDepth(fn.ID))
+	metrics.SetQueueWaitMs(fn.Name, h.Pool.FunctionQueueWaitMs(fn.ID))
+	defer func() {
+		metrics.SetQueueDepth(fn.Name, h.Pool.QueueDepth(fn.ID))
+		metrics.SetQueueWaitMs(fn.Name, h.Pool.FunctionQueueWaitMs(fn.ID))
+	}()
+
 	resp, err := h.Exec.Invoke(r.Context(), name, payload)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		status := http.StatusInternalServerError
+		reason := "internal_error"
+
+		switch {
+		case errors.Is(err, pool.ErrQueueFull):
+			status = capacityShedStatus(fn)
+			reason = "queue_full"
+		case errors.Is(err, pool.ErrInflightLimit):
+			status = capacityShedStatus(fn)
+			reason = "inflight_limit"
+		case errors.Is(err, pool.ErrQueueWaitTimeout):
+			status = capacityShedStatus(fn)
+			reason = "queue_wait_timeout"
+		case errors.Is(err, pool.ErrConcurrencyLimit):
+			status = http.StatusServiceUnavailable
+			reason = "concurrency_limit"
+		case errors.Is(err, context.DeadlineExceeded):
+			status = http.StatusGatewayTimeout
+			reason = "timeout"
+		}
+
+		metrics.RecordAdmissionResult(fn.Name, "rejected", reason)
+		if status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable {
+			metrics.RecordShed(fn.Name, reason)
+			if retryAfter := capacityRetryAfter(fn); retryAfter > 0 {
+				w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+			}
+		}
+
+		http.Error(w, err.Error(), status)
 		return
 	}
+	metrics.RecordAdmissionResult(fn.Name, "accepted", "ok")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+func capacityShedStatus(fn *domain.Function) int {
+	if fn != nil && fn.CapacityPolicy != nil && fn.CapacityPolicy.ShedStatusCode != 0 {
+		return fn.CapacityPolicy.ShedStatusCode
+	}
+	return http.StatusServiceUnavailable
+}
+
+func capacityRetryAfter(fn *domain.Function) int {
+	if fn != nil && fn.CapacityPolicy != nil && fn.CapacityPolicy.RetryAfterS > 0 {
+		return fn.CapacityPolicy.RetryAfterS
+	}
+	return 1
 }
 
 // Health handles GET /health - detailed status
@@ -310,6 +370,49 @@ func (h *Handler) FunctionMetrics(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+// FunctionHeatmap handles GET /functions/{name}/heatmap?weeks=52
+func (h *Handler) FunctionHeatmap(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	weeks := 52
+	if ws := r.URL.Query().Get("weeks"); ws != "" {
+		if n, err := strconv.Atoi(ws); err == nil && n > 0 && n <= 104 {
+			weeks = n
+		}
+	}
+
+	data, err := h.Store.GetFunctionDailyHeatmap(r.Context(), fn.ID, weeks)
+	if err != nil {
+		data = []store.DailyCount{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
+}
+
+// GlobalHeatmap handles GET /metrics/heatmap?weeks=52
+func (h *Handler) GlobalHeatmap(w http.ResponseWriter, r *http.Request) {
+	weeks := 52
+	if ws := r.URL.Query().Get("weeks"); ws != "" {
+		if n, err := strconv.Atoi(ws); err == nil && n > 0 && n <= 104 {
+			weeks = n
+		}
+	}
+
+	data, err := h.Store.GetGlobalDailyHeatmap(r.Context(), weeks)
+	if err != nil {
+		data = []store.DailyCount{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
 }
 
 // GlobalTimeSeries handles GET /metrics/timeseries?range=1h

@@ -78,22 +78,23 @@ type ResourceLimits struct {
 
 // NetworkPolicy defines network isolation rules for a function's VMs
 type NetworkPolicy struct {
-	IsolationMode    string       `json:"isolation_mode,omitempty"`    // "none" (default), "egress-only", "strict"
-	EgressRules      []EgressRule `json:"egress_rules,omitempty"`      // Allowed outbound targets
-	AllowedFunctions []string     `json:"allowed_functions,omitempty"` // Functions allowed to communicate with
-	DenyExternalAccess bool       `json:"deny_external_access,omitempty"` // Block non-RFC1918 destinations
+	IsolationMode      string       `json:"isolation_mode,omitempty"`       // "none" (default), "egress-only", "strict"
+	EgressRules        []EgressRule `json:"egress_rules,omitempty"`         // Allowed outbound targets
+	AllowedFunctions   []string     `json:"allowed_functions,omitempty"`    // Functions allowed to communicate with
+	DenyExternalAccess bool         `json:"deny_external_access,omitempty"` // Block non-RFC1918 destinations
 }
 
 // EgressRule defines an allowed outbound network target
 type EgressRule struct {
 	Host     string `json:"host"`               // IP, CIDR, or hostname
-	Port     int    `json:"port,omitempty"`      // 0 = any port
-	Protocol string `json:"protocol,omitempty"`  // "tcp", "udp", empty = tcp
+	Port     int    `json:"port,omitempty"`     // 0 = any port
+	Protocol string `json:"protocol,omitempty"` // "tcp", "udp", empty = tcp
 }
 
 // ScaleThresholds defines metrics thresholds that trigger scaling actions
 type ScaleThresholds struct {
 	QueueDepth        int     `json:"queue_depth,omitempty"`        // waiters > N triggers action
+	QueueWaitMs       int64   `json:"queue_wait_ms,omitempty"`      // queue wait threshold in ms
 	AvgLatencyMs      int64   `json:"avg_latency_ms,omitempty"`     // avg latency threshold
 	ColdStartPct      float64 `json:"cold_start_pct,omitempty"`     // cold start % threshold (0-100)
 	IdlePct           float64 `json:"idle_pct,omitempty"`           // idle VM % (for scale-down)
@@ -102,14 +103,32 @@ type ScaleThresholds struct {
 
 // AutoScalePolicy defines auto-scaling behavior for a function
 type AutoScalePolicy struct {
-	Enabled             bool            `json:"enabled"`
-	MinReplicas         int             `json:"min_replicas"`
-	MaxReplicas         int             `json:"max_replicas"`
-	ScaleUpThresholds   ScaleThresholds `json:"scale_up_thresholds"`
-	ScaleDownThresholds ScaleThresholds `json:"scale_down_thresholds"`
-	CooldownScaleUpS    int             `json:"cooldown_scale_up_s"`
-	CooldownScaleDownS  int             `json:"cooldown_scale_down_s"`
-	ScaleDownStep       int             `json:"scale_down_step,omitempty"` // VMs to remove per scale-down (default 1)
+	Enabled                 bool            `json:"enabled"`
+	MinReplicas             int             `json:"min_replicas"`
+	MaxReplicas             int             `json:"max_replicas"`
+	TargetUtilization       float64         `json:"target_utilization,omitempty"` // Desired busy ratio [0,1], default 0.7
+	ScaleUpThresholds       ScaleThresholds `json:"scale_up_thresholds"`
+	ScaleDownThresholds     ScaleThresholds `json:"scale_down_thresholds"`
+	CooldownScaleUpS        int             `json:"cooldown_scale_up_s"`
+	CooldownScaleDownS      int             `json:"cooldown_scale_down_s"`
+	ScaleDownStep           int             `json:"scale_down_step,omitempty"` // VMs to remove per scale-down (default 1)
+	ScaleUpStepMax          int             `json:"scale_up_step_max,omitempty"`
+	ScaleDownStabilizationS int             `json:"scale_down_stabilization_s,omitempty"` // Requires sustained low load before scale-down
+	MinSampleCount          int             `json:"min_sample_count,omitempty"`           // Minimum invocations per tick before using latency/rate
+}
+
+// CapacityPolicy defines function-level admission control and overload protection.
+type CapacityPolicy struct {
+	Enabled         bool    `json:"enabled"`
+	MaxInflight     int     `json:"max_inflight,omitempty"`      // Hard cap for in-flight requests
+	MaxQueueDepth   int     `json:"max_queue_depth,omitempty"`   // Max goroutines waiting for a VM
+	MaxQueueWaitMs  int64   `json:"max_queue_wait_ms,omitempty"` // Max wait time for queue admission
+	ShedStatusCode  int     `json:"shed_status_code,omitempty"`  // 429 or 503 (default 503)
+	RetryAfterS     int     `json:"retry_after_s,omitempty"`     // Retry-After hint in seconds
+	BreakerErrorPct float64 `json:"breaker_error_pct,omitempty"` // Reserved for circuit breaker stage
+	BreakerWindowS  int     `json:"breaker_window_s,omitempty"`  // Reserved for circuit breaker stage
+	BreakerOpenS    int     `json:"breaker_open_s,omitempty"`    // Reserved for circuit breaker stage
+	HalfOpenProbes  int     `json:"half_open_probes,omitempty"`  // Reserved for circuit breaker stage
 }
 
 // Layer represents a shared dependency layer that can be mounted as a read-only drive
@@ -141,8 +160,9 @@ type Function struct {
 	Limits              *ResourceLimits   `json:"limits,omitempty"`
 	NetworkPolicy       *NetworkPolicy    `json:"network_policy,omitempty"`
 	AutoScalePolicy     *AutoScalePolicy  `json:"auto_scale_policy,omitempty"`
-	Layers              []string          `json:"layers,omitempty"`  // layer IDs (max 6)
-	LayerPaths          []string          `json:"-"`                 // resolved at invocation time
+	CapacityPolicy      *CapacityPolicy   `json:"capacity_policy,omitempty"`
+	Layers              []string          `json:"layers,omitempty"` // layer IDs (max 6)
+	LayerPaths          []string          `json:"-"`                // resolved at invocation time
 	EnvVars             map[string]string `json:"env_vars,omitempty"`
 	CreatedAt           time.Time         `json:"created_at"`
 	UpdatedAt           time.Time         `json:"updated_at"`

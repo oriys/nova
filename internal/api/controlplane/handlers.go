@@ -30,8 +30,8 @@ type Handler struct {
 	APIKeyManager   *auth.APIKeyManager
 	SecretsStore    *secrets.Store
 	Scheduler       *scheduler.Scheduler
-	RootfsDir       string // Directory where rootfs ext4 images are stored
-	GatewayEnabled  bool   // Whether gateway route management is enabled
+	RootfsDir       string         // Directory where rootfs ext4 images are stored
+	GatewayEnabled  bool           // Whether gateway route management is enabled
 	LayerManager    *layer.Manager // Optional: for shared dependency layers
 }
 
@@ -72,6 +72,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /functions/{name}/scaling", h.SetScalingPolicy)
 	mux.HandleFunc("GET /functions/{name}/scaling", h.GetScalingPolicy)
 	mux.HandleFunc("DELETE /functions/{name}/scaling", h.DeleteScalingPolicy)
+
+	// Capacity policy (admission control)
+	mux.HandleFunc("PUT /functions/{name}/capacity", h.SetCapacityPolicy)
+	mux.HandleFunc("GET /functions/{name}/capacity", h.GetCapacityPolicy)
+	mux.HandleFunc("DELETE /functions/{name}/capacity", h.DeleteCapacityPolicy)
 
 	// Workflows
 	h.RegisterWorkflowRoutes(mux)

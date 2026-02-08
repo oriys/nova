@@ -37,6 +37,8 @@ type CreateFunctionRequest struct {
 	InstanceConcurrency int
 	EnvVars             map[string]string
 	Limits              *domain.ResourceLimits
+	AutoScalePolicy     *domain.AutoScalePolicy
+	CapacityPolicy      *domain.CapacityPolicy
 }
 
 func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunctionRequest) (*domain.Function, string, error) {
@@ -90,6 +92,8 @@ func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunction
 		InstanceConcurrency: req.InstanceConcurrency,
 		EnvVars:             req.EnvVars,
 		Limits:              req.Limits,
+		AutoScalePolicy:     req.AutoScalePolicy,
+		CapacityPolicy:      req.CapacityPolicy,
 		CreatedAt:           time.Now(),
 		UpdatedAt:           time.Now(),
 	}

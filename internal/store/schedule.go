@@ -31,6 +31,7 @@ type ScheduleStore interface {
 	DeleteSchedule(ctx context.Context, id string) error
 	UpdateScheduleLastRun(ctx context.Context, id string, t time.Time) error
 	UpdateScheduleEnabled(ctx context.Context, id string, enabled bool) error
+	UpdateScheduleCron(ctx context.Context, id string, cronExpr string) error
 }
 
 // NewSchedule creates a new Schedule with defaults.
@@ -128,6 +129,14 @@ func (s *PostgresStore) UpdateScheduleEnabled(ctx context.Context, id string, en
 	_, err := s.pool.Exec(ctx, `UPDATE schedules SET enabled = $1, updated_at = NOW() WHERE id = $2`, enabled, id)
 	if err != nil {
 		return fmt.Errorf("update schedule enabled: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) UpdateScheduleCron(ctx context.Context, id string, cronExpr string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE schedules SET cron_expression = $1, updated_at = NOW() WHERE id = $2`, cronExpr, id)
+	if err != nil {
+		return fmt.Errorf("update schedule cron: %w", err)
 	}
 	return nil
 }

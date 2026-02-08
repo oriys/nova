@@ -15,8 +15,16 @@ import (
 	"github.com/oriys/nova/internal/pkg/singleflight"
 )
 
-// ErrConcurrencyLimit is returned when max concurrency is reached
-var ErrConcurrencyLimit = errors.New("concurrency limit reached")
+var (
+	// ErrConcurrencyLimit is returned when max replica count is reached and no warm slot is available.
+	ErrConcurrencyLimit = errors.New("concurrency limit reached")
+	// ErrInflightLimit is returned when function-level max in-flight policy is exceeded.
+	ErrInflightLimit = errors.New("inflight limit reached")
+	// ErrQueueFull is returned when function-level queue depth policy is exceeded.
+	ErrQueueFull = errors.New("queue depth limit reached")
+	// ErrQueueWaitTimeout is returned when waiting for a VM exceeds queue wait policy.
+	ErrQueueWaitTimeout = errors.New("queue wait timeout")
+)
 
 const (
 	DefaultIdleTTL = 60 * time.Second
@@ -25,6 +33,7 @@ const (
 	DefaultCleanupInterval     = 10 * time.Second
 	DefaultHealthCheckInterval = 30 * time.Second
 	DefaultMaxPreWarmWorkers   = 8
+	defaultQueuePollInterval   = 10 * time.Millisecond
 )
 
 type PooledVM struct {
@@ -46,6 +55,7 @@ type functionPool struct {
 	cond            *sync.Cond   // condition variable for waiting
 	codeHash        atomic.Value // string: hash of code when VMs were created
 	desiredReplicas atomic.Int32 // desired replica count set by autoscaler
+	lastQueueWaitMs atomic.Int64
 }
 
 // SnapshotCallback is called after a cold start to create a snapshot
@@ -247,7 +257,7 @@ func (p *Pool) computeInstanceConcurrency(fn *domain.Function) int {
 	return 1
 }
 
-func (p *Pool) Acquire(ctx context.Context, fn *domain.Function, codeContent []byte) (*PooledVM, error) {
+func (p *Pool) preparePoolForFunction(fn *domain.Function) *functionPool {
 	fp := p.getOrCreatePool(fn.ID)
 
 	// Check if code has changed using atomic load first
@@ -282,71 +292,145 @@ func (p *Pool) Acquire(ctx context.Context, fn *domain.Function, codeContent []b
 		}
 	}
 
-	// Update max replicas atomically
-	if fn.MaxReplicas > 0 {
-		fp.maxReplicas.Store(int32(fn.MaxReplicas))
-	}
+	// Update max replicas atomically (0 means unlimited).
+	fp.maxReplicas.Store(int32(fn.MaxReplicas))
 
-	// Fast path: find an idle VM
-	fp.mu.Lock()
+	return fp
+}
+
+func getCapacityLimits(fn *domain.Function) (maxInflight, maxQueueDepth int, maxQueueWait time.Duration) {
+	if fn.CapacityPolicy == nil || !fn.CapacityPolicy.Enabled {
+		return 0, 0, 0
+	}
+	maxInflight = fn.CapacityPolicy.MaxInflight
+	maxQueueDepth = fn.CapacityPolicy.MaxQueueDepth
+	if fn.CapacityPolicy.MaxQueueWaitMs > 0 {
+		maxQueueWait = time.Duration(fn.CapacityPolicy.MaxQueueWaitMs) * time.Millisecond
+	}
+	return
+}
+
+func takeWarmVMLocked(fp *functionPool) *PooledVM {
 	for _, pvm := range fp.vms {
 		if pvm.inflight < pvm.maxConcurrent {
 			pvm.inflight++
 			pvm.LastUsed = time.Now()
 			pvm.ColdStart = false
+			return pvm
+		}
+	}
+	return nil
+}
+
+func inflightCountLocked(fp *functionPool) int {
+	total := 0
+	for _, pvm := range fp.vms {
+		total += pvm.inflight
+	}
+	return total
+}
+
+func (p *Pool) acquireGeneric(
+	ctx context.Context,
+	fn *domain.Function,
+	createVM func(context.Context, *domain.Function) (*PooledVM, error),
+) (*PooledVM, error) {
+	fp := p.preparePoolForFunction(fn)
+	maxInflight, maxQueueDepth, maxQueueWait := getCapacityLimits(fn)
+
+	var waitStart time.Time
+	recordQueueWait := func() {
+		if waitStart.IsZero() {
+			fp.lastQueueWaitMs.Store(0)
+			return
+		}
+		waitMs := time.Since(waitStart).Milliseconds()
+		if waitMs < 0 {
+			waitMs = 0
+		}
+		fp.lastQueueWaitMs.Store(waitMs)
+	}
+	for {
+		fp.mu.Lock()
+		if pvm := takeWarmVMLocked(fp); pvm != nil {
 			fp.mu.Unlock()
+			recordQueueWait()
 			logging.Op().Debug("reusing warm VM", "vm_id", pvm.VM.ID, "function", fn.Name)
 			return pvm, nil
 		}
-	}
 
-	// Check concurrency limit
-	maxReps := fp.maxReplicas.Load()
-	if maxReps > 0 && len(fp.vms) >= int(maxReps) {
-		// All VMs at capacity and at max replica limit - wait for one to become available
-		logging.Op().Debug("concurrency limit reached, waiting", "limit", maxReps, "function", fn.Name)
+		maxReps := fp.maxReplicas.Load()
+		canCreate := maxReps == 0 || len(fp.vms) < int(maxReps)
+		currentInflight := inflightCountLocked(fp)
+
+		if maxInflight > 0 && currentInflight >= maxInflight {
+			fp.mu.Unlock()
+			recordQueueWait()
+			return nil, ErrInflightLimit
+		}
+		if canCreate {
+			fp.mu.Unlock()
+			break
+		}
+
+		if maxQueueDepth > 0 && fp.waiters >= maxQueueDepth {
+			fp.mu.Unlock()
+			recordQueueWait()
+			return nil, ErrQueueFull
+		}
+		if waitStart.IsZero() {
+			waitStart = time.Now()
+		}
+		if maxQueueWait > 0 && time.Since(waitStart) >= maxQueueWait {
+			fp.mu.Unlock()
+			recordQueueWait()
+			return nil, ErrQueueWaitTimeout
+		}
+
 		fp.waiters++
-
-		// Wait with context timeout
-		done := make(chan struct{})
-		go func() {
-			fp.cond.Wait()
-			close(done)
-		}()
-
 		fp.mu.Unlock()
 
+		waitFor := defaultQueuePollInterval
+		if maxQueueWait > 0 {
+			remaining := maxQueueWait - time.Since(waitStart)
+			if remaining <= 0 {
+				fp.mu.Lock()
+				if fp.waiters > 0 {
+					fp.waiters--
+				}
+				fp.mu.Unlock()
+				recordQueueWait()
+				return nil, ErrQueueWaitTimeout
+			}
+			if remaining < waitFor {
+				waitFor = remaining
+			}
+		}
+
+		timer := time.NewTimer(waitFor)
 		select {
 		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
 			fp.mu.Lock()
-			fp.waiters--
-			fp.mu.Unlock()
-			return nil, ctx.Err()
-		case <-done:
-			fp.mu.Lock()
-			fp.waiters--
-			// Try to find an idle VM again
-			for _, pvm := range fp.vms {
-				if pvm.inflight < pvm.maxConcurrent {
-					pvm.inflight++
-					pvm.LastUsed = time.Now()
-					pvm.ColdStart = false
-					fp.mu.Unlock()
-					logging.Op().Debug("got VM after waiting", "vm_id", pvm.VM.ID, "function", fn.Name)
-					return pvm, nil
-				}
+			if fp.waiters > 0 {
+				fp.waiters--
 			}
 			fp.mu.Unlock()
-			// No idle VM found, but we might be able to create one now
-			// (another VM might have been removed)
+			recordQueueWait()
+			return nil, ctx.Err()
+		case <-timer.C:
+			fp.mu.Lock()
+			if fp.waiters > 0 {
+				fp.waiters--
+			}
+			fp.mu.Unlock()
 		}
-	} else {
-		fp.mu.Unlock()
 	}
 
-	// Cold start with singleflight to avoid thundering herd
 	val, err, shared := p.group.Do(fn.ID, func() (interface{}, error) {
-		return p.createVM(ctx, fn, codeContent)
+		return createVM(ctx, fn)
 	})
 	if err != nil {
 		return nil, err
@@ -354,8 +438,32 @@ func (p *Pool) Acquire(ctx context.Context, fn *domain.Function, codeContent []b
 
 	pvm := val.(*PooledVM)
 	if shared {
-		// Another goroutine created this VM and got it. We need our own.
-		pvm, err = p.createVM(ctx, fn, codeContent)
+		fp.mu.Lock()
+		for _, existing := range fp.vms {
+			if existing.VM.ID == pvm.VM.ID && existing.inflight < existing.maxConcurrent {
+				existing.inflight++
+				existing.LastUsed = time.Now()
+				existing.ColdStart = false
+				fp.mu.Unlock()
+				recordQueueWait()
+				return existing, nil
+			}
+		}
+		maxReps := fp.maxReplicas.Load()
+		canCreate := maxReps == 0 || len(fp.vms) < int(maxReps)
+		currentInflight := inflightCountLocked(fp)
+		fp.mu.Unlock()
+
+		if maxInflight > 0 && currentInflight >= maxInflight {
+			recordQueueWait()
+			return nil, ErrInflightLimit
+		}
+		if !canCreate {
+			recordQueueWait()
+			return nil, ErrConcurrencyLimit
+		}
+
+		pvm, err = createVM(ctx, fn)
 		if err != nil {
 			return nil, err
 		}
@@ -364,8 +472,14 @@ func (p *Pool) Acquire(ctx context.Context, fn *domain.Function, codeContent []b
 	fp.mu.Lock()
 	fp.vms = append(fp.vms, pvm)
 	fp.mu.Unlock()
-
+	recordQueueWait()
 	return pvm, nil
+}
+
+func (p *Pool) Acquire(ctx context.Context, fn *domain.Function, codeContent []byte) (*PooledVM, error) {
+	return p.acquireGeneric(ctx, fn, func(ctx context.Context, fn *domain.Function) (*PooledVM, error) {
+		return p.createVM(ctx, fn, codeContent)
+	})
 }
 
 func (p *Pool) createVM(ctx context.Context, fn *domain.Function, codeContent []byte) (*PooledVM, error) {
@@ -432,118 +546,9 @@ func (p *Pool) createVM(ctx context.Context, fn *domain.Function, codeContent []
 // AcquireWithFiles acquires a VM for a multi-file function.
 // files is a map of relative path -> content.
 func (p *Pool) AcquireWithFiles(ctx context.Context, fn *domain.Function, files map[string][]byte) (*PooledVM, error) {
-	fp := p.getOrCreatePool(fn.ID)
-
-	// Check if code has changed
-	if fn.CodeHash != "" {
-		storedHash, _ := fp.codeHash.Load().(string)
-		if storedHash != "" && storedHash != fn.CodeHash {
-			fp.mu.Lock()
-			storedHash2, _ := fp.codeHash.Load().(string)
-			if storedHash2 != "" && storedHash2 != fn.CodeHash {
-				logging.Op().Info("code change detected, evicting VMs",
-					"function", fn.Name,
-					"old_hash", storedHash2[:8],
-					"new_hash", fn.CodeHash[:8])
-				vmsToStop := fp.vms
-				fp.vms = nil
-				fp.codeHash.Store(fn.CodeHash)
-				fp.mu.Unlock()
-
-				go func() {
-					for _, pvm := range vmsToStop {
-						pvm.Client.Close()
-						p.backend.StopVM(pvm.VM.ID)
-					}
-				}()
-			} else {
-				fp.mu.Unlock()
-			}
-		} else if storedHash == "" {
-			fp.codeHash.Store(fn.CodeHash)
-		}
-	}
-
-	if fn.MaxReplicas > 0 {
-		fp.maxReplicas.Store(int32(fn.MaxReplicas))
-	}
-
-	// Fast path: find an idle VM
-	fp.mu.Lock()
-	for _, pvm := range fp.vms {
-		if pvm.inflight < pvm.maxConcurrent {
-			pvm.inflight++
-			pvm.LastUsed = time.Now()
-			pvm.ColdStart = false
-			fp.mu.Unlock()
-			logging.Op().Debug("reusing warm VM", "vm_id", pvm.VM.ID, "function", fn.Name)
-			return pvm, nil
-		}
-	}
-
-	// Check concurrency limit
-	maxReps := fp.maxReplicas.Load()
-	if maxReps > 0 && len(fp.vms) >= int(maxReps) {
-		fp.waiters++
-		done := make(chan struct{})
-		go func() {
-			fp.cond.Wait()
-			close(done)
-		}()
-		fp.mu.Unlock()
-
-		select {
-		case <-ctx.Done():
-			fp.mu.Lock()
-			fp.waiters--
-			fp.mu.Unlock()
-			return nil, ctx.Err()
-		case <-done:
-			fp.mu.Lock()
-			fp.waiters--
-			for _, pvm := range fp.vms {
-				if pvm.inflight < pvm.maxConcurrent {
-					pvm.inflight++
-					pvm.LastUsed = time.Now()
-					pvm.ColdStart = false
-					fp.mu.Unlock()
-					return pvm, nil
-				}
-			}
-			fp.mu.Unlock()
-		}
-	} else {
-		fp.mu.Unlock()
-	}
-
-	// Cold start with singleflight
-	val, err, shared := p.group.Do(fn.ID, func() (interface{}, error) {
+	return p.acquireGeneric(ctx, fn, func(ctx context.Context, fn *domain.Function) (*PooledVM, error) {
 		return p.createVMWithFiles(ctx, fn, files)
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	pvm := val.(*PooledVM)
-	if shared {
-		fp.mu.Lock()
-		for _, existing := range fp.vms {
-			if existing.VM.ID == pvm.VM.ID && existing.inflight < existing.maxConcurrent {
-				existing.inflight++
-				existing.LastUsed = time.Now()
-				existing.ColdStart = false
-				fp.mu.Unlock()
-				return existing, nil
-			}
-		}
-		fp.mu.Unlock()
-	}
-
-	fp.mu.Lock()
-	fp.vms = append(fp.vms, pvm)
-	fp.mu.Unlock()
-
-	return pvm, nil
 }
 
 // createVMWithFiles creates a VM with multiple code files
@@ -816,6 +821,15 @@ func (p *Pool) QueueDepth(funcID string) int {
 		depth := fp.waiters
 		fp.mu.Unlock()
 		return depth
+	}
+	return 0
+}
+
+// FunctionQueueWaitMs returns the most recent queue wait duration observed for a function.
+func (p *Pool) FunctionQueueWaitMs(funcID string) int64 {
+	if value, ok := p.pools.Load(funcID); ok {
+		fp := value.(*functionPool)
+		return fp.lastQueueWaitMs.Load()
 	}
 	return 0
 }

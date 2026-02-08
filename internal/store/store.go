@@ -20,6 +20,7 @@ type FunctionUpdate struct {
 	Limits              *domain.ResourceLimits
 	NetworkPolicy       *domain.NetworkPolicy
 	AutoScalePolicy     *domain.AutoScalePolicy
+	CapacityPolicy      *domain.CapacityPolicy
 	EnvVars             map[string]string
 	MergeEnvVars        bool
 }
@@ -54,6 +55,8 @@ type MetadataStore interface {
 	GetInvocationLog(ctx context.Context, requestID string) (*InvocationLog, error)
 	GetFunctionTimeSeries(ctx context.Context, functionID string, rangeSeconds, bucketSeconds int) ([]TimeSeriesBucket, error)
 	GetGlobalTimeSeries(ctx context.Context, rangeSeconds, bucketSeconds int) ([]TimeSeriesBucket, error)
+	GetFunctionDailyHeatmap(ctx context.Context, functionID string, weeks int) ([]DailyCount, error)
+	GetGlobalDailyHeatmap(ctx context.Context, weeks int) ([]DailyCount, error)
 
 	// Runtimes
 	SaveRuntime(ctx context.Context, rt *RuntimeRecord) error

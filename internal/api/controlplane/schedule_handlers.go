@@ -112,32 +112,54 @@ func (h *ScheduleHandler) ToggleSchedule(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req struct {
-		Enabled bool `json:"enabled"`
+		Enabled        *bool   `json:"enabled,omitempty"`
+		CronExpression *string `json:"cron_expression,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if err := h.Store.UpdateScheduleEnabled(r.Context(), id, req.Enabled); err != nil {
+	// Update cron expression if provided
+	if req.CronExpression != nil && *req.CronExpression != "" {
+		if err := h.Store.UpdateScheduleCron(r.Context(), id, *req.CronExpression); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Re-register with scheduler if currently enabled
+		if h.Scheduler != nil {
+			sched, err := h.Store.GetSchedule(r.Context(), id)
+			if err == nil && sched.Enabled {
+				h.Scheduler.Add(sched)
+			}
+		}
+	}
+
+	// Update enabled if provided
+	if req.Enabled != nil {
+		if err := h.Store.UpdateScheduleEnabled(r.Context(), id, *req.Enabled); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if h.Scheduler != nil {
+			if *req.Enabled {
+				sched, err := h.Store.GetSchedule(r.Context(), id)
+				if err == nil {
+					h.Scheduler.Add(sched)
+				}
+			} else {
+				h.Scheduler.Remove(id)
+			}
+		}
+	}
+
+	// Return updated schedule
+	sched, err := h.Store.GetSchedule(r.Context(), id)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	if h.Scheduler != nil {
-		if req.Enabled {
-			sched, err := h.Store.GetSchedule(r.Context(), id)
-			if err == nil {
-				h.Scheduler.Add(sched)
-			}
-		} else {
-			h.Scheduler.Remove(id)
-		}
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"id":      id,
-		"enabled": req.Enabled,
-	})
+	json.NewEncoder(w).Encode(sched)
 }

@@ -6,11 +6,19 @@ import { Badge } from "@/components/ui/badge"
 import { CodeEditor } from "@/components/code-editor"
 import { FunctionData } from "@/lib/types"
 import { functionsApi, CompileStatus } from "@/lib/api"
-import { Copy, Check, Download, Save, Loader2, AlertCircle } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
+import { Copy, Check, Download, Save, Loader2, AlertCircle, Play } from "lucide-react"
 
 interface FunctionCodeProps {
   func: FunctionData
   onCodeSaved?: () => void
+  invokeInput: string
+  onInvokeInputChange: (value: string) => void
+  invokeOutput: string | null
+  invokeError: string | null
+  invokeMeta: string | null
+  invoking: boolean
+  onInvoke: () => void
 }
 
 // Map display runtime names back to runtime IDs for highlighting
@@ -55,7 +63,7 @@ function getCompileStatusBadge(status: CompileStatus | undefined) {
   }
 }
 
-export function FunctionCode({ func, onCodeSaved }: FunctionCodeProps) {
+export function FunctionCode({ func, onCodeSaved, invokeInput, onInvokeInputChange, invokeOutput, invokeError, invokeMeta, invoking, onInvoke }: FunctionCodeProps) {
   const [code, setCode] = useState("")
   const [originalCode, setOriginalCode] = useState("")
   const [compileStatus, setCompileStatus] = useState<CompileStatus | undefined>(func.compileStatus)
@@ -253,13 +261,64 @@ export function FunctionCode({ func, onCodeSaved }: FunctionCodeProps) {
         />
       </div>
 
-      {/* Info */}
-      <div className="rounded-lg border border-border bg-muted/30 p-4">
-        <p className="text-sm text-muted-foreground">
-          Edit your function code directly in the browser. Changes are saved to the database
-          {compileStatus !== 'not_required' && ' and automatically compiled'}.
-          The function will be updated with the new code on save.
-        </p>
+      {/* Invoke */}
+      <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">
+              Invoke function
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Provide a JSON payload to test your function and inspect the result.
+            </p>
+          </div>
+          <Button onClick={onInvoke} disabled={invoking} size="sm">
+            {invoking ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Play className="mr-2 h-4 w-4" />
+            )}
+            Invoke
+          </Button>
+        </div>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-foreground">Input</div>
+            <Textarea
+              value={invokeInput}
+              onChange={(event) => onInvokeInputChange(event.target.value)}
+              className="min-h-[160px] font-mono text-xs"
+              placeholder='{\n  "key": "value"\n}'
+            />
+            <p className="text-xs text-muted-foreground">
+              Payload must be valid JSON. Leave empty to send an empty object.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-foreground">Output</span>
+              {invokeMeta && (
+                <span className="text-xs text-muted-foreground">{invokeMeta}</span>
+              )}
+            </div>
+            <div className="min-h-[160px] rounded-md border border-border bg-muted/30 p-3">
+              {invokeOutput ? (
+                <pre className="whitespace-pre-wrap text-xs text-foreground">
+                  {invokeOutput}
+                </pre>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No output yet. Invoke the function to see results.
+                </p>
+              )}
+            </div>
+            {invokeError && (
+              <p className="text-xs text-destructive">{invokeError}</p>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )

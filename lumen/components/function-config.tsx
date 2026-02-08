@@ -177,25 +177,6 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="memory">Memory</Label>
-            <Select value={memory} onValueChange={setMemory}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="128">128 MB</SelectItem>
-                <SelectItem value="256">256 MB</SelectItem>
-                <SelectItem value="512">512 MB</SelectItem>
-                <SelectItem value="1024">1024 MB</SelectItem>
-                <SelectItem value="2048">2048 MB</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Allocated memory for execution
-            </p>
-          </div>
-
-          <div className="space-y-2">
             <Label htmlFor="timeout">Timeout (seconds)</Label>
             <Input
               id="timeout"
@@ -239,6 +220,25 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
           Configure CPU, disk I/O, and network bandwidth for the VM. Set to 0 for unlimited.
         </p>
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor="memory">Memory</Label>
+            <Select value={memory} onValueChange={setMemory}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="128">128 MB</SelectItem>
+                <SelectItem value="256">256 MB</SelectItem>
+                <SelectItem value="512">512 MB</SelectItem>
+                <SelectItem value="1024">1024 MB</SelectItem>
+                <SelectItem value="2048">2048 MB</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Allocated memory for execution
+            </p>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="vcpus">vCPUs</Label>
             <Select value={vcpus} onValueChange={setVcpus}>
