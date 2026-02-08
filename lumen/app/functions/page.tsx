@@ -31,19 +31,6 @@ export default function FunctionsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const formatMemory = (mb: number) => {
-    if (mb >= 1024) {
-      return `${(mb / 1024).toFixed(1)} GB`
-    }
-    return `${mb} MB`
-  }
-
-  const formatBandwidth = (bytesPerSecond: number) => {
-    if (bytesPerSecond <= 0) return "Unlimited"
-    const mbps = bytesPerSecond / (1024 * 1024)
-    return `${mbps >= 100 ? mbps.toFixed(0) : mbps.toFixed(1)} MB/s`
-  }
-
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
@@ -99,21 +86,6 @@ export default function FunctionsPage() {
   }, [page, totalPages])
 
   const pagedFunctions = filteredFunctions.slice((page - 1) * pageSize, page * pageSize)
-
-  const totalConfiguredVCPUs = functions.reduce((sum, fn) => {
-    const vcpus = fn.limits?.vcpus && fn.limits.vcpus > 0 ? fn.limits.vcpus : 1
-    return sum + vcpus
-  }, 0)
-  const totalMemoryMB = functions.reduce((sum, fn) => sum + fn.memory, 0)
-  const totalDiskIOPS = functions.reduce((sum, fn) => {
-    const iops = fn.limits?.disk_iops ?? 0
-    return sum + (iops > 0 ? iops : 0)
-  }, 0)
-  const totalDiskBandwidth = functions.reduce((sum, fn) => {
-    const bandwidth = fn.limits?.disk_bandwidth ?? 0
-    return sum + (bandwidth > 0 ? bandwidth : 0)
-  }, 0)
-  const ioConfiguredFunctions = functions.filter((fn) => (fn.limits?.disk_iops ?? 0) > 0 || (fn.limits?.disk_bandwidth ?? 0) > 0).length
 
   const handleCreate = async (name: string, runtime: string, handler: string, memory: number, timeout: number, code: string, limits?: ResourceLimits) => {
     try {
@@ -219,55 +191,6 @@ export default function FunctionsPage() {
               <Plus className="mr-2 h-4 w-4" />
               Create Function
             </Button>
-          </div>
-        </div>
-
-        {/* Summary Stats */}
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-sm text-muted-foreground">Total Functions</p>
-            <p className="text-2xl font-semibold text-foreground">
-              {loading ? "..." : functions.length}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-sm text-muted-foreground">Active</p>
-            <p className="text-2xl font-semibold text-success">
-              {loading ? "..." : functions.filter((f) => f.status === "active").length}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-sm text-muted-foreground">Errors</p>
-            <p className="text-2xl font-semibold text-destructive">
-              {loading ? "..." : functions.filter((f) => f.status === "error").length}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-sm text-muted-foreground">Total Invocations</p>
-            <p className="text-2xl font-semibold text-foreground">
-              {loading ? "..." : functions.reduce((sum, fn) => sum + fn.invocations, 0).toLocaleString()}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-sm text-muted-foreground">Total vCPU</p>
-            <p className="text-2xl font-semibold text-foreground">
-              {loading ? "..." : totalConfiguredVCPUs.toLocaleString()}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-sm text-muted-foreground">Total Memory</p>
-            <p className="text-2xl font-semibold text-foreground">
-              {loading ? "..." : formatMemory(totalMemoryMB)}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-sm text-muted-foreground">Total IO</p>
-            <p className="text-2xl font-semibold text-foreground">
-              {loading ? "..." : (totalDiskIOPS > 0 ? `${totalDiskIOPS.toLocaleString()} IOPS` : "Unlimited")}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {loading ? "" : `BW: ${formatBandwidth(totalDiskBandwidth)} · configured: ${ioConfiguredFunctions}/${functions.length}`}
-            </p>
           </div>
         </div>
 

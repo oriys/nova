@@ -14,11 +14,13 @@ import {
   GitBranch,
   KeyRound,
   Lock,
+  RadioTower,
 } from "lucide-react"
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Functions", href: "/functions", icon: Code2 },
+  { name: "Events", href: "/events", icon: RadioTower },
   { name: "Workflows", href: "/workflows", icon: GitBranch },
   { name: "Runtimes", href: "/runtimes", icon: Play },
   { name: "API Keys", href: "/api-keys", icon: KeyRound },

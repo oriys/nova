@@ -65,10 +65,12 @@ type Handler struct {
 }
 
 type enqueueAsyncInvokeRequest struct {
-	Payload       json.RawMessage `json:"payload"`
-	MaxAttempts   int             `json:"max_attempts"`
-	BackoffBaseMS int             `json:"backoff_base_ms"`
-	BackoffMaxMS  int             `json:"backoff_max_ms"`
+	Payload         json.RawMessage `json:"payload"`
+	MaxAttempts     int             `json:"max_attempts"`
+	BackoffBaseMS   int             `json:"backoff_base_ms"`
+	BackoffMaxMS    int             `json:"backoff_max_ms"`
+	IdempotencyKey  string          `json:"idempotency_key"`
+	IdempotencyTTLS int             `json:"idempotency_ttl_s"`
 }
 
 type retryAsyncInvokeRequest struct {
@@ -203,6 +205,30 @@ func (h *Handler) EnqueueAsyncFunction(w http.ResponseWriter, r *http.Request) {
 	}
 	if inv.BackoffMaxMS < inv.BackoffBaseMS {
 		inv.BackoffMaxMS = inv.BackoffBaseMS
+	}
+
+	idempotencyKey := strings.TrimSpace(req.IdempotencyKey)
+	if idempotencyKey != "" {
+		ttl := time.Duration(req.IdempotencyTTLS) * time.Second
+		enqueued, deduplicated, err := h.Store.EnqueueAsyncInvocationWithIdempotency(r.Context(), inv, idempotencyKey, ttl)
+		if err != nil {
+			if errors.Is(err, store.ErrInvalidIdempotencyKey) {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if deduplicated {
+			w.Header().Set("X-Idempotency-Status", "replay")
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.Header().Set("Location", "/async-invocations/"+enqueued.ID)
+			w.WriteHeader(http.StatusAccepted)
+		}
+		json.NewEncoder(w).Encode(enqueued)
+		return
 	}
 
 	if err := h.Store.EnqueueAsyncInvocation(r.Context(), inv); err != nil {

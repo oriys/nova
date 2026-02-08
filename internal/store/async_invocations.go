@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // Async invocation status values.
@@ -23,16 +25,19 @@ const (
 )
 
 const (
-	DefaultAsyncMaxAttempts  = 3
-	DefaultAsyncBackoffBase  = 1000  // 1s
-	DefaultAsyncBackoffMax   = 60000 // 60s
-	DefaultAsyncListLimit    = 50
-	MaxAsyncListLimit        = 500
-	DefaultAsyncLeaseTimeout = 30 * time.Second
+	DefaultAsyncMaxAttempts    = 3
+	DefaultAsyncBackoffBase    = 1000  // 1s
+	DefaultAsyncBackoffMax     = 60000 // 60s
+	DefaultAsyncListLimit      = 50
+	MaxAsyncListLimit          = 500
+	DefaultAsyncLeaseTimeout   = 30 * time.Second
+	DefaultAsyncIdempotencyTTL = 24 * time.Hour
+	MaxAsyncIdempotencyTTL     = 7 * 24 * time.Hour
 )
 
 var ErrAsyncInvocationNotFound = errors.New("async invocation not found")
 var ErrAsyncInvocationNotDLQ = errors.New("async invocation is not in dlq")
+var ErrInvalidIdempotencyKey = errors.New("invalid idempotency key")
 
 // AsyncInvocation is a durable async function execution request.
 type AsyncInvocation struct {
@@ -89,7 +94,95 @@ func (s *PostgresStore) EnqueueAsyncInvocation(ctx context.Context, inv *AsyncIn
 	}
 	normalizeAsyncInvocation(inv)
 
-	_, err := s.pool.Exec(ctx, `
+	if err := insertAsyncInvocation(ctx, s.pool, inv); err != nil {
+		return fmt.Errorf("enqueue async invocation: %w", err)
+	}
+	return nil
+}
+
+// EnqueueAsyncInvocationWithIdempotency enqueues an async invocation once for a
+// given (function_id, idempotency_key) within the configured idempotency window.
+// If the key is duplicated and still valid, it returns the existing invocation with deduplicated=true.
+func (s *PostgresStore) EnqueueAsyncInvocationWithIdempotency(ctx context.Context, inv *AsyncInvocation, idempotencyKey string, ttl time.Duration) (*AsyncInvocation, bool, error) {
+	if inv == nil {
+		return nil, false, fmt.Errorf("async invocation is required")
+	}
+	if inv.FunctionID == "" || inv.FunctionName == "" {
+		return nil, false, fmt.Errorf("function id and name are required")
+	}
+	normalizeAsyncInvocation(inv)
+
+	key := strings.TrimSpace(idempotencyKey)
+	if key == "" {
+		return nil, false, fmt.Errorf("%w: key is required", ErrInvalidIdempotencyKey)
+	}
+	if len(key) > 256 {
+		return nil, false, fmt.Errorf("%w: max length is 256", ErrInvalidIdempotencyKey)
+	}
+
+	ttl = normalizeIdempotencyTTL(ttl)
+	now := time.Now().UTC()
+	expiresAt := now.Add(ttl)
+
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, false, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	const scope = "invoke_async"
+	resourceID, claimed, err := claimIdempotencyKey(ctx, tx, scope, inv.FunctionID, key, inv.ID, now, expiresAt)
+	if err != nil {
+		return nil, false, fmt.Errorf("claim idempotency key: %w", err)
+	}
+
+	if !claimed {
+		existing, err := getAsyncInvocationByIdempotency(ctx, tx, scope, inv.FunctionID, key, now)
+		if err != nil {
+			// Best effort self-heal for stale/missing links.
+			if _, delErr := tx.Exec(ctx, `
+				DELETE FROM idempotency_keys
+				WHERE scope = $1 AND scope_id = $2 AND idempotency_key = $3
+			`, scope, inv.FunctionID, key); delErr != nil {
+				return nil, false, fmt.Errorf("cleanup stale idempotency key: %w", delErr)
+			}
+
+			resourceID, claimed, err = claimIdempotencyKey(ctx, tx, scope, inv.FunctionID, key, inv.ID, now, expiresAt)
+			if err != nil {
+				return nil, false, fmt.Errorf("reclaim idempotency key: %w", err)
+			}
+			if !claimed {
+				return nil, false, fmt.Errorf("idempotency key conflict for function %s", inv.FunctionName)
+			}
+			if resourceID != inv.ID {
+				return nil, false, fmt.Errorf("unexpected idempotency resource mapping")
+			}
+		} else {
+			if err := tx.Commit(ctx); err != nil {
+				return nil, false, fmt.Errorf("commit replay tx: %w", err)
+			}
+			return existing, true, nil
+		}
+	}
+
+	if resourceID != inv.ID {
+		return nil, false, fmt.Errorf("unexpected idempotency resource id: %s", resourceID)
+	}
+
+	if err := insertAsyncInvocation(ctx, tx, inv); err != nil {
+		return nil, false, fmt.Errorf("enqueue async invocation: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, false, fmt.Errorf("commit idempotent enqueue tx: %w", err)
+	}
+	return inv, false, nil
+}
+
+func insertAsyncInvocation(ctx context.Context, exec interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}, inv *AsyncInvocation) error {
+	_, err := exec.Exec(ctx, `
 		INSERT INTO async_invocations (
 			id, function_id, function_name, payload, status, attempt, max_attempts,
 			backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
@@ -105,10 +198,7 @@ func (s *PostgresStore) EnqueueAsyncInvocation(ctx context.Context, inv *AsyncIn
 		inv.BackoffBaseMS, inv.BackoffMaxMS, inv.NextRunAt, nullIfEmpty(inv.LockedBy), inv.LockedUntil,
 		nullIfEmpty(inv.RequestID), inv.Output, inv.DurationMS, inv.ColdStart, nullIfEmpty(inv.LastError), inv.StartedAt,
 		inv.CompletedAt, inv.CreatedAt, inv.UpdatedAt)
-	if err != nil {
-		return fmt.Errorf("enqueue async invocation: %w", err)
-	}
-	return nil
+	return err
 }
 
 func (s *PostgresStore) GetAsyncInvocation(ctx context.Context, id string) (*AsyncInvocation, error) {
@@ -360,6 +450,60 @@ func (s *PostgresStore) RequeueAsyncInvocation(ctx context.Context, id string, m
 		return nil, fmt.Errorf("requeue async invocation: %w", err)
 	}
 	return inv, nil
+}
+
+func claimIdempotencyKey(ctx context.Context, tx pgx.Tx, scope, scopeID, key, resourceID string, now, expiresAt time.Time) (string, bool, error) {
+	var claimedResourceID string
+	err := tx.QueryRow(ctx, `
+		INSERT INTO idempotency_keys (
+			scope, scope_id, idempotency_key, resource_type, resource_id, expires_at, created_at, updated_at
+		) VALUES (
+			$1, $2, $3, 'async_invocation', $4, $5, $6, $6
+		)
+		ON CONFLICT (scope, scope_id, idempotency_key) DO UPDATE
+			SET resource_id = EXCLUDED.resource_id,
+			    resource_type = EXCLUDED.resource_type,
+			    expires_at = EXCLUDED.expires_at,
+			    updated_at = EXCLUDED.updated_at
+		WHERE idempotency_keys.expires_at <= $6
+		RETURNING resource_id
+	`, scope, scopeID, key, resourceID, expiresAt, now).Scan(&claimedResourceID)
+	if err == pgx.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return claimedResourceID, true, nil
+}
+
+func getAsyncInvocationByIdempotency(ctx context.Context, tx pgx.Tx, scope, scopeID, key string, now time.Time) (*AsyncInvocation, error) {
+	inv, err := scanAsyncInvocation(tx.QueryRow(ctx, `
+		SELECT ai.id, ai.function_id, ai.function_name, ai.payload, ai.status, ai.attempt, ai.max_attempts,
+		       ai.backoff_base_ms, ai.backoff_max_ms, ai.next_run_at, ai.locked_by, ai.locked_until,
+		       ai.request_id, ai.output, ai.duration_ms, ai.cold_start, ai.last_error, ai.started_at,
+		       ai.completed_at, ai.created_at, ai.updated_at
+		FROM idempotency_keys ik
+		JOIN async_invocations ai ON ai.id = ik.resource_id
+		WHERE ik.scope = $1
+		  AND ik.scope_id = $2
+		  AND ik.idempotency_key = $3
+		  AND ik.expires_at > $4
+	`, scope, scopeID, key, now))
+	if err == pgx.ErrNoRows {
+		return nil, ErrAsyncInvocationNotFound
+	}
+	return inv, err
+}
+
+func normalizeIdempotencyTTL(ttl time.Duration) time.Duration {
+	if ttl <= 0 {
+		return DefaultAsyncIdempotencyTTL
+	}
+	if ttl > MaxAsyncIdempotencyTTL {
+		return MaxAsyncIdempotencyTTL
+	}
+	return ttl
 }
 
 func normalizeAsyncInvocation(inv *AsyncInvocation) {

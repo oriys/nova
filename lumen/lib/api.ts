@@ -156,6 +156,78 @@ export interface AsyncInvocationJob {
   updated_at: string;
 }
 
+export interface EventTopic {
+  id: string;
+  name: string;
+  description?: string;
+  retention_hours: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EventSubscription {
+  id: string;
+  topic_id: string;
+  topic_name?: string;
+  name: string;
+  consumer_group: string;
+  function_id: string;
+  function_name: string;
+  enabled: boolean;
+  max_attempts: number;
+  backoff_base_ms: number;
+  backoff_max_ms: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EventMessage {
+  id: string;
+  topic_id: string;
+  topic_name?: string;
+  sequence: number;
+  ordering_key?: string;
+  payload: unknown;
+  headers?: unknown;
+  published_at: string;
+  created_at: string;
+}
+
+export type EventDeliveryStatus = "queued" | "running" | "succeeded" | "dlq";
+
+export interface EventDelivery {
+  id: string;
+  topic_id: string;
+  topic_name?: string;
+  subscription_id: string;
+  subscription_name?: string;
+  consumer_group?: string;
+  message_id: string;
+  message_sequence: number;
+  ordering_key?: string;
+  payload: unknown;
+  headers?: unknown;
+  status: EventDeliveryStatus;
+  attempt: number;
+  max_attempts: number;
+  backoff_base_ms: number;
+  backoff_max_ms: number;
+  next_run_at: string;
+  locked_by?: string;
+  locked_until?: string;
+  function_id: string;
+  function_name: string;
+  request_id?: string;
+  output?: unknown;
+  duration_ms?: number;
+  cold_start?: boolean;
+  last_error?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface FunctionMetrics {
   function_id: string;
   function_name: string;
@@ -327,7 +399,13 @@ export const functionsApi = {
   invokeAsync: (
     name: string,
     payload: unknown = {},
-    options?: { max_attempts?: number; backoff_base_ms?: number; backoff_max_ms?: number }
+    options?: {
+      max_attempts?: number;
+      backoff_base_ms?: number;
+      backoff_max_ms?: number;
+      idempotency_key?: string;
+      idempotency_ttl_s?: number;
+    }
   ) =>
     request<AsyncInvocationJob>(`/functions/${encodeURIComponent(name)}/invoke-async`, {
       method: "POST",
@@ -409,6 +487,125 @@ export const functionsApi = {
   deleteCapacityPolicy: (name: string) =>
     request<{ status: string; function: string }>(`/functions/${encodeURIComponent(name)}/capacity`, {
       method: "DELETE",
+    }),
+};
+
+// Event bus API
+export const eventsApi = {
+  listTopics: (limit: number = 100) =>
+    request<EventTopic[]>(`/topics?limit=${limit}`),
+
+  getTopic: (name: string) =>
+    request<EventTopic>(`/topics/${encodeURIComponent(name)}`),
+
+  createTopic: (data: { name: string; description?: string; retention_hours?: number }) =>
+    request<EventTopic>("/topics", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deleteTopic: (name: string) =>
+    request<{ status: string; name: string }>(`/topics/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    }),
+
+  publish: (
+    topicName: string,
+    data: { payload?: unknown; headers?: unknown; ordering_key?: string }
+  ) =>
+    request<{ message: EventMessage; deliveries: number }>(`/topics/${encodeURIComponent(topicName)}/publish`, {
+      method: "POST",
+      body: JSON.stringify({
+        payload: data.payload ?? {},
+        ...(data.headers !== undefined ? { headers: data.headers } : {}),
+        ...(data.ordering_key ? { ordering_key: data.ordering_key } : {}),
+      }),
+    }),
+
+  listMessages: (topicName: string, limit: number = 50) =>
+    request<EventMessage[]>(`/topics/${encodeURIComponent(topicName)}/messages?limit=${limit}`),
+
+  listSubscriptions: (topicName: string) =>
+    request<EventSubscription[]>(`/topics/${encodeURIComponent(topicName)}/subscriptions`),
+
+  createSubscription: (
+    topicName: string,
+    data: {
+      name: string;
+      consumer_group?: string;
+      function_name: string;
+      enabled?: boolean;
+      max_attempts?: number;
+      backoff_base_ms?: number;
+      backoff_max_ms?: number;
+    }
+  ) =>
+    request<EventSubscription>(`/topics/${encodeURIComponent(topicName)}/subscriptions`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getSubscription: (id: string) =>
+    request<EventSubscription>(`/subscriptions/${encodeURIComponent(id)}`),
+
+  updateSubscription: (
+    id: string,
+    data: {
+      name?: string;
+      consumer_group?: string;
+      function_name?: string;
+      enabled?: boolean;
+      max_attempts?: number;
+      backoff_base_ms?: number;
+      backoff_max_ms?: number;
+    }
+  ) =>
+    request<EventSubscription>(`/subscriptions/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteSubscription: (id: string) =>
+    request<{ status: string; id: string }>(`/subscriptions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+
+  listDeliveries: (
+    subscriptionID: string,
+    limit: number = 100,
+    status?: EventDeliveryStatus | EventDeliveryStatus[]
+  ) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(limit));
+    if (status) {
+      params.set("status", Array.isArray(status) ? status.join(",") : status);
+    }
+    return request<EventDelivery[]>(
+      `/subscriptions/${encodeURIComponent(subscriptionID)}/deliveries?${params.toString()}`
+    );
+  },
+
+  getDelivery: (id: string) =>
+    request<EventDelivery>(`/deliveries/${encodeURIComponent(id)}`),
+
+  replaySubscription: (subscriptionID: string, fromSequence?: number, limit?: number) =>
+    request<{ status: string; subscriptionId: string; queued: number }>(
+      `/subscriptions/${encodeURIComponent(subscriptionID)}/replay`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          ...(typeof fromSequence === "number" ? { from_sequence: fromSequence } : {}),
+          ...(typeof limit === "number" ? { limit } : {}),
+        }),
+      }
+    ),
+
+  retryDelivery: (id: string, maxAttempts?: number) =>
+    request<EventDelivery>(`/deliveries/${encodeURIComponent(id)}/retry`, {
+      method: "POST",
+      body: JSON.stringify(
+        maxAttempts && maxAttempts > 0 ? { max_attempts: maxAttempts } : {}
+      ),
     }),
 };
 

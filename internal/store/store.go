@@ -70,6 +70,32 @@ type MetadataStore interface {
 	MarkAsyncInvocationForRetry(ctx context.Context, id, lastError string, nextRunAt time.Time) error
 	MarkAsyncInvocationDLQ(ctx context.Context, id, lastError string) error
 	RequeueAsyncInvocation(ctx context.Context, id string, maxAttempts int) (*AsyncInvocation, error)
+	EnqueueAsyncInvocationWithIdempotency(ctx context.Context, inv *AsyncInvocation, idempotencyKey string, ttl time.Duration) (*AsyncInvocation, bool, error)
+
+	// Event bus (topics / subscriptions / deliveries)
+	CreateEventTopic(ctx context.Context, topic *EventTopic) error
+	GetEventTopic(ctx context.Context, id string) (*EventTopic, error)
+	GetEventTopicByName(ctx context.Context, name string) (*EventTopic, error)
+	ListEventTopics(ctx context.Context, limit int) ([]*EventTopic, error)
+	DeleteEventTopicByName(ctx context.Context, name string) error
+
+	CreateEventSubscription(ctx context.Context, sub *EventSubscription) error
+	GetEventSubscription(ctx context.Context, id string) (*EventSubscription, error)
+	ListEventSubscriptions(ctx context.Context, topicID string) ([]*EventSubscription, error)
+	UpdateEventSubscription(ctx context.Context, id string, update *EventSubscriptionUpdate) (*EventSubscription, error)
+	DeleteEventSubscription(ctx context.Context, id string) error
+
+	PublishEvent(ctx context.Context, topicID, orderingKey string, payload, headers json.RawMessage) (*EventMessage, int, error)
+	ListEventMessages(ctx context.Context, topicID string, limit int) ([]*EventMessage, error)
+
+	GetEventDelivery(ctx context.Context, id string) (*EventDelivery, error)
+	ListEventDeliveries(ctx context.Context, subscriptionID string, limit int, statuses []EventDeliveryStatus) ([]*EventDelivery, error)
+	AcquireDueEventDelivery(ctx context.Context, workerID string, leaseDuration time.Duration) (*EventDelivery, error)
+	MarkEventDeliverySucceeded(ctx context.Context, id, requestID string, output json.RawMessage, durationMS int64, coldStart bool) error
+	MarkEventDeliveryForRetry(ctx context.Context, id, lastError string, nextRunAt time.Time) error
+	MarkEventDeliveryDLQ(ctx context.Context, id, lastError string) error
+	RequeueEventDelivery(ctx context.Context, id string, maxAttempts int) (*EventDelivery, error)
+	ReplayEventSubscription(ctx context.Context, subscriptionID string, fromSequence int64, limit int) (int, error)
 
 	// Runtimes
 	SaveRuntime(ctx context.Context, rt *RuntimeRecord) error

@@ -78,6 +78,23 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /functions/{name}/capacity", h.GetCapacityPolicy)
 	mux.HandleFunc("DELETE /functions/{name}/capacity", h.DeleteCapacityPolicy)
 
+	// Event bus
+	mux.HandleFunc("POST /topics", h.CreateEventTopic)
+	mux.HandleFunc("GET /topics", h.ListEventTopics)
+	mux.HandleFunc("GET /topics/{name}", h.GetEventTopic)
+	mux.HandleFunc("DELETE /topics/{name}", h.DeleteEventTopic)
+	mux.HandleFunc("POST /topics/{name}/publish", h.PublishEvent)
+	mux.HandleFunc("GET /topics/{name}/messages", h.ListTopicMessages)
+	mux.HandleFunc("POST /topics/{name}/subscriptions", h.CreateEventSubscription)
+	mux.HandleFunc("GET /topics/{name}/subscriptions", h.ListEventSubscriptions)
+	mux.HandleFunc("GET /subscriptions/{id}", h.GetEventSubscription)
+	mux.HandleFunc("PATCH /subscriptions/{id}", h.UpdateEventSubscription)
+	mux.HandleFunc("DELETE /subscriptions/{id}", h.DeleteEventSubscription)
+	mux.HandleFunc("GET /subscriptions/{id}/deliveries", h.ListEventDeliveries)
+	mux.HandleFunc("POST /subscriptions/{id}/replay", h.ReplayEventSubscription)
+	mux.HandleFunc("GET /deliveries/{id}", h.GetEventDelivery)
+	mux.HandleFunc("POST /deliveries/{id}/retry", h.RetryEventDelivery)
+
 	// Workflows
 	h.RegisterWorkflowRoutes(mux)
 

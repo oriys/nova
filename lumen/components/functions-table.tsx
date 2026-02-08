@@ -28,6 +28,26 @@ export function FunctionsTable({ functions, onDelete, loading }: FunctionsTableP
     })
   }
 
+  const formatBandwidth = (bytesPerSecond?: number) => {
+    if (!bytesPerSecond || bytesPerSecond <= 0) {
+      return "Unlimited"
+    }
+    const mbps = bytesPerSecond / (1024 * 1024)
+    return `${mbps >= 100 ? mbps.toFixed(0) : mbps.toFixed(1)} MB/s`
+  }
+
+  const formatIO = (fn: FunctionData) => {
+    const iops = fn.limits?.disk_iops ?? 0
+    const bandwidth = fn.limits?.disk_bandwidth ?? 0
+    if (iops <= 0 && bandwidth <= 0) {
+      return { primary: "Unlimited", secondary: "" }
+    }
+    return {
+      primary: iops > 0 ? `${iops.toLocaleString()} IOPS` : "Unlimited IOPS",
+      secondary: `BW ${formatBandwidth(bandwidth)}`,
+    }
+  }
+
   if (loading) {
     return (
       <div className="rounded-xl border border-border bg-card p-12 text-center">
@@ -63,7 +83,13 @@ export function FunctionsTable({ functions, onDelete, loading }: FunctionsTableP
                 Status
               </th>
               <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                vCPU
+              </th>
+              <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Memory
+              </th>
+              <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                IO
               </th>
               <th className="px-6 py-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Invocations
@@ -80,7 +106,9 @@ export function FunctionsTable({ functions, onDelete, loading }: FunctionsTableP
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {functions.map((fn) => (
+            {functions.map((fn) => {
+              const ioInfo = formatIO(fn)
+              return (
               <tr key={fn.id} className="hover:bg-muted/20 transition-colors">
                 <td className="px-6 py-4">
                   <Link
@@ -116,8 +144,23 @@ export function FunctionsTable({ functions, onDelete, loading }: FunctionsTableP
                 </td>
                 <td className="px-6 py-4">
                   <span className="text-sm text-muted-foreground">
+                    {fn.limits?.vcpus && fn.limits.vcpus > 0 ? fn.limits.vcpus : 1}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <span className="text-sm text-muted-foreground">
                     {fn.memory} MB
                   </span>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="text-sm text-muted-foreground">
+                    <div>{ioInfo.primary}</div>
+                    {ioInfo.secondary && (
+                      <div className="text-xs text-muted-foreground/80 mt-0.5">
+                        {ioInfo.secondary}
+                      </div>
+                    )}
+                  </div>
                 </td>
                 <td className="px-6 py-4 text-right">
                   <span className="text-sm font-medium text-foreground">
@@ -162,7 +205,8 @@ export function FunctionsTable({ functions, onDelete, loading }: FunctionsTableP
                   </div>
                 </td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>

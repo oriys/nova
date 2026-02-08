@@ -16,6 +16,7 @@ import (
 	"github.com/oriys/nova/internal/backend"
 	"github.com/oriys/nova/internal/config"
 	"github.com/oriys/nova/internal/docker"
+	"github.com/oriys/nova/internal/eventbus"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/firecracker"
 	novagrpc "github.com/oriys/nova/internal/grpc"
@@ -200,6 +201,8 @@ func daemonCmd() *cobra.Command {
 			}
 			asyncWorkers := asyncqueue.New(s, exec, asyncqueue.Config{})
 			asyncWorkers.Start()
+			eventWorkers := eventbus.New(s, exec, eventbus.Config{})
+			eventWorkers.Start()
 
 			var httpServer *http.Server
 			if cfg.Daemon.HTTPAddr != "" {
@@ -251,6 +254,7 @@ func daemonCmd() *cobra.Command {
 					}
 					sched.Stop()
 					asyncWorkers.Stop()
+					eventWorkers.Stop()
 					wfEngine.Stop()
 					exec.Shutdown(10 * time.Second)
 					be.Shutdown()
