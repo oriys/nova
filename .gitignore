@@ -2,13 +2,14 @@
 bin/
 /nova
 /agent
+/atlas/atlas
 *.exe
 *.dll
 *.so
 *.dylib
 
 # Go
-go.sum
+/go.sum
 
 # IDE
 .idea/
