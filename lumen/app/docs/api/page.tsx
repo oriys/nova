@@ -2,20 +2,22 @@ import Link from "next/link"
 import { DocsShell } from "@/components/docs/docs-shell"
 import { CodeBlock } from "@/components/docs/code-block"
 import { EndpointTable, type Endpoint } from "@/components/docs/endpoint-table"
+import {
+  apiDomainDocs,
+  apiDomainHref,
+  apiDomainOrder,
+  apiEndpointHref,
+  buildApiDocsNavGroups,
+} from "@/lib/docs/api-reference"
 
-const endpointIndex: Endpoint[] = [
-  { method: "POST", path: "/functions", description: "Create function" },
-  { method: "POST", path: "/functions/{name}/invoke", description: "Sync invoke" },
-  { method: "POST", path: "/functions/{name}/invoke-async", description: "Async invoke" },
-  { method: "POST", path: "/workflows", description: "Create workflow" },
-  { method: "POST", path: "/workflows/{name}/runs", description: "Trigger workflow run" },
-  { method: "POST", path: "/topics", description: "Create topic" },
-  { method: "POST", path: "/topics/{name}/subscriptions", description: "Create function/workflow subscription" },
-  { method: "POST", path: "/topics/{name}/publish", description: "Publish event" },
-  { method: "POST", path: "/subscriptions/{id}/replay", description: "Replay deliveries" },
-  { method: "GET", path: "/metrics/timeseries", description: "Global timeseries metrics" },
-  { method: "GET", path: "/health", description: "Service health detail" },
-]
+const endpointIndex: Endpoint[] = apiDomainOrder.flatMap((domain) =>
+  apiDomainDocs[domain].endpoints.map((endpoint) => ({
+    method: endpoint.spec.method,
+    path: endpoint.spec.path,
+    description: endpoint.spec.summary,
+    href: apiEndpointHref(domain, endpoint.slug),
+  }))
+)
 
 export default function DocsAPIPage() {
   return (
@@ -23,7 +25,8 @@ export default function DocsAPIPage() {
       current="api"
       activeHref="/docs/api"
       title="API Overview"
-      description="Nova API is contract-first and tenant-scoped. Use this page for protocol rules, then jump to domain-specific reference pages for detailed endpoint contracts."
+      description="Nova API is contract-first and tenant-scoped. Use this page for protocol rules, then open per-endpoint contracts from the left sidebar."
+      navGroups={buildApiDocsNavGroups()}
       toc={[
         { id: "api-basics", label: "API Basics" },
         { id: "headers-auth", label: "Headers & Auth" },
@@ -93,22 +96,16 @@ invalid JSON payload
           Detailed endpoint contracts are split by domain for easier maintenance and faster lookup.
         </p>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <Link href="/docs/api/functions" className="rounded-lg border border-border p-4 hover:bg-muted/40">
-            <p className="text-sm font-medium">Functions API</p>
-            <p className="mt-1 text-sm text-muted-foreground">Lifecycle, config patching, sync/async invoke.</p>
-          </Link>
-          <Link href="/docs/api/workflows" className="rounded-lg border border-border p-4 hover:bg-muted/40">
-            <p className="text-sm font-medium">Workflows API</p>
-            <p className="mt-1 text-sm text-muted-foreground">Workflow create, versions, runs, run detail.</p>
-          </Link>
-          <Link href="/docs/api/events" className="rounded-lg border border-border p-4 hover:bg-muted/40">
-            <p className="text-sm font-medium">Events API</p>
-            <p className="mt-1 text-sm text-muted-foreground">Topics, subscriptions, publishing, replay, deliveries.</p>
-          </Link>
-          <Link href="/docs/api/operations" className="rounded-lg border border-border p-4 hover:bg-muted/40">
-            <p className="text-sm font-medium">Operations API</p>
-            <p className="mt-1 text-sm text-muted-foreground">Health, metrics, logs, invocations.</p>
-          </Link>
+          {apiDomainOrder.map((domain) => (
+            <Link
+              key={domain}
+              href={apiDomainHref(domain)}
+              className="rounded-lg border border-border p-4 hover:bg-muted/40"
+            >
+              <p className="text-sm font-medium">{apiDomainDocs[domain].title}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{apiDomainDocs[domain].description}</p>
+            </Link>
+          ))}
         </div>
       </section>
 

@@ -13,16 +13,32 @@ interface TocItem {
   label: string
 }
 
+export interface DocsNavItem {
+  id?: DocsSection | string
+  label: string
+  href: string
+  children?: Array<{
+    label: string
+    href: string
+  }>
+}
+
+export interface DocsNavGroup {
+  title: string
+  items: DocsNavItem[]
+}
+
 interface DocsShellProps {
   current: DocsSection
   activeHref?: string
   title: string
   description?: string
   toc: TocItem[]
+  navGroups?: DocsNavGroup[]
   children: React.ReactNode
 }
 
-const docsNavGroups: { title: string; items: { id: DocsSection; label: string; href: string }[] }[] = [
+const defaultDocsNavGroups: DocsNavGroup[] = [
   {
     title: "Guides",
     items: [
@@ -45,8 +61,23 @@ const docsNavGroups: { title: string; items: { id: DocsSection; label: string; h
   },
 ]
 
-export function DocsShell({ current, activeHref, title, description, toc, children }: DocsShellProps) {
+function isNavItemActive(item: DocsNavItem, activeHref?: string, current?: DocsSection): boolean {
+  if (activeHref) {
+    if (activeHref === item.href) return true
+    if (item.href === "/docs" || item.href === "/docs/api") return false
+    return activeHref.startsWith(`${item.href}/`)
+  }
+  return item.id ? current === item.id : false
+}
+
+function isNavChildActive(href: string, activeHref?: string): boolean {
+  if (!activeHref) return false
+  return activeHref === href || activeHref.startsWith(`${href}/`)
+}
+
+export function DocsShell({ current, activeHref, title, description, toc, navGroups, children }: DocsShellProps) {
   const [activeTocId, setActiveTocId] = useState<string>(toc[0]?.id ?? "")
+  const resolvedNavGroups = navGroups ?? defaultDocsNavGroups
 
   useEffect(() => {
     setActiveTocId(toc[0]?.id ?? "")
@@ -138,22 +169,41 @@ export function DocsShell({ current, activeHref, title, description, toc, childr
         <aside className="relative hidden h-[calc(100vh-4rem)] px-6 py-8 xl:sticky xl:top-16 xl:block xl:self-start">
           <p className="mb-3 text-sm text-muted-foreground">Documentation</p>
           <div className="space-y-5">
-            {docsNavGroups.map((group) => (
+            {resolvedNavGroups.map((group) => (
               <div key={group.title} className="space-y-1">
                 <p className="px-3 text-xs uppercase tracking-wide text-muted-foreground/80">{group.title}</p>
                 {group.items.map((item) => (
-                  <Link
-                    key={item.id}
-                    href={item.href}
-                    className={cn(
-                      "block rounded-md px-3 py-2 text-sm transition-colors",
-                      (activeHref ? activeHref === item.href : current === item.id)
-                        ? "bg-muted font-medium text-foreground"
-                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  <div key={`${group.title}-${item.href}`}>
+                    <Link
+                      href={item.href}
+                      className={cn(
+                        "block rounded-md px-3 py-2 text-sm transition-colors",
+                        isNavItemActive(item, activeHref, current)
+                          ? "bg-muted font-medium text-foreground"
+                          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      )}
+                    >
+                      {item.label}
+                    </Link>
+                    {item.children && item.children.length > 0 && (
+                      <div className="mt-1 space-y-1 pl-4">
+                        {item.children.map((child) => (
+                          <Link
+                            key={`${item.href}-${child.href}`}
+                            href={child.href}
+                            className={cn(
+                              "block rounded-md px-3 py-1.5 text-xs transition-colors",
+                              isNavChildActive(child.href, activeHref)
+                                ? "bg-muted font-medium text-foreground"
+                                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                            )}
+                          >
+                            {child.label}
+                          </Link>
+                        ))}
+                      </div>
                     )}
-                  >
-                    {item.label}
-                  </Link>
+                  </div>
                 ))}
               </div>
             ))}

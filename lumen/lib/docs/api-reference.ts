@@ -936,6 +936,40 @@ export function apiEndpointHref(domain: ApiDomainKey, endpointSlug: string): str
   return `/docs/api/${domain}/${endpointSlug}`
 }
 
+export function apiDomainHref(domain: ApiDomainKey): string {
+  return `/docs/api/${domain}`
+}
+
+export function buildApiDocsNavGroups() {
+  return [
+    {
+      title: "Guides",
+      items: [
+        { id: "introduction", label: "Introduction", href: "/docs" },
+        { id: "architecture", label: "Architecture", href: "/docs/architecture" },
+        { id: "installation", label: "Installation", href: "/docs/installation" },
+      ],
+    },
+    {
+      title: "Reference",
+      items: [
+        { id: "api", label: "API Overview", href: "/docs/api" },
+        ...apiDomainOrder.map((domain) => ({
+          id: "api" as const,
+          label: apiDomainDocs[domain].title,
+          href: apiDomainHref(domain),
+          children: apiDomainDocs[domain].endpoints.map((endpoint) => ({
+            label: endpoint.spec.title,
+            href: apiEndpointHref(domain, endpoint.slug),
+          })),
+        })),
+        { id: "cli", label: "Orbit CLI", href: "/docs/cli" },
+        { id: "mcp", label: "Atlas MCP Server", href: "/docs/mcp-server" },
+      ],
+    },
+  ]
+}
+
 export function getApiDomainDoc(domain: string): ApiDomainDoc | null {
   if (domain in apiDomainDocs) {
     return apiDomainDocs[domain as ApiDomainKey]
