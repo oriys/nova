@@ -9,6 +9,10 @@ import { TenantQuotaEntry, TenantUsageEntry, tenantsApi } from "@/lib/api"
 import { getTenantScope } from "@/lib/tenant-scope"
 import { cn } from "@/lib/utils"
 
+interface TenantGovernancePanelProps {
+  tenantId?: string
+}
+
 type DraftQuota = {
   hard_limit: string
   soft_limit: string
@@ -65,9 +69,8 @@ function parseNonNegativeInt(raw: string, fallback: number): number {
   return parsed
 }
 
-export function TenantGovernancePanel() {
+export function TenantGovernancePanel({ tenantId }: TenantGovernancePanelProps) {
   const [currentTenant, setCurrentTenant] = useState("default")
-  const [currentNamespace, setCurrentNamespace] = useState("default")
   const [loading, setLoading] = useState(true)
   const [savingDimension, setSavingDimension] = useState("")
   const [deletingDimension, setDeletingDimension] = useState("")
@@ -121,10 +124,15 @@ export function TenantGovernancePanel() {
   }, [])
 
   useEffect(() => {
+    if (tenantId) {
+      setCurrentTenant(tenantId)
+      void loadData(tenantId)
+      return
+    }
+
     const syncScope = () => {
       const scope = getTenantScope()
       setCurrentTenant(scope.tenantId)
-      setCurrentNamespace(scope.namespace)
       void loadData(scope.tenantId)
     }
     syncScope()
@@ -134,7 +142,7 @@ export function TenantGovernancePanel() {
       window.removeEventListener("storage", syncScope)
       window.removeEventListener("nova:tenant-scope-changed", syncScope as EventListener)
     }
-  }, [loadData])
+  }, [loadData, tenantId])
 
   const updateDraft = (dimension: string, patch: Partial<DraftQuota>) => {
     setDrafts((prev) => ({
@@ -190,8 +198,6 @@ export function TenantGovernancePanel() {
           <h3 className="text-lg font-semibold text-card-foreground">Tenant Governance</h3>
           <p className="text-xs text-muted-foreground mt-1">
             Quotas and live usage for <span className="font-medium text-foreground">{currentTenant}</span>
-            {" / "}
-            <span className="font-medium text-foreground">{currentNamespace}</span>
           </p>
         </div>
         <Button
@@ -372,4 +378,3 @@ export function TenantGovernancePanel() {
     </div>
   )
 }
-

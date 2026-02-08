@@ -1,4 +1,4 @@
-use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Table, ContentArrangement};
+use comfy_table::{ContentArrangement, Table, modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL};
 use serde_json::Value;
 
 pub struct Column {
@@ -81,10 +81,8 @@ pub fn render(data: &Value, columns: &[Column], format: &str) {
         }
         _ => {
             let wide = format == "wide";
-            let active_columns: Vec<&Column> = columns
-                .iter()
-                .filter(|c| wide || !c.wide_only)
-                .collect();
+            let active_columns: Vec<&Column> =
+                columns.iter().filter(|c| wide || !c.wide_only).collect();
 
             match data {
                 Value::Array(items) => {
@@ -98,8 +96,7 @@ pub fn render(data: &Value, columns: &[Column], format: &str) {
                         .apply_modifier(UTF8_ROUND_CORNERS)
                         .set_content_arrangement(ContentArrangement::Dynamic);
 
-                    let headers: Vec<&str> =
-                        active_columns.iter().map(|c| c.header).collect();
+                    let headers: Vec<&str> = active_columns.iter().map(|c| c.header).collect();
                     table.set_header(headers);
 
                     for item in items {
@@ -124,7 +121,10 @@ pub fn render(data: &Value, columns: &[Column], format: &str) {
                     println!("{table}");
                 }
                 _ => {
-                    println!("{}", serde_json::to_string_pretty(data).unwrap_or_else(|_| data.to_string()));
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(data).unwrap_or_else(|_| data.to_string())
+                    );
                 }
             }
         }

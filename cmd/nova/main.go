@@ -15,20 +15,14 @@ var (
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "nova",
-		Short: "Nova - Minimal Serverless Platform with Firecracker",
-		Long:  "A minimal serverless CLI that runs functions in Firecracker microVMs",
+		Short: "Nova backend service",
+		Long:  "Run Nova backend services (HTTP/gRPC/control plane workers) via the daemon command",
 	}
 
 	rootCmd.PersistentFlags().StringVar(&pgDSN, "pg-dsn", "", "Postgres DSN")
 	rootCmd.PersistentFlags().StringVar(&configFile, "config", "", "Path to config file")
 
 	rootCmd.AddCommand(
-		registerCmd(),
-		listCmd(),
-		getCmd(),
-		deleteCmd(),
-		updateCmd(),
-		invokeCmd(),
 		daemonCmd(),
 	)
 

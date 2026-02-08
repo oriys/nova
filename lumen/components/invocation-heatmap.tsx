@@ -11,8 +11,15 @@ const CELL_SIZE = 13
 const CELL_GAP = 3
 const CELL_ROUND = 2
 const LABEL_OFFSET = 36
+const GRID_TOP_OFFSET = 18
 const DAY_LABELS = ["Mon", "", "Wed", "", "Fri", "", "Sun"]
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+const TOOLTIP_MIN_WIDTH = 120
+const TOOLTIP_PADDING_X = 10
+const TOOLTIP_CHAR_WIDTH = 6.4
+const TOOLTIP_HEIGHT = 28
+const TOOLTIP_MARGIN = 4
+const TOOLTIP_OFFSET = 8
 
 function getColor(count: number, max: number): string {
   if (count === 0) return "var(--muted)"
@@ -189,50 +196,62 @@ export function InvocationHeatmap({ functionName }: InvocationHeatmapProps) {
               <rect
                 key={cell.date}
                 x={LABEL_OFFSET + cell.col * (CELL_SIZE + CELL_GAP)}
-                y={18 + cell.row * (CELL_SIZE + CELL_GAP)}
+                y={GRID_TOP_OFFSET + cell.row * (CELL_SIZE + CELL_GAP)}
                 width={CELL_SIZE}
                 height={CELL_SIZE}
                 rx={CELL_ROUND}
                 fill={getColor(cell.count, maxCount || 1)}
                 className="cursor-pointer transition-opacity hover:opacity-80"
-                onMouseEnter={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect()
-                  const container = e.currentTarget.closest("svg")?.getBoundingClientRect()
-                  if (container) {
-                    setTooltip({
-                      x: rect.left - container.left + CELL_SIZE / 2,
-                      y: rect.top - container.top - 8,
-                      date: cell.date,
-                      count: cell.count,
-                    })
-                  }
+                onMouseEnter={() => {
+                  setTooltip({
+                    x: LABEL_OFFSET + cell.col * (CELL_SIZE + CELL_GAP) + CELL_SIZE / 2,
+                    y: GRID_TOP_OFFSET + cell.row * (CELL_SIZE + CELL_GAP),
+                    date: cell.date,
+                    count: cell.count,
+                  })
                 }}
                 onMouseLeave={() => setTooltip(null)}
               />
             ))}
 
-            {tooltip && (
-              <g>
-                <rect
-                  x={tooltip.x - 60}
-                  y={tooltip.y - 32}
-                  width={120}
-                  height={28}
-                  rx={6}
-                  className="fill-popover stroke-border"
-                  strokeWidth={1}
-                />
-                <text
-                  x={tooltip.x}
-                  y={tooltip.y - 14}
-                  textAnchor="middle"
-                  className="fill-popover-foreground"
-                  fontSize={11}
-                >
-                  {tooltip.count} invocation{tooltip.count !== 1 ? "s" : ""} on {tooltip.date}
-                </text>
-              </g>
-            )}
+            {tooltip && (() => {
+              const label = `${tooltip.count} invocation${tooltip.count !== 1 ? "s" : ""} on ${tooltip.date}`
+              const tooltipWidth = Math.max(
+                TOOLTIP_MIN_WIDTH,
+                label.length * TOOLTIP_CHAR_WIDTH + TOOLTIP_PADDING_X * 2
+              )
+              const tooltipCenterX = Math.max(
+                tooltipWidth / 2 + TOOLTIP_MARGIN,
+                Math.min(svgWidth - tooltipWidth / 2 - TOOLTIP_MARGIN, tooltip.x)
+              )
+              const preferredY = tooltip.y - TOOLTIP_HEIGHT - TOOLTIP_OFFSET
+              const tooltipY = preferredY < TOOLTIP_MARGIN
+                ? tooltip.y + CELL_SIZE + TOOLTIP_OFFSET
+                : preferredY
+
+              return (
+                <g>
+                  <rect
+                    x={tooltipCenterX - tooltipWidth / 2}
+                    y={tooltipY}
+                    width={tooltipWidth}
+                    height={TOOLTIP_HEIGHT}
+                    rx={6}
+                    className="fill-popover stroke-border"
+                    strokeWidth={1}
+                  />
+                  <text
+                    x={tooltipCenterX}
+                    y={tooltipY + 18}
+                    textAnchor="middle"
+                    className="fill-popover-foreground"
+                    fontSize={11}
+                  >
+                    {label}
+                  </text>
+                </g>
+              )
+            })()}
           </svg>
         </>
       )}

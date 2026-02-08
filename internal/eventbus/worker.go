@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/store"
+	"github.com/oriys/nova/internal/workflow"
 )
 
 // Config configures event delivery workers.
@@ -21,10 +24,11 @@ type Config struct {
 	InvokeTimeout time.Duration
 }
 
-// WorkerPool polls queued deliveries and invokes subscribed functions.
+// WorkerPool polls queued deliveries and dispatches subscribed targets.
 type WorkerPool struct {
 	store   *store.Store
 	exec    *executor.Executor
+	wf      *workflow.Service
 	cfg     Config
 	stopCh  chan struct{}
 	started bool
@@ -33,7 +37,7 @@ type WorkerPool struct {
 }
 
 // New creates a new event delivery worker pool.
-func New(s *store.Store, exec *executor.Executor, cfg Config) *WorkerPool {
+func New(s *store.Store, exec *executor.Executor, wf *workflow.Service, cfg Config) *WorkerPool {
 	if cfg.Workers <= 0 {
 		cfg.Workers = 4
 	}
@@ -49,6 +53,7 @@ func New(s *store.Store, exec *executor.Executor, cfg Config) *WorkerPool {
 	return &WorkerPool{
 		store:  s,
 		exec:   exec,
+		wf:     wf,
 		cfg:    cfg,
 		stopCh: make(chan struct{}),
 	}
@@ -111,7 +116,7 @@ func (w *WorkerPool) poll(workerID string) {
 		return
 	}
 
-	// Inbox deduplication (common for both function and webhook deliveries)
+	// Inbox deduplication (common for both function and workflow deliveries)
 	inboxRec, deduplicated, err := w.store.PrepareEventInbox(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID)
 	if err != nil {
 		logging.Op().Error("prepare event inbox failed", "delivery", delivery.ID, "error", err)
@@ -140,8 +145,8 @@ func (w *WorkerPool) poll(workerID string) {
 
 	// Branch on subscription type
 	switch delivery.SubscriptionType {
-	case store.EventSubscriptionTypeWebhook:
-		w.processWebhookDelivery(delivery)
+	case store.EventSubscriptionTypeWorkflow:
+		w.processWorkflowDelivery(delivery)
 	default:
 		w.processFunctionDelivery(delivery)
 	}
@@ -194,83 +199,123 @@ func (w *WorkerPool) processFunctionDelivery(delivery *store.EventDelivery) {
 	w.retryOrDLQ(delivery, errMsg)
 }
 
-// processWebhookDelivery handles webhook-type subscriptions.
-// Optionally invokes a transform function, then delivers via HTTP with signing and ACL enforcement.
-func (w *WorkerPool) processWebhookDelivery(delivery *store.EventDelivery) {
-	payload := delivery.Payload
-	if len(payload) == 0 {
-		payload = json.RawMessage(`{}`)
-	}
-
-	// Optional: invoke transform function to shape the payload before webhook delivery
-	if delivery.TransformFunctionName != "" {
-		transformInput, err := buildEventInvocationPayload(delivery)
-		if err != nil {
-			w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, "build transform payload: "+err.Error())
-			w.retryOrDLQ(delivery, "build transform payload: "+err.Error())
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), w.cfg.InvokeTimeout)
-		ctx = store.WithTenantScope(ctx, delivery.TenantID, delivery.Namespace)
-
-		resp, err := w.exec.Invoke(ctx, delivery.TransformFunctionName, transformInput)
-		cancel()
-
-		if err != nil {
-			w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, "transform function: "+err.Error())
-			w.retryOrDLQ(delivery, "transform function: "+err.Error())
-			return
-		}
-		if resp == nil {
-			w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, "transform function returned nil")
-			w.retryOrDLQ(delivery, "transform function returned nil response")
-			return
-		}
-		if resp.Error != "" {
-			w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, "transform function: "+resp.Error)
-			w.retryOrDLQ(delivery, "transform function error: "+resp.Error)
-			return
-		}
-		payload = resp.Output
-	}
-
-	// Deliver via HTTP
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(delivery.WebhookTimeoutMS)*time.Millisecond+5*time.Second)
-	defer cancel()
-
-	result, durationMS, err := w.deliverWebhook(ctx, delivery, payload)
-
-	// Build output JSON for audit trail
-	var outputJSON json.RawMessage
-	if result != nil {
-		outputJSON, _ = json.Marshal(result)
-	}
-
-	if err != nil {
-		errMsg := err.Error()
+// processWorkflowDelivery handles workflow-type subscriptions.
+// It executes workflow to obtain a final result, then optionally pushes that result to webhook_url.
+func (w *WorkerPool) processWorkflowDelivery(delivery *store.EventDelivery) {
+	if w.wf == nil {
+		errMsg := "workflow service is not configured"
 		if markErr := w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, errMsg); markErr != nil {
-			logging.Op().Error("mark event inbox failed for webhook", "delivery", delivery.ID, "error", markErr)
+			logging.Op().Error("mark event inbox failed for workflow", "delivery", delivery.ID, "error", markErr)
 		}
 		w.retryOrDLQ(delivery, errMsg)
-		logging.Op().Warn("webhook delivery failed", "delivery", delivery.ID, "topic", delivery.TopicName, "subscription", delivery.SubscriptionName,
-			"url", delivery.WebhookURL, "attempt", delivery.Attempt, "duration_ms", durationMS, "error", errMsg)
+		return
+	}
+	if strings.TrimSpace(delivery.WorkflowName) == "" {
+		errMsg := "workflow_name is required for workflow subscription delivery"
+		if markErr := w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, errMsg); markErr != nil {
+			logging.Op().Error("mark event inbox failed for workflow", "delivery", delivery.ID, "error", markErr)
+		}
+		w.retryOrDLQ(delivery, errMsg)
 		return
 	}
 
-	// Success
-	if err := w.store.MarkEventInboxSucceeded(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, "", outputJSON, durationMS, false); err != nil {
-		logging.Op().Error("mark event inbox succeeded failed for webhook", "delivery", delivery.ID, "error", err)
+	start := time.Now()
+	workflowInput, err := buildEventInvocationPayload(delivery)
+	if err != nil {
+		errMsg := "build workflow input: " + err.Error()
+		if markErr := w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, errMsg); markErr != nil {
+			logging.Op().Error("mark event inbox failed for workflow", "delivery", delivery.ID, "error", markErr)
+		}
+		w.retryOrDLQ(delivery, errMsg)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), w.cfg.InvokeTimeout)
+	ctx = store.WithTenantScope(ctx, delivery.TenantID, delivery.Namespace)
+	defer cancel()
+
+	run, err := w.wf.TriggerRun(ctx, delivery.WorkflowName, workflowInput, "event")
+	if err != nil {
+		errMsg := "trigger workflow: " + err.Error()
+		if markErr := w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, errMsg); markErr != nil {
+			logging.Op().Error("mark event inbox failed for workflow", "delivery", delivery.ID, "error", markErr)
+		}
+		w.retryOrDLQ(delivery, errMsg)
+		return
+	}
+
+	finalOutput, err := w.waitWorkflowRun(ctx, run.ID)
+	if err != nil {
+		errMsg := "workflow execution: " + err.Error()
+		if markErr := w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, errMsg); markErr != nil {
+			logging.Op().Error("mark event inbox failed for workflow", "delivery", delivery.ID, "error", markErr)
+		}
+		w.retryOrDLQ(delivery, errMsg)
+		return
+	}
+	if len(finalOutput) == 0 {
+		finalOutput = json.RawMessage(`{}`)
+	}
+
+	outputDoc := map[string]any{
+		"workflow_run_id": run.ID,
+		"workflow_output": finalOutput,
+	}
+
+	if strings.TrimSpace(delivery.WebhookURL) != "" {
+		webhookCtx, webhookCancel := context.WithTimeout(context.Background(), time.Duration(delivery.WebhookTimeoutMS)*time.Millisecond+5*time.Second)
+		result, _, webhookErr := w.deliverWebhook(webhookCtx, delivery, finalOutput)
+		webhookCancel()
+		if webhookErr != nil {
+			errMsg := webhookErr.Error()
+			if markErr := w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, errMsg); markErr != nil {
+				logging.Op().Error("mark event inbox failed for webhook push", "delivery", delivery.ID, "error", markErr)
+			}
+			w.retryOrDLQ(delivery, errMsg)
+			return
+		}
+		outputDoc["webhook"] = result
+	}
+
+	outputJSON, _ := json.Marshal(outputDoc)
+	durationMS := time.Since(start).Milliseconds()
+	if err := w.store.MarkEventInboxSucceeded(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, run.ID, outputJSON, durationMS, false); err != nil {
+		logging.Op().Error("mark event inbox succeeded failed for workflow", "delivery", delivery.ID, "error", err)
 		w.retryOrDLQ(delivery, "mark inbox success: "+err.Error())
 		return
 	}
-	if err := w.store.MarkEventDeliverySucceeded(context.Background(), delivery.ID, "", outputJSON, durationMS, false); err != nil {
-		logging.Op().Error("mark event delivery succeeded failed for webhook", "delivery", delivery.ID, "error", err)
+	if err := w.store.MarkEventDeliverySucceeded(context.Background(), delivery.ID, run.ID, outputJSON, durationMS, false); err != nil {
+		logging.Op().Error("mark event delivery succeeded failed for workflow", "delivery", delivery.ID, "error", err)
 		w.retryOrDLQ(delivery, "mark delivery success: "+err.Error())
 		return
 	}
-	logging.Op().Debug("webhook delivery succeeded", "delivery", delivery.ID, "topic", delivery.TopicName, "subscription", delivery.SubscriptionName,
-		"url", delivery.WebhookURL, "attempt", delivery.Attempt, "duration_ms", durationMS)
+	logging.Op().Debug("workflow delivery succeeded", "delivery", delivery.ID, "topic", delivery.TopicName, "subscription", delivery.SubscriptionName, "workflow", delivery.WorkflowName, "attempt", delivery.Attempt, "duration_ms", durationMS)
+}
+
+func (w *WorkerPool) waitWorkflowRun(ctx context.Context, runID string) (json.RawMessage, error) {
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("wait workflow run timeout/cancelled: %w", ctx.Err())
+		case <-ticker.C:
+			run, err := w.wf.GetRun(ctx, runID)
+			if err != nil {
+				return nil, fmt.Errorf("get run %s: %w", runID, err)
+			}
+			switch run.Status {
+			case domain.RunStatusSucceeded:
+				return run.Output, nil
+			case domain.RunStatusFailed, domain.RunStatusCancelled:
+				if run.ErrorMessage != "" {
+					return nil, fmt.Errorf("run %s %s: %s", runID, run.Status, run.ErrorMessage)
+				}
+				return nil, fmt.Errorf("run %s %s", runID, run.Status)
+			}
+		}
+	}
 }
 
 func (w *WorkerPool) retryOrDLQ(delivery *store.EventDelivery, errMsg string) {

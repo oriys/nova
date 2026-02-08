@@ -1,8 +1,9 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useRef, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { Bell, Search, User } from "lucide-react"
+import { Bell, Search, User, BookOpenText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -34,6 +35,7 @@ export function Header({ title, description }: HeaderProps) {
   const searchContainerRef = useRef<HTMLDivElement | null>(null)
   const searchRequestIDRef = useRef(0)
   const isFunctionsPage = pathname === "/functions"
+  const isDocsPage = pathname.startsWith("/docs")
 
   useEffect(() => {
     setQuery(readFunctionSearchFromLocation())
@@ -259,6 +261,12 @@ export function Header({ title, description }: HeaderProps) {
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5 text-muted-foreground" />
           <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
+        </Button>
+
+        <Button asChild variant={isDocsPage ? "secondary" : "ghost"} size="icon">
+          <Link href="/docs" aria-label="Open docs" title="Open docs">
+            <BookOpenText className="h-5 w-5 text-muted-foreground" />
+          </Link>
         </Button>
 
         <GlobalScopeSwitcher />

@@ -1,8 +1,8 @@
-use clap::Subcommand;
-use serde_json::json;
 use crate::client::NovaClient;
 use crate::error::Result;
 use crate::output::{self, Column};
+use clap::Subcommand;
+use serde_json::json;
 
 #[derive(Subcommand)]
 pub enum TopicsCmd {
@@ -311,9 +311,7 @@ pub async fn run_subscriptions(
             if let Some(m) = max_inflight {
                 body["max_inflight"] = json!(m);
             }
-            let result = client
-                .patch(&format!("/subscriptions/{id}"), &body)
-                .await?;
+            let result = client.patch(&format!("/subscriptions/{id}"), &body).await?;
             output::render_single(&result, SUB_COLUMNS, output_format);
         }
         SubscriptionsCmd::Delete { id } => {

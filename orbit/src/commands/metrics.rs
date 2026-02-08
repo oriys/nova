@@ -1,7 +1,7 @@
-use clap::Subcommand;
 use crate::client::NovaClient;
 use crate::error::Result;
 use crate::output::{self, Column};
+use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum MetricsCmd {
@@ -32,10 +32,7 @@ const TIMESERIES_COLUMNS: &[Column] = &[
     Column::wide("P99", "p99_ms"),
 ];
 
-const HEATMAP_COLUMNS: &[Column] = &[
-    Column::new("Date", "date"),
-    Column::new("Count", "count"),
-];
+const HEATMAP_COLUMNS: &[Column] = &[Column::new("Date", "date"), Column::new("Count", "count")];
 
 pub async fn run_global(cmd: MetricsCmd, client: &NovaClient, output_format: &str) -> Result<()> {
     match cmd {
@@ -52,11 +49,15 @@ pub async fn run_global(cmd: MetricsCmd, client: &NovaClient, output_format: &st
             }
         }
         MetricsCmd::Timeseries { range } => {
-            let result = client.get(&format!("/metrics/timeseries?range={range}")).await?;
+            let result = client
+                .get(&format!("/metrics/timeseries?range={range}"))
+                .await?;
             output::render(&result, TIMESERIES_COLUMNS, output_format);
         }
         MetricsCmd::Heatmap { weeks } => {
-            let result = client.get(&format!("/metrics/heatmap?weeks={weeks}")).await?;
+            let result = client
+                .get(&format!("/metrics/heatmap?weeks={weeks}"))
+                .await?;
             output::render(&result, HEATMAP_COLUMNS, output_format);
         }
     }
@@ -74,18 +75,29 @@ pub async fn run_fn_metrics(
         path = format!("{path}?range={r}");
     }
     let result = client.get(&path).await?;
-    output::render_single(&result, &[
-        Column::new("Function", "function_name"),
-        Column::new("Invocations", "invocations"),
-        Column::new("Errors", "errors"),
-        Column::new("Avg Duration", "avg_duration_ms"),
-        Column::new("Pool Size", "pool.size"),
-    ], output_format);
+    output::render_single(
+        &result,
+        &[
+            Column::new("Function", "function_name"),
+            Column::new("Invocations", "invocations"),
+            Column::new("Errors", "errors"),
+            Column::new("Avg Duration", "avg_duration_ms"),
+            Column::new("Pool Size", "pool.size"),
+        ],
+        output_format,
+    );
     Ok(())
 }
 
-pub async fn run_fn_heatmap(name: &str, weeks: u32, client: &NovaClient, output_format: &str) -> Result<()> {
-    let result = client.get(&format!("/functions/{name}/heatmap?weeks={weeks}")).await?;
+pub async fn run_fn_heatmap(
+    name: &str,
+    weeks: u32,
+    client: &NovaClient,
+    output_format: &str,
+) -> Result<()> {
+    let result = client
+        .get(&format!("/functions/{name}/heatmap?weeks={weeks}"))
+        .await?;
     output::render(&result, HEATMAP_COLUMNS, output_format);
     Ok(())
 }

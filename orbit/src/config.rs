@@ -26,7 +26,8 @@ impl OrbitConfig {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let content = toml::to_string_pretty(self).map_err(|e| crate::error::OrbitError::Config(e.to_string()))?;
+        let content = toml::to_string_pretty(self)
+            .map_err(|e| crate::error::OrbitError::Config(e.to_string()))?;
         std::fs::write(&path, content)?;
         Ok(())
     }

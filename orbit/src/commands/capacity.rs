@@ -1,8 +1,8 @@
-use serde_json::json;
 use crate::client::NovaClient;
 use crate::commands::functions::CapacitySubCmd;
 use crate::error::Result;
 use crate::output::{self, Column};
+use serde_json::json;
 
 const CAPACITY_COLUMNS: &[Column] = &[
     Column::new("Enabled", "enabled"),
@@ -39,11 +39,15 @@ pub async fn run(cmd: CapacitySubCmd, client: &NovaClient, output_format: &str) 
             if let Some(v) = shed_status_code {
                 body["shed_status_code"] = json!(v);
             }
-            let result = client.put(&format!("/functions/{name}/capacity"), &body).await?;
+            let result = client
+                .put(&format!("/functions/{name}/capacity"), &body)
+                .await?;
             output::render_single(&result, CAPACITY_COLUMNS, output_format);
         }
         CapacitySubCmd::Delete { name } => {
-            client.delete(&format!("/functions/{name}/capacity")).await?;
+            client
+                .delete(&format!("/functions/{name}/capacity"))
+                .await?;
             output::print_success(&format!("Capacity policy deleted for '{name}'."));
         }
     }

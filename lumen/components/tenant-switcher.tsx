@@ -1,7 +1,8 @@
 "use client"
 
+import Link from "next/link"
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react"
-import { Building2, FolderTree, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
+import { Building2, Check, Eye, FolderTree, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -357,14 +358,14 @@ export function TenantSwitcher() {
               </div>
               <Button
                 variant="outline"
-                size="sm"
-                className="h-7"
+                size="icon"
+                className="h-7 w-7"
                 title="Create tenant"
                 onClick={() => setCreateTenantOpen(true)}
                 disabled={loading || mutating}
+                aria-label="Create tenant"
               >
-                <Plus className="mr-1 h-3.5 w-3.5" />
-                New Tenant
+                <Plus className="h-3.5 w-3.5" />
               </Button>
             </div>
 
@@ -396,12 +397,26 @@ export function TenantSwitcher() {
                     <div className="flex items-center gap-1">
                       <Button
                         variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs"
+                        size="icon"
+                        className="h-7 w-7"
                         onClick={() => void handleTenantChange(tenant.id)}
                         disabled={loading || mutating || tenant.id === currentTenant}
+                        title={`Use tenant ${tenant.id}`}
+                        aria-label={`Use tenant ${tenant.id}`}
                       >
-                        Use
+                        <Check className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        asChild
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        title={`Tenant detail ${tenant.id}`}
+                        aria-label={`Tenant detail ${tenant.id}`}
+                      >
+                        <Link href={`/tenancy/${encodeURIComponent(tenant.id)}`}>
+                          <Eye className="h-3.5 w-3.5" />
+                        </Link>
                       </Button>
                       <Button
                         variant="ghost"
@@ -414,6 +429,7 @@ export function TenantSwitcher() {
                           setEditTenantOpen(true)
                         }}
                         disabled={loading || mutating}
+                        aria-label={`Rename tenant ${tenant.id}`}
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
@@ -427,6 +443,7 @@ export function TenantSwitcher() {
                           setDeleteTenantOpen(true)
                         }}
                         disabled={loading || mutating || tenant.id === DEFAULT_TENANT_ID}
+                        aria-label={`Delete tenant ${tenant.id}`}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>

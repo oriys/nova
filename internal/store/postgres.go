@@ -354,14 +354,16 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 
 		// Webhook subscription support
 		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'function'`,
+		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS workflow_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS workflow_name TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS webhook_url TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS webhook_method TEXT NOT NULL DEFAULT 'POST'`,
 		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS webhook_headers JSONB NOT NULL DEFAULT '{}'::jsonb`,
 		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS webhook_signing_secret TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS webhook_timeout_ms INTEGER NOT NULL DEFAULT 30000`,
-		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS transform_function_id TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS transform_function_name TEXT NOT NULL DEFAULT ''`,
-		// Relax function FK constraints for webhook subscriptions (function_id may be empty)
+		`ALTER TABLE event_subscriptions DROP COLUMN IF EXISTS transform_function_id`,
+		`ALTER TABLE event_subscriptions DROP COLUMN IF EXISTS transform_function_name`,
+		// Relax function FK constraints for non-function subscriptions (function_id may be empty)
 		`ALTER TABLE event_subscriptions DROP CONSTRAINT IF EXISTS event_subscriptions_function_id_fkey`,
 		`ALTER TABLE event_deliveries DROP CONSTRAINT IF EXISTS event_deliveries_function_id_fkey`,
 

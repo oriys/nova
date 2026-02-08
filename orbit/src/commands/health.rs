@@ -1,7 +1,7 @@
-use clap::Subcommand;
 use crate::client::NovaClient;
 use crate::error::Result;
 use crate::output::{self, Column};
+use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum HealthCmd {

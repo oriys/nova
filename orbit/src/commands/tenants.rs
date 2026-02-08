@@ -1,8 +1,8 @@
-use clap::Subcommand;
-use serde_json::json;
 use crate::client::NovaClient;
 use crate::error::Result;
 use crate::output::{self, Column};
+use clap::Subcommand;
+use serde_json::json;
 
 #[derive(Subcommand)]
 pub enum TenantsCmd {
@@ -59,7 +59,10 @@ pub enum NamespacesSubCmd {
         name: Option<String>,
     },
     /// Delete a namespace
-    Delete { tenant_id: String, namespace: String },
+    Delete {
+        tenant_id: String,
+        namespace: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -76,7 +79,10 @@ pub enum QuotasSubCmd {
         window: Option<String>,
     },
     /// Delete a quota
-    Delete { tenant_id: String, dimension: String },
+    Delete {
+        tenant_id: String,
+        dimension: String,
+    },
 }
 
 const TENANT_COLUMNS: &[Column] = &[
@@ -112,7 +118,12 @@ pub async fn run(cmd: TenantsCmd, client: &NovaClient, output_format: &str) -> R
             let result = client.post("/tenants", &body).await?;
             output::render_single(&result, TENANT_COLUMNS, output_format);
         }
-        TenantsCmd::Update { id, name, status, tier } => {
+        TenantsCmd::Update {
+            id,
+            name,
+            status,
+            tier,
+        } => {
             let mut body = json!({});
             if let Some(n) = name {
                 body["name"] = json!(n);
@@ -132,7 +143,9 @@ pub async fn run(cmd: TenantsCmd, client: &NovaClient, output_format: &str) -> R
         }
         TenantsCmd::Namespaces { cmd } => match cmd {
             NamespacesSubCmd::List { tenant_id } => {
-                let result = client.get(&format!("/tenants/{tenant_id}/namespaces")).await?;
+                let result = client
+                    .get(&format!("/tenants/{tenant_id}/namespaces"))
+                    .await?;
                 output::render(&result, NS_COLUMNS, output_format);
             }
             NamespacesSubCmd::Create { tenant_id, name } => {
@@ -185,10 +198,7 @@ pub async fn run(cmd: TenantsCmd, client: &NovaClient, output_format: &str) -> R
                     body["window"] = json!(w);
                 }
                 let result = client
-                    .put(
-                        &format!("/tenants/{tenant_id}/quotas/{dimension}"),
-                        &body,
-                    )
+                    .put(&format!("/tenants/{tenant_id}/quotas/{dimension}"), &body)
                     .await?;
                 output::render_single(&result, QUOTA_COLUMNS, output_format);
             }

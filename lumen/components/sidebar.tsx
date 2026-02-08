@@ -9,13 +9,13 @@ import {
   Code2,
   Play,
   Settings,
-  ScrollText,
   History,
   GitBranch,
   KeyRound,
   Lock,
   RadioTower,
   Building2,
+  Clock3,
 } from "lucide-react"
 
 // Fixed order by expected usage frequency.
@@ -25,7 +25,7 @@ const navigation = [
   { name: "Events", href: "/events", icon: RadioTower },
   { name: "Workflows", href: "/workflows", icon: GitBranch },
   { name: "Tenancy", href: "/tenancy", icon: Building2 },
-  { name: "Logs", href: "/logs", icon: ScrollText },
+  { name: "Async Jobs", href: "/async-invocations", icon: Clock3 },
   { name: "History", href: "/history", icon: History },
   { name: "Runtimes", href: "/runtimes", icon: Play },
   { name: "Configurations", href: "/configurations", icon: Settings },

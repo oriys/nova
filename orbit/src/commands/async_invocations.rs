@@ -1,8 +1,8 @@
-use clap::Subcommand;
 use crate::client::NovaClient;
 use crate::commands::functions::AsyncInvocationsSubCmd;
 use crate::error::Result;
 use crate::output::{self, Column};
+use clap::Subcommand;
 
 const ASYNC_COLUMNS: &[Column] = &[
     Column::new("ID", "id"),
@@ -29,9 +29,17 @@ pub enum GlobalAsyncCmd {
     Retry { id: String },
 }
 
-pub async fn run_fn(cmd: AsyncInvocationsSubCmd, client: &NovaClient, output_format: &str) -> Result<()> {
+pub async fn run_fn(
+    cmd: AsyncInvocationsSubCmd,
+    client: &NovaClient,
+    output_format: &str,
+) -> Result<()> {
     match cmd {
-        AsyncInvocationsSubCmd::List { name, limit, status } => {
+        AsyncInvocationsSubCmd::List {
+            name,
+            limit,
+            status,
+        } => {
             let mut path = format!("/functions/{name}/async-invocations");
             let mut params = vec![];
             if let Some(l) = limit {
@@ -50,7 +58,11 @@ pub async fn run_fn(cmd: AsyncInvocationsSubCmd, client: &NovaClient, output_for
     Ok(())
 }
 
-pub async fn run_global(cmd: GlobalAsyncCmd, client: &NovaClient, output_format: &str) -> Result<()> {
+pub async fn run_global(
+    cmd: GlobalAsyncCmd,
+    client: &NovaClient,
+    output_format: &str,
+) -> Result<()> {
     match cmd {
         GlobalAsyncCmd::List { limit, status } => {
             let mut path = "/async-invocations".to_string();
@@ -73,7 +85,10 @@ pub async fn run_global(cmd: GlobalAsyncCmd, client: &NovaClient, output_format:
         }
         GlobalAsyncCmd::Retry { id } => {
             let result = client
-                .post(&format!("/async-invocations/{id}/retry"), &serde_json::json!({}))
+                .post(
+                    &format!("/async-invocations/{id}/retry"),
+                    &serde_json::json!({}),
+                )
                 .await?;
             output::render_single(&result, ASYNC_COLUMNS, output_format);
         }

@@ -102,6 +102,83 @@ export interface Runtime {
   functions_count: number;
 }
 
+export interface RouteRateLimit {
+  requests_per_second: number;
+  burst_size: number;
+}
+
+export interface GatewayRoute {
+  id: string;
+  domain: string;
+  path: string;
+  methods?: string[];
+  function_name: string;
+  auth_strategy: string;
+  auth_config?: Record<string, string>;
+  request_schema?: unknown;
+  rate_limit?: RouteRateLimit;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateGatewayRouteRequest {
+  domain?: string;
+  path: string;
+  methods?: string[];
+  function_name: string;
+  auth_strategy?: string;
+  auth_config?: Record<string, string>;
+  request_schema?: unknown;
+  rate_limit?: RouteRateLimit;
+  enabled?: boolean;
+}
+
+export interface UpdateGatewayRouteRequest {
+  domain?: string;
+  path?: string;
+  methods?: string[];
+  function_name?: string;
+  auth_strategy?: string;
+  auth_config?: Record<string, string>;
+  request_schema?: unknown;
+  rate_limit?: RouteRateLimit;
+  enabled?: boolean;
+}
+
+export interface LayerEntry {
+  id: string;
+  name: string;
+  runtime: string;
+  version: string;
+  content_hash?: string;
+  size_mb: number;
+  files: string[];
+  image_path: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateLayerRequest {
+  name: string;
+  runtime: string;
+  files: Record<string, string>; // path -> base64-encoded content
+}
+
+export interface FunctionLayerBinding {
+  position: number;
+  id: string;
+  name: string;
+  size_mb: number;
+}
+
+export interface SetFunctionLayersResponse {
+  status: string;
+  function: string;
+  layers: FunctionLayerBinding[];
+  note?: string;
+}
+
 export interface TenantEntry {
   id: string;
   name: string;
@@ -210,7 +287,7 @@ export interface EventTopic {
   updated_at: string;
 }
 
-export type EventSubscriptionType = "function" | "webhook";
+export type EventSubscriptionType = "function" | "workflow";
 
 export interface EventSubscription {
   id: string;
@@ -220,6 +297,8 @@ export interface EventSubscription {
   consumer_group: string;
   function_id: string;
   function_name: string;
+  workflow_id?: string;
+  workflow_name?: string;
   enabled: boolean;
   max_attempts: number;
   backoff_base_ms: number;
@@ -243,8 +322,6 @@ export interface EventSubscription {
   webhook_headers?: Record<string, string>;
   webhook_signing_secret?: string;
   webhook_timeout_ms?: number;
-  transform_function_id?: string;
-  transform_function_name?: string;
 }
 
 export interface EventMessage {
@@ -285,6 +362,8 @@ export interface EventDelivery {
   locked_until?: string;
   function_id: string;
   function_name: string;
+  workflow_id?: string;
+  workflow_name?: string;
   request_id?: string;
   output?: unknown;
   duration_ms?: number;
@@ -299,8 +378,6 @@ export interface EventDelivery {
   webhook_url?: string;
   webhook_method?: string;
   webhook_timeout_ms?: number;
-  transform_function_id?: string;
-  transform_function_name?: string;
 }
 
 export interface EventOutboxJob {
@@ -766,13 +843,13 @@ export const eventsApi = {
       type?: EventSubscriptionType;
       // Function fields
       function_name?: string;
+      workflow_name?: string;
       // Webhook fields
       webhook_url?: string;
       webhook_method?: string;
       webhook_headers?: Record<string, string>;
       webhook_signing_secret?: string;
       webhook_timeout_ms?: number;
-      transform_function_name?: string;
       // Common fields
       enabled?: boolean;
       max_attempts?: number;
@@ -796,6 +873,7 @@ export const eventsApi = {
       name?: string;
       consumer_group?: string;
       function_name?: string;
+      workflow_name?: string;
       enabled?: boolean;
       max_attempts?: number;
       backoff_base_ms?: number;
@@ -880,6 +958,66 @@ export const eventsApi = {
     }),
 };
 
+// Gateway API
+export const gatewayApi = {
+  listRoutes: (domain?: string) => {
+    const params = new URLSearchParams();
+    if (domain?.trim()) {
+      params.set("domain", domain.trim());
+    }
+    const qs = params.toString();
+    return request<GatewayRoute[]>(`/gateway/routes${qs ? `?${qs}` : ""}`);
+  },
+
+  getRoute: (id: string) =>
+    request<GatewayRoute>(`/gateway/routes/${encodeURIComponent(id)}`),
+
+  createRoute: (data: CreateGatewayRouteRequest) =>
+    request<GatewayRoute>("/gateway/routes", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateRoute: (id: string, data: UpdateGatewayRouteRequest) =>
+    request<GatewayRoute>(`/gateway/routes/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteRoute: (id: string) =>
+    request<{ status: string; id: string }>(`/gateway/routes/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+};
+
+// Shared Layers API
+export const layersApi = {
+  list: () => request<LayerEntry[]>("/layers"),
+
+  get: (name: string) =>
+    request<LayerEntry>(`/layers/${encodeURIComponent(name)}`),
+
+  create: (data: CreateLayerRequest) =>
+    request<LayerEntry>("/layers", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  delete: (name: string) =>
+    request<{ status: string; name: string }>(`/layers/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    }),
+
+  setFunctionLayers: (functionName: string, layerIDs: string[]) =>
+    request<SetFunctionLayersResponse>(`/functions/${encodeURIComponent(functionName)}/layers`, {
+      method: "PUT",
+      body: JSON.stringify({ layer_ids: layerIDs }),
+    }),
+
+  getFunctionLayers: (functionName: string) =>
+    request<LayerEntry[]>(`/functions/${encodeURIComponent(functionName)}/layers`),
+};
+
 // Runtimes API
 export const runtimesApi = {
   list: () => request<Runtime[]>("/runtimes"),
@@ -945,6 +1083,29 @@ export const metricsApi = {
 export const invocationsApi = {
   list: (limit: number = 100) =>
     request<LogEntry[]>(`/invocations?limit=${limit}`),
+};
+
+// Async invocations API (global scope)
+export const asyncInvocationsApi = {
+  list: (limit: number = 100, status?: AsyncInvocationStatus | AsyncInvocationStatus[]) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(limit));
+    if (status) {
+      params.set("status", Array.isArray(status) ? status.join(",") : status);
+    }
+    return request<AsyncInvocationJob[]>(`/async-invocations?${params.toString()}`);
+  },
+
+  get: (id: string) =>
+    request<AsyncInvocationJob>(`/async-invocations/${encodeURIComponent(id)}`),
+
+  retry: (id: string, maxAttempts?: number) =>
+    request<AsyncInvocationJob>(`/async-invocations/${encodeURIComponent(id)}/retry`, {
+      method: "POST",
+      body: JSON.stringify(
+        maxAttempts && maxAttempts > 0 ? { max_attempts: maxAttempts } : {}
+      ),
+    }),
 };
 
 // Health API

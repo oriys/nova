@@ -22,7 +22,11 @@ use commands::{
 };
 
 #[derive(Parser)]
-#[command(name = "orbit", version, about = "CLI for the Nova serverless platform")]
+#[command(
+    name = "orbit",
+    version,
+    about = "CLI for the Nova serverless platform"
+)]
 struct Cli {
     /// Nova server URL
     #[arg(long, env = "NOVA_URL", global = true)]
@@ -154,10 +158,7 @@ async fn main() {
     let api_key = cli.api_key.or(cfg.api_key);
     let tenant = cli.tenant.or(cfg.tenant);
     let namespace = cli.namespace.or(cfg.namespace);
-    let output_format = cli
-        .output
-        .or(cfg.output)
-        .unwrap_or_else(|| "table".into());
+    let output_format = cli.output.or(cfg.output).unwrap_or_else(|| "table".into());
 
     let nova = client::NovaClient::new(server, api_key, tenant, namespace);
 
@@ -173,9 +174,7 @@ async fn main() {
         Commands::Deliveries { cmd } => {
             commands::events::run_deliveries(cmd, &nova, &output_format).await
         }
-        Commands::Workflows { cmd } => {
-            commands::workflows::run(cmd, &nova, &output_format).await
-        }
+        Commands::Workflows { cmd } => commands::workflows::run(cmd, &nova, &output_format).await,
         Commands::Gateway { cmd } => commands::gateway::run(cmd, &nova, &output_format).await,
         Commands::Layers { cmd } => commands::layers::run(cmd, &nova, &output_format).await,
         Commands::Apikeys { cmd } => commands::apikeys::run(cmd, &nova, &output_format).await,

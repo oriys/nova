@@ -1,8 +1,8 @@
-use clap::Subcommand;
-use serde_json::json;
 use crate::client::NovaClient;
 use crate::error::Result;
 use crate::output::{self, Column};
+use clap::Subcommand;
+use serde_json::json;
 
 #[derive(Subcommand)]
 pub enum RuntimesCmd {
@@ -64,12 +64,12 @@ pub async fn run(cmd: RuntimesCmd, client: &NovaClient, output_format: &str) -> 
             output::render_single(&result, RUNTIME_COLUMNS, output_format);
         }
         RuntimesCmd::Upload { id, image } => {
-            let content = std::fs::read(&image)
-                .map_err(|e| crate::error::OrbitError::Input(format!("Cannot read file {image}: {e}")))?;
+            let content = std::fs::read(&image).map_err(|e| {
+                crate::error::OrbitError::Input(format!("Cannot read file {image}: {e}"))
+            })?;
             let form = reqwest::multipart::Form::new().part(
                 "file",
-                reqwest::multipart::Part::bytes(content)
-                    .file_name(image.clone()),
+                reqwest::multipart::Part::bytes(content).file_name(image.clone()),
             );
             // Use raw request for multipart
             let _ = form; // Multipart upload needs direct reqwest usage

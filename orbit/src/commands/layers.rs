@@ -1,9 +1,9 @@
-use clap::Subcommand;
-use serde_json::json;
 use crate::client::NovaClient;
 use crate::commands::functions::FnLayersSubCmd;
 use crate::error::Result;
 use crate::output::{self, Column};
+use clap::Subcommand;
+use serde_json::json;
 
 #[derive(Subcommand)]
 pub enum LayersCmd {

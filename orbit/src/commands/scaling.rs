@@ -1,8 +1,8 @@
-use serde_json::json;
 use crate::client::NovaClient;
 use crate::commands::functions::ScalingSubCmd;
 use crate::error::Result;
 use crate::output::{self, Column};
+use serde_json::json;
 
 const SCALING_COLUMNS: &[Column] = &[
     Column::new("Enabled", "enabled"),
@@ -43,7 +43,9 @@ pub async fn run(cmd: ScalingSubCmd, client: &NovaClient, output_format: &str) -
             if let Some(v) = cooldown_down {
                 body["cooldown_scale_down_s"] = json!(v);
             }
-            let result = client.put(&format!("/functions/{name}/scaling"), &body).await?;
+            let result = client
+                .put(&format!("/functions/{name}/scaling"), &body)
+                .await?;
             output::render_single(&result, SCALING_COLUMNS, output_format);
         }
         ScalingSubCmd::Delete { name } => {

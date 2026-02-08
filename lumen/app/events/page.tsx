@@ -18,6 +18,7 @@ import {
 import {
   eventsApi,
   functionsApi,
+  workflowsApi,
   type EventDelivery,
   type EventDeliveryStatus,
   type EventMessage,
@@ -25,6 +26,7 @@ import {
   type EventSubscription,
   type EventTopic,
   type NovaFunction,
+  type Workflow,
 } from "@/lib/api"
 import { Plus, RefreshCw, Send, Trash2, RotateCcw } from "lucide-react"
 
@@ -49,6 +51,7 @@ function statusBadgeVariant(status: EventDeliveryStatus): "default" | "secondary
 export default function EventsPage() {
   const [topics, setTopics] = useState<EventTopic[]>([])
   const [functions, setFunctions] = useState<NovaFunction[]>([])
+  const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [selectedTopicName, setSelectedTopicName] = useState("")
   const [subscriptions, setSubscriptions] = useState<EventSubscription[]>([])
   const [messages, setMessages] = useState<EventMessage[]>([])
@@ -64,8 +67,9 @@ export default function EventsPage() {
 
   const [newSubName, setNewSubName] = useState("")
   const [newSubGroup, setNewSubGroup] = useState("")
-  const [newSubType, setNewSubType] = useState<"function" | "webhook">("function")
+  const [newSubType, setNewSubType] = useState<"function" | "workflow">("function")
   const [newSubFunction, setNewSubFunction] = useState("")
+  const [newSubWorkflow, setNewSubWorkflow] = useState("")
   const [newSubMaxAttempts, setNewSubMaxAttempts] = useState("3")
   const [newSubBackoffBase, setNewSubBackoffBase] = useState("1000")
   const [newSubBackoffMax, setNewSubBackoffMax] = useState("60000")
@@ -77,7 +81,6 @@ export default function EventsPage() {
   const [newSubWebhookHeaders, setNewSubWebhookHeaders] = useState("{}")
   const [newSubWebhookSecret, setNewSubWebhookSecret] = useState("")
   const [newSubWebhookTimeout, setNewSubWebhookTimeout] = useState("30000")
-  const [newSubTransformFn, setNewSubTransformFn] = useState("__none__")
 
   const [publishPayload, setPublishPayload] = useState("{}")
   const [publishHeaders, setPublishHeaders] = useState("{}")
@@ -108,12 +111,14 @@ export default function EventsPage() {
     try {
       setLoading(true)
       setError(null)
-      const [topicData, functionData] = await Promise.all([
+      const [topicData, functionData, workflowData] = await Promise.all([
         eventsApi.listTopics(200),
         functionsApi.list(),
+        workflowsApi.list(),
       ])
       setTopics(topicData)
       setFunctions(functionData)
+      setWorkflows(workflowData)
 
       if (topicData.length > 0) {
         setSelectedTopicName((prev) => {
@@ -134,13 +139,16 @@ export default function EventsPage() {
       if (functionData.length > 0 && !newSubFunction) {
         setNewSubFunction(functionData[0].name)
       }
+      if (workflowData.length > 0 && !newSubWorkflow) {
+        setNewSubWorkflow(workflowData[0].name)
+      }
     } catch (err) {
       console.error("Failed to load event bus data:", err)
       setError(err instanceof Error ? err.message : "Failed to load event bus data")
     } finally {
       setLoading(false)
     }
-  }, [newSubFunction])
+  }, [newSubFunction, newSubWorkflow])
 
   const fetchTopicDetails = useCallback(async (topicName: string) => {
     if (!topicName) {
@@ -280,8 +288,8 @@ export default function EventsPage() {
       alert("Select a function")
       return
     }
-    if (newSubType === "webhook" && !newSubWebhookURL.trim()) {
-      alert("Webhook URL is required")
+    if (newSubType === "workflow" && !newSubWorkflow) {
+      alert("Select a workflow")
       return
     }
 
@@ -290,7 +298,7 @@ export default function EventsPage() {
       const base = {
         name: newSubName.trim(),
         consumer_group: newSubGroup.trim() || undefined,
-        type: newSubType as "function" | "webhook",
+        type: newSubType as "function" | "workflow",
         max_attempts: Math.max(1, Number(newSubMaxAttempts) || 3),
         backoff_base_ms: Math.max(1, Number(newSubBackoffBase) || 1000),
         backoff_max_ms: Math.max(1, Number(newSubBackoffMax) || 60000),
@@ -314,20 +322,20 @@ export default function EventsPage() {
 
         await eventsApi.createSubscription(selectedTopicName, {
           ...base,
-          webhook_url: newSubWebhookURL.trim(),
-          webhook_method: newSubWebhookMethod || "POST",
+          workflow_name: newSubWorkflow,
+          webhook_url: newSubWebhookURL.trim() || undefined,
+          webhook_method: newSubWebhookMethod || undefined,
           webhook_headers: webhookHeaders,
           webhook_signing_secret: newSubWebhookSecret || undefined,
-          webhook_timeout_ms: Math.max(1000, Number(newSubWebhookTimeout) || 30000),
-          transform_function_name: newSubTransformFn && newSubTransformFn !== "__none__" ? newSubTransformFn : undefined,
+          webhook_timeout_ms: newSubWebhookURL.trim() ? Math.max(1000, Number(newSubWebhookTimeout) || 30000) : undefined,
         })
       }
 
       setNewSubName("")
       setNewSubGroup("")
+      setNewSubWorkflow(workflows[0]?.name || "")
       setNewSubWebhookURL("")
       setNewSubWebhookSecret("")
-      setNewSubTransformFn("__none__")
       setNewSubMaxInflight("0")
       setNewSubRateLimitPerS("0")
       await fetchTopicDetails(selectedTopicName)
@@ -694,98 +702,42 @@ export default function EventsPage() {
                 <div className="rounded-lg border border-border bg-card p-4 space-y-4">
                   <p className="text-sm font-medium text-foreground">Subscriptions</p>
 
-                  <div className="grid gap-3 md:grid-cols-4">
-                    <div className="space-y-1">
-                      <Label>Name</Label>
-                      <Input
-                        value={newSubName}
-                        onChange={(e) => setNewSubName(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Consumer Group</Label>
-                      <Input
-                        value={newSubGroup}
-                        onChange={(e) => setNewSubGroup(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Type</Label>
-                      <Select value={newSubType} onValueChange={(v) => setNewSubType(v as "function" | "webhook")}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="function">Function</SelectItem>
-                          <SelectItem value="webhook">Webhook</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {newSubType === "function" ? (
-                      <div className="space-y-1">
-                        <Label>Function</Label>
-                        <Select value={newSubFunction} onValueChange={setNewSubFunction}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select function" />
+                  <div className="space-y-3">
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-12">
+                      <div className="space-y-1 xl:col-span-4">
+                        <Label>Name</Label>
+                        <Input
+                          value={newSubName}
+                          onChange={(e) => setNewSubName(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1 xl:col-span-4">
+                        <Label>Consumer Group</Label>
+                        <Input
+                          value={newSubGroup}
+                          onChange={(e) => setNewSubGroup(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1 xl:col-span-2">
+                        <Label>Type</Label>
+                        <Select value={newSubType} onValueChange={(v) => setNewSubType(v as "function" | "workflow")}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {functions.map((fn) => (
-                              <SelectItem key={fn.id} value={fn.name}>
-                                {fn.name}
-                              </SelectItem>
-                            ))}
+                            <SelectItem value="function">Function</SelectItem>
+                            <SelectItem value="workflow">Workflow</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
-                    ) : (
-                      <div className="space-y-1">
-                        <Label>Webhook URL</Label>
-                        <Input
-                          placeholder="https://..."
-                          value={newSubWebhookURL}
-                          onChange={(e) => setNewSubWebhookURL(e.target.value)}
-                        />
-                      </div>
-                    )}
-                    {newSubType === "webhook" && (
-                      <>
-                        <div className="space-y-1">
-                          <Label>Method</Label>
-                          <Select value={newSubWebhookMethod} onValueChange={setNewSubWebhookMethod}>
-                            <SelectTrigger>
-                              <SelectValue />
+                      {newSubType === "function" ? (
+                        <div className="space-y-1 xl:col-span-2">
+                          <Label>Function</Label>
+                          <Select value={newSubFunction} onValueChange={setNewSubFunction}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select function" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="POST">POST</SelectItem>
-                              <SelectItem value="PUT">PUT</SelectItem>
-                              <SelectItem value="PATCH">PATCH</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-1">
-                          <Label>Signing Secret</Label>
-                          <Input
-                            value={newSubWebhookSecret}
-                            onChange={(e) => setNewSubWebhookSecret(e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label>Timeout (ms)</Label>
-                          <Input
-                            type="number"
-                            min={1000}
-                            value={newSubWebhookTimeout}
-                            onChange={(e) => setNewSubWebhookTimeout(e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label>Transform Function</Label>
-                          <Select value={newSubTransformFn} onValueChange={setNewSubTransformFn}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="None" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none__">None</SelectItem>
                               {functions.map((fn) => (
                                 <SelectItem key={fn.id} value={fn.name}>
                                   {fn.name}
@@ -794,61 +746,136 @@ export default function EventsPage() {
                             </SelectContent>
                           </Select>
                         </div>
-                      </>
+                      ) : (
+                        <div className="space-y-1 xl:col-span-2">
+                          <Label>Workflow</Label>
+                          <Select value={newSubWorkflow} onValueChange={setNewSubWorkflow}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select workflow" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {workflows.map((wf) => (
+                                <SelectItem key={wf.id} value={wf.name}>
+                                  {wf.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-12">
+                      <div className="space-y-1 xl:col-span-2">
+                        <Label className="flex min-h-[2.5rem] items-end leading-tight">Max Attempts</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={newSubMaxAttempts}
+                          onChange={(e) => setNewSubMaxAttempts(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1 xl:col-span-3">
+                        <Label className="flex min-h-[2.5rem] items-end leading-tight">Backoff Base (ms)</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={newSubBackoffBase}
+                          onChange={(e) => setNewSubBackoffBase(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1 xl:col-span-3">
+                        <Label className="flex min-h-[2.5rem] items-end leading-tight">Backoff Max (ms)</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={newSubBackoffMax}
+                          onChange={(e) => setNewSubBackoffMax(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1 xl:col-span-2">
+                        <Label className="flex min-h-[2.5rem] items-end leading-tight">Max Inflight (0=unlimited)</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={newSubMaxInflight}
+                          onChange={(e) => setNewSubMaxInflight(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1 xl:col-span-2">
+                        <Label className="flex min-h-[2.5rem] items-end leading-tight">Rate Limit/s (0=unlimited)</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={newSubRateLimitPerS}
+                          onChange={(e) => setNewSubRateLimitPerS(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    {newSubType === "workflow" && (
+                      <div className="space-y-3 rounded-md border border-dashed border-border bg-muted/20 p-3">
+                        <p className="text-xs font-medium text-muted-foreground">Webhook (optional)</p>
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-12">
+                          <div className="space-y-1 xl:col-span-5">
+                            <Label>Webhook URL</Label>
+                            <Input
+                              placeholder="https://..."
+                              value={newSubWebhookURL}
+                              onChange={(e) => setNewSubWebhookURL(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-1 xl:col-span-2">
+                            <Label>Method</Label>
+                            <Select value={newSubWebhookMethod} onValueChange={setNewSubWebhookMethod}>
+                              <SelectTrigger className="w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="POST">POST</SelectItem>
+                                <SelectItem value="PUT">PUT</SelectItem>
+                                <SelectItem value="PATCH">PATCH</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1 xl:col-span-2">
+                            <Label>Timeout (ms)</Label>
+                            <Input
+                              type="number"
+                              min={1000}
+                              value={newSubWebhookTimeout}
+                              onChange={(e) => setNewSubWebhookTimeout(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-1 xl:col-span-3">
+                            <Label>Signing Secret</Label>
+                            <Input
+                              value={newSubWebhookSecret}
+                              onChange={(e) => setNewSubWebhookSecret(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-1 xl:col-span-12">
+                            <Label>Headers JSON</Label>
+                            <Textarea
+                              rows={3}
+                              value={newSubWebhookHeaders}
+                              onChange={(e) => setNewSubWebhookHeaders(e.target.value)}
+                              placeholder='{"X-Source":"nova"}'
+                            />
+                          </div>
+                        </div>
+                      </div>
                     )}
-                    <div className="space-y-1">
-                      <Label>Max Attempts</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={newSubMaxAttempts}
-                        onChange={(e) => setNewSubMaxAttempts(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Backoff Base (ms)</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={newSubBackoffBase}
-                        onChange={(e) => setNewSubBackoffBase(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Backoff Max (ms)</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={newSubBackoffMax}
-                        onChange={(e) => setNewSubBackoffMax(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Max Inflight (0=unlimited)</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={newSubMaxInflight}
-                        onChange={(e) => setNewSubMaxInflight(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Rate Limit/s (0=unlimited)</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={newSubRateLimitPerS}
-                        onChange={(e) => setNewSubRateLimitPerS(e.target.value)}
-                      />
+
+                    <div className="flex justify-end">
+                      <Button onClick={handleCreateSubscription} disabled={busy || !newSubName.trim() || (newSubType === "function" ? !newSubFunction : !newSubWorkflow)}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Subscription
+                      </Button>
                     </div>
                   </div>
 
-                  <Button onClick={handleCreateSubscription} disabled={busy || !newSubName.trim() || (newSubType === "function" ? !newSubFunction : !newSubWebhookURL.trim())}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Subscription
-                  </Button>
-
-                  <div className="rounded-md border border-border">
+                  <div className="rounded-md border border-border overflow-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-border">
@@ -887,9 +914,9 @@ export default function EventsPage() {
                                 <td className="px-3 py-2">
                                   <Badge variant="outline">{sub.type || "function"}</Badge>
                                 </td>
-                                <td className="px-3 py-2 text-muted-foreground text-xs max-w-[200px] truncate" title={sub.type === "webhook" ? sub.webhook_url : sub.function_name}>
-                                  {sub.type === "webhook" ? sub.webhook_url : sub.function_name}
-                                  {sub.type === "webhook" && sub.transform_function_name ? ` (transform: ${sub.transform_function_name})` : ""}
+                                <td className="px-3 py-2 text-muted-foreground text-xs max-w-[220px] truncate" title={sub.type === "workflow" ? (sub.webhook_url || sub.workflow_name) : sub.function_name}>
+                                  {sub.type === "workflow" ? (sub.workflow_name || "-") : sub.function_name}
+                                  {sub.type === "workflow" && sub.webhook_url ? ` -> ${sub.webhook_url}` : ""}
                                 </td>
                                 <td className="px-3 py-2 text-muted-foreground">{sub.last_acked_sequence}</td>
                                 <td className="px-3 py-2 text-muted-foreground">{sub.lag}</td>
@@ -947,101 +974,107 @@ export default function EventsPage() {
                       )}
                     </div>
 
-                    <div className="grid gap-2 md:grid-cols-6">
-                      <div className="space-y-1">
-                        <Label>Max Inflight</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={editSubMaxInflight}
-                          onChange={(e) => setEditSubMaxInflight(e.target.value)}
-                          disabled={!selectedSubscriptionID}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label>Rate/s</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={editSubRateLimitPerS}
-                          onChange={(e) => setEditSubRateLimitPerS(e.target.value)}
-                          disabled={!selectedSubscriptionID}
-                        />
-                      </div>
-                      <div className="flex items-end">
-                        <Button variant="outline" onClick={handleSaveSubscriptionFlow} disabled={busy || !selectedSubscriptionID}>
+                    <div className="grid gap-3 xl:grid-cols-3">
+                      <div className="space-y-2 rounded-md border border-border p-3">
+                        <p className="text-xs font-medium text-muted-foreground">Flow Controls</p>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <Label>Max Inflight</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={editSubMaxInflight}
+                              onChange={(e) => setEditSubMaxInflight(e.target.value)}
+                              disabled={!selectedSubscriptionID}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Rate/s</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={editSubRateLimitPerS}
+                              onChange={(e) => setEditSubRateLimitPerS(e.target.value)}
+                              disabled={!selectedSubscriptionID}
+                            />
+                          </div>
+                        </div>
+                        <Button className="w-full" variant="outline" onClick={handleSaveSubscriptionFlow} disabled={busy || !selectedSubscriptionID}>
                           Save Flow
                         </Button>
                       </div>
-                      <div className="space-y-1">
-                        <Label>Seek Sequence</Label>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={seekFromSequence}
-                          onChange={(e) => setSeekFromSequence(e.target.value)}
-                          disabled={!selectedSubscriptionID}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label>Seek Time (RFC3339)</Label>
-                        <Input
-                          type="text"
-                          value={seekFromTime}
-                          onChange={(e) => setSeekFromTime(e.target.value)}
-                          disabled={!selectedSubscriptionID}
-                        />
-                      </div>
-                      <div className="flex items-end">
-                        <Button variant="outline" onClick={handleSeek} disabled={busy || !selectedSubscriptionID}>
+
+                      <div className="space-y-2 rounded-md border border-border p-3">
+                        <p className="text-xs font-medium text-muted-foreground">Seek Cursor</p>
+                        <div className="space-y-1">
+                          <Label>Seek Sequence</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={seekFromSequence}
+                            onChange={(e) => setSeekFromSequence(e.target.value)}
+                            disabled={!selectedSubscriptionID}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Seek Time (RFC3339)</Label>
+                          <Input
+                            type="text"
+                            value={seekFromTime}
+                            onChange={(e) => setSeekFromTime(e.target.value)}
+                            disabled={!selectedSubscriptionID}
+                          />
+                        </div>
+                        <Button className="w-full" variant="outline" onClick={handleSeek} disabled={busy || !selectedSubscriptionID}>
                           Seek Cursor
                         </Button>
                       </div>
-                    </div>
 
-                    <div className="grid gap-2 md:grid-cols-6">
-                      <div className="space-y-1">
-                        <Label>From Sequence</Label>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={replayFromSequence}
-                          onChange={(e) => setReplayFromSequence(e.target.value)}
-                          disabled={!selectedSubscriptionID}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label>Limit</Label>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={replayLimit}
-                          onChange={(e) => setReplayLimit(e.target.value)}
-                          disabled={!selectedSubscriptionID}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label>From Time (RFC3339)</Label>
-                        <Input
-                          type="text"
-                          value={replayFromTime}
-                          onChange={(e) => setReplayFromTime(e.target.value)}
-                          disabled={!selectedSubscriptionID}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label>Cursor Reset</Label>
-                        <Select value={replayResetCursor} onValueChange={setReplayResetCursor}>
-                          <SelectTrigger disabled={!selectedSubscriptionID}>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="true">Replay + reset cursor</SelectItem>
-                            <SelectItem value="false">Replay only</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="md:col-span-2 flex items-end">
+                      <div className="space-y-2 rounded-md border border-border p-3">
+                        <p className="text-xs font-medium text-muted-foreground">Replay</p>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <Label>From Sequence</Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={replayFromSequence}
+                              onChange={(e) => setReplayFromSequence(e.target.value)}
+                              disabled={!selectedSubscriptionID}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Limit</Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={replayLimit}
+                              onChange={(e) => setReplayLimit(e.target.value)}
+                              disabled={!selectedSubscriptionID}
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <Label>From Time (RFC3339)</Label>
+                          <Input
+                            type="text"
+                            value={replayFromTime}
+                            onChange={(e) => setReplayFromTime(e.target.value)}
+                            disabled={!selectedSubscriptionID}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Cursor Reset</Label>
+                          <Select value={replayResetCursor} onValueChange={setReplayResetCursor}>
+                            <SelectTrigger className="w-full" disabled={!selectedSubscriptionID}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="true">Replay + reset cursor</SelectItem>
+                              <SelectItem value="false">Replay only</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
                         <Button className="w-full" variant="outline" onClick={handleReplay} disabled={busy || !selectedSubscriptionID}>
                           <RotateCcw className="mr-2 h-4 w-4" />
                           Replay

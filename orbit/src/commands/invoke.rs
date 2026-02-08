@@ -1,9 +1,9 @@
-use indicatif::{ProgressBar, ProgressStyle};
-use serde_json::{json, Value};
-use std::time::Duration;
 use crate::client::NovaClient;
 use crate::error::Result;
 use crate::output::{self, Column};
+use indicatif::{ProgressBar, ProgressStyle};
+use serde_json::{Value, json};
+use std::time::Duration;
 
 const INVOKE_COLUMNS: &[Column] = &[
     Column::new("Request ID", "request_id"),
@@ -33,20 +33,28 @@ pub async fn run_invoke(
         (Some(p), _) => serde_json::from_str(&p)
             .map_err(|e| crate::error::OrbitError::Input(format!("Invalid JSON payload: {e}")))?,
         (_, Some(path)) => {
-            let content = std::fs::read_to_string(&path)
-                .map_err(|e| crate::error::OrbitError::Input(format!("Cannot read file {path}: {e}")))?;
-            serde_json::from_str(&content)
-                .map_err(|e| crate::error::OrbitError::Input(format!("Invalid JSON in file: {e}")))?
+            let content = std::fs::read_to_string(&path).map_err(|e| {
+                crate::error::OrbitError::Input(format!("Cannot read file {path}: {e}"))
+            })?;
+            serde_json::from_str(&content).map_err(|e| {
+                crate::error::OrbitError::Input(format!("Invalid JSON in file: {e}"))
+            })?
         }
         _ => json!({}),
     };
 
     let spinner = ProgressBar::new_spinner();
-    spinner.set_style(ProgressStyle::default_spinner().template("{spinner:.cyan} Invoking {msg}...").unwrap());
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.cyan} Invoking {msg}...")
+            .unwrap(),
+    );
     spinner.set_message(name.to_string());
     spinner.enable_steady_tick(Duration::from_millis(80));
 
-    let result = client.post(&format!("/functions/{name}/invoke"), &body).await?;
+    let result = client
+        .post(&format!("/functions/{name}/invoke"), &body)
+        .await?;
     spinner.finish_and_clear();
 
     output::render_single(&result, INVOKE_COLUMNS, output_format);
@@ -74,7 +82,9 @@ pub async fn run_invoke_async(
         body["idempotency_key"] = json!(k);
     }
 
-    let result = client.post(&format!("/functions/{name}/invoke-async"), &body).await?;
+    let result = client
+        .post(&format!("/functions/{name}/invoke-async"), &body)
+        .await?;
     output::render_single(&result, ASYNC_COLUMNS, output_format);
     Ok(())
 }

@@ -201,7 +201,7 @@ func daemonCmd() *cobra.Command {
 			}
 			asyncWorkers := asyncqueue.New(s, exec, asyncqueue.Config{})
 			asyncWorkers.Start()
-			eventWorkers := eventbus.New(s, exec, eventbus.Config{})
+			eventWorkers := eventbus.New(s, exec, wfService, eventbus.Config{})
 			eventWorkers.Start()
 			outboxRelay := eventbus.NewOutboxRelay(s, eventbus.OutboxRelayConfig{})
 			outboxRelay.Start()

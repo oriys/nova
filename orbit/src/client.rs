@@ -95,5 +95,4 @@ impl NovaClient {
         let resp = self.build_request(Method::DELETE, path).send().await?;
         Self::handle_response(resp).await
     }
-
 }

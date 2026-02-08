@@ -94,12 +94,12 @@ type EventSubscriptionType string
 
 const (
 	EventSubscriptionTypeFunction EventSubscriptionType = "function"
-	EventSubscriptionTypeWebhook  EventSubscriptionType = "webhook"
+	EventSubscriptionTypeWorkflow EventSubscriptionType = "workflow"
 
 	DefaultWebhookTimeoutMS = 30000
 )
 
-// EventSubscription binds a topic to a function consumer group or webhook endpoint.
+// EventSubscription binds a topic to a function or workflow consumer group.
 type EventSubscription struct {
 	ID              string     `json:"id"`
 	TenantID        string     `json:"tenant_id,omitempty"`
@@ -110,6 +110,8 @@ type EventSubscription struct {
 	ConsumerGroup   string     `json:"consumer_group"`
 	FunctionID      string     `json:"function_id,omitempty"`
 	FunctionName    string     `json:"function_name,omitempty"`
+	WorkflowID      string     `json:"workflow_id,omitempty"`
+	WorkflowName    string     `json:"workflow_name,omitempty"`
 	Enabled         bool       `json:"enabled"`
 	MaxAttempts     int        `json:"max_attempts"`
 	BackoffBaseMS   int        `json:"backoff_base_ms"`
@@ -127,19 +129,16 @@ type EventSubscription struct {
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
 
-	// Subscription type: "function" (default) or "webhook"
+	// Subscription type: "function" (default) or "workflow"
 	Type EventSubscriptionType `json:"type"`
 
-	// Webhook fields (only used when Type == "webhook")
+	// Webhook fields (optional for workflow subscriptions).
+	// If webhook_url is empty, results are only persisted internally.
 	WebhookURL           string          `json:"webhook_url,omitempty"`
 	WebhookMethod        string          `json:"webhook_method,omitempty"`
 	WebhookHeaders       json.RawMessage `json:"webhook_headers,omitempty"`
 	WebhookSigningSecret string          `json:"webhook_signing_secret,omitempty"`
 	WebhookTimeoutMS     int             `json:"webhook_timeout_ms,omitempty"`
-
-	// Transform function: invoked before webhook delivery to transform payload
-	TransformFunctionID   string `json:"transform_function_id,omitempty"`
-	TransformFunctionName string `json:"transform_function_name,omitempty"`
 }
 
 // EventSubscriptionUpdate describes mutable subscription fields.
@@ -148,6 +147,8 @@ type EventSubscriptionUpdate struct {
 	ConsumerGroup *string `json:"consumer_group,omitempty"`
 	FunctionID    *string `json:"function_id,omitempty"`
 	FunctionName  *string `json:"function_name,omitempty"`
+	WorkflowID    *string `json:"workflow_id,omitempty"`
+	WorkflowName  *string `json:"workflow_name,omitempty"`
 	Enabled       *bool   `json:"enabled,omitempty"`
 	MaxAttempts   *int    `json:"max_attempts,omitempty"`
 	BackoffBaseMS *int    `json:"backoff_base_ms,omitempty"`
@@ -161,10 +162,6 @@ type EventSubscriptionUpdate struct {
 	WebhookHeaders       json.RawMessage `json:"webhook_headers,omitempty"`
 	WebhookSigningSecret *string         `json:"webhook_signing_secret,omitempty"`
 	WebhookTimeoutMS     *int            `json:"webhook_timeout_ms,omitempty"`
-
-	// Transform function
-	TransformFunctionID   *string `json:"transform_function_id,omitempty"`
-	TransformFunctionName *string `json:"transform_function_name,omitempty"`
 }
 
 // EventMessage is an immutable record stored under a topic.
@@ -207,6 +204,8 @@ type EventDelivery struct {
 	LockedUntil      *time.Time          `json:"locked_until,omitempty"`
 	FunctionID       string              `json:"function_id,omitempty"`
 	FunctionName     string              `json:"function_name,omitempty"`
+	WorkflowID       string              `json:"workflow_id,omitempty"`
+	WorkflowName     string              `json:"workflow_name,omitempty"`
 	RequestID        string              `json:"request_id,omitempty"`
 	Output           json.RawMessage     `json:"output,omitempty"`
 	DurationMS       int64               `json:"duration_ms,omitempty"`
@@ -226,8 +225,6 @@ type EventDelivery struct {
 	WebhookHeaders       json.RawMessage `json:"webhook_headers,omitempty"`
 	WebhookSigningSecret string          `json:"-"` // never expose in API responses
 	WebhookTimeoutMS     int             `json:"webhook_timeout_ms,omitempty"`
-	TransformFunctionID  string          `json:"transform_function_id,omitempty"`
-	TransformFunctionName string         `json:"transform_function_name,omitempty"`
 }
 
 // EventOutbox is a durable relay queue for transactional publishing.
@@ -311,34 +308,30 @@ func NewEventSubscription(topicID, topicName, name, consumerGroup, functionID, f
 	}
 }
 
-// NewWebhookSubscription creates a webhook-type subscription with defaults.
-func NewWebhookSubscription(topicID, topicName, name, consumerGroup, webhookURL, webhookMethod string) *EventSubscription {
+// NewWorkflowSubscription creates a workflow-type subscription with defaults.
+func NewWorkflowSubscription(topicID, topicName, name, consumerGroup, workflowID, workflowName string) *EventSubscription {
 	now := time.Now().UTC()
-	method := strings.TrimSpace(webhookMethod)
-	if method == "" {
-		method = "POST"
-	}
 	return &EventSubscription{
-		ID:              uuid.New().String(),
-		TenantID:        DefaultTenantID,
-		Namespace:       DefaultNamespace,
-		TopicID:         strings.TrimSpace(topicID),
-		TopicName:       strings.TrimSpace(topicName),
-		Name:            strings.TrimSpace(name),
-		ConsumerGroup:   strings.TrimSpace(consumerGroup),
-		Enabled:         true,
-		MaxAttempts:     DefaultEventMaxAttempts,
-		BackoffBaseMS:   DefaultEventBackoffBaseMS,
-		BackoffMaxMS:    DefaultEventBackoffMaxMS,
-		MaxInflight:     DefaultEventMaxInflight,
-		RateLimitPerSec: DefaultEventRateLimitPerS,
-		Type:            EventSubscriptionTypeWebhook,
-		WebhookURL:      strings.TrimSpace(webhookURL),
-		WebhookMethod:   method,
-		WebhookHeaders:  json.RawMessage(`{}`),
+		ID:               uuid.New().String(),
+		TenantID:         DefaultTenantID,
+		Namespace:        DefaultNamespace,
+		TopicID:          strings.TrimSpace(topicID),
+		TopicName:        strings.TrimSpace(topicName),
+		Name:             strings.TrimSpace(name),
+		ConsumerGroup:    strings.TrimSpace(consumerGroup),
+		WorkflowID:       strings.TrimSpace(workflowID),
+		WorkflowName:     strings.TrimSpace(workflowName),
+		Enabled:          true,
+		MaxAttempts:      DefaultEventMaxAttempts,
+		BackoffBaseMS:    DefaultEventBackoffBaseMS,
+		BackoffMaxMS:     DefaultEventBackoffMaxMS,
+		MaxInflight:      DefaultEventMaxInflight,
+		RateLimitPerSec:  DefaultEventRateLimitPerS,
+		Type:             EventSubscriptionTypeWorkflow,
+		WebhookHeaders:   json.RawMessage(`{}`),
 		WebhookTimeoutMS: DefaultWebhookTimeoutMS,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 }
 
@@ -498,25 +491,22 @@ func (s *PostgresStore) CreateEventSubscription(ctx context.Context, sub *EventS
 
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO event_subscriptions (
-			id, tenant_id, namespace, topic_id, name, consumer_group, function_id, function_name,
+			id, tenant_id, namespace, topic_id, name, consumer_group, function_id, function_name, workflow_id, workflow_name,
 			enabled, max_attempts, backoff_base_ms, backoff_max_ms,
 			max_inflight, rate_limit_per_sec, last_acked_sequence,
 			type, webhook_url, webhook_method, webhook_headers, webhook_signing_secret, webhook_timeout_ms,
-			transform_function_id, transform_function_name,
 			created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8,
-			$9, $10, $11, $12,
-			$13, $14, $15,
-			$16, $17, $18, $19, $20, $21,
-			$22, $23,
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+			$11, $12, $13, $14,
+			$15, $16, $17,
+			$18, $19, $20, $21, $22, $23,
 			$24, $25
 		)
-	`, sub.ID, sub.TenantID, sub.Namespace, sub.TopicID, sub.Name, sub.ConsumerGroup, sub.FunctionID, sub.FunctionName,
+	`, sub.ID, sub.TenantID, sub.Namespace, sub.TopicID, sub.Name, sub.ConsumerGroup, sub.FunctionID, sub.FunctionName, sub.WorkflowID, sub.WorkflowName,
 		sub.Enabled, sub.MaxAttempts, sub.BackoffBaseMS, sub.BackoffMaxMS,
 		sub.MaxInflight, sub.RateLimitPerSec, sub.LastAckedSeq,
 		string(sub.Type), sub.WebhookURL, sub.WebhookMethod, sub.WebhookHeaders, sub.WebhookSigningSecret, sub.WebhookTimeoutMS,
-		sub.TransformFunctionID, sub.TransformFunctionName,
 		sub.CreatedAt, sub.UpdatedAt)
 	if err != nil {
 		if isPGUniqueViolation(err) {
@@ -530,14 +520,13 @@ func (s *PostgresStore) CreateEventSubscription(ctx context.Context, sub *EventS
 func (s *PostgresStore) GetEventSubscription(ctx context.Context, id string) (*EventSubscription, error) {
 	scope := tenantScopeFromContext(ctx)
 	sub, err := scanEventSubscription(s.pool.QueryRow(ctx, `
-		SELECT s.id, s.tenant_id, s.namespace, s.topic_id, t.name, s.name, s.consumer_group, s.function_id, s.function_name,
+		SELECT s.id, s.tenant_id, s.namespace, s.topic_id, t.name, s.name, s.consumer_group, s.function_id, s.function_name, s.workflow_id, s.workflow_name,
 		       s.enabled, s.max_attempts, s.backoff_base_ms, s.backoff_max_ms,
 		       s.max_inflight, s.rate_limit_per_sec, s.last_dispatch_at, s.last_acked_sequence, s.last_acked_at,
 		       COALESCE(stats.inflight_count, 0), COALESCE(stats.queued_count, 0), COALESCE(stats.dlq_count, 0),
 		       GREATEST(COALESCE(stats.latest_sequence, s.last_acked_sequence) - s.last_acked_sequence, 0), stats.oldest_unacked_at,
 		       s.created_at, s.updated_at,
-		       s.type, s.webhook_url, s.webhook_method, s.webhook_headers, s.webhook_signing_secret, s.webhook_timeout_ms,
-		       s.transform_function_id, s.transform_function_name
+		       s.type, s.webhook_url, s.webhook_method, s.webhook_headers, s.webhook_signing_secret, s.webhook_timeout_ms
 		FROM event_subscriptions s
 		JOIN event_topics t ON t.id = s.topic_id
 		LEFT JOIN LATERAL (
@@ -565,14 +554,13 @@ func (s *PostgresStore) GetEventSubscription(ctx context.Context, id string) (*E
 func (s *PostgresStore) ListEventSubscriptions(ctx context.Context, topicID string) ([]*EventSubscription, error) {
 	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
-		SELECT s.id, s.tenant_id, s.namespace, s.topic_id, t.name, s.name, s.consumer_group, s.function_id, s.function_name,
+		SELECT s.id, s.tenant_id, s.namespace, s.topic_id, t.name, s.name, s.consumer_group, s.function_id, s.function_name, s.workflow_id, s.workflow_name,
 		       s.enabled, s.max_attempts, s.backoff_base_ms, s.backoff_max_ms,
 		       s.max_inflight, s.rate_limit_per_sec, s.last_dispatch_at, s.last_acked_sequence, s.last_acked_at,
 		       COALESCE(stats.inflight_count, 0), COALESCE(stats.queued_count, 0), COALESCE(stats.dlq_count, 0),
 		       GREATEST(COALESCE(stats.latest_sequence, s.last_acked_sequence) - s.last_acked_sequence, 0), stats.oldest_unacked_at,
 		       s.created_at, s.updated_at,
-		       s.type, s.webhook_url, s.webhook_method, s.webhook_headers, s.webhook_signing_secret, s.webhook_timeout_ms,
-		       s.transform_function_id, s.transform_function_name
+		       s.type, s.webhook_url, s.webhook_method, s.webhook_headers, s.webhook_signing_secret, s.webhook_timeout_ms
 		FROM event_subscriptions s
 		JOIN event_topics t ON t.id = s.topic_id
 		LEFT JOIN LATERAL (
@@ -629,6 +617,12 @@ func (s *PostgresStore) UpdateEventSubscription(ctx context.Context, id string, 
 	if update.FunctionName != nil {
 		sub.FunctionName = strings.TrimSpace(*update.FunctionName)
 	}
+	if update.WorkflowID != nil {
+		sub.WorkflowID = strings.TrimSpace(*update.WorkflowID)
+	}
+	if update.WorkflowName != nil {
+		sub.WorkflowName = strings.TrimSpace(*update.WorkflowName)
+	}
 	if update.Enabled != nil {
 		sub.Enabled = *update.Enabled
 	}
@@ -662,12 +656,6 @@ func (s *PostgresStore) UpdateEventSubscription(ctx context.Context, id string, 
 	if update.WebhookTimeoutMS != nil {
 		sub.WebhookTimeoutMS = *update.WebhookTimeoutMS
 	}
-	if update.TransformFunctionID != nil {
-		sub.TransformFunctionID = strings.TrimSpace(*update.TransformFunctionID)
-	}
-	if update.TransformFunctionName != nil {
-		sub.TransformFunctionName = strings.TrimSpace(*update.TransformFunctionName)
-	}
 	if err := normalizeEventSubscription(sub); err != nil {
 		return nil, err
 	}
@@ -691,26 +679,25 @@ func (s *PostgresStore) UpdateEventSubscription(ctx context.Context, id string, 
 			consumer_group = $3,
 			function_id = $4,
 			function_name = $5,
-			enabled = $6,
-			max_attempts = $7,
-			backoff_base_ms = $8,
-			backoff_max_ms = $9,
-			max_inflight = $10,
-			rate_limit_per_sec = $11,
-			webhook_url = $12,
-			webhook_method = $13,
-			webhook_headers = $14,
-			webhook_signing_secret = $15,
-			webhook_timeout_ms = $16,
-			transform_function_id = $17,
-			transform_function_name = $18,
+			workflow_id = $6,
+			workflow_name = $7,
+			enabled = $8,
+			max_attempts = $9,
+			backoff_base_ms = $10,
+			backoff_max_ms = $11,
+			max_inflight = $12,
+			rate_limit_per_sec = $13,
+			webhook_url = $14,
+			webhook_method = $15,
+			webhook_headers = $16,
+			webhook_signing_secret = $17,
+			webhook_timeout_ms = $18,
 			updated_at = $19
 		WHERE id = $1
-	`, sub.ID, sub.Name, sub.ConsumerGroup, sub.FunctionID, sub.FunctionName, sub.Enabled,
+	`, sub.ID, sub.Name, sub.ConsumerGroup, sub.FunctionID, sub.FunctionName, sub.WorkflowID, sub.WorkflowName, sub.Enabled,
 		sub.MaxAttempts, sub.BackoffBaseMS, sub.BackoffMaxMS,
 		sub.MaxInflight, sub.RateLimitPerSec,
 		sub.WebhookURL, sub.WebhookMethod, sub.WebhookHeaders, sub.WebhookSigningSecret, sub.WebhookTimeoutMS,
-		sub.TransformFunctionID, sub.TransformFunctionName,
 		sub.UpdatedAt)
 	if err != nil {
 		if isPGUniqueViolation(err) {
@@ -1044,8 +1031,7 @@ func (s *PostgresStore) GetEventDelivery(ctx context.Context, id string) (*Event
 		       d.next_run_at, d.locked_by, d.locked_until, d.function_id, d.function_name,
 		       d.request_id, d.output, d.duration_ms, d.cold_start, d.last_error,
 		       d.started_at, d.completed_at, d.created_at, d.updated_at,
-		       s.type, s.webhook_url, s.webhook_method, s.webhook_headers, s.webhook_signing_secret, s.webhook_timeout_ms,
-		       s.transform_function_id, s.transform_function_name
+		       s.type, s.workflow_id, s.workflow_name, s.webhook_url, s.webhook_method, s.webhook_headers, s.webhook_signing_secret, s.webhook_timeout_ms
 		FROM event_deliveries d
 		JOIN event_topics t ON t.id = d.topic_id
 		JOIN event_subscriptions s ON s.id = d.subscription_id
@@ -1071,8 +1057,7 @@ func (s *PostgresStore) ListEventDeliveries(ctx context.Context, subscriptionID 
 		       d.next_run_at, d.locked_by, d.locked_until, d.function_id, d.function_name,
 		       d.request_id, d.output, d.duration_ms, d.cold_start, d.last_error,
 		       d.started_at, d.completed_at, d.created_at, d.updated_at,
-		       s.type, s.webhook_url, s.webhook_method, s.webhook_headers, s.webhook_signing_secret, s.webhook_timeout_ms,
-		       s.transform_function_id, s.transform_function_name
+		       s.type, s.workflow_id, s.workflow_name, s.webhook_url, s.webhook_method, s.webhook_headers, s.webhook_signing_secret, s.webhook_timeout_ms
 		FROM event_deliveries d
 		JOIN event_topics t ON t.id = d.topic_id
 		JOIN event_subscriptions s ON s.id = d.subscription_id
@@ -1184,8 +1169,7 @@ func (s *PostgresStore) AcquireDueEventDelivery(ctx context.Context, workerID st
 		       d.next_run_at, d.locked_by, d.locked_until, d.function_id, d.function_name,
 		       d.request_id, d.output, d.duration_ms, d.cold_start, d.last_error,
 		       d.started_at, d.completed_at, d.created_at, d.updated_at,
-		       s.type, s.webhook_url, s.webhook_method, s.webhook_headers, s.webhook_signing_secret, s.webhook_timeout_ms,
-		       s.transform_function_id, s.transform_function_name
+		       s.type, s.workflow_id, s.workflow_name, s.webhook_url, s.webhook_method, s.webhook_headers, s.webhook_signing_secret, s.webhook_timeout_ms
 		FROM event_deliveries d
 		JOIN updated u ON u.id = d.id
 		JOIN event_topics t ON t.id = d.topic_id
@@ -1899,6 +1883,8 @@ func normalizeEventSubscription(sub *EventSubscription) error {
 	sub.ConsumerGroup = strings.TrimSpace(sub.ConsumerGroup)
 	sub.FunctionID = strings.TrimSpace(sub.FunctionID)
 	sub.FunctionName = strings.TrimSpace(sub.FunctionName)
+	sub.WorkflowID = strings.TrimSpace(sub.WorkflowID)
+	sub.WorkflowName = strings.TrimSpace(sub.WorkflowName)
 
 	if sub.TopicID == "" {
 		return fmt.Errorf("topic id is required")
@@ -1922,10 +1908,8 @@ func normalizeEventSubscription(sub *EventSubscription) error {
 		if sub.FunctionID == "" || sub.FunctionName == "" {
 			return fmt.Errorf("function_id and function_name are required for function subscriptions")
 		}
-	case EventSubscriptionTypeWebhook:
-		if sub.WebhookURL == "" {
-			return fmt.Errorf("webhook_url is required for webhook subscriptions")
-		}
+		sub.WorkflowID = ""
+		sub.WorkflowName = ""
 		if sub.WebhookMethod == "" {
 			sub.WebhookMethod = "POST"
 		}
@@ -1938,8 +1922,28 @@ func normalizeEventSubscription(sub *EventSubscription) error {
 		if sub.WebhookTimeoutMS > 120000 {
 			sub.WebhookTimeoutMS = 120000
 		}
+	case EventSubscriptionTypeWorkflow:
+		if sub.WorkflowID == "" || sub.WorkflowName == "" {
+			return fmt.Errorf("workflow_id and workflow_name are required for workflow subscriptions")
+		}
+		sub.FunctionID = ""
+		sub.FunctionName = ""
+		if len(sub.WebhookHeaders) == 0 {
+			sub.WebhookHeaders = json.RawMessage(`{}`)
+		}
+		if sub.WebhookTimeoutMS <= 0 {
+			sub.WebhookTimeoutMS = DefaultWebhookTimeoutMS
+		}
+		if sub.WebhookTimeoutMS > 120000 {
+			sub.WebhookTimeoutMS = 120000
+		}
+		if sub.WebhookURL != "" {
+			if sub.WebhookMethod == "" {
+				sub.WebhookMethod = "POST"
+			}
+		}
 	default:
-		return fmt.Errorf("invalid subscription type: %s (must be 'function' or 'webhook')", sub.Type)
+		return fmt.Errorf("invalid subscription type: %s (must be 'function' or 'workflow')", sub.Type)
 	}
 	if sub.MaxAttempts <= 0 {
 		sub.MaxAttempts = DefaultEventMaxAttempts
@@ -2162,6 +2166,8 @@ func scanEventSubscription(scanner eventSubscriptionScanner) (*EventSubscription
 		&sub.ConsumerGroup,
 		&sub.FunctionID,
 		&sub.FunctionName,
+		&sub.WorkflowID,
+		&sub.WorkflowName,
 		&sub.Enabled,
 		&sub.MaxAttempts,
 		&sub.BackoffBaseMS,
@@ -2185,8 +2191,6 @@ func scanEventSubscription(scanner eventSubscriptionScanner) (*EventSubscription
 		&webhookHeaders,
 		&sub.WebhookSigningSecret,
 		&sub.WebhookTimeoutMS,
-		&sub.TransformFunctionID,
-		&sub.TransformFunctionName,
 	); err != nil {
 		return nil, err
 	}
@@ -2291,13 +2295,13 @@ func scanEventDelivery(scanner eventDeliveryScanner) (*EventDelivery, error) {
 		&delivery.UpdatedAt,
 		// Webhook fields from subscription join
 		&subType,
+		&delivery.WorkflowID,
+		&delivery.WorkflowName,
 		&delivery.WebhookURL,
 		&delivery.WebhookMethod,
 		&webhookHeaders,
 		&delivery.WebhookSigningSecret,
 		&delivery.WebhookTimeoutMS,
-		&delivery.TransformFunctionID,
-		&delivery.TransformFunctionName,
 	); err != nil {
 		return nil, err
 	}

@@ -1,7 +1,7 @@
-use clap::Subcommand;
 use crate::client::NovaClient;
 use crate::error::Result;
 use crate::output;
+use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum ConfigCmd {
@@ -24,10 +24,26 @@ pub async fn run(cmd: ConfigCmd, _client: &NovaClient, output_format: &str) -> R
             if output_format == "json" || output_format == "yaml" {
                 output::render_single(&value, &[], output_format);
             } else {
-                println!("server:    {}", config.server.as_deref().unwrap_or("(not set)"));
-                println!("api_key:   {}", if config.api_key.is_some() { "***" } else { "(not set)" });
-                println!("tenant:    {}", config.tenant.as_deref().unwrap_or("(not set)"));
-                println!("namespace: {}", config.namespace.as_deref().unwrap_or("(not set)"));
+                println!(
+                    "server:    {}",
+                    config.server.as_deref().unwrap_or("(not set)")
+                );
+                println!(
+                    "api_key:   {}",
+                    if config.api_key.is_some() {
+                        "***"
+                    } else {
+                        "(not set)"
+                    }
+                );
+                println!(
+                    "tenant:    {}",
+                    config.tenant.as_deref().unwrap_or("(not set)")
+                );
+                println!(
+                    "namespace: {}",
+                    config.namespace.as_deref().unwrap_or("(not set)")
+                );
                 println!("output:    {}", config.output.as_deref().unwrap_or("table"));
             }
         }

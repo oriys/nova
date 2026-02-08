@@ -126,16 +126,20 @@ export function GlobalScopeSwitcher() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button
-        variant="outline"
-        size="sm"
-        className="max-w-[220px]"
-        onClick={() => setOpen(true)}
-        title={`Current scope: ${scopeText}`}
-      >
-        <Globe2 className="h-4 w-4" />
-        <span className="hidden md:block truncate">{scopeText}</span>
-      </Button>
+      <div className="group relative">
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => setOpen(true)}
+          title={`Current scope: ${scopeText}`}
+          aria-label="Switch tenant scope"
+        >
+          <Globe2 className="h-4 w-4" />
+        </Button>
+        <div className="pointer-events-none absolute right-0 top-[calc(100%+0.5rem)] z-50 hidden rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-sm group-hover:block">
+          {scopeText}
+        </div>
+      </div>
 
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
@@ -224,4 +228,3 @@ export function GlobalScopeSwitcher() {
     </Dialog>
   )
 }
-

@@ -1,10 +1,10 @@
-use clap::Subcommand;
-use indicatif::{ProgressBar, ProgressStyle};
-use std::time::Duration;
 use crate::client::NovaClient;
 use crate::commands::functions::SnapshotSubCmd;
 use crate::error::Result;
 use crate::output::{self, Column};
+use clap::Subcommand;
+use indicatif::{ProgressBar, ProgressStyle};
+use std::time::Duration;
 
 const SNAPSHOT_COLUMNS: &[Column] = &[
     Column::new("Function", "function_name"),
@@ -39,7 +39,10 @@ pub async fn run_fn(cmd: SnapshotSubCmd, client: &NovaClient, output_format: &st
             spinner.enable_steady_tick(Duration::from_millis(80));
 
             let result = client
-                .post(&format!("/functions/{name}/snapshot"), &serde_json::json!({}))
+                .post(
+                    &format!("/functions/{name}/snapshot"),
+                    &serde_json::json!({}),
+                )
                 .await?;
             spinner.finish_and_clear();
             output::print_success(&format!("Snapshot created for '{name}'."));
@@ -48,7 +51,9 @@ pub async fn run_fn(cmd: SnapshotSubCmd, client: &NovaClient, output_format: &st
             }
         }
         SnapshotSubCmd::Delete { name } => {
-            client.delete(&format!("/functions/{name}/snapshot")).await?;
+            client
+                .delete(&format!("/functions/{name}/snapshot"))
+                .await?;
             output::print_success(&format!("Snapshot deleted for '{name}'."));
         }
     }

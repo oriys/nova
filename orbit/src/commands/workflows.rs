@@ -1,8 +1,8 @@
-use clap::Subcommand;
-use serde_json::json;
 use crate::client::NovaClient;
 use crate::error::Result;
 use crate::output::{self, Column};
+use clap::Subcommand;
+use serde_json::json;
 
 #[derive(Subcommand)]
 pub enum WorkflowsCmd {
@@ -119,10 +119,12 @@ pub async fn run(cmd: WorkflowsCmd, client: &NovaClient, output_format: &str) ->
                     .map_err(|e| crate::error::OrbitError::Input(format!("Invalid JSON: {e}")))?;
                 body["definition"] = parsed;
             } else if let Some(path) = definition_file {
-                let content = std::fs::read_to_string(&path)
-                    .map_err(|e| crate::error::OrbitError::Input(format!("Cannot read file: {e}")))?;
-                let parsed: serde_json::Value = serde_json::from_str(&content)
-                    .map_err(|e| crate::error::OrbitError::Input(format!("Invalid JSON in file: {e}")))?;
+                let content = std::fs::read_to_string(&path).map_err(|e| {
+                    crate::error::OrbitError::Input(format!("Cannot read file: {e}"))
+                })?;
+                let parsed: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
+                    crate::error::OrbitError::Input(format!("Invalid JSON in file: {e}"))
+                })?;
                 body["definition"] = parsed;
             }
             let result = client.post("/workflows", &body).await?;
@@ -151,10 +153,12 @@ pub async fn run(cmd: WorkflowsCmd, client: &NovaClient, output_format: &str) ->
                     .map_err(|e| crate::error::OrbitError::Input(format!("Invalid JSON: {e}")))?;
                 body["definition"] = parsed;
             } else if let Some(path) = definition_file {
-                let content = std::fs::read_to_string(&path)
-                    .map_err(|e| crate::error::OrbitError::Input(format!("Cannot read file: {e}")))?;
-                let parsed: serde_json::Value = serde_json::from_str(&content)
-                    .map_err(|e| crate::error::OrbitError::Input(format!("Invalid JSON in file: {e}")))?;
+                let content = std::fs::read_to_string(&path).map_err(|e| {
+                    crate::error::OrbitError::Input(format!("Cannot read file: {e}"))
+                })?;
+                let parsed: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
+                    crate::error::OrbitError::Input(format!("Invalid JSON in file: {e}"))
+                })?;
                 body["definition"] = parsed;
             }
             let result = client.put(&format!("/workflows/{name}"), &body).await?;
@@ -172,14 +176,18 @@ pub async fn run(cmd: WorkflowsCmd, client: &NovaClient, output_format: &str) ->
             } => {
                 let mut body = json!({});
                 if let Some(def) = definition {
-                    let parsed: serde_json::Value = serde_json::from_str(&def)
-                        .map_err(|e| crate::error::OrbitError::Input(format!("Invalid JSON: {e}")))?;
+                    let parsed: serde_json::Value = serde_json::from_str(&def).map_err(|e| {
+                        crate::error::OrbitError::Input(format!("Invalid JSON: {e}"))
+                    })?;
                     body["definition"] = parsed;
                 } else if let Some(path) = definition_file {
-                    let content = std::fs::read_to_string(&path)
-                        .map_err(|e| crate::error::OrbitError::Input(format!("Cannot read: {e}")))?;
-                    let parsed: serde_json::Value = serde_json::from_str(&content)
-                        .map_err(|e| crate::error::OrbitError::Input(format!("Invalid JSON: {e}")))?;
+                    let content = std::fs::read_to_string(&path).map_err(|e| {
+                        crate::error::OrbitError::Input(format!("Cannot read: {e}"))
+                    })?;
+                    let parsed: serde_json::Value =
+                        serde_json::from_str(&content).map_err(|e| {
+                            crate::error::OrbitError::Input(format!("Invalid JSON: {e}"))
+                        })?;
                     body["definition"] = parsed;
                 }
                 let result = client
@@ -216,17 +224,12 @@ pub async fn run(cmd: WorkflowsCmd, client: &NovaClient, output_format: &str) ->
                 output::render(&result, RUN_COLUMNS, output_format);
             }
             WfRunsCmd::Get { name, id } => {
-                let result = client
-                    .get(&format!("/workflows/{name}/runs/{id}"))
-                    .await?;
+                let result = client.get(&format!("/workflows/{name}/runs/{id}")).await?;
                 output::render_single(&result, RUN_COLUMNS, output_format);
             }
             WfRunsCmd::Cancel { name, id } => {
                 let result = client
-                    .post(
-                        &format!("/workflows/{name}/runs/{id}/cancel"),
-                        &json!({}),
-                    )
+                    .post(&format!("/workflows/{name}/runs/{id}/cancel"), &json!({}))
                     .await?;
                 output::print_success(&format!("Run '{id}' cancelled."));
                 if output_format == "json" || output_format == "yaml" {

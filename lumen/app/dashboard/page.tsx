@@ -61,15 +61,7 @@ export default function DashboardPage() {
 
       setFunctions(transformedFuncs)
 
-      // Set global metrics
-      setGlobalMetrics({
-        total: metrics.invocations?.total ?? 0,
-        success: metrics.invocations?.success ?? 0,
-        failed: metrics.invocations?.failed ?? 0,
-        avgLatency: Math.round(metrics.latency_ms?.avg ?? 0),
-      })
-
-      // Transform time-series data
+      // Transform time-series data (tenant-scoped from backend store)
       const chartData: TimeSeriesData[] = timeSeriesData.map((point) => ({
         time: point.timestamp,
         invocations: point.invocations,
@@ -77,6 +69,17 @@ export default function DashboardPage() {
         avgDuration: point.avg_duration,
       }))
       setTimeSeries(chartData)
+
+      // Dashboard summary cards use tenant-scoped time-series aggregation
+      const total = chartData.reduce((sum, point) => sum + point.invocations, 0)
+      const failed = chartData.reduce((sum, point) => sum + point.errors, 0)
+      const weightedDuration = chartData.reduce((sum, point) => sum + (point.avgDuration * point.invocations), 0)
+      setGlobalMetrics({
+        total,
+        success: Math.max(0, total - failed),
+        failed,
+        avgLatency: total > 0 ? Math.round(weightedDuration / total) : 0,
+      })
 
       // Fetch logs for active functions (take first few)
       const logsPromises = funcs.slice(0, 3).map((fn) =>
