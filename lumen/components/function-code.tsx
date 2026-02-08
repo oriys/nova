@@ -5,9 +5,9 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { CodeEditor } from "@/components/code-editor"
 import { FunctionData } from "@/lib/types"
-import { functionsApi, CompileStatus } from "@/lib/api"
+import { functionsApi, CompileStatus, AsyncInvocationJob, AsyncInvocationStatus } from "@/lib/api"
 import { Textarea } from "@/components/ui/textarea"
-import { Copy, Check, Download, Save, Loader2, AlertCircle, Play } from "lucide-react"
+import { Copy, Check, Download, Save, Loader2, AlertCircle, Play, RefreshCw, RotateCcw } from "lucide-react"
 
 interface FunctionCodeProps {
   func: FunctionData
@@ -18,6 +18,13 @@ interface FunctionCodeProps {
   invokeError: string | null
   invokeMeta: string | null
   invoking: boolean
+  invokeMode: "sync" | "async"
+  onInvokeModeChange: (mode: "sync" | "async") => void
+  asyncJobs: AsyncInvocationJob[]
+  loadingAsyncJobs: boolean
+  retryingJobId: string | null
+  onRefreshAsyncJobs: () => void
+  onRetryAsyncJob: (jobId: string) => void
   onInvoke: () => void
 }
 
@@ -63,7 +70,39 @@ function getCompileStatusBadge(status: CompileStatus | undefined) {
   }
 }
 
-export function FunctionCode({ func, onCodeSaved, invokeInput, onInvokeInputChange, invokeOutput, invokeError, invokeMeta, invoking, onInvoke }: FunctionCodeProps) {
+function getAsyncStatusBadge(status: AsyncInvocationStatus) {
+  switch (status) {
+    case "queued":
+      return <Badge variant="outline">Queued</Badge>
+    case "running":
+      return <Badge variant="outline" className="text-blue-600 border-blue-600">Running</Badge>
+    case "succeeded":
+      return <Badge variant="outline" className="text-green-600 border-green-600">Succeeded</Badge>
+    case "dlq":
+      return <Badge variant="destructive">DLQ</Badge>
+    default:
+      return <Badge variant="secondary">{status}</Badge>
+  }
+}
+
+export function FunctionCode({
+  func,
+  onCodeSaved,
+  invokeInput,
+  onInvokeInputChange,
+  invokeOutput,
+  invokeError,
+  invokeMeta,
+  invoking,
+  invokeMode,
+  onInvokeModeChange,
+  asyncJobs,
+  loadingAsyncJobs,
+  retryingJobId,
+  onRefreshAsyncJobs,
+  onRetryAsyncJob,
+  onInvoke,
+}: FunctionCodeProps) {
   const [code, setCode] = useState("")
   const [originalCode, setOriginalCode] = useState("")
   const [compileStatus, setCompileStatus] = useState<CompileStatus | undefined>(func.compileStatus)
@@ -269,17 +308,33 @@ export function FunctionCode({ func, onCodeSaved, invokeInput, onInvokeInputChan
               Invoke function
             </h2>
             <p className="text-sm text-muted-foreground">
-              Provide a JSON payload to test your function and inspect the result.
+              Choose sync invoke for immediate output, or async invoke with retry and DLQ fallback.
             </p>
           </div>
-          <Button onClick={onInvoke} disabled={invoking} size="sm">
-            {invoking ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Play className="mr-2 h-4 w-4" />
-            )}
-            Invoke
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={invokeMode === "sync" ? "default" : "outline"}
+              size="sm"
+              onClick={() => onInvokeModeChange("sync")}
+            >
+              Sync
+            </Button>
+            <Button
+              variant={invokeMode === "async" ? "default" : "outline"}
+              size="sm"
+              onClick={() => onInvokeModeChange("async")}
+            >
+              Async
+            </Button>
+            <Button onClick={onInvoke} disabled={invoking} size="sm">
+              {invoking ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Play className="mr-2 h-4 w-4" />
+              )}
+              {invokeMode === "async" ? "Enqueue" : "Invoke"}
+            </Button>
+          </div>
         </div>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -310,13 +365,93 @@ export function FunctionCode({ func, onCodeSaved, invokeInput, onInvokeInputChan
                 </pre>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  No output yet. Invoke the function to see results.
+                  {invokeMode === "async"
+                    ? "No result yet. Async mode returns a job ticket and executes in background."
+                    : "No output yet. Invoke the function to see results."}
                 </p>
               )}
             </div>
             {invokeError && (
               <p className="text-xs text-destructive">{invokeError}</p>
             )}
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-lg border border-border bg-muted/20 p-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Async Queue / DLQ</p>
+              <p className="text-xs text-muted-foreground">Failed jobs are retried with backoff, then moved to DLQ.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={onRefreshAsyncJobs} disabled={loadingAsyncJobs}>
+              {loadingAsyncJobs ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Refresh
+            </Button>
+          </div>
+
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="px-2 py-2 text-left font-medium text-muted-foreground">Job ID</th>
+                  <th className="px-2 py-2 text-left font-medium text-muted-foreground">Status</th>
+                  <th className="px-2 py-2 text-left font-medium text-muted-foreground">Attempts</th>
+                  <th className="px-2 py-2 text-left font-medium text-muted-foreground">Next Run</th>
+                  <th className="px-2 py-2 text-left font-medium text-muted-foreground">Last Error</th>
+                  <th className="px-2 py-2 text-right font-medium text-muted-foreground">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {asyncJobs.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-2 py-4 text-center text-xs text-muted-foreground">
+                      No async jobs yet.
+                    </td>
+                  </tr>
+                ) : (
+                  asyncJobs.map((job) => (
+                    <tr key={job.id} className="border-b border-border/60">
+                      <td className="px-2 py-2">
+                        <code className="text-xs">{job.id.slice(0, 12)}</code>
+                      </td>
+                      <td className="px-2 py-2">{getAsyncStatusBadge(job.status)}</td>
+                      <td className="px-2 py-2 text-xs text-muted-foreground">
+                        {job.attempt}/{job.max_attempts}
+                      </td>
+                      <td className="px-2 py-2 text-xs text-muted-foreground">
+                        {job.next_run_at ? new Date(job.next_run_at).toLocaleString() : "-"}
+                      </td>
+                      <td className="px-2 py-2 text-xs text-muted-foreground">
+                        {job.last_error ? job.last_error.slice(0, 80) : "-"}
+                      </td>
+                      <td className="px-2 py-2 text-right">
+                        {job.status === "dlq" ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => onRetryAsyncJob(job.id)}
+                            disabled={retryingJobId === job.id}
+                          >
+                            {retryingJobId === job.id ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <RotateCcw className="mr-2 h-4 w-4" />
+                            )}
+                            Retry
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

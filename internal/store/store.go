@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/oriys/nova/internal/domain"
 )
@@ -57,6 +59,17 @@ type MetadataStore interface {
 	GetGlobalTimeSeries(ctx context.Context, rangeSeconds, bucketSeconds int) ([]TimeSeriesBucket, error)
 	GetFunctionDailyHeatmap(ctx context.Context, functionID string, weeks int) ([]DailyCount, error)
 	GetGlobalDailyHeatmap(ctx context.Context, weeks int) ([]DailyCount, error)
+
+	// Async invocations (queue + retries + DLQ)
+	EnqueueAsyncInvocation(ctx context.Context, inv *AsyncInvocation) error
+	GetAsyncInvocation(ctx context.Context, id string) (*AsyncInvocation, error)
+	ListAsyncInvocations(ctx context.Context, limit int, statuses []AsyncInvocationStatus) ([]*AsyncInvocation, error)
+	ListFunctionAsyncInvocations(ctx context.Context, functionID string, limit int, statuses []AsyncInvocationStatus) ([]*AsyncInvocation, error)
+	AcquireDueAsyncInvocation(ctx context.Context, workerID string, leaseDuration time.Duration) (*AsyncInvocation, error)
+	MarkAsyncInvocationSucceeded(ctx context.Context, id, requestID string, output json.RawMessage, durationMS int64, coldStart bool) error
+	MarkAsyncInvocationForRetry(ctx context.Context, id, lastError string, nextRunAt time.Time) error
+	MarkAsyncInvocationDLQ(ctx context.Context, id, lastError string) error
+	RequeueAsyncInvocation(ctx context.Context, id string, maxAttempts int) (*AsyncInvocation, error)
 
 	// Runtimes
 	SaveRuntime(ctx context.Context, rt *RuntimeRecord) error

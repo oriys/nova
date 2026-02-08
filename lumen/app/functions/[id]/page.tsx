@@ -23,7 +23,12 @@ import {
 import { cn } from "@/lib/utils"
 import { functionsApi, schedulesApi } from "@/lib/api"
 import { transformFunction, transformLog, FunctionData, LogEntry } from "@/lib/types"
-import type { FunctionMetrics as FunctionMetricsType, FunctionVersionEntry, ScheduleEntry } from "@/lib/api"
+import type {
+  FunctionMetrics as FunctionMetricsType,
+  FunctionVersionEntry,
+  ScheduleEntry,
+  AsyncInvocationJob,
+} from "@/lib/api"
 import {
   ArrowLeft,
   Play,
@@ -53,6 +58,10 @@ export default function FunctionDetailPage({
   const [invokeOutput, setInvokeOutput] = useState<string | null>(null)
   const [invokeError, setInvokeError] = useState<string | null>(null)
   const [invokeMeta, setInvokeMeta] = useState<string | null>(null)
+  const [invokeMode, setInvokeMode] = useState<"sync" | "async">("sync")
+  const [asyncJobs, setAsyncJobs] = useState<AsyncInvocationJob[]>([])
+  const [loadingAsyncJobs, setLoadingAsyncJobs] = useState(false)
+  const [retryingAsyncJobId, setRetryingAsyncJobId] = useState<string | null>(null)
   const [versions, setVersions] = useState<FunctionVersionEntry[]>([])
   const [schedules, setSchedules] = useState<ScheduleEntry[]>([])
   const [schedDialogOpen, setSchedDialogOpen] = useState(false)
@@ -62,6 +71,21 @@ export default function FunctionDetailPage({
   const [editingSchedule, setEditingSchedule] = useState<ScheduleEntry | null>(null)
   const [editCron, setEditCron] = useState("")
   const [editDialogOpen, setEditDialogOpen] = useState(false)
+
+  const refreshAsyncJobs = useCallback(async (functionName?: string) => {
+    const targetName = functionName
+    if (!targetName) return
+    setLoadingAsyncJobs(true)
+    try {
+      const jobs = await functionsApi.listAsyncInvocations(targetName, 50)
+      setAsyncJobs(jobs || [])
+    } catch (err) {
+      console.error("Failed to fetch async invocations:", err)
+      setAsyncJobs([])
+    } finally {
+      setLoadingAsyncJobs(false)
+    }
+  }, [])
 
   const fetchData = useCallback(async () => {
     try {
@@ -78,6 +102,7 @@ export default function FunctionDetailPage({
       // Fetch versions and schedules (non-blocking)
       functionsApi.listVersions(fn.name).then(v => setVersions(v || [])).catch(() => setVersions([]))
       schedulesApi.list(fn.name).then(s => setSchedules(s || [])).catch(() => setSchedules([]))
+      refreshAsyncJobs(fn.name)
 
       setMetrics(fnMetrics)
       setFunc(transformFunction(fn, fnMetrics ?? undefined))
@@ -88,7 +113,7 @@ export default function FunctionDetailPage({
     } finally {
       setLoading(false)
     }
-  }, [id])
+  }, [id, refreshAsyncJobs])
 
   useEffect(() => {
     fetchData()
@@ -116,21 +141,56 @@ export default function FunctionDetailPage({
         }
       }
 
-      const response = await functionsApi.invoke(func.name, payload)
-      setInvokeOutput(JSON.stringify(response.output ?? null, null, 2))
-      setInvokeMeta(
-        `request_id: ${response.request_id} · duration: ${response.duration_ms} ms · ${response.cold_start ? "cold" : "warm"} start`
-      )
-      if (response.error) {
-        setInvokeError(response.error)
+      if (invokeMode === "async") {
+        const job = await functionsApi.invokeAsync(func.name, payload)
+        setInvokeOutput(
+          JSON.stringify(
+            {
+              job_id: job.id,
+              status: job.status,
+              next_run_at: job.next_run_at,
+              max_attempts: job.max_attempts,
+            },
+            null,
+            2
+          )
+        )
+        setInvokeMeta(`job_id: ${job.id} · status: ${job.status} · attempts: ${job.attempt}/${job.max_attempts}`)
+        refreshAsyncJobs(func.name)
+      } else {
+        const response = await functionsApi.invoke(func.name, payload)
+        setInvokeOutput(JSON.stringify(response.output ?? null, null, 2))
+        setInvokeMeta(
+          `request_id: ${response.request_id} · duration: ${response.duration_ms} ms · ${response.cold_start ? "cold" : "warm"} start`
+        )
+        if (response.error) {
+          setInvokeError(response.error)
+        }
+        // Refresh data after invocation
+        fetchData()
       }
-      // Refresh data after invocation
-      fetchData()
     } catch (err) {
       console.error("Failed to invoke function:", err)
       setInvokeError(err instanceof Error ? err.message : "Invocation failed")
     } finally {
       setInvoking(false)
+    }
+  }
+
+  const handleRetryAsyncJob = async (jobID: string) => {
+    setRetryingAsyncJobId(jobID)
+    setInvokeError(null)
+    try {
+      const requeued = await functionsApi.retryAsyncInvocation(jobID)
+      setInvokeMeta(`job_id: ${requeued.id} requeued · attempts reset to ${requeued.attempt}/${requeued.max_attempts}`)
+      if (func) {
+        refreshAsyncJobs(func.name)
+      }
+    } catch (err) {
+      console.error("Failed to retry async job:", err)
+      setInvokeError(err instanceof Error ? err.message : "Retry failed")
+    } finally {
+      setRetryingAsyncJobId(null)
     }
   }
 
@@ -208,7 +268,7 @@ export default function FunctionDetailPage({
               ) : (
                 <Play className="mr-2 h-4 w-4" />
               )}
-              Invoke
+              {invokeMode === "async" ? "Enqueue" : "Invoke"}
             </Button>
           </div>
         </div>
@@ -273,6 +333,13 @@ export default function FunctionDetailPage({
               invokeError={invokeError}
               invokeMeta={invokeMeta}
               invoking={invoking}
+              invokeMode={invokeMode}
+              onInvokeModeChange={setInvokeMode}
+              asyncJobs={asyncJobs}
+              loadingAsyncJobs={loadingAsyncJobs}
+              retryingJobId={retryingAsyncJobId}
+              onRefreshAsyncJobs={() => refreshAsyncJobs(func.name)}
+              onRetryAsyncJob={handleRetryAsyncJob}
               onInvoke={handleInvoke}
             />
           </TabsContent>

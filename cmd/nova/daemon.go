@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/oriys/nova/internal/api"
+	"github.com/oriys/nova/internal/asyncqueue"
 	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/autoscaler"
 	"github.com/oriys/nova/internal/backend"
@@ -197,6 +198,8 @@ func daemonCmd() *cobra.Command {
 			if err := sched.Start(); err != nil {
 				logging.Op().Warn("failed to start scheduler", "error", err)
 			}
+			asyncWorkers := asyncqueue.New(s, exec, asyncqueue.Config{})
+			asyncWorkers.Start()
 
 			var httpServer *http.Server
 			if cfg.Daemon.HTTPAddr != "" {
@@ -247,6 +250,7 @@ func daemonCmd() *cobra.Command {
 						cancel()
 					}
 					sched.Stop()
+					asyncWorkers.Stop()
 					wfEngine.Stop()
 					exec.Shutdown(10 * time.Second)
 					be.Shutdown()

@@ -64,10 +64,26 @@ type Handler struct {
 	Pool  *pool.Pool
 }
 
+type enqueueAsyncInvokeRequest struct {
+	Payload       json.RawMessage `json:"payload"`
+	MaxAttempts   int             `json:"max_attempts"`
+	BackoffBaseMS int             `json:"backoff_base_ms"`
+	BackoffMaxMS  int             `json:"backoff_max_ms"`
+}
+
+type retryAsyncInvokeRequest struct {
+	MaxAttempts int `json:"max_attempts"`
+}
+
 // RegisterRoutes registers all data plane routes on the given mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Function invocation
 	mux.HandleFunc("POST /functions/{name}/invoke", h.InvokeFunction)
+	mux.HandleFunc("POST /functions/{name}/invoke-async", h.EnqueueAsyncFunction)
+	mux.HandleFunc("GET /functions/{name}/async-invocations", h.ListFunctionAsyncInvocations)
+	mux.HandleFunc("GET /async-invocations/{id}", h.GetAsyncInvocation)
+	mux.HandleFunc("GET /async-invocations", h.ListAsyncInvocations)
+	mux.HandleFunc("POST /async-invocations/{id}/retry", h.RetryAsyncInvocation)
 
 	// Health probes
 	mux.HandleFunc("GET /health", h.Health)
@@ -153,6 +169,150 @@ func (h *Handler) InvokeFunction(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// EnqueueAsyncFunction handles POST /functions/{name}/invoke-async
+func (h *Handler) EnqueueAsyncFunction(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	req := enqueueAsyncInvokeRequest{}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+			return
+		}
+	}
+
+	payload := req.Payload
+	if len(payload) == 0 {
+		payload = json.RawMessage("{}")
+	}
+
+	inv := store.NewAsyncInvocation(fn.ID, fn.Name, payload)
+	if req.MaxAttempts > 0 {
+		inv.MaxAttempts = req.MaxAttempts
+	}
+	if req.BackoffBaseMS > 0 {
+		inv.BackoffBaseMS = req.BackoffBaseMS
+	}
+	if req.BackoffMaxMS > 0 {
+		inv.BackoffMaxMS = req.BackoffMaxMS
+	}
+	if inv.BackoffMaxMS < inv.BackoffBaseMS {
+		inv.BackoffMaxMS = inv.BackoffBaseMS
+	}
+
+	if err := h.Store.EnqueueAsyncInvocation(r.Context(), inv); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Location", "/async-invocations/"+inv.ID)
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(inv)
+}
+
+// GetAsyncInvocation handles GET /async-invocations/{id}
+func (h *Handler) GetAsyncInvocation(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	inv, err := h.Store.GetAsyncInvocation(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, store.ErrAsyncInvocationNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(inv)
+}
+
+// ListAsyncInvocations handles GET /async-invocations
+func (h *Handler) ListAsyncInvocations(w http.ResponseWriter, r *http.Request) {
+	limit := parseLimitQuery(r.URL.Query().Get("limit"), store.DefaultAsyncListLimit, store.MaxAsyncListLimit)
+	statuses, err := parseAsyncStatuses(r.URL.Query().Get("status"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	invs, err := h.Store.ListAsyncInvocations(r.Context(), limit, statuses)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if invs == nil {
+		invs = []*store.AsyncInvocation{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(invs)
+}
+
+// ListFunctionAsyncInvocations handles GET /functions/{name}/async-invocations
+func (h *Handler) ListFunctionAsyncInvocations(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	limit := parseLimitQuery(r.URL.Query().Get("limit"), store.DefaultAsyncListLimit, store.MaxAsyncListLimit)
+	statuses, err := parseAsyncStatuses(r.URL.Query().Get("status"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	invs, err := h.Store.ListFunctionAsyncInvocations(r.Context(), fn.ID, limit, statuses)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if invs == nil {
+		invs = []*store.AsyncInvocation{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(invs)
+}
+
+// RetryAsyncInvocation handles POST /async-invocations/{id}/retry
+func (h *Handler) RetryAsyncInvocation(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	req := retryAsyncInvokeRequest{}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+			return
+		}
+	}
+
+	inv, err := h.Store.RequeueAsyncInvocation(r.Context(), id, req.MaxAttempts)
+	if err != nil {
+		if errors.Is(err, store.ErrAsyncInvocationNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, store.ErrAsyncInvocationNotDLQ) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(inv)
+}
+
 func capacityShedStatus(fn *domain.Function) int {
 	if fn != nil && fn.CapacityPolicy != nil && fn.CapacityPolicy.ShedStatusCode != 0 {
 		return fn.CapacityPolicy.ShedStatusCode
@@ -165,6 +325,47 @@ func capacityRetryAfter(fn *domain.Function) int {
 		return fn.CapacityPolicy.RetryAfterS
 	}
 	return 1
+}
+
+func parseLimitQuery(raw string, fallback, max int) int {
+	limit := fallback
+	if raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			limit = n
+		}
+	}
+	if limit <= 0 {
+		limit = fallback
+	}
+	if max > 0 && limit > max {
+		limit = max
+	}
+	return limit
+}
+
+func parseAsyncStatuses(raw string) ([]store.AsyncInvocationStatus, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	statuses := make([]store.AsyncInvocationStatus, 0, len(parts))
+	for _, part := range parts {
+		status := store.AsyncInvocationStatus(strings.TrimSpace(part))
+		if status == "" {
+			continue
+		}
+		switch status {
+		case store.AsyncInvocationStatusQueued,
+			store.AsyncInvocationStatusRunning,
+			store.AsyncInvocationStatusSucceeded,
+			store.AsyncInvocationStatusDLQ:
+			statuses = append(statuses, status)
+		default:
+			return nil, fmt.Errorf("invalid status: %s", status)
+		}
+	}
+	return statuses, nil
 }
 
 // Health handles GET /health - detailed status

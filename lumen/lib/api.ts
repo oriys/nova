@@ -17,6 +17,8 @@ export interface NovaFunction {
   mode?: string;
   limits?: ResourceLimits;
   env_vars?: Record<string, string>;
+  auto_scale_policy?: AutoScalePolicy;
+  capacity_policy?: CapacityPolicy;
   created_at: string;
   updated_at: string;
   version?: number;
@@ -48,6 +50,43 @@ export interface ResourceLimits {
   disk_bandwidth?: number;
   net_rx_bandwidth?: number;
   net_tx_bandwidth?: number;
+}
+
+export interface ScaleThresholds {
+  queue_depth?: number;
+  queue_wait_ms?: number;
+  avg_latency_ms?: number;
+  cold_start_pct?: number;
+  idle_pct?: number;
+  target_concurrency?: number;
+}
+
+export interface AutoScalePolicy {
+  enabled: boolean;
+  min_replicas?: number;
+  max_replicas?: number;
+  target_utilization?: number;
+  scale_up_thresholds?: ScaleThresholds;
+  scale_down_thresholds?: ScaleThresholds;
+  cooldown_scale_up_s?: number;
+  cooldown_scale_down_s?: number;
+  scale_down_step?: number;
+  scale_up_step_max?: number;
+  scale_down_stabilization_s?: number;
+  min_sample_count?: number;
+}
+
+export interface CapacityPolicy {
+  enabled: boolean;
+  max_inflight?: number;
+  max_queue_depth?: number;
+  max_queue_wait_ms?: number;
+  shed_status_code?: number;
+  retry_after_s?: number;
+  breaker_error_pct?: number;
+  breaker_window_s?: number;
+  breaker_open_s?: number;
+  half_open_probes?: number;
 }
 
 export interface Runtime {
@@ -89,6 +128,32 @@ export interface InvokeResponse {
   duration_ms: number;
   cold_start: boolean;
   version?: number;
+}
+
+export type AsyncInvocationStatus = "queued" | "running" | "succeeded" | "dlq";
+
+export interface AsyncInvocationJob {
+  id: string;
+  function_id: string;
+  function_name: string;
+  payload: unknown;
+  status: AsyncInvocationStatus;
+  attempt: number;
+  max_attempts: number;
+  backoff_base_ms: number;
+  backoff_max_ms: number;
+  next_run_at: string;
+  locked_by?: string;
+  locked_until?: string;
+  request_id?: string;
+  output?: unknown;
+  duration_ms?: number;
+  cold_start?: boolean;
+  last_error?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface FunctionMetrics {
@@ -259,6 +324,41 @@ export const functionsApi = {
       body: JSON.stringify(payload),
     }),
 
+  invokeAsync: (
+    name: string,
+    payload: unknown = {},
+    options?: { max_attempts?: number; backoff_base_ms?: number; backoff_max_ms?: number }
+  ) =>
+    request<AsyncInvocationJob>(`/functions/${encodeURIComponent(name)}/invoke-async`, {
+      method: "POST",
+      body: JSON.stringify({
+        payload,
+        ...(options || {}),
+      }),
+    }),
+
+  listAsyncInvocations: (name: string, limit: number = 50, status?: AsyncInvocationStatus | AsyncInvocationStatus[]) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(limit));
+    if (status) {
+      params.set("status", Array.isArray(status) ? status.join(",") : status);
+    }
+    return request<AsyncInvocationJob[]>(
+      `/functions/${encodeURIComponent(name)}/async-invocations?${params.toString()}`
+    );
+  },
+
+  getAsyncInvocation: (id: string) =>
+    request<AsyncInvocationJob>(`/async-invocations/${encodeURIComponent(id)}`),
+
+  retryAsyncInvocation: (id: string, maxAttempts?: number) =>
+    request<AsyncInvocationJob>(`/async-invocations/${encodeURIComponent(id)}/retry`, {
+      method: "POST",
+      body: JSON.stringify(
+        maxAttempts && maxAttempts > 0 ? { max_attempts: maxAttempts } : {}
+      ),
+    }),
+
   logs: (name: string, tail: number = 10) =>
     request<LogEntry[]>(`/functions/${encodeURIComponent(name)}/logs?tail=${tail}`),
 
@@ -282,6 +382,34 @@ export const functionsApi = {
 
   heatmap: (name: string, weeks: number = 52) =>
     request<HeatmapPoint[]>(`/functions/${encodeURIComponent(name)}/heatmap?weeks=${weeks}`),
+
+  getScalingPolicy: (name: string) =>
+    request<AutoScalePolicy>(`/functions/${encodeURIComponent(name)}/scaling`),
+
+  setScalingPolicy: (name: string, data: AutoScalePolicy) =>
+    request<AutoScalePolicy>(`/functions/${encodeURIComponent(name)}/scaling`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteScalingPolicy: (name: string) =>
+    request<{ status: string; function: string }>(`/functions/${encodeURIComponent(name)}/scaling`, {
+      method: "DELETE",
+    }),
+
+  getCapacityPolicy: (name: string) =>
+    request<CapacityPolicy>(`/functions/${encodeURIComponent(name)}/capacity`),
+
+  setCapacityPolicy: (name: string, data: CapacityPolicy) =>
+    request<CapacityPolicy>(`/functions/${encodeURIComponent(name)}/capacity`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteCapacityPolicy: (name: string) =>
+    request<{ status: string; function: string }>(`/functions/${encodeURIComponent(name)}/capacity`, {
+      method: "DELETE",
+    }),
 };
 
 // Runtimes API
