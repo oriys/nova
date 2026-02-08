@@ -30,12 +30,12 @@ import (
 
 // ServerConfig contains dependencies for the HTTP server.
 type ServerConfig struct {
-	Store        *store.Store
-	Exec         *executor.Executor
-	Pool         *pool.Pool
-	Backend      backend.Backend
-	FCAdapter    *firecracker.Adapter // Optional: for Firecracker-specific features (snapshots)
-	AuthCfg      *config.AuthConfig
+	Store           *store.Store
+	Exec            *executor.Executor
+	Pool            *pool.Pool
+	Backend         backend.Backend
+	FCAdapter       *firecracker.Adapter // Optional: for Firecracker-specific features (snapshots)
+	AuthCfg         *config.AuthConfig
 	RateLimitCfg    *config.RateLimitConfig
 	GatewayCfg      *config.GatewayConfig
 	WorkflowService *workflow.Service
@@ -143,6 +143,10 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 		logging.Op().Info("gateway enabled")
 	}
 
+	// Apply tenant scope as the outermost middleware so every path (including gateway routes)
+	// shares the same tenant context for downstream store operations.
+	handler = tenantScopeMiddleware(handler)
+
 	server := &http.Server{
 		Addr:    addr,
 		Handler: handler,
@@ -155,6 +159,15 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 	}()
 
 	return server
+}
+
+func tenantScopeMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tenantID := r.Header.Get("X-Nova-Tenant")
+		namespace := r.Header.Get("X-Nova-Namespace")
+		ctx := store.WithTenantScope(r.Context(), tenantID, namespace)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 // buildAuthenticators creates authenticators based on config.

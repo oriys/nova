@@ -52,6 +52,55 @@ func (s *PostgresStore) Ping(ctx context.Context) error {
 
 func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS tenants (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'active',
+			tier TEXT NOT NULL DEFAULT 'default',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`INSERT INTO tenants (id, name, status, tier) VALUES ('default', 'Default Tenant', 'active', 'default') ON CONFLICT (id) DO NOTHING`,
+		`CREATE TABLE IF NOT EXISTS namespaces (
+			id TEXT PRIMARY KEY,
+			tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE(tenant_id, name)
+		)`,
+		`INSERT INTO namespaces (id, tenant_id, name) VALUES ('default/default', 'default', 'default') ON CONFLICT (id) DO NOTHING`,
+		`CREATE TABLE IF NOT EXISTS tenant_members (
+			tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+			subject TEXT NOT NULL,
+			role TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (tenant_id, subject)
+		)`,
+		`CREATE TABLE IF NOT EXISTS tenant_quotas (
+			tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+			dimension TEXT NOT NULL,
+			hard_limit BIGINT NOT NULL DEFAULT 0,
+			soft_limit BIGINT NOT NULL DEFAULT 0,
+			burst BIGINT NOT NULL DEFAULT 0,
+			window_s INTEGER NOT NULL DEFAULT 60,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (tenant_id, dimension)
+		)`,
+		`CREATE TABLE IF NOT EXISTS tenant_usage_current (
+			tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+			dimension TEXT NOT NULL,
+			used BIGINT NOT NULL DEFAULT 0,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (tenant_id, dimension)
+		)`,
+		`CREATE TABLE IF NOT EXISTS tenant_usage_timeseries (
+			tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+			dimension TEXT NOT NULL,
+			ts TIMESTAMPTZ NOT NULL,
+			used BIGINT NOT NULL DEFAULT 0,
+			PRIMARY KEY (tenant_id, dimension, ts)
+		)`,
 		`CREATE TABLE IF NOT EXISTS functions (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL UNIQUE,
@@ -59,6 +108,13 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			created_at TIMESTAMPTZ NOT NULL,
 			updated_at TIMESTAMPTZ NOT NULL
 		)`,
+		`ALTER TABLE functions ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'`,
+		`ALTER TABLE functions ADD COLUMN IF NOT EXISTS namespace TEXT NOT NULL DEFAULT 'default'`,
+		`UPDATE functions SET tenant_id = 'default' WHERE tenant_id IS NULL OR tenant_id = ''`,
+		`UPDATE functions SET namespace = 'default' WHERE namespace IS NULL OR namespace = ''`,
+		`ALTER TABLE functions DROP CONSTRAINT IF EXISTS functions_name_key`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_functions_tenant_namespace_name ON functions(tenant_id, namespace, name)`,
+		`CREATE INDEX IF NOT EXISTS idx_functions_tenant_namespace ON functions(tenant_id, namespace)`,
 		`CREATE INDEX IF NOT EXISTS idx_functions_runtime ON functions ((data->>'runtime'))`,
 		`CREATE TABLE IF NOT EXISTS function_versions (
 			function_id TEXT NOT NULL REFERENCES functions(id) ON DELETE CASCADE,
@@ -92,8 +148,11 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			stderr TEXT,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
+		`ALTER TABLE invocation_logs ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'`,
+		`ALTER TABLE invocation_logs ADD COLUMN IF NOT EXISTS namespace TEXT NOT NULL DEFAULT 'default'`,
 		`ALTER TABLE invocation_logs ADD COLUMN IF NOT EXISTS input JSONB`,
 		`ALTER TABLE invocation_logs ADD COLUMN IF NOT EXISTS output JSONB`,
+		`CREATE INDEX IF NOT EXISTS idx_invocation_logs_tenant_namespace_created ON invocation_logs(tenant_id, namespace, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_invocation_logs_function_id ON invocation_logs(function_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_invocation_logs_created_at ON invocation_logs(created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_invocation_logs_func_time ON invocation_logs(function_id, created_at DESC)`,
@@ -120,6 +179,9 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
+		`ALTER TABLE async_invocations ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'`,
+		`ALTER TABLE async_invocations ADD COLUMN IF NOT EXISTS namespace TEXT NOT NULL DEFAULT 'default'`,
+		`CREATE INDEX IF NOT EXISTS idx_async_invocations_tenant_namespace_created ON async_invocations(tenant_id, namespace, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_async_invocations_status_next_run ON async_invocations(status, next_run_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_async_invocations_function_created ON async_invocations(function_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_async_invocations_created ON async_invocations(created_at DESC)`,
@@ -144,6 +206,11 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
+		`ALTER TABLE event_topics ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'`,
+		`ALTER TABLE event_topics ADD COLUMN IF NOT EXISTS namespace TEXT NOT NULL DEFAULT 'default'`,
+		`ALTER TABLE event_topics DROP CONSTRAINT IF EXISTS event_topics_name_key`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_event_topics_tenant_namespace_name ON event_topics(tenant_id, namespace, name)`,
+		`CREATE INDEX IF NOT EXISTS idx_event_topics_tenant_namespace_created ON event_topics(tenant_id, namespace, created_at DESC)`,
 		`CREATE TABLE IF NOT EXISTS event_subscriptions (
 			id TEXT PRIMARY KEY,
 			topic_id TEXT NOT NULL REFERENCES event_topics(id) ON DELETE CASCADE,
@@ -165,7 +232,14 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			UNIQUE(topic_id, name),
 			UNIQUE(topic_id, consumer_group)
 		)`,
+		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'`,
+		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS namespace TEXT NOT NULL DEFAULT 'default'`,
+		`UPDATE event_subscriptions s
+			SET tenant_id = t.tenant_id, namespace = t.namespace
+			FROM event_topics t
+			WHERE s.topic_id = t.id`,
 		`CREATE INDEX IF NOT EXISTS idx_event_subscriptions_topic ON event_subscriptions(topic_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_event_subscriptions_tenant_namespace_topic ON event_subscriptions(tenant_id, namespace, topic_id)`,
 		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS max_inflight INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS rate_limit_per_sec INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS last_dispatch_at TIMESTAMPTZ`,
@@ -182,9 +256,16 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			published_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
+		`ALTER TABLE event_messages ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'`,
+		`ALTER TABLE event_messages ADD COLUMN IF NOT EXISTS namespace TEXT NOT NULL DEFAULT 'default'`,
+		`UPDATE event_messages m
+			SET tenant_id = t.tenant_id, namespace = t.namespace
+			FROM event_topics t
+			WHERE m.topic_id = t.id`,
 		`ALTER TABLE event_messages ADD COLUMN IF NOT EXISTS source_outbox_id TEXT UNIQUE`,
 		`CREATE INDEX IF NOT EXISTS idx_event_messages_topic_sequence ON event_messages(topic_id, sequence DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_messages_topic_created ON event_messages(topic_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_event_messages_tenant_namespace_topic_sequence ON event_messages(tenant_id, namespace, topic_id, sequence DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_messages_source_outbox ON event_messages(source_outbox_id)`,
 		`CREATE TABLE IF NOT EXISTS event_deliveries (
 			id TEXT PRIMARY KEY,
@@ -212,9 +293,16 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
+		`ALTER TABLE event_deliveries ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'`,
+		`ALTER TABLE event_deliveries ADD COLUMN IF NOT EXISTS namespace TEXT NOT NULL DEFAULT 'default'`,
+		`UPDATE event_deliveries d
+			SET tenant_id = s.tenant_id, namespace = s.namespace
+			FROM event_subscriptions s
+			WHERE d.subscription_id = s.id`,
 		`CREATE INDEX IF NOT EXISTS idx_event_deliveries_status_next_run ON event_deliveries(status, next_run_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_deliveries_subscription_created ON event_deliveries(subscription_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_deliveries_ordering ON event_deliveries(subscription_id, ordering_key, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_event_deliveries_tenant_namespace_status_next_run ON event_deliveries(tenant_id, namespace, status, next_run_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_deliveries_message ON event_deliveries(message_id)`,
 		`CREATE TABLE IF NOT EXISTS event_outbox (
 			id TEXT PRIMARY KEY,
@@ -237,7 +325,14 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
+		`ALTER TABLE event_outbox ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'`,
+		`ALTER TABLE event_outbox ADD COLUMN IF NOT EXISTS namespace TEXT NOT NULL DEFAULT 'default'`,
+		`UPDATE event_outbox o
+			SET tenant_id = t.tenant_id, namespace = t.namespace
+			FROM event_topics t
+			WHERE o.topic_id = t.id`,
 		`CREATE INDEX IF NOT EXISTS idx_event_outbox_status_next_attempt ON event_outbox(status, next_attempt_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_event_outbox_tenant_namespace_status_next_attempt ON event_outbox(tenant_id, namespace, status, next_attempt_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_outbox_topic_created ON event_outbox(topic_id, created_at DESC)`,
 		`CREATE TABLE IF NOT EXISTS event_inbox (
 			subscription_id TEXT NOT NULL REFERENCES event_subscriptions(id) ON DELETE CASCADE,

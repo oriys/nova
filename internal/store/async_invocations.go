@@ -42,6 +42,8 @@ var ErrInvalidIdempotencyKey = errors.New("invalid idempotency key")
 // AsyncInvocation is a durable async function execution request.
 type AsyncInvocation struct {
 	ID            string                `json:"id"`
+	TenantID      string                `json:"tenant_id,omitempty"`
+	Namespace     string                `json:"namespace,omitempty"`
 	FunctionID    string                `json:"function_id"`
 	FunctionName  string                `json:"function_name"`
 	Payload       json.RawMessage       `json:"payload"`
@@ -92,6 +94,9 @@ func (s *PostgresStore) EnqueueAsyncInvocation(ctx context.Context, inv *AsyncIn
 	if inv.FunctionID == "" || inv.FunctionName == "" {
 		return fmt.Errorf("function id and name are required")
 	}
+	scope := tenantScopeFromContext(ctx)
+	inv.TenantID = scope.TenantID
+	inv.Namespace = scope.Namespace
 	normalizeAsyncInvocation(inv)
 
 	if err := insertAsyncInvocation(ctx, s.pool, inv); err != nil {
@@ -110,6 +115,9 @@ func (s *PostgresStore) EnqueueAsyncInvocationWithIdempotency(ctx context.Contex
 	if inv.FunctionID == "" || inv.FunctionName == "" {
 		return nil, false, fmt.Errorf("function id and name are required")
 	}
+	scopeCfg := tenantScopeFromContext(ctx)
+	inv.TenantID = scopeCfg.TenantID
+	inv.Namespace = scopeCfg.Namespace
 	normalizeAsyncInvocation(inv)
 
 	key := strings.TrimSpace(idempotencyKey)
@@ -184,17 +192,17 @@ func insertAsyncInvocation(ctx context.Context, exec interface {
 }, inv *AsyncInvocation) error {
 	_, err := exec.Exec(ctx, `
 		INSERT INTO async_invocations (
-			id, function_id, function_name, payload, status, attempt, max_attempts,
+			id, tenant_id, namespace, function_id, function_name, payload, status, attempt, max_attempts,
 			backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 			request_id, output, duration_ms, cold_start, last_error, started_at,
 			completed_at, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7,
-			$8, $9, $10, $11, $12,
-			$13, $14, $15, $16, $17, $18,
-			$19, $20, $21
+			$1, $2, $3, $4, $5, $6, $7, $8, $9,
+			$10, $11, $12, $13, $14,
+			$15, $16, $17, $18, $19, $20,
+			$21, $22, $23
 		)
-	`, inv.ID, inv.FunctionID, inv.FunctionName, inv.Payload, string(inv.Status), inv.Attempt, inv.MaxAttempts,
+	`, inv.ID, inv.TenantID, inv.Namespace, inv.FunctionID, inv.FunctionName, inv.Payload, string(inv.Status), inv.Attempt, inv.MaxAttempts,
 		inv.BackoffBaseMS, inv.BackoffMaxMS, inv.NextRunAt, nullIfEmpty(inv.LockedBy), inv.LockedUntil,
 		nullIfEmpty(inv.RequestID), inv.Output, inv.DurationMS, inv.ColdStart, nullIfEmpty(inv.LastError), inv.StartedAt,
 		inv.CompletedAt, inv.CreatedAt, inv.UpdatedAt)
@@ -202,14 +210,15 @@ func insertAsyncInvocation(ctx context.Context, exec interface {
 }
 
 func (s *PostgresStore) GetAsyncInvocation(ctx context.Context, id string) (*AsyncInvocation, error) {
+	scope := tenantScopeFromContext(ctx)
 	inv, err := scanAsyncInvocation(s.pool.QueryRow(ctx, `
-		SELECT id, function_id, function_name, payload, status, attempt, max_attempts,
+		SELECT id, tenant_id, namespace, function_id, function_name, payload, status, attempt, max_attempts,
 		       backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		       request_id, output, duration_ms, cold_start, last_error, started_at,
 		       completed_at, created_at, updated_at
 		FROM async_invocations
-		WHERE id = $1
-	`, id))
+		WHERE id = $1 AND tenant_id = $2 AND namespace = $3
+	`, id, scope.TenantID, scope.Namespace))
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("%w: %s", ErrAsyncInvocationNotFound, id)
 	}
@@ -221,18 +230,20 @@ func (s *PostgresStore) GetAsyncInvocation(ctx context.Context, id string) (*Asy
 
 func (s *PostgresStore) ListAsyncInvocations(ctx context.Context, limit int, statuses []AsyncInvocationStatus) ([]*AsyncInvocation, error) {
 	limit = normalizeAsyncListLimit(limit)
+	scope := tenantScopeFromContext(ctx)
 	query := `
-		SELECT id, function_id, function_name, payload, status, attempt, max_attempts,
+		SELECT id, tenant_id, namespace, function_id, function_name, payload, status, attempt, max_attempts,
 		       backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		       request_id, output, duration_ms, cold_start, last_error, started_at,
 		       completed_at, created_at, updated_at
 		FROM async_invocations
+		WHERE tenant_id = $1 AND namespace = $2
 	`
-	args := []any{}
+	args := []any{scope.TenantID, scope.Namespace}
 
 	if len(statuses) > 0 {
 		args = append(args, statusesToStrings(statuses))
-		query += " WHERE status = ANY($" + strconv.Itoa(len(args)) + ")"
+		query += " AND status = ANY($" + strconv.Itoa(len(args)) + ")"
 	}
 
 	args = append(args, limit)
@@ -260,15 +271,16 @@ func (s *PostgresStore) ListAsyncInvocations(ctx context.Context, limit int, sta
 
 func (s *PostgresStore) ListFunctionAsyncInvocations(ctx context.Context, functionID string, limit int, statuses []AsyncInvocationStatus) ([]*AsyncInvocation, error) {
 	limit = normalizeAsyncListLimit(limit)
+	scope := tenantScopeFromContext(ctx)
 	query := `
-		SELECT id, function_id, function_name, payload, status, attempt, max_attempts,
+		SELECT id, tenant_id, namespace, function_id, function_name, payload, status, attempt, max_attempts,
 		       backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		       request_id, output, duration_ms, cold_start, last_error, started_at,
 		       completed_at, created_at, updated_at
 		FROM async_invocations
-		WHERE function_id = $1
+		WHERE tenant_id = $1 AND namespace = $2 AND function_id = $3
 	`
-	args := []any{functionID}
+	args := []any{scope.TenantID, scope.Namespace, functionID}
 
 	if len(statuses) > 0 {
 		args = append(args, statusesToStrings(statuses))
@@ -324,7 +336,7 @@ func (s *PostgresStore) AcquireDueAsyncInvocation(ctx context.Context, workerID 
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1
 		)
-		RETURNING id, function_id, function_name, payload, status, attempt, max_attempts,
+		RETURNING id, tenant_id, namespace, function_id, function_name, payload, status, attempt, max_attempts,
 		          backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		          request_id, output, duration_ms, cold_start, last_error, started_at,
 		          completed_at, created_at, updated_at
@@ -412,6 +424,7 @@ func (s *PostgresStore) RequeueAsyncInvocation(ctx context.Context, id string, m
 	if maxAttempts <= 0 {
 		maxAttempts = DefaultAsyncMaxAttempts
 	}
+	scope := tenantScopeFromContext(ctx)
 
 	inv, err := scanAsyncInvocation(s.pool.QueryRow(ctx, `
 		UPDATE async_invocations SET
@@ -429,15 +442,15 @@ func (s *PostgresStore) RequeueAsyncInvocation(ctx context.Context, id string, m
 			started_at = NULL,
 			completed_at = NULL,
 			updated_at = $3
-		WHERE id = $1 AND status = 'dlq'
-		RETURNING id, function_id, function_name, payload, status, attempt, max_attempts,
+		WHERE id = $1 AND tenant_id = $4 AND namespace = $5 AND status = 'dlq'
+		RETURNING id, tenant_id, namespace, function_id, function_name, payload, status, attempt, max_attempts,
 		          backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		          request_id, output, duration_ms, cold_start, last_error, started_at,
 		          completed_at, created_at, updated_at
-	`, id, maxAttempts, now))
+	`, id, maxAttempts, now, scope.TenantID, scope.Namespace))
 	if err == pgx.ErrNoRows {
 		var status string
-		statusErr := s.pool.QueryRow(ctx, `SELECT status FROM async_invocations WHERE id = $1`, id).Scan(&status)
+		statusErr := s.pool.QueryRow(ctx, `SELECT status FROM async_invocations WHERE id = $1 AND tenant_id = $2 AND namespace = $3`, id, scope.TenantID, scope.Namespace).Scan(&status)
 		if statusErr == pgx.ErrNoRows {
 			return nil, fmt.Errorf("%w: %s", ErrAsyncInvocationNotFound, id)
 		}
@@ -479,7 +492,7 @@ func claimIdempotencyKey(ctx context.Context, tx pgx.Tx, scope, scopeID, key, re
 
 func getAsyncInvocationByIdempotency(ctx context.Context, tx pgx.Tx, scope, scopeID, key string, now time.Time) (*AsyncInvocation, error) {
 	inv, err := scanAsyncInvocation(tx.QueryRow(ctx, `
-		SELECT ai.id, ai.function_id, ai.function_name, ai.payload, ai.status, ai.attempt, ai.max_attempts,
+		SELECT ai.id, ai.tenant_id, ai.namespace, ai.function_id, ai.function_name, ai.payload, ai.status, ai.attempt, ai.max_attempts,
 		       ai.backoff_base_ms, ai.backoff_max_ms, ai.next_run_at, ai.locked_by, ai.locked_until,
 		       ai.request_id, ai.output, ai.duration_ms, ai.cold_start, ai.last_error, ai.started_at,
 		       ai.completed_at, ai.created_at, ai.updated_at
@@ -510,6 +523,12 @@ func normalizeAsyncInvocation(inv *AsyncInvocation) {
 	now := time.Now().UTC()
 	if inv.ID == "" {
 		inv.ID = uuid.New().String()
+	}
+	if inv.TenantID == "" {
+		inv.TenantID = DefaultTenantID
+	}
+	if inv.Namespace == "" {
+		inv.Namespace = DefaultNamespace
 	}
 	if len(inv.Payload) == 0 {
 		inv.Payload = json.RawMessage(`{}`)
@@ -581,6 +600,8 @@ func scanAsyncInvocation(scanner asyncInvocationScanner) (*AsyncInvocation, erro
 
 	err := scanner.Scan(
 		&inv.ID,
+		&inv.TenantID,
+		&inv.Namespace,
 		&inv.FunctionID,
 		&inv.FunctionName,
 		&payload,

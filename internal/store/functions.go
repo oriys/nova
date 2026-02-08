@@ -14,6 +14,9 @@ func (s *PostgresStore) SaveFunction(ctx context.Context, fn *domain.Function) e
 	if fn.ID == "" || fn.Name == "" {
 		return fmt.Errorf("function id and name are required")
 	}
+	scope := tenantScopeFromContext(ctx)
+	fn.TenantID = scope.TenantID
+	fn.Namespace = scope.Namespace
 
 	now := time.Now()
 	if fn.CreatedAt.IsZero() {
@@ -29,13 +32,15 @@ func (s *PostgresStore) SaveFunction(ctx context.Context, fn *domain.Function) e
 	}
 
 	_, err = s.pool.Exec(ctx, `
-		INSERT INTO functions (id, name, data, created_at, updated_at)
-		VALUES ($1, $2, $3::jsonb, $4, $5)
+		INSERT INTO functions (id, tenant_id, namespace, name, data, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
 		ON CONFLICT (id) DO UPDATE SET
+			tenant_id = EXCLUDED.tenant_id,
+			namespace = EXCLUDED.namespace,
 			name = EXCLUDED.name,
 			data = EXCLUDED.data,
 			updated_at = EXCLUDED.updated_at
-	`, fn.ID, fn.Name, data, fn.CreatedAt, fn.UpdatedAt)
+	`, fn.ID, fn.TenantID, fn.Namespace, fn.Name, data, fn.CreatedAt, fn.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("save function: %w", err)
 	}
@@ -43,8 +48,13 @@ func (s *PostgresStore) SaveFunction(ctx context.Context, fn *domain.Function) e
 }
 
 func (s *PostgresStore) GetFunction(ctx context.Context, id string) (*domain.Function, error) {
+	scope := tenantScopeFromContext(ctx)
 	var data []byte
-	err := s.pool.QueryRow(ctx, `SELECT data FROM functions WHERE id = $1`, id).Scan(&data)
+	err := s.pool.QueryRow(ctx, `
+		SELECT data
+		FROM functions
+		WHERE id = $1 AND tenant_id = $2 AND namespace = $3
+	`, id, scope.TenantID, scope.Namespace).Scan(&data)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("function not found: %s", id)
 	}
@@ -56,12 +66,23 @@ func (s *PostgresStore) GetFunction(ctx context.Context, id string) (*domain.Fun
 	if err := json.Unmarshal(data, &fn); err != nil {
 		return nil, err
 	}
+	if fn.TenantID == "" {
+		fn.TenantID = scope.TenantID
+	}
+	if fn.Namespace == "" {
+		fn.Namespace = scope.Namespace
+	}
 	return &fn, nil
 }
 
 func (s *PostgresStore) GetFunctionByName(ctx context.Context, name string) (*domain.Function, error) {
+	scope := tenantScopeFromContext(ctx)
 	var data []byte
-	err := s.pool.QueryRow(ctx, `SELECT data FROM functions WHERE name = $1`, name).Scan(&data)
+	err := s.pool.QueryRow(ctx, `
+		SELECT data
+		FROM functions
+		WHERE name = $1 AND tenant_id = $2 AND namespace = $3
+	`, name, scope.TenantID, scope.Namespace).Scan(&data)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("function not found: %s", name)
 	}
@@ -73,11 +94,21 @@ func (s *PostgresStore) GetFunctionByName(ctx context.Context, name string) (*do
 	if err := json.Unmarshal(data, &fn); err != nil {
 		return nil, err
 	}
+	if fn.TenantID == "" {
+		fn.TenantID = scope.TenantID
+	}
+	if fn.Namespace == "" {
+		fn.Namespace = scope.Namespace
+	}
 	return &fn, nil
 }
 
 func (s *PostgresStore) DeleteFunction(ctx context.Context, id string) error {
-	ct, err := s.pool.Exec(ctx, `DELETE FROM functions WHERE id = $1`, id)
+	scope := tenantScopeFromContext(ctx)
+	ct, err := s.pool.Exec(ctx, `
+		DELETE FROM functions
+		WHERE id = $1 AND tenant_id = $2 AND namespace = $3
+	`, id, scope.TenantID, scope.Namespace)
 	if err != nil {
 		return fmt.Errorf("delete function: %w", err)
 	}
@@ -88,7 +119,13 @@ func (s *PostgresStore) DeleteFunction(ctx context.Context, id string) error {
 }
 
 func (s *PostgresStore) ListFunctions(ctx context.Context) ([]*domain.Function, error) {
-	rows, err := s.pool.Query(ctx, `SELECT data FROM functions ORDER BY name`)
+	scope := tenantScopeFromContext(ctx)
+	rows, err := s.pool.Query(ctx, `
+		SELECT data
+		FROM functions
+		WHERE tenant_id = $1 AND namespace = $2
+		ORDER BY name
+	`, scope.TenantID, scope.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("list functions: %w", err)
 	}
@@ -103,6 +140,12 @@ func (s *PostgresStore) ListFunctions(ctx context.Context) ([]*domain.Function, 
 		var fn domain.Function
 		if err := json.Unmarshal(data, &fn); err != nil {
 			continue
+		}
+		if fn.TenantID == "" {
+			fn.TenantID = scope.TenantID
+		}
+		if fn.Namespace == "" {
+			fn.Namespace = scope.Namespace
 		}
 		functions = append(functions, &fn)
 	}

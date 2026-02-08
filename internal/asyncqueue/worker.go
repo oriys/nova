@@ -111,6 +111,7 @@ func (w *WorkerPool) poll(workerID string) {
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), w.cfg.InvokeTimeout)
+	ctx = store.WithTenantScope(ctx, job.TenantID, job.Namespace)
 	defer cancel()
 
 	resp, invokeErr := w.exec.Invoke(ctx, job.FunctionName, job.Payload)

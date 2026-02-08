@@ -12,6 +12,8 @@ import (
 // InvocationLog represents a single function invocation record
 type InvocationLog struct {
 	ID           string          `json:"id"`
+	TenantID     string          `json:"tenant_id,omitempty"`
+	Namespace    string          `json:"namespace,omitempty"`
 	FunctionID   string          `json:"function_id"`
 	FunctionName string          `json:"function_name"`
 	Runtime      string          `json:"runtime"`
@@ -40,15 +42,18 @@ func (s *PostgresStore) SaveInvocationLog(ctx context.Context, log *InvocationLo
 	if log.ID == "" {
 		return fmt.Errorf("invocation log id is required")
 	}
+	scope := tenantScopeFromContext(ctx)
+	log.TenantID = scope.TenantID
+	log.Namespace = scope.Namespace
 	if log.CreatedAt.IsZero() {
 		log.CreatedAt = time.Now()
 	}
 
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO invocation_logs (id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, stdout, stderr, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		INSERT INTO invocation_logs (id, tenant_id, namespace, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, stdout, stderr, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 		ON CONFLICT (id) DO NOTHING
-	`, log.ID, log.FunctionID, log.FunctionName, log.Runtime, log.DurationMs, log.ColdStart, log.Success, log.ErrorMessage, log.InputSize, log.OutputSize, log.Input, log.Output, log.Stdout, log.Stderr, log.CreatedAt)
+	`, log.ID, log.TenantID, log.Namespace, log.FunctionID, log.FunctionName, log.Runtime, log.DurationMs, log.ColdStart, log.Success, log.ErrorMessage, log.InputSize, log.OutputSize, log.Input, log.Output, log.Stdout, log.Stderr, log.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("save invocation log: %w", err)
 	}
@@ -59,20 +64,23 @@ func (s *PostgresStore) SaveInvocationLogs(ctx context.Context, logs []*Invocati
 	if len(logs) == 0 {
 		return nil
 	}
+	scope := tenantScopeFromContext(ctx)
 
 	batch := &pgx.Batch{}
 	for _, log := range logs {
 		if log.ID == "" {
 			return fmt.Errorf("invocation log id is required")
 		}
+		log.TenantID = scope.TenantID
+		log.Namespace = scope.Namespace
 		if log.CreatedAt.IsZero() {
 			log.CreatedAt = time.Now()
 		}
 		batch.Queue(`
-			INSERT INTO invocation_logs (id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, stdout, stderr, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			INSERT INTO invocation_logs (id, tenant_id, namespace, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, stdout, stderr, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 			ON CONFLICT (id) DO NOTHING
-		`, log.ID, log.FunctionID, log.FunctionName, log.Runtime, log.DurationMs, log.ColdStart, log.Success, log.ErrorMessage, log.InputSize, log.OutputSize, log.Input, log.Output, log.Stdout, log.Stderr, log.CreatedAt)
+		`, log.ID, log.TenantID, log.Namespace, log.FunctionID, log.FunctionName, log.Runtime, log.DurationMs, log.ColdStart, log.Success, log.ErrorMessage, log.InputSize, log.OutputSize, log.Input, log.Output, log.Stdout, log.Stderr, log.CreatedAt)
 	}
 
 	results := s.pool.SendBatch(ctx, batch)
@@ -91,14 +99,15 @@ func (s *PostgresStore) ListInvocationLogs(ctx context.Context, functionID strin
 	if limit <= 0 {
 		limit = 10
 	}
+	scope := tenantScopeFromContext(ctx)
 
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, stdout, stderr, created_at
+		SELECT id, tenant_id, namespace, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, stdout, stderr, created_at
 		FROM invocation_logs
-		WHERE function_id = $1
+		WHERE tenant_id = $1 AND namespace = $2 AND function_id = $3
 		ORDER BY created_at DESC
-		LIMIT $2
-	`, functionID, limit)
+		LIMIT $4
+	`, scope.TenantID, scope.Namespace, functionID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list invocation logs: %w", err)
 	}
@@ -109,7 +118,7 @@ func (s *PostgresStore) ListInvocationLogs(ctx context.Context, functionID strin
 		var log InvocationLog
 		var errorMessage, stdout, stderr *string
 		var input, output []byte
-		if err := rows.Scan(&log.ID, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &input, &output, &stdout, &stderr, &log.CreatedAt); err != nil {
+		if err := rows.Scan(&log.ID, &log.TenantID, &log.Namespace, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &input, &output, &stdout, &stderr, &log.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan invocation log: %w", err)
 		}
 		if errorMessage != nil {
@@ -139,13 +148,15 @@ func (s *PostgresStore) ListAllInvocationLogs(ctx context.Context, limit int) ([
 	if limit <= 0 {
 		limit = 100
 	}
+	scope := tenantScopeFromContext(ctx)
 
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, stdout, stderr, created_at
+		SELECT id, tenant_id, namespace, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, stdout, stderr, created_at
 		FROM invocation_logs
+		WHERE tenant_id = $1 AND namespace = $2
 		ORDER BY created_at DESC
-		LIMIT $1
-	`, limit)
+		LIMIT $3
+	`, scope.TenantID, scope.Namespace, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list all invocation logs: %w", err)
 	}
@@ -156,7 +167,7 @@ func (s *PostgresStore) ListAllInvocationLogs(ctx context.Context, limit int) ([
 		var log InvocationLog
 		var errorMessage, stdout, stderr *string
 		var input, output []byte
-		if err := rows.Scan(&log.ID, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &input, &output, &stdout, &stderr, &log.CreatedAt); err != nil {
+		if err := rows.Scan(&log.ID, &log.TenantID, &log.Namespace, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &input, &output, &stdout, &stderr, &log.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan invocation log: %w", err)
 		}
 		if errorMessage != nil {
@@ -183,14 +194,15 @@ func (s *PostgresStore) ListAllInvocationLogs(ctx context.Context, limit int) ([
 }
 
 func (s *PostgresStore) GetInvocationLog(ctx context.Context, requestID string) (*InvocationLog, error) {
+	scope := tenantScopeFromContext(ctx)
 	var log InvocationLog
 	var errorMessage, stdout, stderr *string
 	var input, output []byte
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, stdout, stderr, created_at
+		SELECT id, tenant_id, namespace, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, stdout, stderr, created_at
 		FROM invocation_logs
-		WHERE id = $1
-	`, requestID).Scan(&log.ID, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &input, &output, &stdout, &stderr, &log.CreatedAt)
+		WHERE id = $1 AND tenant_id = $2 AND namespace = $3
+	`, requestID, scope.TenantID, scope.Namespace).Scan(&log.ID, &log.TenantID, &log.Namespace, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &input, &output, &stdout, &stderr, &log.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("invocation log not found: %s", requestID)
 	}
@@ -223,23 +235,26 @@ func (s *PostgresStore) GetFunctionTimeSeries(ctx context.Context, functionID st
 		bucketSeconds = 60
 	}
 
+	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
 		WITH buckets AS (
 			SELECT generate_series(
-				to_timestamp(floor(extract(epoch from NOW() - make_interval(secs => $2::double precision)) / $3) * $3),
-				to_timestamp(floor(extract(epoch from NOW()) / $3) * $3),
-				make_interval(secs => $3::double precision)
+				to_timestamp(floor(extract(epoch from NOW() - make_interval(secs => $1::double precision)) / $2) * $2),
+				to_timestamp(floor(extract(epoch from NOW()) / $2) * $2),
+				make_interval(secs => $2::double precision)
 			) AS bucket
 		),
 		data AS (
 			SELECT
-				to_timestamp(floor(extract(epoch from created_at) / $3) * $3) AS bucket,
+				to_timestamp(floor(extract(epoch from created_at) / $2) * $2) AS bucket,
 				COUNT(*) AS invocations,
 				COUNT(*) FILTER (WHERE NOT success) AS errors,
 				AVG(duration_ms) AS avg_duration
 			FROM invocation_logs
-			WHERE function_id = $1
-			  AND created_at >= NOW() - make_interval(secs => $2::double precision)
+			WHERE tenant_id = $3
+			  AND namespace = $4
+			  AND function_id = $5
+			  AND created_at >= NOW() - make_interval(secs => $1::double precision)
 			GROUP BY bucket
 		)
 		SELECT
@@ -250,7 +265,7 @@ func (s *PostgresStore) GetFunctionTimeSeries(ctx context.Context, functionID st
 		FROM buckets b
 		LEFT JOIN data d ON b.bucket = d.bucket
 		ORDER BY b.bucket ASC
-	`, functionID, rangeSeconds, bucketSeconds)
+	`, rangeSeconds, bucketSeconds, scope.TenantID, scope.Namespace, functionID)
 	if err != nil {
 		return nil, fmt.Errorf("get function time series: %w", err)
 	}
@@ -282,10 +297,11 @@ func (s *PostgresStore) GetFunctionDailyHeatmap(ctx context.Context, functionID 
 	}
 	days := weeks * 7
 
+	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
 		WITH days AS (
 			SELECT generate_series(
-				(CURRENT_DATE - make_interval(days => $2))::date,
+				(CURRENT_DATE - make_interval(days => $1))::date,
 				CURRENT_DATE,
 				'1 day'::interval
 			)::date AS day
@@ -295,11 +311,13 @@ func (s *PostgresStore) GetFunctionDailyHeatmap(ctx context.Context, functionID 
 			COALESCE(COUNT(l.id), 0) AS invocations
 		FROM days d
 		LEFT JOIN invocation_logs l
-			ON l.function_id = $1
+			ON l.tenant_id = $2
+			AND l.namespace = $3
+			AND l.function_id = $4
 			AND l.created_at::date = d.day
 		GROUP BY d.day
 		ORDER BY d.day ASC
-	`, functionID, days)
+	`, days, scope.TenantID, scope.Namespace, functionID)
 	if err != nil {
 		return nil, fmt.Errorf("get function daily heatmap: %w", err)
 	}
@@ -325,6 +343,7 @@ func (s *PostgresStore) GetGlobalDailyHeatmap(ctx context.Context, weeks int) ([
 	}
 	days := weeks * 7
 
+	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
 		WITH days AS (
 			SELECT generate_series(
@@ -338,10 +357,12 @@ func (s *PostgresStore) GetGlobalDailyHeatmap(ctx context.Context, weeks int) ([
 			COALESCE(COUNT(l.id), 0) AS invocations
 		FROM days d
 		LEFT JOIN invocation_logs l
-			ON l.created_at::date = d.day
+			ON l.tenant_id = $2
+			AND l.namespace = $3
+			AND l.created_at::date = d.day
 		GROUP BY d.day
 		ORDER BY d.day ASC
-	`, days)
+	`, days, scope.TenantID, scope.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("get global daily heatmap: %w", err)
 	}
@@ -369,6 +390,7 @@ func (s *PostgresStore) GetGlobalTimeSeries(ctx context.Context, rangeSeconds, b
 		bucketSeconds = 60
 	}
 
+	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
 		WITH buckets AS (
 			SELECT generate_series(
@@ -384,7 +406,9 @@ func (s *PostgresStore) GetGlobalTimeSeries(ctx context.Context, rangeSeconds, b
 				COUNT(*) FILTER (WHERE NOT success) AS errors,
 				AVG(duration_ms) AS avg_duration
 			FROM invocation_logs
-			WHERE created_at >= NOW() - make_interval(secs => $1::double precision)
+			WHERE tenant_id = $3
+			  AND namespace = $4
+			  AND created_at >= NOW() - make_interval(secs => $1::double precision)
 			GROUP BY bucket
 		)
 		SELECT
@@ -395,7 +419,7 @@ func (s *PostgresStore) GetGlobalTimeSeries(ctx context.Context, rangeSeconds, b
 		FROM buckets b
 		LEFT JOIN data d ON b.bucket = d.bucket
 		ORDER BY b.bucket ASC
-	`, rangeSeconds, bucketSeconds)
+	`, rangeSeconds, bucketSeconds, scope.TenantID, scope.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("get global time series: %w", err)
 	}

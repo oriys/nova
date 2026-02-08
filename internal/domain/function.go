@@ -147,6 +147,8 @@ type Layer struct {
 
 type Function struct {
 	ID                  string            `json:"id"`
+	TenantID            string            `json:"tenant_id,omitempty"`
+	Namespace           string            `json:"namespace,omitempty"`
 	Name                string            `json:"name"`
 	Runtime             Runtime           `json:"runtime"`
 	Handler             string            `json:"handler"`

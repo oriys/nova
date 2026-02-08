@@ -101,7 +101,8 @@ func (r *OutboxRelay) poll(workerID string) {
 		return
 	}
 
-	msg, fanout, newlyPublished, err := r.store.PublishEventFromOutbox(context.Background(), job.ID, job.TopicID, job.OrderingKey, job.Payload, job.Headers)
+	publishCtx := store.WithTenantScope(context.Background(), job.TenantID, job.Namespace)
+	msg, fanout, newlyPublished, err := r.store.PublishEventFromOutbox(publishCtx, job.ID, job.TopicID, job.OrderingKey, job.Payload, job.Headers)
 	if err == nil {
 		if err := r.store.MarkEventOutboxPublished(context.Background(), job.ID, msg.ID); err != nil {
 			logging.Op().Error("mark event outbox published failed", "outbox", job.ID, "message_id", msg.ID, "error", err)

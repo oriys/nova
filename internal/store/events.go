@@ -80,6 +80,8 @@ var (
 // EventTopic is a publish/subscribe topic.
 type EventTopic struct {
 	ID             string    `json:"id"`
+	TenantID       string    `json:"tenant_id,omitempty"`
+	Namespace      string    `json:"namespace,omitempty"`
 	Name           string    `json:"name"`
 	Description    string    `json:"description,omitempty"`
 	RetentionHours int       `json:"retention_hours"`
@@ -90,6 +92,8 @@ type EventTopic struct {
 // EventSubscription binds a topic to a function consumer group.
 type EventSubscription struct {
 	ID              string     `json:"id"`
+	TenantID        string     `json:"tenant_id,omitempty"`
+	Namespace       string     `json:"namespace,omitempty"`
 	TopicID         string     `json:"topic_id"`
 	TopicName       string     `json:"topic_name,omitempty"`
 	Name            string     `json:"name"`
@@ -131,6 +135,8 @@ type EventSubscriptionUpdate struct {
 // EventMessage is an immutable record stored under a topic.
 type EventMessage struct {
 	ID          string          `json:"id"`
+	TenantID    string          `json:"tenant_id,omitempty"`
+	Namespace   string          `json:"namespace,omitempty"`
 	TopicID     string          `json:"topic_id"`
 	TopicName   string          `json:"topic_name,omitempty"`
 	Sequence    int64           `json:"sequence"`
@@ -144,6 +150,8 @@ type EventMessage struct {
 // EventDelivery tracks fanout delivery lifecycle for a subscription.
 type EventDelivery struct {
 	ID               string              `json:"id"`
+	TenantID         string              `json:"tenant_id,omitempty"`
+	Namespace        string              `json:"namespace,omitempty"`
 	TopicID          string              `json:"topic_id"`
 	TopicName        string              `json:"topic_name,omitempty"`
 	SubscriptionID   string              `json:"subscription_id"`
@@ -178,6 +186,8 @@ type EventDelivery struct {
 // EventOutbox is a durable relay queue for transactional publishing.
 type EventOutbox struct {
 	ID            string            `json:"id"`
+	TenantID      string            `json:"tenant_id,omitempty"`
+	Namespace     string            `json:"namespace,omitempty"`
 	TopicID       string            `json:"topic_id"`
 	TopicName     string            `json:"topic_name"`
 	OrderingKey   string            `json:"ordering_key,omitempty"`
@@ -219,6 +229,8 @@ func NewEventTopic(name, description string) *EventTopic {
 	now := time.Now().UTC()
 	return &EventTopic{
 		ID:             uuid.New().String(),
+		TenantID:       DefaultTenantID,
+		Namespace:      DefaultNamespace,
 		Name:           strings.TrimSpace(name),
 		Description:    strings.TrimSpace(description),
 		RetentionHours: DefaultEventRetentionHours,
@@ -232,6 +244,8 @@ func NewEventSubscription(topicID, topicName, name, consumerGroup, functionID, f
 	now := time.Now().UTC()
 	return &EventSubscription{
 		ID:              uuid.New().String(),
+		TenantID:        DefaultTenantID,
+		Namespace:       DefaultNamespace,
 		TopicID:         strings.TrimSpace(topicID),
 		TopicName:       strings.TrimSpace(topicName),
 		Name:            strings.TrimSpace(name),
@@ -260,6 +274,8 @@ func NewEventOutbox(topicID, topicName, orderingKey string, payload, headers jso
 	}
 	return &EventOutbox{
 		ID:            uuid.New().String(),
+		TenantID:      DefaultTenantID,
+		Namespace:     DefaultNamespace,
 		TopicID:       strings.TrimSpace(topicID),
 		TopicName:     strings.TrimSpace(topicName),
 		OrderingKey:   strings.TrimSpace(orderingKey),
@@ -279,14 +295,17 @@ func (s *PostgresStore) CreateEventTopic(ctx context.Context, topic *EventTopic)
 	if topic == nil {
 		return fmt.Errorf("event topic is required")
 	}
+	scope := tenantScopeFromContext(ctx)
+	topic.TenantID = scope.TenantID
+	topic.Namespace = scope.Namespace
 	if err := normalizeEventTopic(topic); err != nil {
 		return err
 	}
 
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO event_topics (id, name, description, retention_hours, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, topic.ID, topic.Name, topic.Description, topic.RetentionHours, topic.CreatedAt, topic.UpdatedAt)
+		INSERT INTO event_topics (id, tenant_id, namespace, name, description, retention_hours, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, topic.ID, topic.TenantID, topic.Namespace, topic.Name, topic.Description, topic.RetentionHours, topic.CreatedAt, topic.UpdatedAt)
 	if err != nil {
 		if isPGUniqueViolation(err) {
 			return fmt.Errorf("event topic already exists: %s", topic.Name)
@@ -297,11 +316,12 @@ func (s *PostgresStore) CreateEventTopic(ctx context.Context, topic *EventTopic)
 }
 
 func (s *PostgresStore) GetEventTopic(ctx context.Context, id string) (*EventTopic, error) {
+	scope := tenantScopeFromContext(ctx)
 	topic, err := scanEventTopic(s.pool.QueryRow(ctx, `
-		SELECT id, name, description, retention_hours, created_at, updated_at
+		SELECT id, tenant_id, namespace, name, description, retention_hours, created_at, updated_at
 		FROM event_topics
-		WHERE id = $1
-	`, id))
+		WHERE id = $1 AND tenant_id = $2 AND namespace = $3
+	`, id, scope.TenantID, scope.Namespace))
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("%w: %s", ErrEventTopicNotFound, id)
 	}
@@ -313,11 +333,12 @@ func (s *PostgresStore) GetEventTopic(ctx context.Context, id string) (*EventTop
 
 func (s *PostgresStore) GetEventTopicByName(ctx context.Context, name string) (*EventTopic, error) {
 	topicName := strings.TrimSpace(name)
+	scope := tenantScopeFromContext(ctx)
 	topic, err := scanEventTopic(s.pool.QueryRow(ctx, `
-		SELECT id, name, description, retention_hours, created_at, updated_at
+		SELECT id, tenant_id, namespace, name, description, retention_hours, created_at, updated_at
 		FROM event_topics
-		WHERE name = $1
-	`, topicName))
+		WHERE name = $1 AND tenant_id = $2 AND namespace = $3
+	`, topicName, scope.TenantID, scope.Namespace))
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("%w: %s", ErrEventTopicNotFound, topicName)
 	}
@@ -329,12 +350,14 @@ func (s *PostgresStore) GetEventTopicByName(ctx context.Context, name string) (*
 
 func (s *PostgresStore) ListEventTopics(ctx context.Context, limit int) ([]*EventTopic, error) {
 	limit = normalizeEventListLimit(limit)
+	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, description, retention_hours, created_at, updated_at
+		SELECT id, tenant_id, namespace, name, description, retention_hours, created_at, updated_at
 		FROM event_topics
+		WHERE tenant_id = $1 AND namespace = $2
 		ORDER BY created_at DESC
-		LIMIT $1
-	`, limit)
+		LIMIT $3
+	`, scope.TenantID, scope.Namespace, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list event topics: %w", err)
 	}
@@ -356,7 +379,11 @@ func (s *PostgresStore) ListEventTopics(ctx context.Context, limit int) ([]*Even
 
 func (s *PostgresStore) DeleteEventTopicByName(ctx context.Context, name string) error {
 	topicName := strings.TrimSpace(name)
-	ct, err := s.pool.Exec(ctx, `DELETE FROM event_topics WHERE name = $1`, topicName)
+	scope := tenantScopeFromContext(ctx)
+	ct, err := s.pool.Exec(ctx, `
+		DELETE FROM event_topics
+		WHERE name = $1 AND tenant_id = $2 AND namespace = $3
+	`, topicName, scope.TenantID, scope.Namespace)
 	if err != nil {
 		return fmt.Errorf("delete event topic: %w", err)
 	}
@@ -370,12 +397,19 @@ func (s *PostgresStore) CreateEventSubscription(ctx context.Context, sub *EventS
 	if sub == nil {
 		return fmt.Errorf("event subscription is required")
 	}
+	scope := tenantScopeFromContext(ctx)
+	sub.TenantID = scope.TenantID
+	sub.Namespace = scope.Namespace
 	if err := normalizeEventSubscription(sub); err != nil {
 		return err
 	}
 
 	if sub.TopicName == "" {
-		if err := s.pool.QueryRow(ctx, `SELECT name FROM event_topics WHERE id = $1`, sub.TopicID).Scan(&sub.TopicName); err != nil {
+		if err := s.pool.QueryRow(ctx, `
+			SELECT name
+			FROM event_topics
+			WHERE id = $1 AND tenant_id = $2 AND namespace = $3
+		`, sub.TopicID, sub.TenantID, sub.Namespace).Scan(&sub.TopicName); err != nil {
 			if err == pgx.ErrNoRows {
 				return fmt.Errorf("%w: %s", ErrEventTopicNotFound, sub.TopicID)
 			}
@@ -385,15 +419,15 @@ func (s *PostgresStore) CreateEventSubscription(ctx context.Context, sub *EventS
 
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO event_subscriptions (
-			id, topic_id, name, consumer_group, function_id, function_name,
+			id, tenant_id, namespace, topic_id, name, consumer_group, function_id, function_name,
 			enabled, max_attempts, backoff_base_ms, backoff_max_ms,
 			max_inflight, rate_limit_per_sec, last_acked_sequence, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6,
-			$7, $8, $9, $10,
-			$11, $12, $13, $14, $15
+			$1, $2, $3, $4, $5, $6, $7, $8,
+			$9, $10, $11, $12,
+			$13, $14, $15, $16, $17
 		)
-	`, sub.ID, sub.TopicID, sub.Name, sub.ConsumerGroup, sub.FunctionID, sub.FunctionName,
+	`, sub.ID, sub.TenantID, sub.Namespace, sub.TopicID, sub.Name, sub.ConsumerGroup, sub.FunctionID, sub.FunctionName,
 		sub.Enabled, sub.MaxAttempts, sub.BackoffBaseMS, sub.BackoffMaxMS,
 		sub.MaxInflight, sub.RateLimitPerSec, sub.LastAckedSeq, sub.CreatedAt, sub.UpdatedAt)
 	if err != nil {
@@ -406,8 +440,9 @@ func (s *PostgresStore) CreateEventSubscription(ctx context.Context, sub *EventS
 }
 
 func (s *PostgresStore) GetEventSubscription(ctx context.Context, id string) (*EventSubscription, error) {
+	scope := tenantScopeFromContext(ctx)
 	sub, err := scanEventSubscription(s.pool.QueryRow(ctx, `
-		SELECT s.id, s.topic_id, t.name, s.name, s.consumer_group, s.function_id, s.function_name,
+		SELECT s.id, s.tenant_id, s.namespace, s.topic_id, t.name, s.name, s.consumer_group, s.function_id, s.function_name,
 		       s.enabled, s.max_attempts, s.backoff_base_ms, s.backoff_max_ms,
 		       s.max_inflight, s.rate_limit_per_sec, s.last_dispatch_at, s.last_acked_sequence, s.last_acked_at,
 		       COALESCE(stats.inflight_count, 0), COALESCE(stats.queued_count, 0), COALESCE(stats.dlq_count, 0),
@@ -426,8 +461,8 @@ func (s *PostgresStore) GetEventSubscription(ctx context.Context, id string) (*E
 			JOIN event_messages m ON m.id = d.message_id
 			WHERE d.subscription_id = s.id
 		) stats ON TRUE
-		WHERE s.id = $1
-	`, id))
+		WHERE s.id = $1 AND s.tenant_id = $2 AND s.namespace = $3
+	`, id, scope.TenantID, scope.Namespace))
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("%w: %s", ErrEventSubscriptionNotFound, id)
 	}
@@ -438,8 +473,9 @@ func (s *PostgresStore) GetEventSubscription(ctx context.Context, id string) (*E
 }
 
 func (s *PostgresStore) ListEventSubscriptions(ctx context.Context, topicID string) ([]*EventSubscription, error) {
+	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
-		SELECT s.id, s.topic_id, t.name, s.name, s.consumer_group, s.function_id, s.function_name,
+		SELECT s.id, s.tenant_id, s.namespace, s.topic_id, t.name, s.name, s.consumer_group, s.function_id, s.function_name,
 		       s.enabled, s.max_attempts, s.backoff_base_ms, s.backoff_max_ms,
 		       s.max_inflight, s.rate_limit_per_sec, s.last_dispatch_at, s.last_acked_sequence, s.last_acked_at,
 		       COALESCE(stats.inflight_count, 0), COALESCE(stats.queued_count, 0), COALESCE(stats.dlq_count, 0),
@@ -458,9 +494,9 @@ func (s *PostgresStore) ListEventSubscriptions(ctx context.Context, topicID stri
 			JOIN event_messages m ON m.id = d.message_id
 			WHERE d.subscription_id = s.id
 		) stats ON TRUE
-		WHERE s.topic_id = $1
+		WHERE s.topic_id = $1 AND s.tenant_id = $2 AND s.namespace = $3
 		ORDER BY s.created_at ASC
-	`, strings.TrimSpace(topicID))
+	`, strings.TrimSpace(topicID), scope.TenantID, scope.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("list event subscriptions: %w", err)
 	}
@@ -523,7 +559,11 @@ func (s *PostgresStore) UpdateEventSubscription(ctx context.Context, id string, 
 		return nil, err
 	}
 	if sub.TopicName == "" {
-		if err := s.pool.QueryRow(ctx, `SELECT name FROM event_topics WHERE id = $1`, sub.TopicID).Scan(&sub.TopicName); err != nil {
+		if err := s.pool.QueryRow(ctx, `
+			SELECT name
+			FROM event_topics
+			WHERE id = $1 AND tenant_id = $2 AND namespace = $3
+		`, sub.TopicID, sub.TenantID, sub.Namespace).Scan(&sub.TopicName); err != nil {
 			if err == pgx.ErrNoRows {
 				return nil, fmt.Errorf("%w: %s", ErrEventTopicNotFound, sub.TopicID)
 			}
@@ -562,7 +602,11 @@ func (s *PostgresStore) UpdateEventSubscription(ctx context.Context, id string, 
 }
 
 func (s *PostgresStore) DeleteEventSubscription(ctx context.Context, id string) error {
-	ct, err := s.pool.Exec(ctx, `DELETE FROM event_subscriptions WHERE id = $1`, strings.TrimSpace(id))
+	scope := tenantScopeFromContext(ctx)
+	ct, err := s.pool.Exec(ctx, `
+		DELETE FROM event_subscriptions
+		WHERE id = $1 AND tenant_id = $2 AND namespace = $3
+	`, strings.TrimSpace(id), scope.TenantID, scope.Namespace)
 	if err != nil {
 		return fmt.Errorf("delete event subscription: %w", err)
 	}
@@ -589,8 +633,11 @@ func (s *PostgresStore) PublishEvent(ctx context.Context, topicID, orderingKey s
 	}
 
 	now := time.Now().UTC()
+	scope := tenantScopeFromContext(ctx)
 	msg := &EventMessage{
 		ID:          uuid.New().String(),
+		TenantID:    scope.TenantID,
+		Namespace:   scope.Namespace,
 		TopicID:     topicID,
 		OrderingKey: ok,
 		Payload:     payload,
@@ -605,7 +652,11 @@ func (s *PostgresStore) PublishEvent(ctx context.Context, topicID, orderingKey s
 	}
 	defer tx.Rollback(ctx)
 
-	if err := tx.QueryRow(ctx, `SELECT name FROM event_topics WHERE id = $1`, topicID).Scan(&msg.TopicName); err != nil {
+	if err := tx.QueryRow(ctx, `
+		SELECT name
+		FROM event_topics
+		WHERE id = $1 AND tenant_id = $2 AND namespace = $3
+	`, topicID, scope.TenantID, scope.Namespace).Scan(&msg.TopicName); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, 0, fmt.Errorf("%w: %s", ErrEventTopicNotFound, topicID)
 		}
@@ -613,19 +664,19 @@ func (s *PostgresStore) PublishEvent(ctx context.Context, topicID, orderingKey s
 	}
 
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO event_messages (id, topic_id, ordering_key, payload, headers, published_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO event_messages (id, tenant_id, namespace, topic_id, ordering_key, payload, headers, published_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING sequence
-	`, msg.ID, msg.TopicID, msg.OrderingKey, msg.Payload, msg.Headers, msg.PublishedAt, msg.CreatedAt).Scan(&msg.Sequence); err != nil {
+	`, msg.ID, msg.TenantID, msg.Namespace, msg.TopicID, msg.OrderingKey, msg.Payload, msg.Headers, msg.PublishedAt, msg.CreatedAt).Scan(&msg.Sequence); err != nil {
 		return nil, 0, fmt.Errorf("insert event message: %w", err)
 	}
 
 	rows, err := tx.Query(ctx, `
 		SELECT id, function_id, function_name, max_attempts, backoff_base_ms, backoff_max_ms
 		FROM event_subscriptions
-		WHERE topic_id = $1 AND enabled = TRUE
+		WHERE topic_id = $1 AND tenant_id = $2 AND namespace = $3 AND enabled = TRUE
 		ORDER BY created_at ASC
-	`, topicID)
+	`, topicID, scope.TenantID, scope.Namespace)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list event subscriptions for publish: %w", err)
 	}
@@ -659,15 +710,15 @@ func (s *PostgresStore) PublishEvent(ctx context.Context, topicID, orderingKey s
 		deliveryID := uuid.New().String()
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO event_deliveries (
-				id, topic_id, subscription_id, message_id, function_id, function_name,
+				id, tenant_id, namespace, topic_id, subscription_id, message_id, function_id, function_name,
 				ordering_key, status, attempt, max_attempts, backoff_base_ms, backoff_max_ms,
 				next_run_at, created_at, updated_at
 			) VALUES (
-				$1, $2, $3, $4, $5, $6,
-				$7, 'queued', 0, $8, $9, $10,
-				$11, $11, $11
+				$1, $2, $3, $4, $5, $6, $7, $8,
+				$9, 'queued', 0, $10, $11, $12,
+				$13, $13, $13
 			)
-		`, deliveryID, topicID, target.ID, msg.ID, target.FunctionID, target.FunctionName,
+		`, deliveryID, scope.TenantID, scope.Namespace, topicID, target.ID, msg.ID, target.FunctionID, target.FunctionName,
 			msg.OrderingKey, target.MaxAttempts, target.BackoffBaseMS, target.BackoffMaxMS, now); err != nil {
 			return nil, 0, fmt.Errorf("insert event delivery: %w", err)
 		}
@@ -682,14 +733,15 @@ func (s *PostgresStore) PublishEvent(ctx context.Context, topicID, orderingKey s
 
 func (s *PostgresStore) ListEventMessages(ctx context.Context, topicID string, limit int) ([]*EventMessage, error) {
 	limit = normalizeEventListLimit(limit)
+	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
-		SELECT m.id, m.topic_id, t.name, m.sequence, m.ordering_key, m.payload, m.headers, m.published_at, m.created_at
+		SELECT m.id, m.tenant_id, m.namespace, m.topic_id, t.name, m.sequence, m.ordering_key, m.payload, m.headers, m.published_at, m.created_at
 		FROM event_messages m
 		JOIN event_topics t ON t.id = m.topic_id
-		WHERE m.topic_id = $1
+		WHERE m.topic_id = $1 AND m.tenant_id = $2 AND m.namespace = $3
 		ORDER BY m.sequence DESC
-		LIMIT $2
-	`, strings.TrimSpace(topicID), limit)
+		LIMIT $4
+	`, strings.TrimSpace(topicID), scope.TenantID, scope.Namespace, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list event messages: %w", err)
 	}
@@ -732,7 +784,10 @@ func (s *PostgresStore) PublishEventFromOutbox(ctx context.Context, outboxID, to
 	}
 
 	now := time.Now().UTC()
+	scope := tenantScopeFromContext(ctx)
 	msg := &EventMessage{
+		TenantID:    scope.TenantID,
+		Namespace:   scope.Namespace,
 		TopicID:     topicID,
 		OrderingKey: ok,
 		Payload:     payload,
@@ -747,7 +802,11 @@ func (s *PostgresStore) PublishEventFromOutbox(ctx context.Context, outboxID, to
 	}
 	defer tx.Rollback(ctx)
 
-	if err := tx.QueryRow(ctx, `SELECT name FROM event_topics WHERE id = $1`, topicID).Scan(&msg.TopicName); err != nil {
+	if err := tx.QueryRow(ctx, `
+		SELECT name
+		FROM event_topics
+		WHERE id = $1 AND tenant_id = $2 AND namespace = $3
+	`, topicID, scope.TenantID, scope.Namespace).Scan(&msg.TopicName); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, 0, false, fmt.Errorf("%w: %s", ErrEventTopicNotFound, topicID)
 		}
@@ -757,8 +816,8 @@ func (s *PostgresStore) PublishEventFromOutbox(ctx context.Context, outboxID, to
 	var inserted bool
 	err = tx.QueryRow(ctx, `
 		WITH ins AS (
-			INSERT INTO event_messages (id, topic_id, source_outbox_id, ordering_key, payload, headers, published_at, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+			INSERT INTO event_messages (id, tenant_id, namespace, topic_id, source_outbox_id, ordering_key, payload, headers, published_at, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
 			ON CONFLICT (source_outbox_id) DO NOTHING
 			RETURNING id, sequence, published_at, created_at, TRUE AS inserted
 		), existing AS (
@@ -774,7 +833,7 @@ func (s *PostgresStore) PublishEventFromOutbox(ctx context.Context, outboxID, to
 		FROM existing
 		WHERE NOT EXISTS (SELECT 1 FROM ins)
 		LIMIT 1
-	`, uuid.New().String(), topicID, outboxID, msg.OrderingKey, msg.Payload, msg.Headers, now).Scan(
+	`, uuid.New().String(), scope.TenantID, scope.Namespace, topicID, outboxID, msg.OrderingKey, msg.Payload, msg.Headers, now).Scan(
 		&msg.ID, &msg.Sequence, &msg.PublishedAt, &msg.CreatedAt, &inserted,
 	)
 	if err == pgx.ErrNoRows {
@@ -794,9 +853,9 @@ func (s *PostgresStore) PublishEventFromOutbox(ctx context.Context, outboxID, to
 	rows, err := tx.Query(ctx, `
 		SELECT id, function_id, function_name, max_attempts, backoff_base_ms, backoff_max_ms
 		FROM event_subscriptions
-		WHERE topic_id = $1 AND enabled = TRUE
+		WHERE topic_id = $1 AND tenant_id = $2 AND namespace = $3 AND enabled = TRUE
 		ORDER BY created_at ASC
-	`, topicID)
+	`, topicID, scope.TenantID, scope.Namespace)
 	if err != nil {
 		return nil, 0, false, fmt.Errorf("list event subscriptions for outbox publish: %w", err)
 	}
@@ -830,15 +889,15 @@ func (s *PostgresStore) PublishEventFromOutbox(ctx context.Context, outboxID, to
 		deliveryID := uuid.New().String()
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO event_deliveries (
-				id, topic_id, subscription_id, message_id, function_id, function_name,
+				id, tenant_id, namespace, topic_id, subscription_id, message_id, function_id, function_name,
 				ordering_key, status, attempt, max_attempts, backoff_base_ms, backoff_max_ms,
 				next_run_at, created_at, updated_at
 			) VALUES (
-				$1, $2, $3, $4, $5, $6,
-				$7, 'queued', 0, $8, $9, $10,
-				$11, $11, $11
+				$1, $2, $3, $4, $5, $6, $7, $8,
+				$9, 'queued', 0, $10, $11, $12,
+				$13, $13, $13
 			)
-		`, deliveryID, topicID, target.ID, msg.ID, target.FunctionID, target.FunctionName,
+		`, deliveryID, scope.TenantID, scope.Namespace, topicID, target.ID, msg.ID, target.FunctionID, target.FunctionName,
 			msg.OrderingKey, target.MaxAttempts, target.BackoffBaseMS, target.BackoffMaxMS, now); err != nil {
 			return nil, 0, false, fmt.Errorf("insert outbox delivery: %w", err)
 		}
@@ -852,8 +911,9 @@ func (s *PostgresStore) PublishEventFromOutbox(ctx context.Context, outboxID, to
 }
 
 func (s *PostgresStore) GetEventDelivery(ctx context.Context, id string) (*EventDelivery, error) {
+	scope := tenantScopeFromContext(ctx)
 	delivery, err := scanEventDelivery(s.pool.QueryRow(ctx, `
-		SELECT d.id, d.topic_id, t.name, d.subscription_id, s.name, s.consumer_group,
+		SELECT d.id, d.tenant_id, d.namespace, d.topic_id, t.name, d.subscription_id, s.name, s.consumer_group,
 		       d.message_id, m.sequence, d.ordering_key, m.payload, m.headers,
 		       d.status, d.attempt, d.max_attempts, d.backoff_base_ms, d.backoff_max_ms,
 		       d.next_run_at, d.locked_by, d.locked_until, d.function_id, d.function_name,
@@ -863,8 +923,8 @@ func (s *PostgresStore) GetEventDelivery(ctx context.Context, id string) (*Event
 		JOIN event_topics t ON t.id = d.topic_id
 		JOIN event_subscriptions s ON s.id = d.subscription_id
 		JOIN event_messages m ON m.id = d.message_id
-		WHERE d.id = $1
-	`, strings.TrimSpace(id)))
+		WHERE d.id = $1 AND d.tenant_id = $2 AND d.namespace = $3
+	`, strings.TrimSpace(id), scope.TenantID, scope.Namespace))
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("%w: %s", ErrEventDeliveryNotFound, id)
 	}
@@ -876,8 +936,9 @@ func (s *PostgresStore) GetEventDelivery(ctx context.Context, id string) (*Event
 
 func (s *PostgresStore) ListEventDeliveries(ctx context.Context, subscriptionID string, limit int, statuses []EventDeliveryStatus) ([]*EventDelivery, error) {
 	limit = normalizeEventListLimit(limit)
+	scope := tenantScopeFromContext(ctx)
 	query := `
-		SELECT d.id, d.topic_id, t.name, d.subscription_id, s.name, s.consumer_group,
+		SELECT d.id, d.tenant_id, d.namespace, d.topic_id, t.name, d.subscription_id, s.name, s.consumer_group,
 		       d.message_id, m.sequence, d.ordering_key, m.payload, m.headers,
 		       d.status, d.attempt, d.max_attempts, d.backoff_base_ms, d.backoff_max_ms,
 		       d.next_run_at, d.locked_by, d.locked_until, d.function_id, d.function_name,
@@ -887,9 +948,9 @@ func (s *PostgresStore) ListEventDeliveries(ctx context.Context, subscriptionID 
 		JOIN event_topics t ON t.id = d.topic_id
 		JOIN event_subscriptions s ON s.id = d.subscription_id
 		JOIN event_messages m ON m.id = d.message_id
-		WHERE d.subscription_id = $1
+		WHERE d.subscription_id = $1 AND d.tenant_id = $2 AND d.namespace = $3
 	`
-	args := []any{strings.TrimSpace(subscriptionID)}
+	args := []any{strings.TrimSpace(subscriptionID), scope.TenantID, scope.Namespace}
 
 	if len(statuses) > 0 {
 		args = append(args, eventStatusesToStrings(statuses))
@@ -988,7 +1049,7 @@ func (s *PostgresStore) AcquireDueEventDelivery(ctx context.Context, workerID st
 			WHERE s.id = c.subscription_id
 			RETURNING s.id
 		)
-		SELECT d.id, d.topic_id, t.name, d.subscription_id, s.name, s.consumer_group,
+		SELECT d.id, d.tenant_id, d.namespace, d.topic_id, t.name, d.subscription_id, s.name, s.consumer_group,
 		       d.message_id, m.sequence, d.ordering_key, m.payload, m.headers,
 		       d.status, d.attempt, d.max_attempts, d.backoff_base_ms, d.backoff_max_ms,
 		       d.next_run_at, d.locked_by, d.locked_until, d.function_id, d.function_name,
@@ -1108,6 +1169,7 @@ func (s *PostgresStore) MarkEventDeliveryDLQ(ctx context.Context, id, lastError 
 func (s *PostgresStore) RequeueEventDelivery(ctx context.Context, id string, maxAttempts int) (*EventDelivery, error) {
 	now := time.Now().UTC()
 	maxAttempts = normalizeEventMaxAttempts(maxAttempts)
+	scope := tenantScopeFromContext(ctx)
 
 	ct, err := s.pool.Exec(ctx, `
 		UPDATE event_deliveries SET
@@ -1125,14 +1187,18 @@ func (s *PostgresStore) RequeueEventDelivery(ctx context.Context, id string, max
 			started_at = NULL,
 			completed_at = NULL,
 			updated_at = $3
-		WHERE id = $1 AND status = 'dlq'
-	`, id, maxAttempts, now)
+		WHERE id = $1 AND tenant_id = $4 AND namespace = $5 AND status = 'dlq'
+	`, id, maxAttempts, now, scope.TenantID, scope.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("requeue event delivery: %w", err)
 	}
 	if ct.RowsAffected() == 0 {
 		var status string
-		statusErr := s.pool.QueryRow(ctx, `SELECT status FROM event_deliveries WHERE id = $1`, id).Scan(&status)
+		statusErr := s.pool.QueryRow(ctx, `
+			SELECT status
+			FROM event_deliveries
+			WHERE id = $1 AND tenant_id = $2 AND namespace = $3
+		`, id, scope.TenantID, scope.Namespace).Scan(&status)
 		if statusErr == pgx.ErrNoRows {
 			return nil, fmt.Errorf("%w: %s", ErrEventDeliveryNotFound, id)
 		}
@@ -1149,12 +1215,19 @@ func (s *PostgresStore) CreateEventOutbox(ctx context.Context, outbox *EventOutb
 	if outbox == nil {
 		return fmt.Errorf("event outbox is required")
 	}
+	scope := tenantScopeFromContext(ctx)
+	outbox.TenantID = scope.TenantID
+	outbox.Namespace = scope.Namespace
 	if err := normalizeEventOutbox(outbox); err != nil {
 		return err
 	}
 
 	if outbox.TopicName == "" {
-		if err := s.pool.QueryRow(ctx, `SELECT name FROM event_topics WHERE id = $1`, outbox.TopicID).Scan(&outbox.TopicName); err != nil {
+		if err := s.pool.QueryRow(ctx, `
+			SELECT name
+			FROM event_topics
+			WHERE id = $1 AND tenant_id = $2 AND namespace = $3
+		`, outbox.TopicID, outbox.TenantID, outbox.Namespace).Scan(&outbox.TopicName); err != nil {
 			if err == pgx.ErrNoRows {
 				return fmt.Errorf("%w: %s", ErrEventTopicNotFound, outbox.TopicID)
 			}
@@ -1164,13 +1237,13 @@ func (s *PostgresStore) CreateEventOutbox(ctx context.Context, outbox *EventOutb
 
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO event_outbox (
-			id, topic_id, topic_name, ordering_key, payload, headers, status, attempt,
+			id, tenant_id, namespace, topic_id, topic_name, ordering_key, payload, headers, status, attempt,
 			max_attempts, backoff_base_ms, backoff_max_ms, next_attempt_at, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8,
-			$9, $10, $11, $12, $13, $14
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+			$11, $12, $13, $14, $15, $16
 		)
-	`, outbox.ID, outbox.TopicID, outbox.TopicName, outbox.OrderingKey, outbox.Payload, outbox.Headers, string(outbox.Status), outbox.Attempt,
+	`, outbox.ID, outbox.TenantID, outbox.Namespace, outbox.TopicID, outbox.TopicName, outbox.OrderingKey, outbox.Payload, outbox.Headers, string(outbox.Status), outbox.Attempt,
 		outbox.MaxAttempts, outbox.BackoffBaseMS, outbox.BackoffMaxMS, outbox.NextAttemptAt, outbox.CreatedAt, outbox.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("create event outbox: %w", err)
@@ -1179,13 +1252,14 @@ func (s *PostgresStore) CreateEventOutbox(ctx context.Context, outbox *EventOutb
 }
 
 func (s *PostgresStore) GetEventOutbox(ctx context.Context, id string) (*EventOutbox, error) {
+	scope := tenantScopeFromContext(ctx)
 	outbox, err := scanEventOutbox(s.pool.QueryRow(ctx, `
-		SELECT id, topic_id, topic_name, ordering_key, payload, headers, status, attempt,
+		SELECT id, tenant_id, namespace, topic_id, topic_name, ordering_key, payload, headers, status, attempt,
 		       max_attempts, backoff_base_ms, backoff_max_ms, next_attempt_at,
 		       locked_by, locked_until, message_id, last_error, published_at, created_at, updated_at
 		FROM event_outbox
-		WHERE id = $1
-	`, strings.TrimSpace(id)))
+		WHERE id = $1 AND tenant_id = $2 AND namespace = $3
+	`, strings.TrimSpace(id), scope.TenantID, scope.Namespace))
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("%w: %s", ErrEventOutboxNotFound, id)
 	}
@@ -1197,14 +1271,15 @@ func (s *PostgresStore) GetEventOutbox(ctx context.Context, id string) (*EventOu
 
 func (s *PostgresStore) ListEventOutbox(ctx context.Context, topicID string, limit int, statuses []EventOutboxStatus) ([]*EventOutbox, error) {
 	limit = normalizeEventListLimit(limit)
+	scope := tenantScopeFromContext(ctx)
 	query := `
-		SELECT id, topic_id, topic_name, ordering_key, payload, headers, status, attempt,
+		SELECT id, tenant_id, namespace, topic_id, topic_name, ordering_key, payload, headers, status, attempt,
 		       max_attempts, backoff_base_ms, backoff_max_ms, next_attempt_at,
 		       locked_by, locked_until, message_id, last_error, published_at, created_at, updated_at
 		FROM event_outbox
-		WHERE topic_id = $1
+		WHERE topic_id = $1 AND tenant_id = $2 AND namespace = $3
 	`
-	args := []any{strings.TrimSpace(topicID)}
+	args := []any{strings.TrimSpace(topicID), scope.TenantID, scope.Namespace}
 	if len(statuses) > 0 {
 		args = append(args, outboxStatusesToStrings(statuses))
 		query += " AND status = ANY($" + strconv.Itoa(len(args)) + ")"
@@ -1256,7 +1331,7 @@ func (s *PostgresStore) AcquireDueEventOutbox(ctx context.Context, workerID stri
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1
 		)
-		RETURNING id, topic_id, topic_name, ordering_key, payload, headers, status, attempt,
+		RETURNING id, tenant_id, namespace, topic_id, topic_name, ordering_key, payload, headers, status, attempt,
 		          max_attempts, backoff_base_ms, backoff_max_ms, next_attempt_at,
 		          locked_by, locked_until, message_id, last_error, published_at, created_at, updated_at
 	`, workerID, leaseUntil, now))
@@ -1337,6 +1412,7 @@ func (s *PostgresStore) MarkEventOutboxFailed(ctx context.Context, id, lastError
 func (s *PostgresStore) RequeueEventOutbox(ctx context.Context, id string, maxAttempts int) (*EventOutbox, error) {
 	now := time.Now().UTC()
 	maxAttempts = normalizeOutboxMaxAttempts(maxAttempts)
+	scope := tenantScopeFromContext(ctx)
 	ct, err := s.pool.Exec(ctx, `
 		UPDATE event_outbox SET
 			status = 'pending',
@@ -1347,14 +1423,18 @@ func (s *PostgresStore) RequeueEventOutbox(ctx context.Context, id string, maxAt
 			locked_until = NULL,
 			last_error = NULL,
 			updated_at = $3
-		WHERE id = $1 AND status = 'failed'
-	`, strings.TrimSpace(id), maxAttempts, now)
+		WHERE id = $1 AND tenant_id = $4 AND namespace = $5 AND status = 'failed'
+	`, strings.TrimSpace(id), maxAttempts, now, scope.TenantID, scope.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("requeue event outbox: %w", err)
 	}
 	if ct.RowsAffected() == 0 {
 		var status string
-		statusErr := s.pool.QueryRow(ctx, `SELECT status FROM event_outbox WHERE id = $1`, strings.TrimSpace(id)).Scan(&status)
+		statusErr := s.pool.QueryRow(ctx, `
+			SELECT status
+			FROM event_outbox
+			WHERE id = $1 AND tenant_id = $2 AND namespace = $3
+		`, strings.TrimSpace(id), scope.TenantID, scope.Namespace).Scan(&status)
 		if statusErr == pgx.ErrNoRows {
 			return nil, fmt.Errorf("%w: %s", ErrEventOutboxNotFound, id)
 		}
@@ -1480,10 +1560,13 @@ func (s *PostgresStore) ResolveEventReplaySequenceByTime(ctx context.Context, su
 	if from.IsZero() {
 		return 1, nil
 	}
+	scope := tenantScopeFromContext(ctx)
 	var topicID string
 	if err := s.pool.QueryRow(ctx, `
-		SELECT topic_id FROM event_subscriptions WHERE id = $1
-	`, strings.TrimSpace(subscriptionID)).Scan(&topicID); err != nil {
+		SELECT topic_id
+		FROM event_subscriptions
+		WHERE id = $1 AND tenant_id = $2 AND namespace = $3
+	`, strings.TrimSpace(subscriptionID), scope.TenantID, scope.Namespace).Scan(&topicID); err != nil {
 		if err == pgx.ErrNoRows {
 			return 0, fmt.Errorf("%w: %s", ErrEventSubscriptionNotFound, subscriptionID)
 		}
@@ -1494,10 +1577,10 @@ func (s *PostgresStore) ResolveEventReplaySequenceByTime(ctx context.Context, su
 	err := s.pool.QueryRow(ctx, `
 		SELECT sequence
 		FROM event_messages
-		WHERE topic_id = $1 AND published_at >= $2
+		WHERE topic_id = $1 AND tenant_id = $2 AND namespace = $3 AND published_at >= $4
 		ORDER BY sequence ASC
 		LIMIT 1
-	`, topicID, from.UTC()).Scan(&sequence)
+	`, topicID, scope.TenantID, scope.Namespace, from.UTC()).Scan(&sequence)
 	if err == nil {
 		return sequence, nil
 	}
@@ -1508,8 +1591,8 @@ func (s *PostgresStore) ResolveEventReplaySequenceByTime(ctx context.Context, su
 	err = s.pool.QueryRow(ctx, `
 		SELECT COALESCE(MAX(sequence) + 1, 1)
 		FROM event_messages
-		WHERE topic_id = $1
-	`, topicID).Scan(&sequence)
+		WHERE topic_id = $1 AND tenant_id = $2 AND namespace = $3
+	`, topicID, scope.TenantID, scope.Namespace).Scan(&sequence)
 	if err != nil {
 		return 0, fmt.Errorf("resolve replay sequence fallback: %w", err)
 	}
@@ -1520,14 +1603,15 @@ func (s *PostgresStore) SetEventSubscriptionCursor(ctx context.Context, subscrip
 	if lastAckedSequence < 0 {
 		return nil, fmt.Errorf("last_acked_sequence must be >= 0")
 	}
+	scope := tenantScopeFromContext(ctx)
 	now := time.Now().UTC()
 	ct, err := s.pool.Exec(ctx, `
 		UPDATE event_subscriptions
 		SET last_acked_sequence = $2,
 		    last_acked_at = $3,
 		    updated_at = $3
-		WHERE id = $1
-	`, strings.TrimSpace(subscriptionID), lastAckedSequence, now)
+		WHERE id = $1 AND tenant_id = $4 AND namespace = $5
+	`, strings.TrimSpace(subscriptionID), lastAckedSequence, now, scope.TenantID, scope.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("set event subscription cursor: %w", err)
 	}
@@ -1543,6 +1627,7 @@ func (s *PostgresStore) ReplayEventSubscription(ctx context.Context, subscriptio
 	}
 	limit = normalizeEventReplayLimit(limit)
 
+	scope := tenantScopeFromContext(ctx)
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return 0, fmt.Errorf("begin tx: %w", err)
@@ -1561,8 +1646,8 @@ func (s *PostgresStore) ReplayEventSubscription(ctx context.Context, subscriptio
 	err = tx.QueryRow(ctx, `
 		SELECT topic_id, function_id, function_name, max_attempts, backoff_base_ms, backoff_max_ms
 		FROM event_subscriptions
-		WHERE id = $1
-	`, strings.TrimSpace(subscriptionID)).Scan(
+		WHERE id = $1 AND tenant_id = $2 AND namespace = $3
+	`, strings.TrimSpace(subscriptionID), scope.TenantID, scope.Namespace).Scan(
 		&cfg.TopicID,
 		&cfg.FunctionID,
 		&cfg.FunctionName,
@@ -1582,10 +1667,10 @@ func (s *PostgresStore) ReplayEventSubscription(ctx context.Context, subscriptio
 	rows, err := tx.Query(ctx, `
 		SELECT id, ordering_key
 		FROM event_messages
-		WHERE topic_id = $1 AND sequence >= $2
+		WHERE topic_id = $1 AND tenant_id = $2 AND namespace = $3 AND sequence >= $4
 		ORDER BY sequence ASC
-		LIMIT $3
-	`, cfg.TopicID, fromSequence, limit)
+		LIMIT $5
+	`, cfg.TopicID, scope.TenantID, scope.Namespace, fromSequence, limit)
 	if err != nil {
 		return 0, fmt.Errorf("list messages for replay: %w", err)
 	}
@@ -1615,15 +1700,15 @@ func (s *PostgresStore) ReplayEventSubscription(ctx context.Context, subscriptio
 		deliveryID := uuid.New().String()
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO event_deliveries (
-				id, topic_id, subscription_id, message_id, function_id, function_name,
+				id, tenant_id, namespace, topic_id, subscription_id, message_id, function_id, function_name,
 				ordering_key, status, attempt, max_attempts, backoff_base_ms, backoff_max_ms,
 				next_run_at, created_at, updated_at
 			) VALUES (
-				$1, $2, $3, $4, $5, $6,
-				$7, 'queued', 0, $8, $9, $10,
-				$11, $11, $11
+				$1, $2, $3, $4, $5, $6, $7, $8,
+				$9, 'queued', 0, $10, $11, $12,
+				$13, $13, $13
 			)
-		`, deliveryID, cfg.TopicID, subscriptionID, msg.ID, cfg.FunctionID, cfg.FunctionName,
+		`, deliveryID, scope.TenantID, scope.Namespace, cfg.TopicID, subscriptionID, msg.ID, cfg.FunctionID, cfg.FunctionName,
 			msg.OrderingKey, cfg.MaxAttempts, cfg.BackoffBaseMS, cfg.BackoffMaxMS, now); err != nil {
 			return 0, fmt.Errorf("insert replay delivery: %w", err)
 		}
@@ -1640,6 +1725,12 @@ func normalizeEventTopic(topic *EventTopic) error {
 	now := time.Now().UTC()
 	if topic.ID == "" {
 		topic.ID = uuid.New().String()
+	}
+	if topic.TenantID == "" {
+		topic.TenantID = DefaultTenantID
+	}
+	if topic.Namespace == "" {
+		topic.Namespace = DefaultNamespace
 	}
 	topic.Name = strings.TrimSpace(topic.Name)
 	topic.Description = strings.TrimSpace(topic.Description)
@@ -1663,6 +1754,12 @@ func normalizeEventSubscription(sub *EventSubscription) error {
 	now := time.Now().UTC()
 	if sub.ID == "" {
 		sub.ID = uuid.New().String()
+	}
+	if sub.TenantID == "" {
+		sub.TenantID = DefaultTenantID
+	}
+	if sub.Namespace == "" {
+		sub.Namespace = DefaultNamespace
 	}
 	sub.TopicID = strings.TrimSpace(sub.TopicID)
 	sub.Name = strings.TrimSpace(sub.Name)
@@ -1712,6 +1809,12 @@ func normalizeEventOutbox(outbox *EventOutbox) error {
 	now := time.Now().UTC()
 	if outbox.ID == "" {
 		outbox.ID = uuid.New().String()
+	}
+	if outbox.TenantID == "" {
+		outbox.TenantID = DefaultTenantID
+	}
+	if outbox.Namespace == "" {
+		outbox.Namespace = DefaultNamespace
 	}
 	outbox.TopicID = strings.TrimSpace(outbox.TopicID)
 	outbox.TopicName = strings.TrimSpace(outbox.TopicName)
@@ -1868,6 +1971,8 @@ func scanEventTopic(scanner eventTopicScanner) (*EventTopic, error) {
 	var topic EventTopic
 	if err := scanner.Scan(
 		&topic.ID,
+		&topic.TenantID,
+		&topic.Namespace,
 		&topic.Name,
 		&topic.Description,
 		&topic.RetentionHours,
@@ -1888,6 +1993,8 @@ func scanEventSubscription(scanner eventSubscriptionScanner) (*EventSubscription
 	var oldestUnackedAt *time.Time
 	if err := scanner.Scan(
 		&sub.ID,
+		&sub.TenantID,
+		&sub.Namespace,
 		&sub.TopicID,
 		&sub.TopicName,
 		&sub.Name,
@@ -1932,6 +2039,8 @@ func scanEventMessage(scanner eventMessageScanner) (*EventMessage, error) {
 	var headers []byte
 	if err := scanner.Scan(
 		&msg.ID,
+		&msg.TenantID,
+		&msg.Namespace,
 		&msg.TopicID,
 		&msg.TopicName,
 		&msg.Sequence,
@@ -1970,6 +2079,8 @@ func scanEventDelivery(scanner eventDeliveryScanner) (*EventDelivery, error) {
 
 	if err := scanner.Scan(
 		&delivery.ID,
+		&delivery.TenantID,
+		&delivery.Namespace,
 		&delivery.TopicID,
 		&delivery.TopicName,
 		&delivery.SubscriptionID,
@@ -2042,6 +2153,8 @@ func scanEventOutbox(scanner eventOutboxScanner) (*EventOutbox, error) {
 
 	if err := scanner.Scan(
 		&job.ID,
+		&job.TenantID,
+		&job.Namespace,
 		&job.TopicID,
 		&job.TopicName,
 		&job.OrderingKey,
