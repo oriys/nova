@@ -205,6 +205,8 @@ export interface EventMessage {
 
 export type EventDeliveryStatus = "queued" | "running" | "succeeded" | "dlq";
 
+export type EventOutboxStatus = "pending" | "publishing" | "published" | "failed";
+
 export interface EventDelivery {
   id: string;
   topic_id: string;
@@ -234,6 +236,28 @@ export interface EventDelivery {
   last_error?: string;
   started_at?: string;
   completed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EventOutboxJob {
+  id: string;
+  topic_id: string;
+  topic_name: string;
+  ordering_key?: string;
+  payload: unknown;
+  headers?: unknown;
+  status: EventOutboxStatus;
+  attempt: number;
+  max_attempts: number;
+  backoff_base_ms: number;
+  backoff_max_ms: number;
+  next_attempt_at: string;
+  locked_by?: string;
+  locked_until?: string;
+  message_id?: string;
+  last_error?: string;
+  published_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -532,6 +556,44 @@ export const eventsApi = {
       }),
     }),
 
+  enqueueOutbox: (
+    topicName: string,
+    data: {
+      payload?: unknown;
+      headers?: unknown;
+      ordering_key?: string;
+      max_attempts?: number;
+      backoff_base_ms?: number;
+      backoff_max_ms?: number;
+    }
+  ) =>
+    request<EventOutboxJob>(`/topics/${encodeURIComponent(topicName)}/outbox`, {
+      method: "POST",
+      body: JSON.stringify({
+        payload: data.payload ?? {},
+        ...(data.headers !== undefined ? { headers: data.headers } : {}),
+        ...(data.ordering_key ? { ordering_key: data.ordering_key } : {}),
+        ...(typeof data.max_attempts === "number" ? { max_attempts: data.max_attempts } : {}),
+        ...(typeof data.backoff_base_ms === "number" ? { backoff_base_ms: data.backoff_base_ms } : {}),
+        ...(typeof data.backoff_max_ms === "number" ? { backoff_max_ms: data.backoff_max_ms } : {}),
+      }),
+    }),
+
+  listOutbox: (
+    topicName: string,
+    limit: number = 100,
+    status?: EventOutboxStatus | EventOutboxStatus[]
+  ) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(limit));
+    if (status) {
+      params.set("status", Array.isArray(status) ? status.join(",") : status);
+    }
+    return request<EventOutboxJob[]>(
+      `/topics/${encodeURIComponent(topicName)}/outbox?${params.toString()}`
+    );
+  },
+
   listMessages: (topicName: string, limit: number = 50) =>
     request<EventMessage[]>(`/topics/${encodeURIComponent(topicName)}/messages?limit=${limit}`),
 
@@ -635,6 +697,14 @@ export const eventsApi = {
 
   retryDelivery: (id: string, maxAttempts?: number) =>
     request<EventDelivery>(`/deliveries/${encodeURIComponent(id)}/retry`, {
+      method: "POST",
+      body: JSON.stringify(
+        maxAttempts && maxAttempts > 0 ? { max_attempts: maxAttempts } : {}
+      ),
+    }),
+
+  retryOutbox: (id: string, maxAttempts?: number) =>
+    request<EventOutboxJob>(`/outbox/${encodeURIComponent(id)}/retry`, {
       method: "POST",
       body: JSON.stringify(
         maxAttempts && maxAttempts > 0 ? { max_attempts: maxAttempts } : {}

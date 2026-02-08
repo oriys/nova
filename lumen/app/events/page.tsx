@@ -21,6 +21,7 @@ import {
   type EventDelivery,
   type EventDeliveryStatus,
   type EventMessage,
+  type EventOutboxJob,
   type EventSubscription,
   type EventTopic,
   type NovaFunction,
@@ -51,6 +52,7 @@ export default function EventsPage() {
   const [selectedTopicName, setSelectedTopicName] = useState("")
   const [subscriptions, setSubscriptions] = useState<EventSubscription[]>([])
   const [messages, setMessages] = useState<EventMessage[]>([])
+  const [outboxJobs, setOutboxJobs] = useState<EventOutboxJob[]>([])
   const [selectedSubscriptionID, setSelectedSubscriptionID] = useState("")
   const [deliveries, setDeliveries] = useState<EventDelivery[]>([])
   const [loading, setLoading] = useState(true)
@@ -72,6 +74,9 @@ export default function EventsPage() {
   const [publishPayload, setPublishPayload] = useState("{}")
   const [publishHeaders, setPublishHeaders] = useState("{}")
   const [publishOrderingKey, setPublishOrderingKey] = useState("")
+  const [outboxMaxAttempts, setOutboxMaxAttempts] = useState("5")
+  const [outboxBackoffBase, setOutboxBackoffBase] = useState("1000")
+  const [outboxBackoffMax, setOutboxBackoffMax] = useState("60000")
 
   const [replayFromSequence, setReplayFromSequence] = useState("1")
   const [replayLimit, setReplayLimit] = useState("100")
@@ -113,6 +118,7 @@ export default function EventsPage() {
         setSelectedTopicName("")
         setSubscriptions([])
         setMessages([])
+        setOutboxJobs([])
         setSelectedSubscriptionID("")
         setDeliveries([])
       }
@@ -132,18 +138,21 @@ export default function EventsPage() {
     if (!topicName) {
       setSubscriptions([])
       setMessages([])
+      setOutboxJobs([])
       setSelectedSubscriptionID("")
       setDeliveries([])
       return
     }
 
     try {
-      const [subData, messageData] = await Promise.all([
+      const [subData, messageData, outboxData] = await Promise.all([
         eventsApi.listSubscriptions(topicName),
         eventsApi.listMessages(topicName, 100),
+        eventsApi.listOutbox(topicName, 100),
       ])
       setSubscriptions(subData)
       setMessages(messageData)
+      setOutboxJobs(outboxData)
 
       if (subData.length > 0) {
         setSelectedSubscriptionID((prev) => {
@@ -363,6 +372,33 @@ export default function EventsPage() {
     }
   }
 
+  const handleEnqueueOutbox = async () => {
+    if (!selectedTopicName) {
+      alert("Select a topic first")
+      return
+    }
+    try {
+      setBusy(true)
+      const payload = parseJSONText(publishPayload, "Payload")
+      const headers = parseJSONText(publishHeaders, "Headers")
+      const job = await eventsApi.enqueueOutbox(selectedTopicName, {
+        payload,
+        headers,
+        ordering_key: publishOrderingKey.trim() || undefined,
+        max_attempts: Math.max(1, Number(outboxMaxAttempts) || 5),
+        backoff_base_ms: Math.max(1, Number(outboxBackoffBase) || 1000),
+        backoff_max_ms: Math.max(1, Number(outboxBackoffMax) || 60000),
+      })
+      await fetchTopicDetails(selectedTopicName)
+      alert(`Outbox enqueued: ${job.id}`)
+    } catch (err) {
+      console.error("Failed to enqueue outbox event:", err)
+      alert(err instanceof Error ? err.message : "Failed to enqueue outbox event")
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const handleReplay = async () => {
     if (!selectedSubscriptionID) {
       alert("Select a subscription first")
@@ -422,6 +458,19 @@ export default function EventsPage() {
     } catch (err) {
       console.error("Failed to retry delivery:", err)
       alert(err instanceof Error ? err.message : "Failed to retry delivery")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleRetryOutbox = async (outboxID: string) => {
+    try {
+      setBusy(true)
+      await eventsApi.retryOutbox(outboxID)
+      await fetchTopicDetails(selectedTopicName)
+    } catch (err) {
+      console.error("Failed to retry outbox:", err)
+      alert(err instanceof Error ? err.message : "Failed to retry outbox")
     } finally {
       setBusy(false)
     }
@@ -553,11 +602,43 @@ export default function EventsPage() {
                         placeholder="customer-42"
                       />
                     </div>
+                    <div className="space-y-2">
+                      <Label>Outbox Max Attempts</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={outboxMaxAttempts}
+                        onChange={(e) => setOutboxMaxAttempts(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Outbox Backoff Base (ms)</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={outboxBackoffBase}
+                        onChange={(e) => setOutboxBackoffBase(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Outbox Backoff Max (ms)</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={outboxBackoffMax}
+                        onChange={(e) => setOutboxBackoffMax(e.target.value)}
+                      />
+                    </div>
                   </div>
-                  <Button onClick={handlePublish} disabled={busy}>
-                    <Send className="mr-2 h-4 w-4" />
-                    Publish Event
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={handlePublish} disabled={busy}>
+                      <Send className="mr-2 h-4 w-4" />
+                      Publish Event
+                    </Button>
+                    <Button variant="outline" onClick={handleEnqueueOutbox} disabled={busy}>
+                      Enqueue Outbox
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="rounded-lg border border-border bg-card p-4 space-y-4">
@@ -881,6 +962,62 @@ export default function EventsPage() {
                               <td className="px-3 py-2 text-muted-foreground">{message.sequence}</td>
                               <td className="px-3 py-2 text-muted-foreground">{message.ordering_key || "-"}</td>
                               <td className="px-3 py-2 text-muted-foreground">{formatDate(message.published_at)}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-border bg-card p-4">
+                  <p className="text-sm font-medium text-foreground mb-2">Outbox Jobs</p>
+                  <div className="rounded-md border border-border overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">ID</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Status</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Attempt</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Message</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Next Attempt</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Error</th>
+                          <th className="px-3 py-2 text-right font-medium text-muted-foreground">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {outboxJobs.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="px-3 py-4 text-center text-muted-foreground">No outbox jobs.</td>
+                          </tr>
+                        ) : (
+                          outboxJobs.map((job) => (
+                            <tr key={job.id} className="border-b border-border last:border-0">
+                              <td className="px-3 py-2 text-xs text-muted-foreground">{job.id.slice(0, 8)}...</td>
+                              <td className="px-3 py-2">
+                                <Badge variant={
+                                  job.status === "published"
+                                    ? "default"
+                                    : job.status === "failed"
+                                      ? "destructive"
+                                      : "secondary"
+                                }>
+                                  {job.status}
+                                </Badge>
+                              </td>
+                              <td className="px-3 py-2 text-muted-foreground">{job.attempt}/{job.max_attempts}</td>
+                              <td className="px-3 py-2 text-muted-foreground">{job.message_id || "-"}</td>
+                              <td className="px-3 py-2 text-muted-foreground">{formatDate(job.next_attempt_at)}</td>
+                              <td className="px-3 py-2 text-muted-foreground max-w-[280px] truncate">{job.last_error || "-"}</td>
+                              <td className="px-3 py-2 text-right">
+                                {job.status === "failed" ? (
+                                  <Button variant="outline" size="sm" onClick={() => handleRetryOutbox(job.id)} disabled={busy}>
+                                    Retry
+                                  </Button>
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </td>
                             </tr>
                           ))
                         )}

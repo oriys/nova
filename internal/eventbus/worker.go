@@ -111,11 +111,38 @@ func (w *WorkerPool) poll(workerID string) {
 		return
 	}
 
+	inboxRec, deduplicated, err := w.store.PrepareEventInbox(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID)
+	if err != nil {
+		logging.Op().Error("prepare event inbox failed", "delivery", delivery.ID, "error", err)
+		w.retryOrDLQ(delivery, "prepare inbox: "+err.Error())
+		return
+	}
+	if deduplicated {
+		var output json.RawMessage
+		var durationMS int64
+		var coldStart bool
+		var requestID string
+		if inboxRec != nil {
+			output = inboxRec.Output
+			durationMS = inboxRec.DurationMS
+			coldStart = inboxRec.ColdStart
+			requestID = inboxRec.RequestID
+		}
+		if err := w.store.MarkEventDeliverySucceeded(context.Background(), delivery.ID, requestID, output, durationMS, coldStart); err != nil {
+			logging.Op().Error("mark deduplicated event delivery succeeded failed", "delivery", delivery.ID, "error", err)
+			w.retryOrDLQ(delivery, "mark deduplicated success: "+err.Error())
+			return
+		}
+		logging.Op().Debug("event delivery deduplicated by inbox", "delivery", delivery.ID, "topic", delivery.TopicName, "subscription", delivery.SubscriptionName, "message_id", delivery.MessageID)
+		return
+	}
+
 	payload, err := buildEventInvocationPayload(delivery)
 	if err != nil {
-		if markErr := w.store.MarkEventDeliveryDLQ(context.Background(), delivery.ID, "serialize event payload: "+err.Error()); markErr != nil {
-			logging.Op().Error("mark event delivery dlq after serialization failure failed", "delivery", delivery.ID, "error", markErr)
+		if markInboxErr := w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, "serialize payload: "+err.Error()); markInboxErr != nil {
+			logging.Op().Error("mark event inbox failed after serialization failure failed", "delivery", delivery.ID, "error", markInboxErr)
 		}
+		w.retryOrDLQ(delivery, "serialize event payload: "+err.Error())
 		return
 	}
 
@@ -134,14 +161,30 @@ func (w *WorkerPool) poll(workerID string) {
 	}
 
 	if errMsg == "" {
+		if err := w.store.MarkEventInboxSucceeded(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, resp.RequestID, resp.Output, resp.DurationMs, resp.ColdStart); err != nil {
+			logging.Op().Error("mark event inbox succeeded failed", "delivery", delivery.ID, "error", err)
+			w.retryOrDLQ(delivery, "mark inbox success: "+err.Error())
+			return
+		}
 		if err := w.store.MarkEventDeliverySucceeded(context.Background(), delivery.ID, resp.RequestID, resp.Output, resp.DurationMs, resp.ColdStart); err != nil {
 			logging.Op().Error("mark event delivery succeeded failed", "delivery", delivery.ID, "error", err)
+			w.retryOrDLQ(delivery, "mark delivery success: "+err.Error())
 			return
 		}
 		logging.Op().Debug("event delivery succeeded", "delivery", delivery.ID, "topic", delivery.TopicName, "subscription", delivery.SubscriptionName, "attempt", delivery.Attempt)
 		return
 	}
 
+	if err := w.store.MarkEventInboxFailed(context.Background(), delivery.SubscriptionID, delivery.MessageID, delivery.ID, errMsg); err != nil {
+		logging.Op().Error("mark event inbox failed", "delivery", delivery.ID, "error", err)
+	}
+	w.retryOrDLQ(delivery, errMsg)
+}
+
+func (w *WorkerPool) retryOrDLQ(delivery *store.EventDelivery, errMsg string) {
+	if delivery == nil {
+		return
+	}
 	if delivery.Attempt >= delivery.MaxAttempts {
 		if err := w.store.MarkEventDeliveryDLQ(context.Background(), delivery.ID, errMsg); err != nil {
 			logging.Op().Error("mark event delivery dlq failed", "delivery", delivery.ID, "error", err)

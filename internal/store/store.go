@@ -87,6 +87,7 @@ type MetadataStore interface {
 
 	PublishEvent(ctx context.Context, topicID, orderingKey string, payload, headers json.RawMessage) (*EventMessage, int, error)
 	ListEventMessages(ctx context.Context, topicID string, limit int) ([]*EventMessage, error)
+	PublishEventFromOutbox(ctx context.Context, outboxID, topicID, orderingKey string, payload, headers json.RawMessage) (*EventMessage, int, bool, error)
 
 	GetEventDelivery(ctx context.Context, id string) (*EventDelivery, error)
 	ListEventDeliveries(ctx context.Context, subscriptionID string, limit int, statuses []EventDeliveryStatus) ([]*EventDelivery, error)
@@ -98,6 +99,19 @@ type MetadataStore interface {
 	ResolveEventReplaySequenceByTime(ctx context.Context, subscriptionID string, from time.Time) (int64, error)
 	SetEventSubscriptionCursor(ctx context.Context, subscriptionID string, lastAckedSequence int64) (*EventSubscription, error)
 	ReplayEventSubscription(ctx context.Context, subscriptionID string, fromSequence int64, limit int) (int, error)
+
+	CreateEventOutbox(ctx context.Context, outbox *EventOutbox) error
+	GetEventOutbox(ctx context.Context, id string) (*EventOutbox, error)
+	ListEventOutbox(ctx context.Context, topicID string, limit int, statuses []EventOutboxStatus) ([]*EventOutbox, error)
+	AcquireDueEventOutbox(ctx context.Context, workerID string, leaseDuration time.Duration) (*EventOutbox, error)
+	MarkEventOutboxPublished(ctx context.Context, id, messageID string) error
+	MarkEventOutboxForRetry(ctx context.Context, id, lastError string, nextRunAt time.Time) error
+	MarkEventOutboxFailed(ctx context.Context, id, lastError string) error
+	RequeueEventOutbox(ctx context.Context, id string, maxAttempts int) (*EventOutbox, error)
+
+	PrepareEventInbox(ctx context.Context, subscriptionID, messageID, deliveryID string) (*EventInboxRecord, bool, error)
+	MarkEventInboxSucceeded(ctx context.Context, subscriptionID, messageID, deliveryID, requestID string, output json.RawMessage, durationMS int64, coldStart bool) error
+	MarkEventInboxFailed(ctx context.Context, subscriptionID, messageID, deliveryID, lastError string) error
 
 	// Runtimes
 	SaveRuntime(ctx context.Context, rt *RuntimeRecord) error

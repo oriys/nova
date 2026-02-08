@@ -84,6 +84,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /topics/{name}", h.GetEventTopic)
 	mux.HandleFunc("DELETE /topics/{name}", h.DeleteEventTopic)
 	mux.HandleFunc("POST /topics/{name}/publish", h.PublishEvent)
+	mux.HandleFunc("POST /topics/{name}/outbox", h.CreateEventOutbox)
+	mux.HandleFunc("GET /topics/{name}/outbox", h.ListEventOutbox)
 	mux.HandleFunc("GET /topics/{name}/messages", h.ListTopicMessages)
 	mux.HandleFunc("POST /topics/{name}/subscriptions", h.CreateEventSubscription)
 	mux.HandleFunc("GET /topics/{name}/subscriptions", h.ListEventSubscriptions)
@@ -95,6 +97,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /subscriptions/{id}/seek", h.SeekEventSubscription)
 	mux.HandleFunc("GET /deliveries/{id}", h.GetEventDelivery)
 	mux.HandleFunc("POST /deliveries/{id}/retry", h.RetryEventDelivery)
+	mux.HandleFunc("POST /outbox/{id}/retry", h.RetryEventOutbox)
 
 	// Workflows
 	h.RegisterWorkflowRoutes(mux)

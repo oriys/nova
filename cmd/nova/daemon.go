@@ -203,6 +203,8 @@ func daemonCmd() *cobra.Command {
 			asyncWorkers.Start()
 			eventWorkers := eventbus.New(s, exec, eventbus.Config{})
 			eventWorkers.Start()
+			outboxRelay := eventbus.NewOutboxRelay(s, eventbus.OutboxRelayConfig{})
+			outboxRelay.Start()
 
 			var httpServer *http.Server
 			if cfg.Daemon.HTTPAddr != "" {
@@ -255,6 +257,7 @@ func daemonCmd() *cobra.Command {
 					sched.Stop()
 					asyncWorkers.Stop()
 					eventWorkers.Stop()
+					outboxRelay.Stop()
 					wfEngine.Stop()
 					exec.Shutdown(10 * time.Second)
 					be.Shutdown()

@@ -60,6 +60,19 @@ type seekEventSubscriptionRequest struct {
 	FromTime     string `json:"from_time,omitempty"`
 }
 
+type createEventOutboxRequest struct {
+	Payload       json.RawMessage `json:"payload"`
+	Headers       json.RawMessage `json:"headers"`
+	OrderingKey   string          `json:"ordering_key"`
+	MaxAttempts   int             `json:"max_attempts,omitempty"`
+	BackoffBaseMS int             `json:"backoff_base_ms,omitempty"`
+	BackoffMaxMS  int             `json:"backoff_max_ms,omitempty"`
+}
+
+type retryEventOutboxRequest struct {
+	MaxAttempts int `json:"max_attempts,omitempty"`
+}
+
 type retryEventDeliveryRequest struct {
 	MaxAttempts int `json:"max_attempts,omitempty"`
 }
@@ -170,6 +183,77 @@ func (h *Handler) PublishEvent(w http.ResponseWriter, r *http.Request) {
 		"message":    msg,
 		"deliveries": fanout,
 	})
+}
+
+func (h *Handler) CreateEventOutbox(w http.ResponseWriter, r *http.Request) {
+	topicName := r.PathValue("name")
+	topic, err := h.Store.GetEventTopicByName(r.Context(), topicName)
+	if err != nil {
+		if errors.Is(err, store.ErrEventTopicNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	req := createEventOutboxRequest{}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+			return
+		}
+	}
+
+	job := store.NewEventOutbox(topic.ID, topic.Name, req.OrderingKey, req.Payload, req.Headers)
+	if req.MaxAttempts > 0 {
+		job.MaxAttempts = req.MaxAttempts
+	}
+	if req.BackoffBaseMS > 0 {
+		job.BackoffBaseMS = req.BackoffBaseMS
+	}
+	if req.BackoffMaxMS > 0 {
+		job.BackoffMaxMS = req.BackoffMaxMS
+	}
+	if err := h.Store.CreateEventOutbox(r.Context(), job); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Location", "/outbox/"+job.ID)
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(job)
+}
+
+func (h *Handler) ListEventOutbox(w http.ResponseWriter, r *http.Request) {
+	topicName := r.PathValue("name")
+	topic, err := h.Store.GetEventTopicByName(r.Context(), topicName)
+	if err != nil {
+		if errors.Is(err, store.ErrEventTopicNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	limit := parseEventLimitQuery(r.URL.Query().Get("limit"), store.DefaultEventListLimit, store.MaxEventListLimit)
+	statuses, err := parseOutboxStatuses(r.URL.Query().Get("status"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	jobs, err := h.Store.ListEventOutbox(r.Context(), topic.ID, limit, statuses)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if jobs == nil {
+		jobs = []*store.EventOutbox{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(jobs)
 }
 
 func (h *Handler) ListTopicMessages(w http.ResponseWriter, r *http.Request) {
@@ -547,6 +631,34 @@ func (h *Handler) RetryEventDelivery(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(delivery)
 }
 
+func (h *Handler) RetryEventOutbox(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	req := retryEventOutboxRequest{}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+			return
+		}
+	}
+
+	job, err := h.Store.RequeueEventOutbox(r.Context(), id, req.MaxAttempts)
+	if err != nil {
+		if errors.Is(err, store.ErrEventOutboxNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, store.ErrEventOutboxNotFailed) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(job)
+}
+
 func parseEventLimitQuery(raw string, fallback, max int) int {
 	limit := fallback
 	if raw != "" {
@@ -583,6 +695,31 @@ func parseEventStatuses(raw string) ([]store.EventDeliveryStatus, error) {
 			statuses = append(statuses, status)
 		default:
 			return nil, fmt.Errorf("invalid status: %s", status)
+		}
+	}
+	return statuses, nil
+}
+
+func parseOutboxStatuses(raw string) ([]store.EventOutboxStatus, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	statuses := make([]store.EventOutboxStatus, 0, len(parts))
+	for _, part := range parts {
+		status := store.EventOutboxStatus(strings.TrimSpace(part))
+		if status == "" {
+			continue
+		}
+		switch status {
+		case store.EventOutboxStatusPending,
+			store.EventOutboxStatusPublishing,
+			store.EventOutboxStatusPublished,
+			store.EventOutboxStatusFailed:
+			statuses = append(statuses, status)
+		default:
+			return nil, fmt.Errorf("invalid outbox status: %s", status)
 		}
 	}
 	return statuses, nil

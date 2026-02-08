@@ -25,6 +25,25 @@ const (
 	EventDeliveryStatusDLQ       EventDeliveryStatus = "dlq"
 )
 
+// EventOutboxStatus values.
+type EventOutboxStatus string
+
+const (
+	EventOutboxStatusPending    EventOutboxStatus = "pending"
+	EventOutboxStatusPublishing EventOutboxStatus = "publishing"
+	EventOutboxStatusPublished  EventOutboxStatus = "published"
+	EventOutboxStatusFailed     EventOutboxStatus = "failed"
+)
+
+// EventInboxStatus values.
+type EventInboxStatus string
+
+const (
+	EventInboxStatusProcessing EventInboxStatus = "processing"
+	EventInboxStatusSucceeded  EventInboxStatus = "succeeded"
+	EventInboxStatusFailed     EventInboxStatus = "failed"
+)
+
 const (
 	DefaultEventRetentionHours = 168 // 7 days
 	DefaultEventListLimit      = 50
@@ -37,6 +56,10 @@ const (
 	DefaultEventMaxInflight    = 0 // 0 means unlimited
 	DefaultEventRateLimitPerS  = 0 // 0 means unlimited
 	DefaultEventLeaseTimeout   = 30 * time.Second
+	DefaultOutboxMaxAttempts   = 5
+	DefaultOutboxBackoffBaseMS = 1000
+	DefaultOutboxBackoffMaxMS  = 60000
+	DefaultOutboxLeaseTimeout  = 30 * time.Second
 )
 
 var (
@@ -44,6 +67,8 @@ var (
 	ErrEventSubscriptionNotFound = errors.New("event subscription not found")
 	ErrEventDeliveryNotFound     = errors.New("event delivery not found")
 	ErrEventDeliveryNotDLQ       = errors.New("event delivery is not in dlq")
+	ErrEventOutboxNotFound       = errors.New("event outbox not found")
+	ErrEventOutboxNotFailed      = errors.New("event outbox is not failed")
 	ErrInvalidEventTopicName     = errors.New("invalid event topic name")
 	ErrInvalidEventSubName       = errors.New("invalid event subscription name")
 	ErrInvalidConsumerGroup      = errors.New("invalid consumer group")
@@ -150,6 +175,45 @@ type EventDelivery struct {
 	UpdatedAt        time.Time           `json:"updated_at"`
 }
 
+// EventOutbox is a durable relay queue for transactional publishing.
+type EventOutbox struct {
+	ID            string            `json:"id"`
+	TopicID       string            `json:"topic_id"`
+	TopicName     string            `json:"topic_name"`
+	OrderingKey   string            `json:"ordering_key,omitempty"`
+	Payload       json.RawMessage   `json:"payload"`
+	Headers       json.RawMessage   `json:"headers,omitempty"`
+	Status        EventOutboxStatus `json:"status"`
+	Attempt       int               `json:"attempt"`
+	MaxAttempts   int               `json:"max_attempts"`
+	BackoffBaseMS int               `json:"backoff_base_ms"`
+	BackoffMaxMS  int               `json:"backoff_max_ms"`
+	NextAttemptAt time.Time         `json:"next_attempt_at"`
+	LockedBy      string            `json:"locked_by,omitempty"`
+	LockedUntil   *time.Time        `json:"locked_until,omitempty"`
+	MessageID     string            `json:"message_id,omitempty"`
+	LastError     string            `json:"last_error,omitempty"`
+	PublishedAt   *time.Time        `json:"published_at,omitempty"`
+	CreatedAt     time.Time         `json:"created_at"`
+	UpdatedAt     time.Time         `json:"updated_at"`
+}
+
+// EventInboxRecord tracks deduplication state per (subscription, message).
+type EventInboxRecord struct {
+	SubscriptionID string           `json:"subscription_id"`
+	MessageID      string           `json:"message_id"`
+	DeliveryID     string           `json:"delivery_id"`
+	Status         EventInboxStatus `json:"status"`
+	RequestID      string           `json:"request_id,omitempty"`
+	Output         json.RawMessage  `json:"output,omitempty"`
+	DurationMS     int64            `json:"duration_ms,omitempty"`
+	ColdStart      bool             `json:"cold_start"`
+	LastError      string           `json:"last_error,omitempty"`
+	SucceededAt    *time.Time       `json:"succeeded_at,omitempty"`
+	CreatedAt      time.Time        `json:"created_at"`
+	UpdatedAt      time.Time        `json:"updated_at"`
+}
+
 // NewEventTopic creates a topic with defaults.
 func NewEventTopic(name, description string) *EventTopic {
 	now := time.Now().UTC()
@@ -182,6 +246,32 @@ func NewEventSubscription(topicID, topicName, name, consumerGroup, functionID, f
 		RateLimitPerSec: DefaultEventRateLimitPerS,
 		CreatedAt:       now,
 		UpdatedAt:       now,
+	}
+}
+
+// NewEventOutbox creates an outbox relay job with defaults.
+func NewEventOutbox(topicID, topicName, orderingKey string, payload, headers json.RawMessage) *EventOutbox {
+	now := time.Now().UTC()
+	if len(payload) == 0 {
+		payload = json.RawMessage(`{}`)
+	}
+	if len(headers) == 0 {
+		headers = json.RawMessage(`{}`)
+	}
+	return &EventOutbox{
+		ID:            uuid.New().String(),
+		TopicID:       strings.TrimSpace(topicID),
+		TopicName:     strings.TrimSpace(topicName),
+		OrderingKey:   strings.TrimSpace(orderingKey),
+		Payload:       payload,
+		Headers:       headers,
+		Status:        EventOutboxStatusPending,
+		MaxAttempts:   DefaultOutboxMaxAttempts,
+		BackoffBaseMS: DefaultOutboxBackoffBaseMS,
+		BackoffMaxMS:  DefaultOutboxBackoffMaxMS,
+		NextAttemptAt: now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 }
 
@@ -619,6 +709,148 @@ func (s *PostgresStore) ListEventMessages(ctx context.Context, topicID string, l
 	return out, nil
 }
 
+// PublishEventFromOutbox publishes one outbox job with de-duplication by source_outbox_id.
+// It returns (message, fanoutCreated, newlyPublished).
+func (s *PostgresStore) PublishEventFromOutbox(ctx context.Context, outboxID, topicID, orderingKey string, payload, headers json.RawMessage) (*EventMessage, int, bool, error) {
+	outboxID = strings.TrimSpace(outboxID)
+	if outboxID == "" {
+		return nil, 0, false, fmt.Errorf("outbox id is required")
+	}
+	topicID = strings.TrimSpace(topicID)
+	if topicID == "" {
+		return nil, 0, false, fmt.Errorf("topic id is required")
+	}
+	ok, err := normalizeOrderingKey(orderingKey)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	if len(payload) == 0 {
+		payload = json.RawMessage(`{}`)
+	}
+	if len(headers) == 0 {
+		headers = json.RawMessage(`{}`)
+	}
+
+	now := time.Now().UTC()
+	msg := &EventMessage{
+		TopicID:     topicID,
+		OrderingKey: ok,
+		Payload:     payload,
+		Headers:     headers,
+		PublishedAt: now,
+		CreatedAt:   now,
+	}
+
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, 0, false, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if err := tx.QueryRow(ctx, `SELECT name FROM event_topics WHERE id = $1`, topicID).Scan(&msg.TopicName); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, 0, false, fmt.Errorf("%w: %s", ErrEventTopicNotFound, topicID)
+		}
+		return nil, 0, false, fmt.Errorf("lookup event topic: %w", err)
+	}
+
+	var inserted bool
+	err = tx.QueryRow(ctx, `
+		WITH ins AS (
+			INSERT INTO event_messages (id, topic_id, source_outbox_id, ordering_key, payload, headers, published_at, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+			ON CONFLICT (source_outbox_id) DO NOTHING
+			RETURNING id, sequence, published_at, created_at, TRUE AS inserted
+		), existing AS (
+			SELECT id, sequence, published_at, created_at, FALSE AS inserted
+			FROM event_messages
+			WHERE source_outbox_id = $3
+			LIMIT 1
+		)
+		SELECT id, sequence, published_at, created_at, inserted
+		FROM ins
+		UNION ALL
+		SELECT id, sequence, published_at, created_at, inserted
+		FROM existing
+		WHERE NOT EXISTS (SELECT 1 FROM ins)
+		LIMIT 1
+	`, uuid.New().String(), topicID, outboxID, msg.OrderingKey, msg.Payload, msg.Headers, now).Scan(
+		&msg.ID, &msg.Sequence, &msg.PublishedAt, &msg.CreatedAt, &inserted,
+	)
+	if err == pgx.ErrNoRows {
+		return nil, 0, false, fmt.Errorf("publish outbox message: no message resolved")
+	}
+	if err != nil {
+		return nil, 0, false, fmt.Errorf("publish outbox message: %w", err)
+	}
+
+	if !inserted {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, 0, false, fmt.Errorf("commit deduplicated outbox publish: %w", err)
+		}
+		return msg, 0, false, nil
+	}
+
+	rows, err := tx.Query(ctx, `
+		SELECT id, function_id, function_name, max_attempts, backoff_base_ms, backoff_max_ms
+		FROM event_subscriptions
+		WHERE topic_id = $1 AND enabled = TRUE
+		ORDER BY created_at ASC
+	`, topicID)
+	if err != nil {
+		return nil, 0, false, fmt.Errorf("list event subscriptions for outbox publish: %w", err)
+	}
+	type subTarget struct {
+		ID            string
+		FunctionID    string
+		FunctionName  string
+		MaxAttempts   int
+		BackoffBaseMS int
+		BackoffMaxMS  int
+	}
+	targets := make([]subTarget, 0)
+	for rows.Next() {
+		var target subTarget
+		if err := rows.Scan(&target.ID, &target.FunctionID, &target.FunctionName, &target.MaxAttempts, &target.BackoffBaseMS, &target.BackoffMaxMS); err != nil {
+			rows.Close()
+			return nil, 0, false, fmt.Errorf("scan subscription for outbox publish: %w", err)
+		}
+		target.MaxAttempts = normalizeEventMaxAttempts(target.MaxAttempts)
+		target.BackoffBaseMS, target.BackoffMaxMS = normalizeEventBackoff(target.BackoffBaseMS, target.BackoffMaxMS)
+		targets = append(targets, target)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, 0, false, fmt.Errorf("iterate subscriptions for outbox publish: %w", err)
+	}
+	rows.Close()
+
+	fanout := 0
+	for _, target := range targets {
+		deliveryID := uuid.New().String()
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO event_deliveries (
+				id, topic_id, subscription_id, message_id, function_id, function_name,
+				ordering_key, status, attempt, max_attempts, backoff_base_ms, backoff_max_ms,
+				next_run_at, created_at, updated_at
+			) VALUES (
+				$1, $2, $3, $4, $5, $6,
+				$7, 'queued', 0, $8, $9, $10,
+				$11, $11, $11
+			)
+		`, deliveryID, topicID, target.ID, msg.ID, target.FunctionID, target.FunctionName,
+			msg.OrderingKey, target.MaxAttempts, target.BackoffBaseMS, target.BackoffMaxMS, now); err != nil {
+			return nil, 0, false, fmt.Errorf("insert outbox delivery: %w", err)
+		}
+		fanout++
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, 0, false, fmt.Errorf("commit outbox publish: %w", err)
+	}
+	return msg, fanout, true, nil
+}
+
 func (s *PostgresStore) GetEventDelivery(ctx context.Context, id string) (*EventDelivery, error) {
 	delivery, err := scanEventDelivery(s.pool.QueryRow(ctx, `
 		SELECT d.id, d.topic_id, t.name, d.subscription_id, s.name, s.consumer_group,
@@ -913,6 +1145,337 @@ func (s *PostgresStore) RequeueEventDelivery(ctx context.Context, id string, max
 	return s.GetEventDelivery(ctx, id)
 }
 
+func (s *PostgresStore) CreateEventOutbox(ctx context.Context, outbox *EventOutbox) error {
+	if outbox == nil {
+		return fmt.Errorf("event outbox is required")
+	}
+	if err := normalizeEventOutbox(outbox); err != nil {
+		return err
+	}
+
+	if outbox.TopicName == "" {
+		if err := s.pool.QueryRow(ctx, `SELECT name FROM event_topics WHERE id = $1`, outbox.TopicID).Scan(&outbox.TopicName); err != nil {
+			if err == pgx.ErrNoRows {
+				return fmt.Errorf("%w: %s", ErrEventTopicNotFound, outbox.TopicID)
+			}
+			return fmt.Errorf("lookup topic for outbox: %w", err)
+		}
+	}
+
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO event_outbox (
+			id, topic_id, topic_name, ordering_key, payload, headers, status, attempt,
+			max_attempts, backoff_base_ms, backoff_max_ms, next_attempt_at, created_at, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8,
+			$9, $10, $11, $12, $13, $14
+		)
+	`, outbox.ID, outbox.TopicID, outbox.TopicName, outbox.OrderingKey, outbox.Payload, outbox.Headers, string(outbox.Status), outbox.Attempt,
+		outbox.MaxAttempts, outbox.BackoffBaseMS, outbox.BackoffMaxMS, outbox.NextAttemptAt, outbox.CreatedAt, outbox.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("create event outbox: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) GetEventOutbox(ctx context.Context, id string) (*EventOutbox, error) {
+	outbox, err := scanEventOutbox(s.pool.QueryRow(ctx, `
+		SELECT id, topic_id, topic_name, ordering_key, payload, headers, status, attempt,
+		       max_attempts, backoff_base_ms, backoff_max_ms, next_attempt_at,
+		       locked_by, locked_until, message_id, last_error, published_at, created_at, updated_at
+		FROM event_outbox
+		WHERE id = $1
+	`, strings.TrimSpace(id)))
+	if err == pgx.ErrNoRows {
+		return nil, fmt.Errorf("%w: %s", ErrEventOutboxNotFound, id)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get event outbox: %w", err)
+	}
+	return outbox, nil
+}
+
+func (s *PostgresStore) ListEventOutbox(ctx context.Context, topicID string, limit int, statuses []EventOutboxStatus) ([]*EventOutbox, error) {
+	limit = normalizeEventListLimit(limit)
+	query := `
+		SELECT id, topic_id, topic_name, ordering_key, payload, headers, status, attempt,
+		       max_attempts, backoff_base_ms, backoff_max_ms, next_attempt_at,
+		       locked_by, locked_until, message_id, last_error, published_at, created_at, updated_at
+		FROM event_outbox
+		WHERE topic_id = $1
+	`
+	args := []any{strings.TrimSpace(topicID)}
+	if len(statuses) > 0 {
+		args = append(args, outboxStatusesToStrings(statuses))
+		query += " AND status = ANY($" + strconv.Itoa(len(args)) + ")"
+	}
+	args = append(args, limit)
+	query += " ORDER BY created_at DESC LIMIT $" + strconv.Itoa(len(args))
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list event outbox: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]*EventOutbox, 0, limit)
+	for rows.Next() {
+		job, err := scanEventOutbox(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan event outbox: %w", err)
+		}
+		out = append(out, job)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list event outbox rows: %w", err)
+	}
+	return out, nil
+}
+
+func (s *PostgresStore) AcquireDueEventOutbox(ctx context.Context, workerID string, leaseDuration time.Duration) (*EventOutbox, error) {
+	if workerID == "" {
+		workerID = "outbox-relay"
+	}
+	if leaseDuration <= 0 {
+		leaseDuration = DefaultOutboxLeaseTimeout
+	}
+	now := time.Now().UTC()
+	leaseUntil := now.Add(leaseDuration)
+
+	job, err := scanEventOutbox(s.pool.QueryRow(ctx, `
+		UPDATE event_outbox SET
+			status = 'publishing',
+			attempt = attempt + 1,
+			locked_by = $1,
+			locked_until = $2,
+			updated_at = $3
+		WHERE id = (
+			SELECT id FROM event_outbox
+			WHERE ((status = 'pending' AND next_attempt_at <= $3) OR (status = 'publishing' AND locked_until < $3))
+			ORDER BY next_attempt_at ASC, created_at ASC
+			FOR UPDATE SKIP LOCKED
+			LIMIT 1
+		)
+		RETURNING id, topic_id, topic_name, ordering_key, payload, headers, status, attempt,
+		          max_attempts, backoff_base_ms, backoff_max_ms, next_attempt_at,
+		          locked_by, locked_until, message_id, last_error, published_at, created_at, updated_at
+	`, workerID, leaseUntil, now))
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("acquire event outbox: %w", err)
+	}
+	return job, nil
+}
+
+func (s *PostgresStore) MarkEventOutboxPublished(ctx context.Context, id, messageID string) error {
+	now := time.Now().UTC()
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE event_outbox SET
+			status = 'published',
+			message_id = $2,
+			last_error = NULL,
+			locked_by = NULL,
+			locked_until = NULL,
+			published_at = $3,
+			updated_at = $3
+		WHERE id = $1
+	`, strings.TrimSpace(id), nullIfEmpty(messageID), now)
+	if err != nil {
+		return fmt.Errorf("mark event outbox published: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("%w: %s", ErrEventOutboxNotFound, id)
+	}
+	return nil
+}
+
+func (s *PostgresStore) MarkEventOutboxForRetry(ctx context.Context, id, lastError string, nextRunAt time.Time) error {
+	if nextRunAt.IsZero() {
+		nextRunAt = time.Now().UTC()
+	}
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE event_outbox SET
+			status = 'pending',
+			last_error = $2,
+			next_attempt_at = $3,
+			locked_by = NULL,
+			locked_until = NULL,
+			updated_at = NOW()
+		WHERE id = $1
+	`, strings.TrimSpace(id), nullIfEmpty(lastError), nextRunAt)
+	if err != nil {
+		return fmt.Errorf("mark event outbox retry: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("%w: %s", ErrEventOutboxNotFound, id)
+	}
+	return nil
+}
+
+func (s *PostgresStore) MarkEventOutboxFailed(ctx context.Context, id, lastError string) error {
+	now := time.Now().UTC()
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE event_outbox SET
+			status = 'failed',
+			last_error = $2,
+			locked_by = NULL,
+			locked_until = NULL,
+			updated_at = $3
+		WHERE id = $1
+	`, strings.TrimSpace(id), nullIfEmpty(lastError), now)
+	if err != nil {
+		return fmt.Errorf("mark event outbox failed: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("%w: %s", ErrEventOutboxNotFound, id)
+	}
+	return nil
+}
+
+func (s *PostgresStore) RequeueEventOutbox(ctx context.Context, id string, maxAttempts int) (*EventOutbox, error) {
+	now := time.Now().UTC()
+	maxAttempts = normalizeOutboxMaxAttempts(maxAttempts)
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE event_outbox SET
+			status = 'pending',
+			attempt = 0,
+			max_attempts = $2,
+			next_attempt_at = $3,
+			locked_by = NULL,
+			locked_until = NULL,
+			last_error = NULL,
+			updated_at = $3
+		WHERE id = $1 AND status = 'failed'
+	`, strings.TrimSpace(id), maxAttempts, now)
+	if err != nil {
+		return nil, fmt.Errorf("requeue event outbox: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		var status string
+		statusErr := s.pool.QueryRow(ctx, `SELECT status FROM event_outbox WHERE id = $1`, strings.TrimSpace(id)).Scan(&status)
+		if statusErr == pgx.ErrNoRows {
+			return nil, fmt.Errorf("%w: %s", ErrEventOutboxNotFound, id)
+		}
+		if statusErr != nil {
+			return nil, fmt.Errorf("requeue event outbox lookup: %w", statusErr)
+		}
+		return nil, fmt.Errorf("%w: %s (%s)", ErrEventOutboxNotFailed, id, status)
+	}
+	return s.GetEventOutbox(ctx, id)
+}
+
+func (s *PostgresStore) PrepareEventInbox(ctx context.Context, subscriptionID, messageID, deliveryID string) (*EventInboxRecord, bool, error) {
+	subscriptionID = strings.TrimSpace(subscriptionID)
+	messageID = strings.TrimSpace(messageID)
+	deliveryID = strings.TrimSpace(deliveryID)
+	if subscriptionID == "" || messageID == "" || deliveryID == "" {
+		return nil, false, fmt.Errorf("subscription_id, message_id, and delivery_id are required")
+	}
+	now := time.Now().UTC()
+
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, false, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	ct, err := tx.Exec(ctx, `
+		INSERT INTO event_inbox (
+			subscription_id, message_id, delivery_id, status, created_at, updated_at
+		) VALUES (
+			$1, $2, $3, 'processing', $4, $4
+		)
+		ON CONFLICT DO NOTHING
+	`, subscriptionID, messageID, deliveryID, now)
+	if err != nil {
+		return nil, false, fmt.Errorf("insert event inbox: %w", err)
+	}
+	if ct.RowsAffected() > 0 {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, false, fmt.Errorf("commit new event inbox: %w", err)
+		}
+		return nil, false, nil
+	}
+
+	record, err := scanEventInbox(tx.QueryRow(ctx, `
+		SELECT subscription_id, message_id, delivery_id, status, request_id, output, duration_ms, cold_start,
+		       last_error, succeeded_at, created_at, updated_at
+		FROM event_inbox
+		WHERE subscription_id = $1 AND message_id = $2
+		FOR UPDATE
+	`, subscriptionID, messageID))
+	if err != nil {
+		return nil, false, fmt.Errorf("load event inbox: %w", err)
+	}
+
+	if record.Status == EventInboxStatusSucceeded {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, false, fmt.Errorf("commit deduplicated event inbox: %w", err)
+		}
+		return record, true, nil
+	}
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE event_inbox
+		SET delivery_id = $3,
+		    status = 'processing',
+		    last_error = NULL,
+		    updated_at = $4
+		WHERE subscription_id = $1 AND message_id = $2
+	`, subscriptionID, messageID, deliveryID, now); err != nil {
+		return nil, false, fmt.Errorf("refresh event inbox processing state: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, false, fmt.Errorf("commit refreshed event inbox: %w", err)
+	}
+	return nil, false, nil
+}
+
+func (s *PostgresStore) MarkEventInboxSucceeded(ctx context.Context, subscriptionID, messageID, deliveryID, requestID string, output json.RawMessage, durationMS int64, coldStart bool) error {
+	now := time.Now().UTC()
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE event_inbox
+		SET delivery_id = $3,
+		    status = 'succeeded',
+		    request_id = $4,
+		    output = $5,
+		    duration_ms = $6,
+		    cold_start = $7,
+		    last_error = NULL,
+		    succeeded_at = $8,
+		    updated_at = $8
+		WHERE subscription_id = $1 AND message_id = $2
+	`, strings.TrimSpace(subscriptionID), strings.TrimSpace(messageID), strings.TrimSpace(deliveryID), nullIfEmpty(requestID), output, durationMS, coldStart, now)
+	if err != nil {
+		return fmt.Errorf("mark event inbox succeeded: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("event inbox not found for subscription=%s message=%s", subscriptionID, messageID)
+	}
+	return nil
+}
+
+func (s *PostgresStore) MarkEventInboxFailed(ctx context.Context, subscriptionID, messageID, deliveryID, lastError string) error {
+	now := time.Now().UTC()
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE event_inbox
+		SET delivery_id = $3,
+		    status = 'failed',
+		    last_error = $4,
+		    updated_at = $5
+		WHERE subscription_id = $1 AND message_id = $2
+	`, strings.TrimSpace(subscriptionID), strings.TrimSpace(messageID), strings.TrimSpace(deliveryID), nullIfEmpty(lastError), now)
+	if err != nil {
+		return fmt.Errorf("mark event inbox failed: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("event inbox not found for subscription=%s message=%s", subscriptionID, messageID)
+	}
+	return nil
+}
+
 func (s *PostgresStore) ResolveEventReplaySequenceByTime(ctx context.Context, subscriptionID string, from time.Time) (int64, error) {
 	if from.IsZero() {
 		return 1, nil
@@ -1145,6 +1708,41 @@ func normalizeEventSubscription(sub *EventSubscription) error {
 	return nil
 }
 
+func normalizeEventOutbox(outbox *EventOutbox) error {
+	now := time.Now().UTC()
+	if outbox.ID == "" {
+		outbox.ID = uuid.New().String()
+	}
+	outbox.TopicID = strings.TrimSpace(outbox.TopicID)
+	outbox.TopicName = strings.TrimSpace(outbox.TopicName)
+	outbox.OrderingKey = strings.TrimSpace(outbox.OrderingKey)
+	if outbox.TopicID == "" {
+		return fmt.Errorf("topic id is required")
+	}
+	if len(outbox.OrderingKey) > 256 {
+		return fmt.Errorf("%w: max length is 256", ErrInvalidOrderingKey)
+	}
+	if len(outbox.Payload) == 0 {
+		outbox.Payload = json.RawMessage(`{}`)
+	}
+	if len(outbox.Headers) == 0 {
+		outbox.Headers = json.RawMessage(`{}`)
+	}
+	if outbox.Status == "" {
+		outbox.Status = EventOutboxStatusPending
+	}
+	outbox.MaxAttempts = normalizeOutboxMaxAttempts(outbox.MaxAttempts)
+	outbox.BackoffBaseMS, outbox.BackoffMaxMS = normalizeOutboxBackoff(outbox.BackoffBaseMS, outbox.BackoffMaxMS)
+	if outbox.NextAttemptAt.IsZero() {
+		outbox.NextAttemptAt = now
+	}
+	if outbox.CreatedAt.IsZero() {
+		outbox.CreatedAt = now
+	}
+	outbox.UpdatedAt = now
+	return nil
+}
+
 func validateEventName(value string, baseErr error) error {
 	if value == "" {
 		return fmt.Errorf("%w: value is required", baseErr)
@@ -1189,6 +1787,32 @@ func normalizeEventBackoff(baseMS, maxMS int) (int, int) {
 	return baseMS, maxMS
 }
 
+func normalizeOutboxMaxAttempts(maxAttempts int) int {
+	if maxAttempts <= 0 {
+		return DefaultOutboxMaxAttempts
+	}
+	if maxAttempts > 100 {
+		return 100
+	}
+	return maxAttempts
+}
+
+func normalizeOutboxBackoff(baseMS, maxMS int) (int, int) {
+	if baseMS <= 0 {
+		baseMS = DefaultOutboxBackoffBaseMS
+	}
+	if maxMS <= 0 {
+		maxMS = DefaultOutboxBackoffMaxMS
+	}
+	if maxMS < baseMS {
+		maxMS = baseMS
+	}
+	if maxMS > 24*60*60*1000 {
+		maxMS = 24 * 60 * 60 * 1000
+	}
+	return baseMS, maxMS
+}
+
 func normalizeEventListLimit(limit int) int {
 	if limit <= 0 {
 		return DefaultEventListLimit
@@ -1210,6 +1834,17 @@ func normalizeEventReplayLimit(limit int) int {
 }
 
 func eventStatusesToStrings(statuses []EventDeliveryStatus) []string {
+	out := make([]string, 0, len(statuses))
+	for _, status := range statuses {
+		if status == "" {
+			continue
+		}
+		out = append(out, string(status))
+	}
+	return out
+}
+
+func outboxStatusesToStrings(statuses []EventOutboxStatus) []string {
 	out := make([]string, 0, len(statuses))
 	for _, status := range statuses {
 		if status == "" {
@@ -1390,4 +2025,101 @@ func scanEventDelivery(scanner eventDeliveryScanner) (*EventDelivery, error) {
 		delivery.LastError = *lastError
 	}
 	return &delivery, nil
+}
+
+type eventOutboxScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanEventOutbox(scanner eventOutboxScanner) (*EventOutbox, error) {
+	var job EventOutbox
+	var status string
+	var payload []byte
+	var headers []byte
+	var lockedBy *string
+	var messageID *string
+	var lastError *string
+
+	if err := scanner.Scan(
+		&job.ID,
+		&job.TopicID,
+		&job.TopicName,
+		&job.OrderingKey,
+		&payload,
+		&headers,
+		&status,
+		&job.Attempt,
+		&job.MaxAttempts,
+		&job.BackoffBaseMS,
+		&job.BackoffMaxMS,
+		&job.NextAttemptAt,
+		&lockedBy,
+		&job.LockedUntil,
+		&messageID,
+		&lastError,
+		&job.PublishedAt,
+		&job.CreatedAt,
+		&job.UpdatedAt,
+	); err != nil {
+		return nil, err
+	}
+	job.Status = EventOutboxStatus(status)
+	if len(payload) > 0 {
+		job.Payload = payload
+	} else {
+		job.Payload = json.RawMessage(`{}`)
+	}
+	if len(headers) > 0 {
+		job.Headers = headers
+	}
+	if lockedBy != nil {
+		job.LockedBy = *lockedBy
+	}
+	if messageID != nil {
+		job.MessageID = *messageID
+	}
+	if lastError != nil {
+		job.LastError = *lastError
+	}
+	return &job, nil
+}
+
+type eventInboxScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanEventInbox(scanner eventInboxScanner) (*EventInboxRecord, error) {
+	var rec EventInboxRecord
+	var status string
+	var requestID *string
+	var output []byte
+	var lastError *string
+
+	if err := scanner.Scan(
+		&rec.SubscriptionID,
+		&rec.MessageID,
+		&rec.DeliveryID,
+		&status,
+		&requestID,
+		&output,
+		&rec.DurationMS,
+		&rec.ColdStart,
+		&lastError,
+		&rec.SucceededAt,
+		&rec.CreatedAt,
+		&rec.UpdatedAt,
+	); err != nil {
+		return nil, err
+	}
+	rec.Status = EventInboxStatus(status)
+	if requestID != nil {
+		rec.RequestID = *requestID
+	}
+	if len(output) > 0 {
+		rec.Output = output
+	}
+	if lastError != nil {
+		rec.LastError = *lastError
+	}
+	return &rec, nil
 }
