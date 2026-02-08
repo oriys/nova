@@ -71,9 +71,11 @@ func (s *Scheduler) Add(sched *store.Schedule) error {
 	schedID := sched.ID
 	fnName := sched.FunctionName
 	input := sched.Input
+	tenantID := sched.TenantID
+	namespace := sched.Namespace
 
 	entryID, err := s.cron.AddFunc(sched.CronExpr, func() {
-		s.invoke(schedID, fnName, input)
+		s.invoke(schedID, tenantID, namespace, fnName, input)
 	})
 	if err != nil {
 		return err
@@ -94,8 +96,9 @@ func (s *Scheduler) Remove(id string) {
 	}
 }
 
-func (s *Scheduler) invoke(schedID, fnName string, input json.RawMessage) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+func (s *Scheduler) invoke(schedID, tenantID, namespace, fnName string, input json.RawMessage) {
+	scopedCtx := store.WithTenantScope(context.Background(), tenantID, namespace)
+	ctx, cancel := context.WithTimeout(scopedCtx, 30*time.Second)
 	defer cancel()
 
 	payload := input
@@ -111,7 +114,7 @@ func (s *Scheduler) invoke(schedID, fnName string, input json.RawMessage) {
 	}
 
 	// Update last_run_at
-	if err := s.store.UpdateScheduleLastRun(context.Background(), schedID, time.Now()); err != nil {
+	if err := s.store.UpdateScheduleLastRun(scopedCtx, schedID, time.Now()); err != nil {
 		logging.Op().Warn("failed to update schedule last_run", "schedule", schedID, "error", err)
 	}
 }

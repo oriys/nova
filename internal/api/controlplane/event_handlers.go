@@ -167,6 +167,17 @@ func (h *Handler) PublishEvent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	scope := store.TenantScopeFromContext(r.Context())
+	decision, err := h.Store.CheckAndConsumeTenantQuota(r.Context(), scope.TenantID, store.TenantDimensionEventPublishes, 1)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if decision != nil && !decision.Allowed {
+		writeTenantQuotaExceededResponse(w, decision)
+		return
+	}
+
 	msg, fanout, err := h.Store.PublishEvent(r.Context(), topic.ID, req.OrderingKey, req.Payload, req.Headers)
 	if err != nil {
 		if errors.Is(err, store.ErrInvalidOrderingKey) {
@@ -203,6 +214,17 @@ func (h *Handler) CreateEventOutbox(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid JSON payload", http.StatusBadRequest)
 			return
 		}
+	}
+
+	scope := store.TenantScopeFromContext(r.Context())
+	decision, err := h.Store.CheckAndConsumeTenantQuota(r.Context(), scope.TenantID, store.TenantDimensionEventPublishes, 1)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if decision != nil && !decision.Allowed {
+		writeTenantQuotaExceededResponse(w, decision)
+		return
 	}
 
 	job := store.NewEventOutbox(topic.ID, topic.Name, req.OrderingKey, req.Payload, req.Headers)

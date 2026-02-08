@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -30,22 +31,36 @@ type RateLimitBucket struct {
 
 // SaveAPIKey creates or updates an API key
 func (s *PostgresStore) SaveAPIKey(ctx context.Context, key *APIKeyRecord) error {
+	scope := tenantScopeFromContext(ctx)
 	permissions := key.Permissions
 	if len(permissions) == 0 {
 		permissions = json.RawMessage("[]")
 	}
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO api_keys (name, key_hash, tier, enabled, expires_at, permissions, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT (name) DO UPDATE SET
-			key_hash = EXCLUDED.key_hash,
-			tier = EXCLUDED.tier,
-			enabled = EXCLUDED.enabled,
-			expires_at = EXCLUDED.expires_at,
-			permissions = EXCLUDED.permissions,
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE api_keys
+		SET key_hash = $4,
+			tier = $5,
+			enabled = $6,
+			expires_at = $7,
+			permissions = $8,
 			updated_at = NOW()
-	`, key.Name, key.KeyHash, key.Tier, key.Enabled, key.ExpiresAt, permissions, key.CreatedAt, key.UpdatedAt)
+		WHERE tenant_id = $1 AND namespace = $2 AND name = $3
+	`, scope.TenantID, scope.Namespace, key.Name, key.KeyHash, key.Tier, key.Enabled, key.ExpiresAt, permissions)
 	if err != nil {
+		return fmt.Errorf("save api key: %w", err)
+	}
+	if ct.RowsAffected() > 0 {
+		return nil
+	}
+
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO api_keys (tenant_id, namespace, name, key_hash, tier, enabled, expires_at, permissions, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, scope.TenantID, scope.Namespace, key.Name, key.KeyHash, key.Tier, key.Enabled, key.ExpiresAt, permissions, key.CreatedAt, key.UpdatedAt)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate key value") {
+			return fmt.Errorf("api key name '%s' already exists in another tenant or namespace", key.Name)
+		}
 		return fmt.Errorf("save api key: %w", err)
 	}
 	return nil
@@ -53,11 +68,13 @@ func (s *PostgresStore) SaveAPIKey(ctx context.Context, key *APIKeyRecord) error
 
 // GetAPIKeyByHash retrieves an API key by its hash
 func (s *PostgresStore) GetAPIKeyByHash(ctx context.Context, keyHash string) (*APIKeyRecord, error) {
+	scope := tenantScopeFromContext(ctx)
 	var key APIKeyRecord
 	err := s.pool.QueryRow(ctx, `
 		SELECT name, key_hash, tier, enabled, expires_at, COALESCE(permissions, '[]'::jsonb), created_at, updated_at
-		FROM api_keys WHERE key_hash = $1
-	`, keyHash).Scan(&key.Name, &key.KeyHash, &key.Tier, &key.Enabled, &key.ExpiresAt, &key.Permissions, &key.CreatedAt, &key.UpdatedAt)
+		FROM api_keys
+		WHERE key_hash = $1 AND tenant_id = $2 AND namespace = $3
+	`, keyHash, scope.TenantID, scope.Namespace).Scan(&key.Name, &key.KeyHash, &key.Tier, &key.Enabled, &key.ExpiresAt, &key.Permissions, &key.CreatedAt, &key.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -69,11 +86,13 @@ func (s *PostgresStore) GetAPIKeyByHash(ctx context.Context, keyHash string) (*A
 
 // GetAPIKeyByName retrieves an API key by name
 func (s *PostgresStore) GetAPIKeyByName(ctx context.Context, name string) (*APIKeyRecord, error) {
+	scope := tenantScopeFromContext(ctx)
 	var key APIKeyRecord
 	err := s.pool.QueryRow(ctx, `
 		SELECT name, key_hash, tier, enabled, expires_at, COALESCE(permissions, '[]'::jsonb), created_at, updated_at
-		FROM api_keys WHERE name = $1
-	`, name).Scan(&key.Name, &key.KeyHash, &key.Tier, &key.Enabled, &key.ExpiresAt, &key.Permissions, &key.CreatedAt, &key.UpdatedAt)
+		FROM api_keys
+		WHERE name = $1 AND tenant_id = $2 AND namespace = $3
+	`, name, scope.TenantID, scope.Namespace).Scan(&key.Name, &key.KeyHash, &key.Tier, &key.Enabled, &key.ExpiresAt, &key.Permissions, &key.CreatedAt, &key.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("api key not found: %s", name)
 	}
@@ -85,10 +104,13 @@ func (s *PostgresStore) GetAPIKeyByName(ctx context.Context, name string) (*APIK
 
 // ListAPIKeys returns all API keys
 func (s *PostgresStore) ListAPIKeys(ctx context.Context) ([]*APIKeyRecord, error) {
+	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
 		SELECT name, key_hash, tier, enabled, expires_at, COALESCE(permissions, '[]'::jsonb), created_at, updated_at
-		FROM api_keys ORDER BY name
-	`)
+		FROM api_keys
+		WHERE tenant_id = $1 AND namespace = $2
+		ORDER BY name
+	`, scope.TenantID, scope.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("list api keys: %w", err)
 	}
@@ -107,7 +129,11 @@ func (s *PostgresStore) ListAPIKeys(ctx context.Context) ([]*APIKeyRecord, error
 
 // DeleteAPIKey removes an API key
 func (s *PostgresStore) DeleteAPIKey(ctx context.Context, name string) error {
-	ct, err := s.pool.Exec(ctx, `DELETE FROM api_keys WHERE name = $1`, name)
+	scope := tenantScopeFromContext(ctx)
+	ct, err := s.pool.Exec(ctx, `
+		DELETE FROM api_keys
+		WHERE name = $1 AND tenant_id = $2 AND namespace = $3
+	`, name, scope.TenantID, scope.Namespace)
 	if err != nil {
 		return fmt.Errorf("delete api key: %w", err)
 	}
@@ -121,14 +147,27 @@ func (s *PostgresStore) DeleteAPIKey(ctx context.Context, name string) error {
 
 // SaveSecret stores an encrypted secret
 func (s *PostgresStore) SaveSecret(ctx context.Context, name, encryptedValue string) error {
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO secrets (name, value, created_at, updated_at)
-		VALUES ($1, $2, NOW(), NOW())
-		ON CONFLICT (name) DO UPDATE SET
-			value = EXCLUDED.value,
-			updated_at = NOW()
-	`, name, encryptedValue)
+	scope := tenantScopeFromContext(ctx)
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE secrets
+		SET value = $4, updated_at = NOW()
+		WHERE tenant_id = $1 AND namespace = $2 AND name = $3
+	`, scope.TenantID, scope.Namespace, name, encryptedValue)
 	if err != nil {
+		return fmt.Errorf("save secret: %w", err)
+	}
+	if ct.RowsAffected() > 0 {
+		return nil
+	}
+
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO secrets (tenant_id, namespace, name, value, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, NOW(), NOW())
+	`, scope.TenantID, scope.Namespace, name, encryptedValue)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate key value") {
+			return fmt.Errorf("secret '%s' already exists in another tenant or namespace", name)
+		}
 		return fmt.Errorf("save secret: %w", err)
 	}
 	return nil
@@ -136,8 +175,12 @@ func (s *PostgresStore) SaveSecret(ctx context.Context, name, encryptedValue str
 
 // GetSecret retrieves an encrypted secret
 func (s *PostgresStore) GetSecret(ctx context.Context, name string) (string, error) {
+	scope := tenantScopeFromContext(ctx)
 	var value string
-	err := s.pool.QueryRow(ctx, `SELECT value FROM secrets WHERE name = $1`, name).Scan(&value)
+	err := s.pool.QueryRow(ctx, `
+		SELECT value FROM secrets
+		WHERE name = $1 AND tenant_id = $2 AND namespace = $3
+	`, name, scope.TenantID, scope.Namespace).Scan(&value)
 	if err == pgx.ErrNoRows {
 		return "", fmt.Errorf("secret not found: %s", name)
 	}
@@ -149,7 +192,11 @@ func (s *PostgresStore) GetSecret(ctx context.Context, name string) (string, err
 
 // DeleteSecret removes a secret
 func (s *PostgresStore) DeleteSecret(ctx context.Context, name string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM secrets WHERE name = $1`, name)
+	scope := tenantScopeFromContext(ctx)
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM secrets
+		WHERE name = $1 AND tenant_id = $2 AND namespace = $3
+	`, name, scope.TenantID, scope.Namespace)
 	if err != nil {
 		return fmt.Errorf("delete secret: %w", err)
 	}
@@ -158,7 +205,13 @@ func (s *PostgresStore) DeleteSecret(ctx context.Context, name string) error {
 
 // ListSecrets returns all secret names with their creation times
 func (s *PostgresStore) ListSecrets(ctx context.Context) (map[string]string, error) {
-	rows, err := s.pool.Query(ctx, `SELECT name, created_at FROM secrets ORDER BY name`)
+	scope := tenantScopeFromContext(ctx)
+	rows, err := s.pool.Query(ctx, `
+		SELECT name, created_at
+		FROM secrets
+		WHERE tenant_id = $1 AND namespace = $2
+		ORDER BY name
+	`, scope.TenantID, scope.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("list secrets: %w", err)
 	}
@@ -178,8 +231,14 @@ func (s *PostgresStore) ListSecrets(ctx context.Context) (map[string]string, err
 
 // SecretExists checks if a secret exists
 func (s *PostgresStore) SecretExists(ctx context.Context, name string) (bool, error) {
+	scope := tenantScopeFromContext(ctx)
 	var exists bool
-	err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM secrets WHERE name = $1)`, name).Scan(&exists)
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM secrets
+			WHERE name = $1 AND tenant_id = $2 AND namespace = $3
+		)
+	`, name, scope.TenantID, scope.Namespace).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("check secret exists: %w", err)
 	}

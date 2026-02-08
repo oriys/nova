@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import { useRouter } from "next/navigation"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { FunctionsTable } from "@/components/functions-table"
@@ -17,12 +18,20 @@ import {
 } from "@/components/ui/select"
 import { functionsApi, metricsApi, runtimesApi, type ResourceLimits } from "@/lib/api"
 import { transformFunction, FunctionData, RuntimeInfo, transformRuntime } from "@/lib/types"
+import {
+  FUNCTION_SEARCH_EVENT,
+  type FunctionSearchDetail,
+  dispatchFunctionSearch,
+  readFunctionSearchFromLocation,
+} from "@/lib/function-search"
 import { Plus, Search, Filter, RefreshCw } from "lucide-react"
 
 export default function FunctionsPage() {
+  const router = useRouter()
   const [functions, setFunctions] = useState<FunctionData[]>([])
   const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([])
   const [searchQuery, setSearchQuery] = useState("")
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [runtimeFilter, setRuntimeFilter] = useState<string>("all")
   const [page, setPage] = useState(1)
@@ -31,13 +40,58 @@ export default function FunctionsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
+  useEffect(() => {
+    const initialQuery = readFunctionSearchFromLocation()
+    setSearchQuery(initialQuery)
+    setDebouncedSearchQuery(initialQuery)
+  }, [])
+
+  useEffect(() => {
+    const handleFunctionSearch = (event: Event) => {
+      const custom = event as CustomEvent<FunctionSearchDetail>
+      const next = custom.detail?.query ?? ""
+      setSearchQuery((prev) => (prev === next ? prev : next))
+    }
+
+    window.addEventListener(FUNCTION_SEARCH_EVENT, handleFunctionSearch)
+    return () => {
+      window.removeEventListener(FUNCTION_SEARCH_EVENT, handleFunctionSearch)
+    }
+  }, [])
+
+  useEffect(() => {
+    const current = readFunctionSearchFromLocation()
+    const next = debouncedSearchQuery.trim()
+    if (current === next) {
+      return
+    }
+
+    const params = new URLSearchParams(window.location.search)
+    if (next) {
+      params.set("q", next)
+    } else {
+      params.delete("q")
+    }
+    const qs = params.toString()
+    router.replace(qs ? `/functions?${qs}` : "/functions", { scroll: false })
+    dispatchFunctionSearch(next)
+  }, [debouncedSearchQuery, router])
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
 
       const [funcs, metrics, rts] = await Promise.all([
-        functionsApi.list(),
+        functionsApi.list(debouncedSearchQuery),
         metricsApi.global(),
         runtimesApi.list(),
       ])
@@ -61,20 +115,19 @@ export default function FunctionsPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [debouncedSearchQuery])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
 
   const filteredFunctions = functions.filter((fn) => {
-    const matchesSearch = fn.name.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesStatus = statusFilter === "all" || fn.status === statusFilter
     const matchesRuntime = runtimeFilter === "all" || fn.runtime.toLowerCase().includes(runtimeFilter.toLowerCase())
-    return matchesSearch && matchesStatus && matchesRuntime
+    return matchesStatus && matchesRuntime
   })
 
-  const uniqueRuntimes = [...new Set(functions.map((fn) => fn.runtime.split(" ")[0]))]
+  const uniqueRuntimes = [...new Set(runtimes.map((r) => r.name.split(" ")[0]))]
 
   useEffect(() => {
     setPage(1)

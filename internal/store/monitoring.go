@@ -42,9 +42,12 @@ func (s *PostgresStore) SaveInvocationLog(ctx context.Context, log *InvocationLo
 	if log.ID == "" {
 		return fmt.Errorf("invocation log id is required")
 	}
-	scope := tenantScopeFromContext(ctx)
-	log.TenantID = scope.TenantID
-	log.Namespace = scope.Namespace
+	// Only use context scope if not already set on the log object (e.g. from background worker)
+	if log.TenantID == "" {
+		scope := tenantScopeFromContext(ctx)
+		log.TenantID = scope.TenantID
+		log.Namespace = scope.Namespace
+	}
 	if log.CreatedAt.IsZero() {
 		log.CreatedAt = time.Now()
 	}
@@ -71,8 +74,11 @@ func (s *PostgresStore) SaveInvocationLogs(ctx context.Context, logs []*Invocati
 		if log.ID == "" {
 			return fmt.Errorf("invocation log id is required")
 		}
-		log.TenantID = scope.TenantID
-		log.Namespace = scope.Namespace
+		// Only override if not set (worker passes it explicitly)
+		if log.TenantID == "" {
+			log.TenantID = scope.TenantID
+			log.Namespace = scope.Namespace
+		}
 		if log.CreatedAt.IsZero() {
 			log.CreatedAt = time.Now()
 		}

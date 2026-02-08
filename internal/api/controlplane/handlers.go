@@ -63,6 +63,20 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /config", h.GetConfig)
 	mux.HandleFunc("PUT /config", h.UpdateConfig)
 
+	// Tenant / namespace management
+	mux.HandleFunc("GET /tenants", h.ListTenants)
+	mux.HandleFunc("POST /tenants", h.CreateTenant)
+	mux.HandleFunc("PATCH /tenants/{tenantID}", h.UpdateTenant)
+	mux.HandleFunc("DELETE /tenants/{tenantID}", h.DeleteTenant)
+	mux.HandleFunc("GET /tenants/{tenantID}/namespaces", h.ListNamespaces)
+	mux.HandleFunc("POST /tenants/{tenantID}/namespaces", h.CreateNamespace)
+	mux.HandleFunc("PATCH /tenants/{tenantID}/namespaces/{namespace}", h.UpdateNamespace)
+	mux.HandleFunc("DELETE /tenants/{tenantID}/namespaces/{namespace}", h.DeleteNamespace)
+	mux.HandleFunc("GET /tenants/{tenantID}/quotas", h.ListTenantQuotas)
+	mux.HandleFunc("PUT /tenants/{tenantID}/quotas/{dimension}", h.UpsertTenantQuota)
+	mux.HandleFunc("DELETE /tenants/{tenantID}/quotas/{dimension}", h.DeleteTenantQuota)
+	mux.HandleFunc("GET /tenants/{tenantID}/usage", h.GetTenantUsage)
+
 	// Snapshot management
 	mux.HandleFunc("GET /snapshots", h.ListSnapshots)
 	mux.HandleFunc("POST /functions/{name}/snapshot", h.CreateSnapshot)

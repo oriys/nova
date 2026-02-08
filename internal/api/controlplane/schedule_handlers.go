@@ -49,6 +49,9 @@ func (h *ScheduleHandler) CreateSchedule(w http.ResponseWriter, r *http.Request)
 	}
 
 	sched := store.NewSchedule(fnName, req.CronExpression, req.Input)
+	scope := store.TenantScopeFromContext(r.Context())
+	sched.TenantID = scope.TenantID
+	sched.Namespace = scope.Namespace
 
 	if err := h.Store.SaveSchedule(r.Context(), sched); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -85,9 +88,24 @@ func (h *ScheduleHandler) ListSchedules(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *ScheduleHandler) DeleteSchedule(w http.ResponseWriter, r *http.Request) {
+	fnName := r.PathValue("name")
 	id := r.PathValue("id")
 	if id == "" {
 		http.Error(w, "schedule id is required", http.StatusBadRequest)
+		return
+	}
+	if fnName == "" {
+		http.Error(w, "function name is required", http.StatusBadRequest)
+		return
+	}
+
+	sched, err := h.Store.GetSchedule(r.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if sched.FunctionName != fnName {
+		http.Error(w, "schedule not found", http.StatusNotFound)
 		return
 	}
 
@@ -105,9 +123,24 @@ func (h *ScheduleHandler) DeleteSchedule(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *ScheduleHandler) ToggleSchedule(w http.ResponseWriter, r *http.Request) {
+	fnName := r.PathValue("name")
 	id := r.PathValue("id")
 	if id == "" {
 		http.Error(w, "schedule id is required", http.StatusBadRequest)
+		return
+	}
+	if fnName == "" {
+		http.Error(w, "function name is required", http.StatusBadRequest)
+		return
+	}
+
+	sched, err := h.Store.GetSchedule(r.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if sched.FunctionName != fnName {
+		http.Error(w, "schedule not found", http.StatusNotFound)
 		return
 	}
 
@@ -128,9 +161,9 @@ func (h *ScheduleHandler) ToggleSchedule(w http.ResponseWriter, r *http.Request)
 		}
 		// Re-register with scheduler if currently enabled
 		if h.Scheduler != nil {
-			sched, err := h.Store.GetSchedule(r.Context(), id)
-			if err == nil && sched.Enabled {
-				h.Scheduler.Add(sched)
+			updated, err := h.Store.GetSchedule(r.Context(), id)
+			if err == nil && updated.Enabled {
+				h.Scheduler.Add(updated)
 			}
 		}
 	}
@@ -143,9 +176,9 @@ func (h *ScheduleHandler) ToggleSchedule(w http.ResponseWriter, r *http.Request)
 		}
 		if h.Scheduler != nil {
 			if *req.Enabled {
-				sched, err := h.Store.GetSchedule(r.Context(), id)
+				updated, err := h.Store.GetSchedule(r.Context(), id)
 				if err == nil {
-					h.Scheduler.Add(sched)
+					h.Scheduler.Add(updated)
 				}
 			} else {
 				h.Scheduler.Remove(id)
@@ -154,7 +187,7 @@ func (h *ScheduleHandler) ToggleSchedule(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Return updated schedule
-	sched, err := h.Store.GetSchedule(r.Context(), id)
+	sched, err = h.Store.GetSchedule(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

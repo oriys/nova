@@ -102,6 +102,50 @@ export interface Runtime {
   functions_count: number;
 }
 
+export interface TenantEntry {
+  id: string;
+  name: string;
+  status: string;
+  tier: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NamespaceEntry {
+  id: string;
+  tenant_id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TenantQuotaEntry {
+  tenant_id: string;
+  dimension: string;
+  hard_limit: number;
+  soft_limit: number;
+  burst: number;
+  window_s: number;
+  updated_at: string;
+}
+
+export interface TenantUsageEntry {
+  tenant_id: string;
+  dimension: string;
+  used: number;
+  updated_at: string;
+}
+
+export interface TenantQuotaDecision {
+  tenant_id: string;
+  dimension: string;
+  allowed: boolean;
+  used: number;
+  limit: number;
+  window_s?: number;
+  retry_after_s?: number;
+}
+
 export interface LogEntry {
   id: string;
   request_id?: string;
@@ -409,7 +453,15 @@ async function request<T>(
 
 // Functions API
 export const functionsApi = {
-  list: () => request<NovaFunction[]>("/functions"),
+  list: (search?: string, limit?: number) => {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (typeof limit === "number" && Number.isFinite(limit) && limit > 0) {
+      params.set("limit", String(Math.floor(limit)));
+    }
+    const qs = params.toString();
+    return request<NovaFunction[]>(`/functions${qs ? `?${qs}` : ""}`);
+  },
 
   get: (name: string) => request<NovaFunction>(`/functions/${encodeURIComponent(name)}`),
 
@@ -528,6 +580,88 @@ export const functionsApi = {
     request<{ status: string; function: string }>(`/functions/${encodeURIComponent(name)}/capacity`, {
       method: "DELETE",
     }),
+};
+
+// Tenant and namespace management API
+export const tenantsApi = {
+  list: () => request<TenantEntry[]>("/tenants"),
+
+  create: (data: { id: string; name?: string; status?: string; tier?: string }) =>
+    request<TenantEntry>("/tenants", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  update: (tenantID: string, data: { name?: string; status?: string; tier?: string }) =>
+    request<TenantEntry>(`/tenants/${encodeURIComponent(tenantID)}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  delete: (tenantID: string) =>
+    request<{ status: string; id: string }>(`/tenants/${encodeURIComponent(tenantID)}`, {
+      method: "DELETE",
+    }),
+
+  listNamespaces: (tenantID: string) =>
+    request<NamespaceEntry[]>(`/tenants/${encodeURIComponent(tenantID)}/namespaces`),
+
+  createNamespace: (tenantID: string, data: { name: string }) =>
+    request<NamespaceEntry>(`/tenants/${encodeURIComponent(tenantID)}/namespaces`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateNamespace: (tenantID: string, namespaceName: string, data: { name: string }) =>
+    request<NamespaceEntry>(
+      `/tenants/${encodeURIComponent(tenantID)}/namespaces/${encodeURIComponent(namespaceName)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }
+    ),
+
+  deleteNamespace: (tenantID: string, namespaceName: string) =>
+    request<{ status: string; tenant_id: string; name: string }>(
+      `/tenants/${encodeURIComponent(tenantID)}/namespaces/${encodeURIComponent(namespaceName)}`,
+      {
+        method: "DELETE",
+      }
+    ),
+
+  listQuotas: (tenantID: string) =>
+    request<TenantQuotaEntry[]>(`/tenants/${encodeURIComponent(tenantID)}/quotas`),
+
+  upsertQuota: (
+    tenantID: string,
+    dimension: string,
+    data: {
+      hard_limit: number;
+      soft_limit?: number;
+      burst?: number;
+      window_s?: number;
+    }
+  ) =>
+    request<TenantQuotaEntry>(
+      `/tenants/${encodeURIComponent(tenantID)}/quotas/${encodeURIComponent(dimension)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }
+    ),
+
+  deleteQuota: (tenantID: string, dimension: string) =>
+    request<{ status: string; tenant_id: string; dimension: string }>(
+      `/tenants/${encodeURIComponent(tenantID)}/quotas/${encodeURIComponent(dimension)}`,
+      {
+        method: "DELETE",
+      }
+    ),
+
+  usage: (tenantID: string, refresh: boolean = true) =>
+    request<TenantUsageEntry[]>(
+      `/tenants/${encodeURIComponent(tenantID)}/usage?refresh=${refresh ? "true" : "false"}`
+    ),
 };
 
 // Event bus API

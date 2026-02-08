@@ -98,6 +98,15 @@ func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunction
 		UpdatedAt:           time.Now(),
 	}
 
+	// Set default network policy to ensure isolation (NetNS)
+	if fn.NetworkPolicy == nil {
+		fn.NetworkPolicy = &domain.NetworkPolicy{
+			IsolationMode: "egress-only",
+		}
+	} else if fn.NetworkPolicy.IsolationMode == "" {
+		fn.NetworkPolicy.IsolationMode = "egress-only"
+	}
+
 	if err := s.store.SaveFunction(ctx, fn); err != nil {
 		return nil, "", err
 	}

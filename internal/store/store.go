@@ -37,7 +37,32 @@ type MetadataStore interface {
 	GetFunctionByName(ctx context.Context, name string) (*domain.Function, error)
 	DeleteFunction(ctx context.Context, id string) error
 	ListFunctions(ctx context.Context) ([]*domain.Function, error)
+	SearchFunctions(ctx context.Context, query string) ([]*domain.Function, error)
 	UpdateFunction(ctx context.Context, name string, update *FunctionUpdate) (*domain.Function, error)
+
+	// Tenancy (tenant / namespace)
+	ListTenants(ctx context.Context) ([]*TenantRecord, error)
+	GetTenant(ctx context.Context, id string) (*TenantRecord, error)
+	CreateTenant(ctx context.Context, tenant *TenantRecord) (*TenantRecord, error)
+	UpdateTenant(ctx context.Context, id string, update *TenantUpdate) (*TenantRecord, error)
+	DeleteTenant(ctx context.Context, id string) error
+
+	ListNamespaces(ctx context.Context, tenantID string) ([]*NamespaceRecord, error)
+	GetNamespace(ctx context.Context, tenantID, name string) (*NamespaceRecord, error)
+	CreateNamespace(ctx context.Context, namespace *NamespaceRecord) (*NamespaceRecord, error)
+	UpdateNamespace(ctx context.Context, tenantID, name string, update *NamespaceUpdate) (*NamespaceRecord, error)
+	DeleteNamespace(ctx context.Context, tenantID, name string) error
+
+	// Tenant governance (quota + usage)
+	ListTenantQuotas(ctx context.Context, tenantID string) ([]*TenantQuotaRecord, error)
+	UpsertTenantQuota(ctx context.Context, quota *TenantQuotaRecord) (*TenantQuotaRecord, error)
+	DeleteTenantQuota(ctx context.Context, tenantID, dimension string) error
+	ListTenantUsage(ctx context.Context, tenantID string) ([]*TenantUsageRecord, error)
+	RefreshTenantUsage(ctx context.Context, tenantID string) ([]*TenantUsageRecord, error)
+	CheckAndConsumeTenantQuota(ctx context.Context, tenantID, dimension string, amount int64) (*TenantQuotaDecision, error)
+	CheckTenantAbsoluteQuota(ctx context.Context, tenantID, dimension string, value int64) (*TenantQuotaDecision, error)
+	GetTenantFunctionCount(ctx context.Context, tenantID string) (int64, error)
+	GetTenantAsyncQueueDepth(ctx context.Context, tenantID string) (int64, error)
 
 	PublishVersion(ctx context.Context, funcID string, version *domain.FunctionVersion) error
 	GetVersion(ctx context.Context, funcID string, version int) (*domain.FunctionVersion, error)

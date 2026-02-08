@@ -24,12 +24,12 @@ type EngineConfig struct {
 
 // Engine is the worker pool that polls for ready DAG nodes and executes them.
 type Engine struct {
-	store    *store.Store
-	exec     *executor.Executor
-	cfg      EngineConfig
-	ownerID  string
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
+	store   *store.Store
+	exec    *executor.Executor
+	cfg     EngineConfig
+	ownerID string
+	stopCh  chan struct{}
+	wg      sync.WaitGroup
 }
 
 // NewEngine creates a new workflow engine.
@@ -115,7 +115,8 @@ func (e *Engine) executeNode(ctx context.Context, node *domain.RunNode) {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	execCtx, cancel := context.WithTimeout(ctx, timeout)
+	scopedCtx := store.WithTenantScope(ctx, node.TenantID, node.Namespace)
+	execCtx, cancel := context.WithTimeout(scopedCtx, timeout)
 	defer cancel()
 
 	// Build input: if node has explicit input, use it; otherwise use empty object

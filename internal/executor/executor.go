@@ -294,6 +294,8 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 func (e *Executor) persistInvocationLog(reqID string, fn *domain.Function, durationMs int64, coldStart, success bool, errMsg string, inputSize, outputSize int, input, output json.RawMessage, stdout, stderr string) {
 	e.logBatcher.Enqueue(&store.InvocationLog{
 		ID:           reqID,
+		TenantID:     fn.TenantID,
+		Namespace:    fn.Namespace,
 		FunctionID:   fn.ID,
 		FunctionName: fn.Name,
 		Runtime:      string(fn.Runtime),

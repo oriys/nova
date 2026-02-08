@@ -51,7 +51,7 @@ type Workflow struct {
 // WorkflowVersion is a published, immutable version of a workflow DAG.
 type WorkflowVersion struct {
 	ID         string          `json:"id"`
-	WorkflowID string         `json:"workflow_id"`
+	WorkflowID string          `json:"workflow_id"`
 	Version    int             `json:"version"`
 	Definition json.RawMessage `json:"definition"` // Full definition JSONB
 	Nodes      []WorkflowNode  `json:"nodes,omitempty"`
@@ -130,6 +130,8 @@ type WorkflowRun struct {
 // RunNode tracks the status of a single node in a run.
 type RunNode struct {
 	ID             string          `json:"id"`
+	TenantID       string          `json:"tenant_id,omitempty"`
+	Namespace      string          `json:"namespace,omitempty"`
 	RunID          string          `json:"run_id"`
 	NodeID         string          `json:"node_id"` // FK to dag_workflow_nodes
 	NodeKey        string          `json:"node_key"`

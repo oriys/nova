@@ -229,6 +229,9 @@ func (a *apiKeyStoreAdapter) GetAPIKeyByHash(ctx context.Context, keyHash string
 	if err != nil {
 		return nil, err
 	}
+	if rec == nil {
+		return nil, nil
+	}
 	policies, _ := auth.UnmarshalPolicies(rec.Permissions)
 	return &auth.APIKey{
 		Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,

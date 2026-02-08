@@ -377,13 +377,20 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash)`,
+		`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'`,
+		`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS namespace TEXT NOT NULL DEFAULT 'default'`,
 		`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'`,
+		`CREATE INDEX IF NOT EXISTS idx_api_keys_tenant_namespace_name ON api_keys(tenant_id, namespace, name)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_keys_tenant_namespace_hash ON api_keys(tenant_id, namespace, key_hash)`,
 		`CREATE TABLE IF NOT EXISTS secrets (
 			name TEXT PRIMARY KEY,
 			value TEXT NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
+		`ALTER TABLE secrets ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'`,
+		`ALTER TABLE secrets ADD COLUMN IF NOT EXISTS namespace TEXT NOT NULL DEFAULT 'default'`,
+		`CREATE INDEX IF NOT EXISTS idx_secrets_tenant_namespace_name ON secrets(tenant_id, namespace, name)`,
 		`CREATE TABLE IF NOT EXISTS rate_limit_buckets (
 			key TEXT PRIMARY KEY,
 			tokens DOUBLE PRECISION NOT NULL,
@@ -422,6 +429,10 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
+		`ALTER TABLE dag_workflows ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'`,
+		`ALTER TABLE dag_workflows ADD COLUMN IF NOT EXISTS namespace TEXT NOT NULL DEFAULT 'default'`,
+		`CREATE INDEX IF NOT EXISTS idx_dag_workflows_tenant_namespace_created ON dag_workflows(tenant_id, namespace, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_dag_workflows_tenant_namespace_name ON dag_workflows(tenant_id, namespace, name)`,
 		`CREATE TABLE IF NOT EXISTS dag_workflow_versions (
 			id TEXT PRIMARY KEY,
 			workflow_id TEXT NOT NULL REFERENCES dag_workflows(id) ON DELETE CASCADE,
@@ -506,7 +517,11 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
+		`ALTER TABLE schedules ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'`,
+		`ALTER TABLE schedules ADD COLUMN IF NOT EXISTS namespace TEXT NOT NULL DEFAULT 'default'`,
 		`CREATE INDEX IF NOT EXISTS idx_schedules_function ON schedules(function_name)`,
+		`CREATE INDEX IF NOT EXISTS idx_schedules_tenant_namespace_function ON schedules(tenant_id, namespace, function_name)`,
+		`CREATE INDEX IF NOT EXISTS idx_schedules_tenant_namespace_id ON schedules(tenant_id, namespace, id)`,
 
 		// Gateway routes table
 		`CREATE TABLE IF NOT EXISTS gateway_routes (

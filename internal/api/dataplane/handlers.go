@@ -77,6 +77,27 @@ type retryAsyncInvokeRequest struct {
 	MaxAttempts int `json:"max_attempts"`
 }
 
+func writeTenantQuotaExceeded(w http.ResponseWriter, decision *store.TenantQuotaDecision) {
+	if decision == nil {
+		http.Error(w, "tenant quota exceeded", http.StatusTooManyRequests)
+		return
+	}
+	if decision.RetryAfterS > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(decision.RetryAfterS))
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusTooManyRequests)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"error":        "tenant quota exceeded",
+		"tenant_id":    decision.TenantID,
+		"dimension":    decision.Dimension,
+		"used":         decision.Used,
+		"limit":        decision.Limit,
+		"window_s":     decision.WindowS,
+		"retry_after_s": decision.RetryAfterS,
+	})
+}
+
 // RegisterRoutes registers all data plane routes on the given mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Function invocation
@@ -122,6 +143,20 @@ func (h *Handler) InvokeFunction(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		payload = json.RawMessage("{}")
+	}
+
+	scope := store.TenantScopeFromContext(r.Context())
+	invQuotaDecision, err := h.Store.CheckAndConsumeTenantQuota(r.Context(), scope.TenantID, store.TenantDimensionInvocations, 1)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if invQuotaDecision != nil && !invQuotaDecision.Allowed {
+		reason := "tenant_quota_" + invQuotaDecision.Dimension
+		metrics.RecordAdmissionResult(fn.Name, "rejected", reason)
+		metrics.RecordShed(fn.Name, reason)
+		writeTenantQuotaExceeded(w, invQuotaDecision)
+		return
 	}
 
 	metrics.SetQueueDepth(fn.Name, h.Pool.QueueDepth(fn.ID))
@@ -191,6 +226,22 @@ func (h *Handler) EnqueueAsyncFunction(w http.ResponseWriter, r *http.Request) {
 	payload := req.Payload
 	if len(payload) == 0 {
 		payload = json.RawMessage("{}")
+	}
+
+	scope := store.TenantScopeFromContext(r.Context())
+	queueDepth, err := h.Store.GetTenantAsyncQueueDepth(r.Context(), scope.TenantID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	queueQuotaDecision, err := h.Store.CheckTenantAbsoluteQuota(r.Context(), scope.TenantID, store.TenantDimensionAsyncQueueDepth, queueDepth+1)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if queueQuotaDecision != nil && !queueQuotaDecision.Allowed {
+		writeTenantQuotaExceeded(w, queueQuotaDecision)
+		return
 	}
 
 	inv := store.NewAsyncInvocation(fn.ID, fn.Name, payload)

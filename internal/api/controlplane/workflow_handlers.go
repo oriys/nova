@@ -157,10 +157,15 @@ func (h *Handler) ListWorkflowRuns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetWorkflowRun(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
 	runID := r.PathValue("runID")
 	run, err := h.WorkflowService.GetRun(r.Context(), runID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if run.WorkflowName != name {
+		http.Error(w, "run not found", http.StatusNotFound)
 		return
 	}
 	wfWriteJSON(w, http.StatusOK, run)

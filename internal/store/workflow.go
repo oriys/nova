@@ -56,6 +56,7 @@ type WorkflowStore interface {
 // --- PostgresStore implements WorkflowStore ---
 
 func (s *PostgresStore) CreateWorkflow(ctx context.Context, w *domain.Workflow) error {
+	scope := tenantScopeFromContext(ctx)
 	if w.ID == "" {
 		w.ID = uuid.New().String()
 	}
@@ -66,17 +67,18 @@ func (s *PostgresStore) CreateWorkflow(ctx context.Context, w *domain.Workflow) 
 		w.Status = domain.WorkflowStatusActive
 	}
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO dag_workflows (id, name, description, status, current_version, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		w.ID, w.Name, w.Description, w.Status, w.CurrentVersion, w.CreatedAt, w.UpdatedAt)
+		`INSERT INTO dag_workflows (id, tenant_id, namespace, name, description, status, current_version, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		w.ID, scope.TenantID, scope.Namespace, w.Name, w.Description, w.Status, w.CurrentVersion, w.CreatedAt, w.UpdatedAt)
 	return err
 }
 
 func (s *PostgresStore) GetWorkflow(ctx context.Context, id string) (*domain.Workflow, error) {
+	scope := tenantScopeFromContext(ctx)
 	w := &domain.Workflow{}
 	err := s.pool.QueryRow(ctx,
 		`SELECT id, name, description, status, current_version, created_at, updated_at
-		 FROM dag_workflows WHERE id = $1`, id).
+		 FROM dag_workflows WHERE id = $1 AND tenant_id = $2 AND namespace = $3`, id, scope.TenantID, scope.Namespace).
 		Scan(&w.ID, &w.Name, &w.Description, &w.Status, &w.CurrentVersion, &w.CreatedAt, &w.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("workflow not found: %s", id)
@@ -85,10 +87,13 @@ func (s *PostgresStore) GetWorkflow(ctx context.Context, id string) (*domain.Wor
 }
 
 func (s *PostgresStore) GetWorkflowByName(ctx context.Context, name string) (*domain.Workflow, error) {
+	scope := tenantScopeFromContext(ctx)
 	w := &domain.Workflow{}
 	err := s.pool.QueryRow(ctx,
 		`SELECT id, name, description, status, current_version, created_at, updated_at
-		 FROM dag_workflows WHERE name = $1`, name).
+		 FROM dag_workflows
+		 WHERE name = $1 AND tenant_id = $2 AND namespace = $3`,
+		name, scope.TenantID, scope.Namespace).
 		Scan(&w.ID, &w.Name, &w.Description, &w.Status, &w.CurrentVersion, &w.CreatedAt, &w.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("workflow not found: %s", name)
@@ -97,9 +102,13 @@ func (s *PostgresStore) GetWorkflowByName(ctx context.Context, name string) (*do
 }
 
 func (s *PostgresStore) ListWorkflows(ctx context.Context) ([]*domain.Workflow, error) {
+	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, name, description, status, current_version, created_at, updated_at
-		 FROM dag_workflows WHERE status != 'deleted' ORDER BY created_at DESC`)
+		 FROM dag_workflows
+		 WHERE status != 'deleted' AND tenant_id = $1 AND namespace = $2
+		 ORDER BY created_at DESC`,
+		scope.TenantID, scope.Namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -117,15 +126,35 @@ func (s *PostgresStore) ListWorkflows(ctx context.Context) ([]*domain.Workflow, 
 }
 
 func (s *PostgresStore) DeleteWorkflow(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx,
-		`UPDATE dag_workflows SET status = 'deleted', updated_at = NOW() WHERE id = $1`, id)
+	scope := tenantScopeFromContext(ctx)
+	ct, err := s.pool.Exec(ctx,
+		`UPDATE dag_workflows
+		 SET status = 'deleted', updated_at = NOW()
+		 WHERE id = $1 AND tenant_id = $2 AND namespace = $3`,
+		id, scope.TenantID, scope.Namespace)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("workflow not found: %s", id)
+	}
 	return err
 }
 
 func (s *PostgresStore) UpdateWorkflowVersion(ctx context.Context, id string, version int) error {
-	_, err := s.pool.Exec(ctx,
-		`UPDATE dag_workflows SET current_version = $2, updated_at = NOW() WHERE id = $1`, id, version)
-	return err
+	scope := tenantScopeFromContext(ctx)
+	ct, err := s.pool.Exec(ctx,
+		`UPDATE dag_workflows
+		 SET current_version = $2, updated_at = NOW()
+		 WHERE id = $1 AND tenant_id = $3 AND namespace = $4`,
+		id, version, scope.TenantID, scope.Namespace)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("workflow not found: %s", id)
+	}
+	return nil
 }
 
 // --- Versions ---
@@ -308,6 +337,7 @@ func (s *PostgresStore) CreateRun(ctx context.Context, run *domain.WorkflowRun) 
 }
 
 func (s *PostgresStore) GetRun(ctx context.Context, id string) (*domain.WorkflowRun, error) {
+	scope := tenantScopeFromContext(ctx)
 	r := &domain.WorkflowRun{}
 	err := s.pool.QueryRow(ctx,
 		`SELECT r.id, r.workflow_id, w.name, r.version_id, v.version, r.status, r.trigger_type,
@@ -315,7 +345,8 @@ func (s *PostgresStore) GetRun(ctx context.Context, id string) (*domain.Workflow
 		 FROM dag_runs r
 		 JOIN dag_workflows w ON w.id = r.workflow_id
 		 JOIN dag_workflow_versions v ON v.id = r.version_id
-		 WHERE r.id = $1`, id).
+		 WHERE r.id = $1 AND w.tenant_id = $2 AND w.namespace = $3`,
+		id, scope.TenantID, scope.Namespace).
 		Scan(&r.ID, &r.WorkflowID, &r.WorkflowName, &r.VersionID, &r.Version, &r.Status, &r.TriggerType,
 			&r.Input, &r.Output, &r.ErrorMessage, &r.StartedAt, &r.FinishedAt, &r.CreatedAt)
 	if err == pgx.ErrNoRows {
@@ -325,14 +356,16 @@ func (s *PostgresStore) GetRun(ctx context.Context, id string) (*domain.Workflow
 }
 
 func (s *PostgresStore) ListRuns(ctx context.Context, workflowID string) ([]*domain.WorkflowRun, error) {
+	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx,
 		`SELECT r.id, r.workflow_id, w.name, r.version_id, v.version, r.status, r.trigger_type,
 		        r.input, r.output, COALESCE(r.error_message, ''), r.started_at, r.finished_at, r.created_at
 		 FROM dag_runs r
 		 JOIN dag_workflows w ON w.id = r.workflow_id
 		 JOIN dag_workflow_versions v ON v.id = r.version_id
-		 WHERE r.workflow_id = $1
-		 ORDER BY r.created_at DESC LIMIT 100`, workflowID)
+		 WHERE r.workflow_id = $1 AND w.tenant_id = $2 AND w.namespace = $3
+		 ORDER BY r.created_at DESC LIMIT 100`,
+		workflowID, scope.TenantID, scope.Namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -414,21 +447,34 @@ func (s *PostgresStore) AcquireReadyNode(ctx context.Context, leaseOwner string,
 
 	n := &domain.RunNode{}
 	err := s.pool.QueryRow(ctx,
-		`UPDATE dag_run_nodes SET
-			status = 'running', lease_owner = $1, lease_expires_at = $2, started_at = $3,
-			attempt = attempt + 1
-		 WHERE id = (
-			SELECT id FROM dag_run_nodes
-			WHERE (status = 'ready') OR (status = 'running' AND lease_expires_at < $3)
-			ORDER BY created_at
-			FOR UPDATE SKIP LOCKED
+		`WITH candidate AS (
+			SELECT rn.id, w.tenant_id, w.namespace
+			FROM dag_run_nodes rn
+			JOIN dag_runs r ON r.id = rn.run_id
+			JOIN dag_workflows w ON w.id = r.workflow_id
+			WHERE (rn.status = 'ready') OR (rn.status = 'running' AND rn.lease_expires_at < $3)
+			ORDER BY rn.created_at
+			FOR UPDATE OF rn SKIP LOCKED
 			LIMIT 1
-		 )
-		 RETURNING id, run_id, node_id, node_key, function_name, status, unresolved_deps,
-		           attempt, input, output, COALESCE(error_message, ''), COALESCE(lease_owner, ''), lease_expires_at,
-		           started_at, finished_at, created_at`,
+		),
+		updated AS (
+			UPDATE dag_run_nodes rn
+			SET status = 'running',
+				lease_owner = $1,
+				lease_expires_at = $2,
+				started_at = $3,
+				attempt = rn.attempt + 1
+			FROM candidate c
+			WHERE rn.id = c.id
+			RETURNING rn.id, c.tenant_id, c.namespace, rn.run_id, rn.node_id, rn.node_key, rn.function_name, rn.status, rn.unresolved_deps,
+			          rn.attempt, rn.input, rn.output, COALESCE(rn.error_message, '') AS error_message, COALESCE(rn.lease_owner, '') AS lease_owner, rn.lease_expires_at,
+			          rn.started_at, rn.finished_at, rn.created_at
+		)
+		SELECT id, tenant_id, namespace, run_id, node_id, node_key, function_name, status, unresolved_deps,
+		       attempt, input, output, error_message, lease_owner, lease_expires_at, started_at, finished_at, created_at
+		FROM updated`,
 		leaseOwner, leaseExpires, now).
-		Scan(&n.ID, &n.RunID, &n.NodeID, &n.NodeKey, &n.FunctionName,
+		Scan(&n.ID, &n.TenantID, &n.Namespace, &n.RunID, &n.NodeID, &n.NodeKey, &n.FunctionName,
 			&n.Status, &n.UnresolvedDeps, &n.Attempt, &n.Input, &n.Output, &n.ErrorMessage,
 			&n.LeaseOwner, &n.LeaseExpiresAt, &n.StartedAt, &n.FinishedAt, &n.CreatedAt)
 	if err == pgx.ErrNoRows {

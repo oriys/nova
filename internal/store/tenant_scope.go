@@ -44,6 +44,11 @@ func tenantScopeFromContext(ctx context.Context) TenantScope {
 	return TenantScopeFromContext(ctx)
 }
 
+// IsValidTenantScopePart checks whether a tenant or namespace identifier is valid.
+func IsValidTenantScopePart(value string) bool {
+	return tenantScopePattern.MatchString(strings.TrimSpace(value))
+}
+
 func normalizeTenantScope(tenantID, namespace string) (string, string) {
 	tenantID = strings.TrimSpace(tenantID)
 	namespace = strings.TrimSpace(namespace)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/oriys/nova/internal/domain"
@@ -33,6 +34,22 @@ func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Code == "" {
 		http.Error(w, "code is required", http.StatusBadRequest)
+		return
+	}
+
+	scope := store.TenantScopeFromContext(r.Context())
+	functionCount, err := h.Store.GetTenantFunctionCount(r.Context(), scope.TenantID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	functionCountDecision, err := h.Store.CheckTenantAbsoluteQuota(r.Context(), scope.TenantID, store.TenantDimensionFunctionsCount, functionCount+1)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if functionCountDecision != nil && !functionCountDecision.Allowed {
+		writeTenantQuotaExceededResponse(w, functionCountDecision)
 		return
 	}
 
@@ -71,13 +88,39 @@ func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 
 // ListFunctions handles GET /functions
 func (h *Handler) ListFunctions(w http.ResponseWriter, r *http.Request) {
-	funcs, err := h.Store.ListFunctions(r.Context())
+	query := r.URL.Query().Get("search")
+	if query == "" {
+		query = r.URL.Query().Get("q")
+	}
+	limitRaw := strings.TrimSpace(r.URL.Query().Get("limit"))
+	limit := 0
+	if limitRaw != "" {
+		n, err := strconv.Atoi(limitRaw)
+		if err != nil || n <= 0 {
+			http.Error(w, "invalid limit", http.StatusBadRequest)
+			return
+		}
+		limit = n
+	}
+
+	var funcs []*domain.Function
+	var err error
+
+	if query != "" {
+		funcs, err = h.Store.SearchFunctions(r.Context(), query)
+	} else {
+		funcs, err = h.Store.ListFunctions(r.Context())
+	}
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if funcs == nil {
 		funcs = []*domain.Function{}
+	}
+	if limit > 0 && len(funcs) > limit {
+		funcs = funcs[:limit]
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(funcs)

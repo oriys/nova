@@ -155,6 +155,43 @@ func (s *PostgresStore) ListFunctions(ctx context.Context) ([]*domain.Function, 
 	return functions, nil
 }
 
+func (s *PostgresStore) SearchFunctions(ctx context.Context, query string) ([]*domain.Function, error) {
+	scope := tenantScopeFromContext(ctx)
+	rows, err := s.pool.Query(ctx, `
+		SELECT data
+		FROM functions
+		WHERE tenant_id = $1 AND namespace = $2 AND name ILIKE $3
+		ORDER BY name
+	`, scope.TenantID, scope.Namespace, "%"+query+"%")
+	if err != nil {
+		return nil, fmt.Errorf("search functions: %w", err)
+	}
+	defer rows.Close()
+
+	var functions []*domain.Function
+	for rows.Next() {
+		var data []byte
+		if err := rows.Scan(&data); err != nil {
+			return nil, fmt.Errorf("search functions scan: %w", err)
+		}
+		var fn domain.Function
+		if err := json.Unmarshal(data, &fn); err != nil {
+			continue
+		}
+		if fn.TenantID == "" {
+			fn.TenantID = scope.TenantID
+		}
+		if fn.Namespace == "" {
+			fn.Namespace = scope.Namespace
+		}
+		functions = append(functions, &fn)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("search functions rows: %w", err)
+	}
+	return functions, nil
+}
+
 func (s *PostgresStore) UpdateFunction(ctx context.Context, name string, update *FunctionUpdate) (*domain.Function, error) {
 	fn, err := s.GetFunctionByName(ctx, name)
 	if err != nil {

@@ -3,6 +3,7 @@ package controlplane
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/domain"
@@ -94,7 +95,7 @@ func (h *APIKeyHandler) DeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Manager.Delete(r.Context(), name); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), apiKeyHTTPStatus(err))
 		return
 	}
 
@@ -110,7 +111,7 @@ func (h *APIKeyHandler) ToggleAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Enabled     *bool                  `json:"enabled"`
+		Enabled     *bool                   `json:"enabled"`
 		Permissions *[]domain.PolicyBinding `json:"permissions"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -121,12 +122,12 @@ func (h *APIKeyHandler) ToggleAPIKey(w http.ResponseWriter, r *http.Request) {
 	if req.Enabled != nil {
 		if *req.Enabled {
 			if err := h.Manager.Enable(r.Context(), name); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				http.Error(w, err.Error(), apiKeyHTTPStatus(err))
 				return
 			}
 		} else {
 			if err := h.Manager.Revoke(r.Context(), name); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				http.Error(w, err.Error(), apiKeyHTTPStatus(err))
 				return
 			}
 		}
@@ -134,7 +135,7 @@ func (h *APIKeyHandler) ToggleAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	if req.Permissions != nil {
 		if err := h.Manager.UpdatePolicies(r.Context(), name, *req.Permissions); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, err.Error(), apiKeyHTTPStatus(err))
 			return
 		}
 	}
@@ -144,4 +145,18 @@ func (h *APIKeyHandler) ToggleAPIKey(w http.ResponseWriter, r *http.Request) {
 		"name":   name,
 		"status": "updated",
 	})
+}
+
+func apiKeyHTTPStatus(err error) int {
+	if err == nil {
+		return http.StatusOK
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "not found") {
+		return http.StatusNotFound
+	}
+	if strings.Contains(msg, "already exists") {
+		return http.StatusConflict
+	}
+	return http.StatusInternalServerError
 }
