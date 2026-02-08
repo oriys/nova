@@ -34,6 +34,8 @@ const (
 	DefaultEventMaxAttempts    = 3
 	DefaultEventBackoffBaseMS  = 1000
 	DefaultEventBackoffMaxMS   = 60000
+	DefaultEventMaxInflight    = 0 // 0 means unlimited
+	DefaultEventRateLimitPerS  = 0 // 0 means unlimited
 	DefaultEventLeaseTimeout   = 30 * time.Second
 )
 
@@ -62,19 +64,29 @@ type EventTopic struct {
 
 // EventSubscription binds a topic to a function consumer group.
 type EventSubscription struct {
-	ID            string    `json:"id"`
-	TopicID       string    `json:"topic_id"`
-	TopicName     string    `json:"topic_name,omitempty"`
-	Name          string    `json:"name"`
-	ConsumerGroup string    `json:"consumer_group"`
-	FunctionID    string    `json:"function_id"`
-	FunctionName  string    `json:"function_name"`
-	Enabled       bool      `json:"enabled"`
-	MaxAttempts   int       `json:"max_attempts"`
-	BackoffBaseMS int       `json:"backoff_base_ms"`
-	BackoffMaxMS  int       `json:"backoff_max_ms"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID              string     `json:"id"`
+	TopicID         string     `json:"topic_id"`
+	TopicName       string     `json:"topic_name,omitempty"`
+	Name            string     `json:"name"`
+	ConsumerGroup   string     `json:"consumer_group"`
+	FunctionID      string     `json:"function_id"`
+	FunctionName    string     `json:"function_name"`
+	Enabled         bool       `json:"enabled"`
+	MaxAttempts     int        `json:"max_attempts"`
+	BackoffBaseMS   int        `json:"backoff_base_ms"`
+	BackoffMaxMS    int        `json:"backoff_max_ms"`
+	MaxInflight     int        `json:"max_inflight"`
+	RateLimitPerSec int        `json:"rate_limit_per_sec"`
+	LastDispatchAt  *time.Time `json:"last_dispatch_at,omitempty"`
+	LastAckedSeq    int64      `json:"last_acked_sequence"`
+	LastAckedAt     *time.Time `json:"last_acked_at,omitempty"`
+	Lag             int64      `json:"lag"`
+	Inflight        int        `json:"inflight"`
+	Queued          int        `json:"queued"`
+	DLQ             int        `json:"dlq"`
+	OldestUnackedS  int64      `json:"oldest_unacked_age_s,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 // EventSubscriptionUpdate describes mutable subscription fields.
@@ -87,6 +99,8 @@ type EventSubscriptionUpdate struct {
 	MaxAttempts   *int    `json:"max_attempts,omitempty"`
 	BackoffBaseMS *int    `json:"backoff_base_ms,omitempty"`
 	BackoffMaxMS  *int    `json:"backoff_max_ms,omitempty"`
+	MaxInflight   *int    `json:"max_inflight,omitempty"`
+	RateLimitPerS *int    `json:"rate_limit_per_sec,omitempty"`
 }
 
 // EventMessage is an immutable record stored under a topic.
@@ -153,19 +167,21 @@ func NewEventTopic(name, description string) *EventTopic {
 func NewEventSubscription(topicID, topicName, name, consumerGroup, functionID, functionName string) *EventSubscription {
 	now := time.Now().UTC()
 	return &EventSubscription{
-		ID:            uuid.New().String(),
-		TopicID:       strings.TrimSpace(topicID),
-		TopicName:     strings.TrimSpace(topicName),
-		Name:          strings.TrimSpace(name),
-		ConsumerGroup: strings.TrimSpace(consumerGroup),
-		FunctionID:    strings.TrimSpace(functionID),
-		FunctionName:  strings.TrimSpace(functionName),
-		Enabled:       true,
-		MaxAttempts:   DefaultEventMaxAttempts,
-		BackoffBaseMS: DefaultEventBackoffBaseMS,
-		BackoffMaxMS:  DefaultEventBackoffMaxMS,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ID:              uuid.New().String(),
+		TopicID:         strings.TrimSpace(topicID),
+		TopicName:       strings.TrimSpace(topicName),
+		Name:            strings.TrimSpace(name),
+		ConsumerGroup:   strings.TrimSpace(consumerGroup),
+		FunctionID:      strings.TrimSpace(functionID),
+		FunctionName:    strings.TrimSpace(functionName),
+		Enabled:         true,
+		MaxAttempts:     DefaultEventMaxAttempts,
+		BackoffBaseMS:   DefaultEventBackoffBaseMS,
+		BackoffMaxMS:    DefaultEventBackoffMaxMS,
+		MaxInflight:     DefaultEventMaxInflight,
+		RateLimitPerSec: DefaultEventRateLimitPerS,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 }
 
@@ -280,13 +296,16 @@ func (s *PostgresStore) CreateEventSubscription(ctx context.Context, sub *EventS
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO event_subscriptions (
 			id, topic_id, name, consumer_group, function_id, function_name,
-			enabled, max_attempts, backoff_base_ms, backoff_max_ms, created_at, updated_at
+			enabled, max_attempts, backoff_base_ms, backoff_max_ms,
+			max_inflight, rate_limit_per_sec, last_acked_sequence, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
-			$7, $8, $9, $10, $11, $12
+			$7, $8, $9, $10,
+			$11, $12, $13, $14, $15
 		)
 	`, sub.ID, sub.TopicID, sub.Name, sub.ConsumerGroup, sub.FunctionID, sub.FunctionName,
-		sub.Enabled, sub.MaxAttempts, sub.BackoffBaseMS, sub.BackoffMaxMS, sub.CreatedAt, sub.UpdatedAt)
+		sub.Enabled, sub.MaxAttempts, sub.BackoffBaseMS, sub.BackoffMaxMS,
+		sub.MaxInflight, sub.RateLimitPerSec, sub.LastAckedSeq, sub.CreatedAt, sub.UpdatedAt)
 	if err != nil {
 		if isPGUniqueViolation(err) {
 			return fmt.Errorf("event subscription name or consumer_group already exists on topic: %s", sub.TopicName)
@@ -299,9 +318,24 @@ func (s *PostgresStore) CreateEventSubscription(ctx context.Context, sub *EventS
 func (s *PostgresStore) GetEventSubscription(ctx context.Context, id string) (*EventSubscription, error) {
 	sub, err := scanEventSubscription(s.pool.QueryRow(ctx, `
 		SELECT s.id, s.topic_id, t.name, s.name, s.consumer_group, s.function_id, s.function_name,
-		       s.enabled, s.max_attempts, s.backoff_base_ms, s.backoff_max_ms, s.created_at, s.updated_at
+		       s.enabled, s.max_attempts, s.backoff_base_ms, s.backoff_max_ms,
+		       s.max_inflight, s.rate_limit_per_sec, s.last_dispatch_at, s.last_acked_sequence, s.last_acked_at,
+		       COALESCE(stats.inflight_count, 0), COALESCE(stats.queued_count, 0), COALESCE(stats.dlq_count, 0),
+		       GREATEST(COALESCE(stats.latest_sequence, s.last_acked_sequence) - s.last_acked_sequence, 0), stats.oldest_unacked_at,
+		       s.created_at, s.updated_at
 		FROM event_subscriptions s
 		JOIN event_topics t ON t.id = s.topic_id
+		LEFT JOIN LATERAL (
+			SELECT
+				COUNT(*) FILTER (WHERE d.status = 'running') AS inflight_count,
+				COUNT(*) FILTER (WHERE d.status = 'queued') AS queued_count,
+				COUNT(*) FILTER (WHERE d.status = 'dlq') AS dlq_count,
+				MAX(m.sequence) AS latest_sequence,
+				MIN(d.created_at) FILTER (WHERE d.status IN ('queued', 'running', 'dlq')) AS oldest_unacked_at
+			FROM event_deliveries d
+			JOIN event_messages m ON m.id = d.message_id
+			WHERE d.subscription_id = s.id
+		) stats ON TRUE
 		WHERE s.id = $1
 	`, id))
 	if err == pgx.ErrNoRows {
@@ -316,9 +350,24 @@ func (s *PostgresStore) GetEventSubscription(ctx context.Context, id string) (*E
 func (s *PostgresStore) ListEventSubscriptions(ctx context.Context, topicID string) ([]*EventSubscription, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT s.id, s.topic_id, t.name, s.name, s.consumer_group, s.function_id, s.function_name,
-		       s.enabled, s.max_attempts, s.backoff_base_ms, s.backoff_max_ms, s.created_at, s.updated_at
+		       s.enabled, s.max_attempts, s.backoff_base_ms, s.backoff_max_ms,
+		       s.max_inflight, s.rate_limit_per_sec, s.last_dispatch_at, s.last_acked_sequence, s.last_acked_at,
+		       COALESCE(stats.inflight_count, 0), COALESCE(stats.queued_count, 0), COALESCE(stats.dlq_count, 0),
+		       GREATEST(COALESCE(stats.latest_sequence, s.last_acked_sequence) - s.last_acked_sequence, 0), stats.oldest_unacked_at,
+		       s.created_at, s.updated_at
 		FROM event_subscriptions s
 		JOIN event_topics t ON t.id = s.topic_id
+		LEFT JOIN LATERAL (
+			SELECT
+				COUNT(*) FILTER (WHERE d.status = 'running') AS inflight_count,
+				COUNT(*) FILTER (WHERE d.status = 'queued') AS queued_count,
+				COUNT(*) FILTER (WHERE d.status = 'dlq') AS dlq_count,
+				MAX(m.sequence) AS latest_sequence,
+				MIN(d.created_at) FILTER (WHERE d.status IN ('queued', 'running', 'dlq')) AS oldest_unacked_at
+			FROM event_deliveries d
+			JOIN event_messages m ON m.id = d.message_id
+			WHERE d.subscription_id = s.id
+		) stats ON TRUE
 		WHERE s.topic_id = $1
 		ORDER BY s.created_at ASC
 	`, strings.TrimSpace(topicID))
@@ -374,6 +423,12 @@ func (s *PostgresStore) UpdateEventSubscription(ctx context.Context, id string, 
 	if update.BackoffMaxMS != nil {
 		sub.BackoffMaxMS = *update.BackoffMaxMS
 	}
+	if update.MaxInflight != nil {
+		sub.MaxInflight = *update.MaxInflight
+	}
+	if update.RateLimitPerS != nil {
+		sub.RateLimitPerSec = *update.RateLimitPerS
+	}
 	if err := normalizeEventSubscription(sub); err != nil {
 		return nil, err
 	}
@@ -397,10 +452,13 @@ func (s *PostgresStore) UpdateEventSubscription(ctx context.Context, id string, 
 			max_attempts = $7,
 			backoff_base_ms = $8,
 			backoff_max_ms = $9,
-			updated_at = $10
+			max_inflight = $10,
+			rate_limit_per_sec = $11,
+			updated_at = $12
 		WHERE id = $1
 	`, sub.ID, sub.Name, sub.ConsumerGroup, sub.FunctionID, sub.FunctionName, sub.Enabled,
-		sub.MaxAttempts, sub.BackoffBaseMS, sub.BackoffMaxMS, sub.UpdatedAt)
+		sub.MaxAttempts, sub.BackoffBaseMS, sub.BackoffMaxMS,
+		sub.MaxInflight, sub.RateLimitPerSec, sub.UpdatedAt)
 	if err != nil {
 		if isPGUniqueViolation(err) {
 			return nil, fmt.Errorf("event subscription name or consumer_group already exists on topic: %s", sub.TopicName)
@@ -642,13 +700,28 @@ func (s *PostgresStore) AcquireDueEventDelivery(ctx context.Context, workerID st
 
 	delivery, err := scanEventDelivery(s.pool.QueryRow(ctx, `
 		WITH candidate AS (
-			SELECT d.id
+			SELECT d.id, d.subscription_id
 			FROM event_deliveries d
 			JOIN event_subscriptions s ON s.id = d.subscription_id
 			WHERE s.enabled = TRUE
 			  AND (
 				(d.status = 'queued' AND d.next_run_at <= $3)
 				OR (d.status = 'running' AND d.locked_until < $3)
+			  )
+			  AND (
+			  	s.max_inflight <= 0
+			  	OR (
+			  		SELECT COUNT(*) FROM event_deliveries infl
+			  		WHERE infl.subscription_id = d.subscription_id
+			  		  AND infl.status = 'running'
+			  		  AND infl.id <> d.id
+			  		  AND infl.locked_until >= $3
+			  	) < s.max_inflight
+			  )
+			  AND (
+			  	s.rate_limit_per_sec <= 0
+			  	OR s.last_dispatch_at IS NULL
+			  	OR s.last_dispatch_at <= $3 - ((1000.0 / GREATEST(s.rate_limit_per_sec, 1)) * INTERVAL '1 millisecond')
 			  )
 			  AND (
 				d.ordering_key = ''
@@ -663,7 +736,7 @@ func (s *PostgresStore) AcquireDueEventDelivery(ctx context.Context, workerID st
 				)
 			  )
 			ORDER BY d.next_run_at ASC, d.created_at ASC
-			FOR UPDATE SKIP LOCKED
+			FOR UPDATE OF d, s SKIP LOCKED
 			LIMIT 1
 		), updated AS (
 			UPDATE event_deliveries d
@@ -676,6 +749,12 @@ func (s *PostgresStore) AcquireDueEventDelivery(ctx context.Context, workerID st
 			FROM candidate c
 			WHERE d.id = c.id
 			RETURNING d.id
+		), touched_sub AS (
+			UPDATE event_subscriptions s
+			SET last_dispatch_at = $3
+			FROM candidate c
+			WHERE s.id = c.subscription_id
+			RETURNING s.id
 		)
 		SELECT d.id, d.topic_id, t.name, d.subscription_id, s.name, s.consumer_group,
 		       d.message_id, m.sequence, d.ordering_key, m.payload, m.headers,
@@ -700,25 +779,52 @@ func (s *PostgresStore) AcquireDueEventDelivery(ctx context.Context, workerID st
 
 func (s *PostgresStore) MarkEventDeliverySucceeded(ctx context.Context, id, requestID string, output json.RawMessage, durationMS int64, coldStart bool) error {
 	now := time.Now().UTC()
-	ct, err := s.pool.Exec(ctx, `
-		UPDATE event_deliveries SET
-			status = 'succeeded',
-			request_id = $2,
-			output = $3,
-			duration_ms = $4,
-			cold_start = $5,
-			last_error = NULL,
-			locked_by = NULL,
-			locked_until = NULL,
-			completed_at = $6,
-			updated_at = $6
-		WHERE id = $1
-	`, id, nullIfEmpty(requestID), output, durationMS, coldStart, now)
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var subscriptionID string
+	var sequence int64
+	err = tx.QueryRow(ctx, `
+		WITH updated AS (
+			UPDATE event_deliveries SET
+				status = 'succeeded',
+				request_id = $2,
+				output = $3,
+				duration_ms = $4,
+				cold_start = $5,
+				last_error = NULL,
+				locked_by = NULL,
+				locked_until = NULL,
+				completed_at = $6,
+				updated_at = $6
+			WHERE id = $1
+			RETURNING subscription_id, message_id
+		)
+		SELECT updated.subscription_id, m.sequence
+		FROM updated
+		JOIN event_messages m ON m.id = updated.message_id
+	`, id, nullIfEmpty(requestID), output, durationMS, coldStart, now).Scan(&subscriptionID, &sequence)
+	if err == pgx.ErrNoRows {
+		return fmt.Errorf("%w: %s", ErrEventDeliveryNotFound, id)
+	}
 	if err != nil {
 		return fmt.Errorf("mark event delivery succeeded: %w", err)
 	}
-	if ct.RowsAffected() == 0 {
-		return fmt.Errorf("%w: %s", ErrEventDeliveryNotFound, id)
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE event_subscriptions
+		SET last_acked_sequence = GREATEST(last_acked_sequence, $2),
+		    last_acked_at = $3
+		WHERE id = $1
+	`, subscriptionID, sequence, now); err != nil {
+		return fmt.Errorf("update event subscription cursor: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit event success tx: %w", err)
 	}
 	return nil
 }
@@ -805,6 +911,67 @@ func (s *PostgresStore) RequeueEventDelivery(ctx context.Context, id string, max
 	}
 
 	return s.GetEventDelivery(ctx, id)
+}
+
+func (s *PostgresStore) ResolveEventReplaySequenceByTime(ctx context.Context, subscriptionID string, from time.Time) (int64, error) {
+	if from.IsZero() {
+		return 1, nil
+	}
+	var topicID string
+	if err := s.pool.QueryRow(ctx, `
+		SELECT topic_id FROM event_subscriptions WHERE id = $1
+	`, strings.TrimSpace(subscriptionID)).Scan(&topicID); err != nil {
+		if err == pgx.ErrNoRows {
+			return 0, fmt.Errorf("%w: %s", ErrEventSubscriptionNotFound, subscriptionID)
+		}
+		return 0, fmt.Errorf("resolve replay topic: %w", err)
+	}
+
+	var sequence int64
+	err := s.pool.QueryRow(ctx, `
+		SELECT sequence
+		FROM event_messages
+		WHERE topic_id = $1 AND published_at >= $2
+		ORDER BY sequence ASC
+		LIMIT 1
+	`, topicID, from.UTC()).Scan(&sequence)
+	if err == nil {
+		return sequence, nil
+	}
+	if err != pgx.ErrNoRows {
+		return 0, fmt.Errorf("resolve replay sequence by time: %w", err)
+	}
+
+	err = s.pool.QueryRow(ctx, `
+		SELECT COALESCE(MAX(sequence) + 1, 1)
+		FROM event_messages
+		WHERE topic_id = $1
+	`, topicID).Scan(&sequence)
+	if err != nil {
+		return 0, fmt.Errorf("resolve replay sequence fallback: %w", err)
+	}
+	return sequence, nil
+}
+
+func (s *PostgresStore) SetEventSubscriptionCursor(ctx context.Context, subscriptionID string, lastAckedSequence int64) (*EventSubscription, error) {
+	if lastAckedSequence < 0 {
+		return nil, fmt.Errorf("last_acked_sequence must be >= 0")
+	}
+	now := time.Now().UTC()
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE event_subscriptions
+		SET last_acked_sequence = $2,
+		    last_acked_at = $3,
+		    updated_at = $3
+		WHERE id = $1
+	`, strings.TrimSpace(subscriptionID), lastAckedSequence, now)
+	if err != nil {
+		return nil, fmt.Errorf("set event subscription cursor: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return nil, fmt.Errorf("%w: %s", ErrEventSubscriptionNotFound, subscriptionID)
+	}
+	return s.GetEventSubscription(ctx, subscriptionID)
 }
 
 func (s *PostgresStore) ReplayEventSubscription(ctx context.Context, subscriptionID string, fromSequence int64, limit int) (int, error) {
@@ -959,6 +1126,18 @@ func normalizeEventSubscription(sub *EventSubscription) error {
 		sub.MaxAttempts = DefaultEventMaxAttempts
 	}
 	sub.BackoffBaseMS, sub.BackoffMaxMS = normalizeEventBackoff(sub.BackoffBaseMS, sub.BackoffMaxMS)
+	if sub.MaxInflight < 0 {
+		return fmt.Errorf("max_inflight must be >= 0")
+	}
+	if sub.MaxInflight > 100000 {
+		sub.MaxInflight = 100000
+	}
+	if sub.RateLimitPerSec < 0 {
+		return fmt.Errorf("rate_limit_per_sec must be >= 0")
+	}
+	if sub.RateLimitPerSec > 10000 {
+		sub.RateLimitPerSec = 10000
+	}
 	if sub.CreatedAt.IsZero() {
 		sub.CreatedAt = now
 	}
@@ -1071,6 +1250,7 @@ type eventSubscriptionScanner interface {
 
 func scanEventSubscription(scanner eventSubscriptionScanner) (*EventSubscription, error) {
 	var sub EventSubscription
+	var oldestUnackedAt *time.Time
 	if err := scanner.Scan(
 		&sub.ID,
 		&sub.TopicID,
@@ -1083,10 +1263,26 @@ func scanEventSubscription(scanner eventSubscriptionScanner) (*EventSubscription
 		&sub.MaxAttempts,
 		&sub.BackoffBaseMS,
 		&sub.BackoffMaxMS,
+		&sub.MaxInflight,
+		&sub.RateLimitPerSec,
+		&sub.LastDispatchAt,
+		&sub.LastAckedSeq,
+		&sub.LastAckedAt,
+		&sub.Inflight,
+		&sub.Queued,
+		&sub.DLQ,
+		&sub.Lag,
+		&oldestUnackedAt,
 		&sub.CreatedAt,
 		&sub.UpdatedAt,
 	); err != nil {
 		return nil, err
+	}
+	if oldestUnackedAt != nil {
+		age := time.Since(*oldestUnackedAt).Seconds()
+		if age > 0 {
+			sub.OldestUnackedS = int64(age)
+		}
 	}
 	return &sub, nil
 }

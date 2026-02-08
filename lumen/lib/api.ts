@@ -177,6 +177,16 @@ export interface EventSubscription {
   max_attempts: number;
   backoff_base_ms: number;
   backoff_max_ms: number;
+  max_inflight: number;
+  rate_limit_per_sec: number;
+  last_dispatch_at?: string;
+  last_acked_sequence: number;
+  last_acked_at?: string;
+  lag: number;
+  inflight: number;
+  queued: number;
+  dlq: number;
+  oldest_unacked_age_s?: number;
   created_at: string;
   updated_at: string;
 }
@@ -538,6 +548,8 @@ export const eventsApi = {
       max_attempts?: number;
       backoff_base_ms?: number;
       backoff_max_ms?: number;
+      max_inflight?: number;
+      rate_limit_per_sec?: number;
     }
   ) =>
     request<EventSubscription>(`/topics/${encodeURIComponent(topicName)}/subscriptions`, {
@@ -558,6 +570,8 @@ export const eventsApi = {
       max_attempts?: number;
       backoff_base_ms?: number;
       backoff_max_ms?: number;
+      max_inflight?: number;
+      rate_limit_per_sec?: number;
     }
   ) =>
     request<EventSubscription>(`/subscriptions/${encodeURIComponent(id)}`, {
@@ -588,14 +602,33 @@ export const eventsApi = {
   getDelivery: (id: string) =>
     request<EventDelivery>(`/deliveries/${encodeURIComponent(id)}`),
 
-  replaySubscription: (subscriptionID: string, fromSequence?: number, limit?: number) =>
-    request<{ status: string; subscriptionId: string; queued: number }>(
+  replaySubscription: (
+    subscriptionID: string,
+    fromSequence?: number,
+    limit?: number,
+    options?: { from_time?: string; reset_cursor?: boolean }
+  ) =>
+    request<{ status: string; subscriptionId: string; from_sequence: number; queued: number }>(
       `/subscriptions/${encodeURIComponent(subscriptionID)}/replay`,
       {
         method: "POST",
         body: JSON.stringify({
           ...(typeof fromSequence === "number" ? { from_sequence: fromSequence } : {}),
           ...(typeof limit === "number" ? { limit } : {}),
+          ...(options?.from_time ? { from_time: options.from_time } : {}),
+          ...(options?.reset_cursor ? { reset_cursor: true } : {}),
+        }),
+      }
+    ),
+
+  seekSubscription: (subscriptionID: string, fromSequence?: number, fromTime?: string) =>
+    request<{ status: string; subscriptionId: string; from_sequence: number; subscription: EventSubscription }>(
+      `/subscriptions/${encodeURIComponent(subscriptionID)}/seek`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          ...(typeof fromSequence === "number" ? { from_sequence: fromSequence } : {}),
+          ...(fromTime ? { from_time: fromTime } : {}),
         }),
       }
     ),

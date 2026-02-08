@@ -66,6 +66,8 @@ export default function EventsPage() {
   const [newSubMaxAttempts, setNewSubMaxAttempts] = useState("3")
   const [newSubBackoffBase, setNewSubBackoffBase] = useState("1000")
   const [newSubBackoffMax, setNewSubBackoffMax] = useState("60000")
+  const [newSubMaxInflight, setNewSubMaxInflight] = useState("0")
+  const [newSubRateLimitPerS, setNewSubRateLimitPerS] = useState("0")
 
   const [publishPayload, setPublishPayload] = useState("{}")
   const [publishHeaders, setPublishHeaders] = useState("{}")
@@ -73,6 +75,13 @@ export default function EventsPage() {
 
   const [replayFromSequence, setReplayFromSequence] = useState("1")
   const [replayLimit, setReplayLimit] = useState("100")
+  const [replayFromTime, setReplayFromTime] = useState("")
+  const [replayResetCursor, setReplayResetCursor] = useState("true")
+  const [seekFromSequence, setSeekFromSequence] = useState("1")
+  const [seekFromTime, setSeekFromTime] = useState("")
+
+  const [editSubMaxInflight, setEditSubMaxInflight] = useState("0")
+  const [editSubRateLimitPerS, setEditSubRateLimitPerS] = useState("0")
 
   const [busy, setBusy] = useState(false)
 
@@ -179,6 +188,17 @@ export default function EventsPage() {
     fetchDeliveries(selectedSubscriptionID)
   }, [selectedSubscriptionID, fetchDeliveries])
 
+  useEffect(() => {
+    if (!selectedSubscription) {
+      return
+    }
+    setEditSubMaxInflight(String(selectedSubscription.max_inflight ?? 0))
+    setEditSubRateLimitPerS(String(selectedSubscription.rate_limit_per_sec ?? 0))
+    const nextSeq = Math.max(1, (selectedSubscription.last_acked_sequence || 0) + 1)
+    setReplayFromSequence(String(nextSeq))
+    setSeekFromSequence(String(nextSeq))
+  }, [selectedSubscription])
+
   const parseJSONText = (raw: string, fieldName: string): unknown => {
     const text = raw.trim()
     if (!text) {
@@ -253,9 +273,13 @@ export default function EventsPage() {
         max_attempts: Math.max(1, Number(newSubMaxAttempts) || 3),
         backoff_base_ms: Math.max(1, Number(newSubBackoffBase) || 1000),
         backoff_max_ms: Math.max(1, Number(newSubBackoffMax) || 60000),
+        max_inflight: Math.max(0, Number(newSubMaxInflight) || 0),
+        rate_limit_per_sec: Math.max(0, Number(newSubRateLimitPerS) || 0),
       })
       setNewSubName("")
       setNewSubGroup("")
+      setNewSubMaxInflight("0")
+      setNewSubRateLimitPerS("0")
       await fetchTopicDetails(selectedTopicName)
     } catch (err) {
       console.error("Failed to create subscription:", err)
@@ -287,6 +311,26 @@ export default function EventsPage() {
     } catch (err) {
       console.error("Failed to delete subscription:", err)
       alert(err instanceof Error ? err.message : "Failed to delete subscription")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleSaveSubscriptionFlow = async () => {
+    if (!selectedSubscriptionID) {
+      alert("Select a subscription first")
+      return
+    }
+    try {
+      setBusy(true)
+      await eventsApi.updateSubscription(selectedSubscriptionID, {
+        max_inflight: Math.max(0, Number(editSubMaxInflight) || 0),
+        rate_limit_per_sec: Math.max(0, Number(editSubRateLimitPerS) || 0),
+      })
+      await fetchTopicDetails(selectedTopicName)
+    } catch (err) {
+      console.error("Failed to update subscription flow controls:", err)
+      alert(err instanceof Error ? err.message : "Failed to update subscription flow controls")
     } finally {
       setBusy(false)
     }
@@ -330,13 +374,41 @@ export default function EventsPage() {
       const response = await eventsApi.replaySubscription(
         selectedSubscriptionID,
         Math.max(1, Number(replayFromSequence) || 1),
-        Math.max(1, Number(replayLimit) || 100)
+        Math.max(1, Number(replayLimit) || 100),
+        {
+          from_time: replayFromTime.trim() || undefined,
+          reset_cursor: replayResetCursor === "true",
+        }
       )
+      await fetchTopicDetails(selectedTopicName)
       await fetchDeliveries(selectedSubscriptionID)
       alert(`Replay queued ${response.queued} deliveries`)
     } catch (err) {
       console.error("Failed to replay:", err)
       alert(err instanceof Error ? err.message : "Failed to replay")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleSeek = async () => {
+    if (!selectedSubscriptionID) {
+      alert("Select a subscription first")
+      return
+    }
+    try {
+      setBusy(true)
+      const result = await eventsApi.seekSubscription(
+        selectedSubscriptionID,
+        Math.max(1, Number(seekFromSequence) || 1),
+        seekFromTime.trim() || undefined
+      )
+      await fetchTopicDetails(selectedTopicName)
+      await fetchDeliveries(selectedSubscriptionID)
+      alert(`Cursor moved. Next replay/invoke starts from sequence ${result.from_sequence}`)
+    } catch (err) {
+      console.error("Failed to seek subscription cursor:", err)
+      alert(err instanceof Error ? err.message : "Failed to seek subscription cursor")
     } finally {
       setBusy(false)
     }
@@ -491,7 +563,7 @@ export default function EventsPage() {
                 <div className="rounded-lg border border-border bg-card p-4 space-y-4">
                   <p className="text-sm font-medium text-foreground">Subscriptions</p>
 
-                  <div className="grid gap-3 md:grid-cols-3">
+                  <div className="grid gap-3 md:grid-cols-4">
                     <Input
                       placeholder="subscription name"
                       value={newSubName}
@@ -535,6 +607,20 @@ export default function EventsPage() {
                       value={newSubBackoffMax}
                       onChange={(e) => setNewSubBackoffMax(e.target.value)}
                     />
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="max inflight (0=unlimited)"
+                      value={newSubMaxInflight}
+                      onChange={(e) => setNewSubMaxInflight(e.target.value)}
+                    />
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="rate/s (0=unlimited)"
+                      value={newSubRateLimitPerS}
+                      onChange={(e) => setNewSubRateLimitPerS(e.target.value)}
+                    />
                   </div>
 
                   <Button onClick={handleCreateSubscription} disabled={busy || !newSubName.trim() || !newSubFunction}>
@@ -549,6 +635,10 @@ export default function EventsPage() {
                           <th className="px-3 py-2 text-left font-medium text-muted-foreground">Name</th>
                           <th className="px-3 py-2 text-left font-medium text-muted-foreground">Consumer Group</th>
                           <th className="px-3 py-2 text-left font-medium text-muted-foreground">Function</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Cursor</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Lag</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Backlog</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Flow</th>
                           <th className="px-3 py-2 text-left font-medium text-muted-foreground">Status</th>
                           <th className="px-3 py-2 text-right font-medium text-muted-foreground">Actions</th>
                         </tr>
@@ -556,7 +646,7 @@ export default function EventsPage() {
                       <tbody>
                         {subscriptions.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="px-3 py-4 text-center text-muted-foreground">No subscriptions.</td>
+                            <td colSpan={9} className="px-3 py-4 text-center text-muted-foreground">No subscriptions.</td>
                           </tr>
                         ) : (
                           subscriptions.map((sub) => {
@@ -576,6 +666,14 @@ export default function EventsPage() {
                                 </td>
                                 <td className="px-3 py-2 text-muted-foreground">{sub.consumer_group}</td>
                                 <td className="px-3 py-2 text-muted-foreground">{sub.function_name}</td>
+                                <td className="px-3 py-2 text-muted-foreground">{sub.last_acked_sequence}</td>
+                                <td className="px-3 py-2 text-muted-foreground">{sub.lag}</td>
+                                <td className="px-3 py-2 text-muted-foreground">
+                                  r{sub.inflight} / q{sub.queued} / dlq{sub.dlq}
+                                </td>
+                                <td className="px-3 py-2 text-muted-foreground">
+                                  inflight {sub.max_inflight || "unlimited"} · rate {sub.rate_limit_per_sec || "unlimited"}/s
+                                </td>
                                 <td className="px-3 py-2">
                                   <Badge variant={sub.enabled ? "default" : "secondary"}>
                                     {sub.enabled ? "enabled" : "disabled"}
@@ -611,34 +709,98 @@ export default function EventsPage() {
                 </div>
 
                 <div className="rounded-lg border border-border bg-card p-4 space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="space-y-3">
                     <div>
                       <p className="text-sm font-medium text-foreground">Deliveries</p>
                       <p className="text-xs text-muted-foreground">
                         {selectedSubscription ? `Subscription: ${selectedSubscription.name}` : "Select a subscription"}
                       </p>
+                      {selectedSubscription && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Cursor {selectedSubscription.last_acked_sequence} · lag {selectedSubscription.lag} · oldest unacked {selectedSubscription.oldest_unacked_age_s ?? 0}s
+                        </p>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2">
+
+                    <div className="grid gap-2 md:grid-cols-6">
                       <Input
-                        className="w-28"
+                        type="number"
+                        min={0}
+                        value={editSubMaxInflight}
+                        onChange={(e) => setEditSubMaxInflight(e.target.value)}
+                        placeholder="max inflight"
+                        disabled={!selectedSubscriptionID}
+                      />
+                      <Input
+                        type="number"
+                        min={0}
+                        value={editSubRateLimitPerS}
+                        onChange={(e) => setEditSubRateLimitPerS(e.target.value)}
+                        placeholder="rate/s"
+                        disabled={!selectedSubscriptionID}
+                      />
+                      <Button variant="outline" onClick={handleSaveSubscriptionFlow} disabled={busy || !selectedSubscriptionID}>
+                        Save Flow
+                      </Button>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={seekFromSequence}
+                        onChange={(e) => setSeekFromSequence(e.target.value)}
+                        placeholder="seek seq"
+                        disabled={!selectedSubscriptionID}
+                      />
+                      <Input
+                        type="text"
+                        value={seekFromTime}
+                        onChange={(e) => setSeekFromTime(e.target.value)}
+                        placeholder="seek RFC3339 time"
+                        disabled={!selectedSubscriptionID}
+                      />
+                      <Button variant="outline" onClick={handleSeek} disabled={busy || !selectedSubscriptionID}>
+                        Seek Cursor
+                      </Button>
+                    </div>
+
+                    <div className="grid gap-2 md:grid-cols-6">
+                      <Input
                         type="number"
                         min={1}
                         value={replayFromSequence}
                         onChange={(e) => setReplayFromSequence(e.target.value)}
                         placeholder="from seq"
+                        disabled={!selectedSubscriptionID}
                       />
                       <Input
-                        className="w-24"
                         type="number"
                         min={1}
                         value={replayLimit}
                         onChange={(e) => setReplayLimit(e.target.value)}
                         placeholder="limit"
+                        disabled={!selectedSubscriptionID}
                       />
-                      <Button variant="outline" onClick={handleReplay} disabled={busy || !selectedSubscriptionID}>
-                        <RotateCcw className="mr-2 h-4 w-4" />
-                        Replay
-                      </Button>
+                      <Input
+                        type="text"
+                        value={replayFromTime}
+                        onChange={(e) => setReplayFromTime(e.target.value)}
+                        placeholder="from RFC3339 time"
+                        disabled={!selectedSubscriptionID}
+                      />
+                      <Select value={replayResetCursor} onValueChange={setReplayResetCursor}>
+                        <SelectTrigger disabled={!selectedSubscriptionID}>
+                          <SelectValue placeholder="reset cursor" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">Replay + reset cursor</SelectItem>
+                          <SelectItem value="false">Replay only</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <div className="md:col-span-2">
+                        <Button className="w-full" variant="outline" onClick={handleReplay} disabled={busy || !selectedSubscriptionID}>
+                          <RotateCcw className="mr-2 h-4 w-4" />
+                          Replay
+                        </Button>
+                      </div>
                     </div>
                   </div>
 

@@ -92,6 +92,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /subscriptions/{id}", h.DeleteEventSubscription)
 	mux.HandleFunc("GET /subscriptions/{id}/deliveries", h.ListEventDeliveries)
 	mux.HandleFunc("POST /subscriptions/{id}/replay", h.ReplayEventSubscription)
+	mux.HandleFunc("POST /subscriptions/{id}/seek", h.SeekEventSubscription)
 	mux.HandleFunc("GET /deliveries/{id}", h.GetEventDelivery)
 	mux.HandleFunc("POST /deliveries/{id}/retry", h.RetryEventDelivery)
 

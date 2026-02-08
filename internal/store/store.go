@@ -95,6 +95,8 @@ type MetadataStore interface {
 	MarkEventDeliveryForRetry(ctx context.Context, id, lastError string, nextRunAt time.Time) error
 	MarkEventDeliveryDLQ(ctx context.Context, id, lastError string) error
 	RequeueEventDelivery(ctx context.Context, id string, maxAttempts int) (*EventDelivery, error)
+	ResolveEventReplaySequenceByTime(ctx context.Context, subscriptionID string, from time.Time) (int64, error)
+	SetEventSubscriptionCursor(ctx context.Context, subscriptionID string, lastAckedSequence int64) (*EventSubscription, error)
 	ReplayEventSubscription(ctx context.Context, subscriptionID string, fromSequence int64, limit int) (int, error)
 
 	// Runtimes

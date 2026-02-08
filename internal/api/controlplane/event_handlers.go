@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/oriys/nova/internal/store"
 )
@@ -31,6 +32,8 @@ type createEventSubscriptionRequest struct {
 	MaxAttempts   int    `json:"max_attempts,omitempty"`
 	BackoffBaseMS int    `json:"backoff_base_ms,omitempty"`
 	BackoffMaxMS  int    `json:"backoff_max_ms,omitempty"`
+	MaxInflight   int    `json:"max_inflight,omitempty"`
+	RateLimitPerS int    `json:"rate_limit_per_sec,omitempty"`
 }
 
 type updateEventSubscriptionRequest struct {
@@ -41,11 +44,20 @@ type updateEventSubscriptionRequest struct {
 	MaxAttempts   *int    `json:"max_attempts,omitempty"`
 	BackoffBaseMS *int    `json:"backoff_base_ms,omitempty"`
 	BackoffMaxMS  *int    `json:"backoff_max_ms,omitempty"`
+	MaxInflight   *int    `json:"max_inflight,omitempty"`
+	RateLimitPerS *int    `json:"rate_limit_per_sec,omitempty"`
 }
 
 type replayEventSubscriptionRequest struct {
-	FromSequence int64 `json:"from_sequence,omitempty"`
-	Limit        int   `json:"limit,omitempty"`
+	FromSequence int64  `json:"from_sequence,omitempty"`
+	Limit        int    `json:"limit,omitempty"`
+	FromTime     string `json:"from_time,omitempty"`
+	ResetCursor  bool   `json:"reset_cursor,omitempty"`
+}
+
+type seekEventSubscriptionRequest struct {
+	FromSequence int64  `json:"from_sequence,omitempty"`
+	FromTime     string `json:"from_time,omitempty"`
 }
 
 type retryEventDeliveryRequest struct {
@@ -231,6 +243,8 @@ func (h *Handler) CreateEventSubscription(w http.ResponseWriter, r *http.Request
 	if req.BackoffMaxMS > 0 {
 		sub.BackoffMaxMS = req.BackoffMaxMS
 	}
+	sub.MaxInflight = req.MaxInflight
+	sub.RateLimitPerSec = req.RateLimitPerS
 
 	if err := h.Store.CreateEventSubscription(r.Context(), sub); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
@@ -302,6 +316,8 @@ func (h *Handler) UpdateEventSubscription(w http.ResponseWriter, r *http.Request
 		MaxAttempts:   req.MaxAttempts,
 		BackoffBaseMS: req.BackoffBaseMS,
 		BackoffMaxMS:  req.BackoffMaxMS,
+		MaxInflight:   req.MaxInflight,
+		RateLimitPerS: req.RateLimitPerS,
 	}
 
 	if req.FunctionName != nil {
@@ -400,7 +416,40 @@ func (h *Handler) ReplayEventSubscription(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	count, err := h.Store.ReplayEventSubscription(r.Context(), subscriptionID, req.FromSequence, req.Limit)
+	fromSequence := req.FromSequence
+	if strings.TrimSpace(req.FromTime) != "" {
+		fromTime, err := time.Parse(time.RFC3339, strings.TrimSpace(req.FromTime))
+		if err != nil {
+			http.Error(w, "from_time must be RFC3339", http.StatusBadRequest)
+			return
+		}
+		seq, err := h.Store.ResolveEventReplaySequenceByTime(r.Context(), subscriptionID, fromTime)
+		if err != nil {
+			if errors.Is(err, store.ErrEventSubscriptionNotFound) {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		fromSequence = seq
+	}
+	if fromSequence <= 0 {
+		fromSequence = 1
+	}
+	if req.ResetCursor {
+		_, err := h.Store.SetEventSubscriptionCursor(r.Context(), subscriptionID, fromSequence-1)
+		if err != nil {
+			if errors.Is(err, store.ErrEventSubscriptionNotFound) {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	count, err := h.Store.ReplayEventSubscription(r.Context(), subscriptionID, fromSequence, req.Limit)
 	if err != nil {
 		if errors.Is(err, store.ErrEventSubscriptionNotFound) {
 			http.Error(w, err.Error(), http.StatusNotFound)
@@ -414,7 +463,59 @@ func (h *Handler) ReplayEventSubscription(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(map[string]any{
 		"status":         "replayed",
 		"subscriptionId": subscriptionID,
+		"from_sequence":  fromSequence,
 		"queued":         count,
+	})
+}
+
+func (h *Handler) SeekEventSubscription(w http.ResponseWriter, r *http.Request) {
+	subscriptionID := r.PathValue("id")
+	req := seekEventSubscriptionRequest{}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+			return
+		}
+	}
+
+	fromSequence := req.FromSequence
+	if strings.TrimSpace(req.FromTime) != "" {
+		fromTime, err := time.Parse(time.RFC3339, strings.TrimSpace(req.FromTime))
+		if err != nil {
+			http.Error(w, "from_time must be RFC3339", http.StatusBadRequest)
+			return
+		}
+		seq, err := h.Store.ResolveEventReplaySequenceByTime(r.Context(), subscriptionID, fromTime)
+		if err != nil {
+			if errors.Is(err, store.ErrEventSubscriptionNotFound) {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		fromSequence = seq
+	}
+	if fromSequence <= 0 {
+		fromSequence = 1
+	}
+
+	sub, err := h.Store.SetEventSubscriptionCursor(r.Context(), subscriptionID, fromSequence-1)
+	if err != nil {
+		if errors.Is(err, store.ErrEventSubscriptionNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"status":         "seeked",
+		"subscriptionId": subscriptionID,
+		"from_sequence":  fromSequence,
+		"subscription":   sub,
 	})
 }
 
