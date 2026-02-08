@@ -77,7 +77,7 @@ export default function EventsPage() {
   const [newSubWebhookHeaders, setNewSubWebhookHeaders] = useState("{}")
   const [newSubWebhookSecret, setNewSubWebhookSecret] = useState("")
   const [newSubWebhookTimeout, setNewSubWebhookTimeout] = useState("30000")
-  const [newSubTransformFn, setNewSubTransformFn] = useState("")
+  const [newSubTransformFn, setNewSubTransformFn] = useState("__none__")
 
   const [publishPayload, setPublishPayload] = useState("{}")
   const [publishHeaders, setPublishHeaders] = useState("{}")
@@ -319,7 +319,7 @@ export default function EventsPage() {
           webhook_headers: webhookHeaders,
           webhook_signing_secret: newSubWebhookSecret || undefined,
           webhook_timeout_ms: Math.max(1000, Number(newSubWebhookTimeout) || 30000),
-          transform_function_name: newSubTransformFn || undefined,
+          transform_function_name: newSubTransformFn && newSubTransformFn !== "__none__" ? newSubTransformFn : undefined,
         })
       }
 
@@ -327,7 +327,7 @@ export default function EventsPage() {
       setNewSubGroup("")
       setNewSubWebhookURL("")
       setNewSubWebhookSecret("")
-      setNewSubTransformFn("")
+      setNewSubTransformFn("__none__")
       setNewSubMaxInflight("0")
       setNewSubRateLimitPerS("0")
       await fetchTopicDetails(selectedTopicName)
@@ -539,27 +539,36 @@ export default function EventsPage() {
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-sm font-medium text-foreground mb-3">Create Topic</p>
           <div className="grid gap-3 md:grid-cols-4">
-            <Input
-              placeholder="topic name (orders.created)"
-              value={createTopicName}
-              onChange={(e) => setCreateTopicName(e.target.value)}
-            />
-            <Input
-              placeholder="description"
-              value={createTopicDesc}
-              onChange={(e) => setCreateTopicDesc(e.target.value)}
-            />
-            <Input
-              type="number"
-              min={1}
-              value={createTopicRetentionHours}
-              onChange={(e) => setCreateTopicRetentionHours(e.target.value)}
-              placeholder="retention hours"
-            />
-            <Button onClick={handleCreateTopic} disabled={busy || !createTopicName.trim()}>
-              <Plus className="mr-2 h-4 w-4" />
-              Create Topic
-            </Button>
+            <div className="space-y-1">
+              <Label>Topic Name</Label>
+              <Input
+                placeholder="orders.created"
+                value={createTopicName}
+                onChange={(e) => setCreateTopicName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Description</Label>
+              <Input
+                value={createTopicDesc}
+                onChange={(e) => setCreateTopicDesc(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Retention (hours)</Label>
+              <Input
+                type="number"
+                min={1}
+                value={createTopicRetentionHours}
+                onChange={(e) => setCreateTopicRetentionHours(e.target.value)}
+              />
+            </div>
+            <div className="flex items-end">
+              <Button onClick={handleCreateTopic} disabled={busy || !createTopicName.trim()}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Topic
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -686,75 +695,40 @@ export default function EventsPage() {
                   <p className="text-sm font-medium text-foreground">Subscriptions</p>
 
                   <div className="grid gap-3 md:grid-cols-4">
-                    <Input
-                      placeholder="subscription name"
-                      value={newSubName}
-                      onChange={(e) => setNewSubName(e.target.value)}
-                    />
-                    <Input
-                      placeholder="consumer group (optional)"
-                      value={newSubGroup}
-                      onChange={(e) => setNewSubGroup(e.target.value)}
-                    />
-                    <Select value={newSubType} onValueChange={(v) => setNewSubType(v as "function" | "webhook")}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="function">Function</SelectItem>
-                        <SelectItem value="webhook">Webhook</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {newSubType === "function" ? (
-                      <Select value={newSubFunction} onValueChange={setNewSubFunction}>
+                    <div className="space-y-1">
+                      <Label>Name</Label>
+                      <Input
+                        value={newSubName}
+                        onChange={(e) => setNewSubName(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Consumer Group</Label>
+                      <Input
+                        value={newSubGroup}
+                        onChange={(e) => setNewSubGroup(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Type</Label>
+                      <Select value={newSubType} onValueChange={(v) => setNewSubType(v as "function" | "webhook")}>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select function" />
+                          <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {functions.map((fn) => (
-                            <SelectItem key={fn.id} value={fn.name}>
-                              {fn.name}
-                            </SelectItem>
-                          ))}
+                          <SelectItem value="function">Function</SelectItem>
+                          <SelectItem value="webhook">Webhook</SelectItem>
                         </SelectContent>
                       </Select>
-                    ) : (
-                      <Input
-                        placeholder="webhook URL (https://...)"
-                        value={newSubWebhookURL}
-                        onChange={(e) => setNewSubWebhookURL(e.target.value)}
-                      />
-                    )}
-                    {newSubType === "webhook" && (
-                      <>
-                        <Select value={newSubWebhookMethod} onValueChange={setNewSubWebhookMethod}>
+                    </div>
+                    {newSubType === "function" ? (
+                      <div className="space-y-1">
+                        <Label>Function</Label>
+                        <Select value={newSubFunction} onValueChange={setNewSubFunction}>
                           <SelectTrigger>
-                            <SelectValue placeholder="Method" />
+                            <SelectValue placeholder="Select function" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="POST">POST</SelectItem>
-                            <SelectItem value="PUT">PUT</SelectItem>
-                            <SelectItem value="PATCH">PATCH</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Input
-                          placeholder="signing secret (optional)"
-                          value={newSubWebhookSecret}
-                          onChange={(e) => setNewSubWebhookSecret(e.target.value)}
-                        />
-                        <Input
-                          type="number"
-                          min={1000}
-                          placeholder="timeout ms"
-                          value={newSubWebhookTimeout}
-                          onChange={(e) => setNewSubWebhookTimeout(e.target.value)}
-                        />
-                        <Select value={newSubTransformFn} onValueChange={setNewSubTransformFn}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Transform fn (optional)" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="">None</SelectItem>
                             {functions.map((fn) => (
                               <SelectItem key={fn.id} value={fn.name}>
                                 {fn.name}
@@ -762,43 +736,111 @@ export default function EventsPage() {
                             ))}
                           </SelectContent>
                         </Select>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <Label>Webhook URL</Label>
+                        <Input
+                          placeholder="https://..."
+                          value={newSubWebhookURL}
+                          onChange={(e) => setNewSubWebhookURL(e.target.value)}
+                        />
+                      </div>
+                    )}
+                    {newSubType === "webhook" && (
+                      <>
+                        <div className="space-y-1">
+                          <Label>Method</Label>
+                          <Select value={newSubWebhookMethod} onValueChange={setNewSubWebhookMethod}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="POST">POST</SelectItem>
+                              <SelectItem value="PUT">PUT</SelectItem>
+                              <SelectItem value="PATCH">PATCH</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Signing Secret</Label>
+                          <Input
+                            value={newSubWebhookSecret}
+                            onChange={(e) => setNewSubWebhookSecret(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Timeout (ms)</Label>
+                          <Input
+                            type="number"
+                            min={1000}
+                            value={newSubWebhookTimeout}
+                            onChange={(e) => setNewSubWebhookTimeout(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Transform Function</Label>
+                          <Select value={newSubTransformFn} onValueChange={setNewSubTransformFn}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="None" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">None</SelectItem>
+                              {functions.map((fn) => (
+                                <SelectItem key={fn.id} value={fn.name}>
+                                  {fn.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </>
                     )}
-                    <Input
-                      type="number"
-                      min={1}
-                      placeholder="max attempts"
-                      value={newSubMaxAttempts}
-                      onChange={(e) => setNewSubMaxAttempts(e.target.value)}
-                    />
-                    <Input
-                      type="number"
-                      min={1}
-                      placeholder="backoff base ms"
-                      value={newSubBackoffBase}
-                      onChange={(e) => setNewSubBackoffBase(e.target.value)}
-                    />
-                    <Input
-                      type="number"
-                      min={1}
-                      placeholder="backoff max ms"
-                      value={newSubBackoffMax}
-                      onChange={(e) => setNewSubBackoffMax(e.target.value)}
-                    />
-                    <Input
-                      type="number"
-                      min={0}
-                      placeholder="max inflight (0=unlimited)"
-                      value={newSubMaxInflight}
-                      onChange={(e) => setNewSubMaxInflight(e.target.value)}
-                    />
-                    <Input
-                      type="number"
-                      min={0}
-                      placeholder="rate/s (0=unlimited)"
-                      value={newSubRateLimitPerS}
-                      onChange={(e) => setNewSubRateLimitPerS(e.target.value)}
-                    />
+                    <div className="space-y-1">
+                      <Label>Max Attempts</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={newSubMaxAttempts}
+                        onChange={(e) => setNewSubMaxAttempts(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Backoff Base (ms)</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={newSubBackoffBase}
+                        onChange={(e) => setNewSubBackoffBase(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Backoff Max (ms)</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={newSubBackoffMax}
+                        onChange={(e) => setNewSubBackoffMax(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Max Inflight (0=unlimited)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={newSubMaxInflight}
+                        onChange={(e) => setNewSubMaxInflight(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Rate Limit/s (0=unlimited)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={newSubRateLimitPerS}
+                        onChange={(e) => setNewSubRateLimitPerS(e.target.value)}
+                      />
+                    </div>
                   </div>
 
                   <Button onClick={handleCreateSubscription} disabled={busy || !newSubName.trim() || (newSubType === "function" ? !newSubFunction : !newSubWebhookURL.trim())}>
@@ -906,79 +948,100 @@ export default function EventsPage() {
                     </div>
 
                     <div className="grid gap-2 md:grid-cols-6">
-                      <Input
-                        type="number"
-                        min={0}
-                        value={editSubMaxInflight}
-                        onChange={(e) => setEditSubMaxInflight(e.target.value)}
-                        placeholder="max inflight"
-                        disabled={!selectedSubscriptionID}
-                      />
-                      <Input
-                        type="number"
-                        min={0}
-                        value={editSubRateLimitPerS}
-                        onChange={(e) => setEditSubRateLimitPerS(e.target.value)}
-                        placeholder="rate/s"
-                        disabled={!selectedSubscriptionID}
-                      />
-                      <Button variant="outline" onClick={handleSaveSubscriptionFlow} disabled={busy || !selectedSubscriptionID}>
-                        Save Flow
-                      </Button>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={seekFromSequence}
-                        onChange={(e) => setSeekFromSequence(e.target.value)}
-                        placeholder="seek seq"
-                        disabled={!selectedSubscriptionID}
-                      />
-                      <Input
-                        type="text"
-                        value={seekFromTime}
-                        onChange={(e) => setSeekFromTime(e.target.value)}
-                        placeholder="seek RFC3339 time"
-                        disabled={!selectedSubscriptionID}
-                      />
-                      <Button variant="outline" onClick={handleSeek} disabled={busy || !selectedSubscriptionID}>
-                        Seek Cursor
-                      </Button>
+                      <div className="space-y-1">
+                        <Label>Max Inflight</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={editSubMaxInflight}
+                          onChange={(e) => setEditSubMaxInflight(e.target.value)}
+                          disabled={!selectedSubscriptionID}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Rate/s</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={editSubRateLimitPerS}
+                          onChange={(e) => setEditSubRateLimitPerS(e.target.value)}
+                          disabled={!selectedSubscriptionID}
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <Button variant="outline" onClick={handleSaveSubscriptionFlow} disabled={busy || !selectedSubscriptionID}>
+                          Save Flow
+                        </Button>
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Seek Sequence</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={seekFromSequence}
+                          onChange={(e) => setSeekFromSequence(e.target.value)}
+                          disabled={!selectedSubscriptionID}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Seek Time (RFC3339)</Label>
+                        <Input
+                          type="text"
+                          value={seekFromTime}
+                          onChange={(e) => setSeekFromTime(e.target.value)}
+                          disabled={!selectedSubscriptionID}
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <Button variant="outline" onClick={handleSeek} disabled={busy || !selectedSubscriptionID}>
+                          Seek Cursor
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="grid gap-2 md:grid-cols-6">
-                      <Input
-                        type="number"
-                        min={1}
-                        value={replayFromSequence}
-                        onChange={(e) => setReplayFromSequence(e.target.value)}
-                        placeholder="from seq"
-                        disabled={!selectedSubscriptionID}
-                      />
-                      <Input
-                        type="number"
-                        min={1}
-                        value={replayLimit}
-                        onChange={(e) => setReplayLimit(e.target.value)}
-                        placeholder="limit"
-                        disabled={!selectedSubscriptionID}
-                      />
-                      <Input
-                        type="text"
-                        value={replayFromTime}
-                        onChange={(e) => setReplayFromTime(e.target.value)}
-                        placeholder="from RFC3339 time"
-                        disabled={!selectedSubscriptionID}
-                      />
-                      <Select value={replayResetCursor} onValueChange={setReplayResetCursor}>
-                        <SelectTrigger disabled={!selectedSubscriptionID}>
-                          <SelectValue placeholder="reset cursor" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="true">Replay + reset cursor</SelectItem>
-                          <SelectItem value="false">Replay only</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <div className="md:col-span-2">
+                      <div className="space-y-1">
+                        <Label>From Sequence</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={replayFromSequence}
+                          onChange={(e) => setReplayFromSequence(e.target.value)}
+                          disabled={!selectedSubscriptionID}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Limit</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={replayLimit}
+                          onChange={(e) => setReplayLimit(e.target.value)}
+                          disabled={!selectedSubscriptionID}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>From Time (RFC3339)</Label>
+                        <Input
+                          type="text"
+                          value={replayFromTime}
+                          onChange={(e) => setReplayFromTime(e.target.value)}
+                          disabled={!selectedSubscriptionID}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Cursor Reset</Label>
+                        <Select value={replayResetCursor} onValueChange={setReplayResetCursor}>
+                          <SelectTrigger disabled={!selectedSubscriptionID}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="true">Replay + reset cursor</SelectItem>
+                            <SelectItem value="false">Replay only</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="md:col-span-2 flex items-end">
                         <Button className="w-full" variant="outline" onClick={handleReplay} disabled={busy || !selectedSubscriptionID}>
                           <RotateCcw className="mr-2 h-4 w-4" />
                           Replay
