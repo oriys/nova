@@ -10,11 +10,12 @@ import (
 
 // Identity represents an authenticated identity
 type Identity struct {
-	Subject  string                 // "user:xxx" or "apikey:name"
-	KeyName  string                 // API Key name (empty for JWT auth)
-	Tier     string                 // Rate limit tier: "default", "premium", etc.
-	Claims   map[string]any         // JWT claims or API key metadata
-	Policies []domain.PolicyBinding // Authorization policies (from API key or JWT)
+	Subject       string                 // "user:xxx" or "apikey:name"
+	KeyName       string                 // API Key name (empty for JWT auth)
+	Tier          string                 // Rate limit tier: "default", "premium", etc.
+	Claims        map[string]any         // JWT claims or API key metadata
+	Policies      []domain.PolicyBinding // Authorization policies (from API key or JWT)
+	AllowedScopes []TenantScope          // Optional tenant/namespace restrictions for this identity
 }
 
 // contextKey is used for storing Identity in context
@@ -34,6 +35,36 @@ func GetIdentity(ctx context.Context) *Identity {
 		return id
 	}
 	return nil
+}
+
+// ScopeRestricted reports whether this identity has explicit tenant scope restrictions.
+func (id *Identity) ScopeRestricted() bool {
+	return id != nil && len(id.AllowedScopes) > 0
+}
+
+// AllowsScope checks whether this identity can access the given tenant/namespace pair.
+// If no AllowedScopes are configured, access is unrestricted.
+func (id *Identity) AllowsScope(tenantID, namespace string) bool {
+	if id == nil {
+		return false
+	}
+	if len(id.AllowedScopes) == 0 {
+		return true
+	}
+	for _, scope := range id.AllowedScopes {
+		if scope.Allows(tenantID, namespace) {
+			return true
+		}
+	}
+	return false
+}
+
+// PrimaryScope returns the first configured allowed scope, if present.
+func (id *Identity) PrimaryScope() (TenantScope, bool) {
+	if id == nil || len(id.AllowedScopes) == 0 {
+		return TenantScope{}, false
+	}
+	return id.AllowedScopes[0], true
 }
 
 // Authenticator is the interface for authentication providers

@@ -6,16 +6,40 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/store"
 )
 
 // ListTenants handles GET /tenants
 func (h *Handler) ListTenants(w http.ResponseWriter, r *http.Request) {
-	tenants, err := h.Store.ListTenants(r.Context())
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	identity := auth.GetIdentity(r.Context())
+	tenantIDs, unrestricted := visibleTenantIDs(identity)
+
+	var (
+		tenants []*store.TenantRecord
+		err     error
+	)
+	if unrestricted {
+		tenants, err = h.Store.ListTenants(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	} else {
+		tenants = make([]*store.TenantRecord, 0, len(tenantIDs))
+		for _, tenantID := range tenantIDs {
+			tenant, getErr := h.Store.GetTenant(r.Context(), tenantID)
+			if getErr != nil {
+				if strings.Contains(strings.ToLower(getErr.Error()), "not found") {
+					continue
+				}
+				http.Error(w, getErr.Error(), tenancyHTTPStatus(getErr))
+				return
+			}
+			tenants = append(tenants, tenant)
+		}
 	}
+
 	if tenants == nil {
 		tenants = []*store.TenantRecord{}
 	}
@@ -34,6 +58,9 @@ func (h *Handler) CreateTenant(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.ID) != "" && !enforceTenantAccess(w, r, req.ID) {
 		return
 	}
 
@@ -56,6 +83,9 @@ func (h *Handler) CreateTenant(w http.ResponseWriter, r *http.Request) {
 // UpdateTenant handles PATCH /tenants/{tenantID}
 func (h *Handler) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.PathValue("tenantID")
+	if !enforceTenantAccess(w, r, tenantID) {
+		return
+	}
 
 	var update store.TenantUpdate
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
@@ -76,6 +106,9 @@ func (h *Handler) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 // DeleteTenant handles DELETE /tenants/{tenantID}
 func (h *Handler) DeleteTenant(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.PathValue("tenantID")
+	if !enforceTenantAccess(w, r, tenantID) {
+		return
+	}
 
 	if err := h.Store.DeleteTenant(r.Context(), tenantID); err != nil {
 		http.Error(w, err.Error(), tenancyHTTPStatus(err))
@@ -92,12 +125,16 @@ func (h *Handler) DeleteTenant(w http.ResponseWriter, r *http.Request) {
 // ListNamespaces handles GET /tenants/{tenantID}/namespaces
 func (h *Handler) ListNamespaces(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.PathValue("tenantID")
+	if !enforceTenantAccess(w, r, tenantID) {
+		return
+	}
 
 	namespaces, err := h.Store.ListNamespaces(r.Context(), tenantID)
 	if err != nil {
 		http.Error(w, err.Error(), tenancyHTTPStatus(err))
 		return
 	}
+	namespaces = filterVisibleNamespaces(auth.GetIdentity(r.Context()), tenantID, namespaces)
 	if namespaces == nil {
 		namespaces = []*store.NamespaceRecord{}
 	}
@@ -115,6 +152,9 @@ func (h *Handler) CreateNamespace(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Name) != "" && !enforceNamespaceAccess(w, r, tenantID, req.Name) {
 		return
 	}
 
@@ -136,10 +176,16 @@ func (h *Handler) CreateNamespace(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) UpdateNamespace(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.PathValue("tenantID")
 	namespaceName := r.PathValue("namespace")
+	if !enforceNamespaceAccess(w, r, tenantID, namespaceName) {
+		return
+	}
 
 	var update store.NamespaceUpdate
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if update.Name != nil && !enforceNamespaceAccess(w, r, tenantID, strings.TrimSpace(*update.Name)) {
 		return
 	}
 
@@ -157,6 +203,9 @@ func (h *Handler) UpdateNamespace(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) DeleteNamespace(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.PathValue("tenantID")
 	namespaceName := r.PathValue("namespace")
+	if !enforceNamespaceAccess(w, r, tenantID, namespaceName) {
+		return
+	}
 
 	if err := h.Store.DeleteNamespace(r.Context(), tenantID, namespaceName); err != nil {
 		http.Error(w, err.Error(), tenancyHTTPStatus(err))
@@ -174,6 +223,9 @@ func (h *Handler) DeleteNamespace(w http.ResponseWriter, r *http.Request) {
 // ListTenantQuotas handles GET /tenants/{tenantID}/quotas
 func (h *Handler) ListTenantQuotas(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.PathValue("tenantID")
+	if !enforceTenantAccess(w, r, tenantID) {
+		return
+	}
 
 	quotas, err := h.Store.ListTenantQuotas(r.Context(), tenantID)
 	if err != nil {
@@ -192,6 +244,9 @@ func (h *Handler) ListTenantQuotas(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) UpsertTenantQuota(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.PathValue("tenantID")
 	dimension := r.PathValue("dimension")
+	if !enforceTenantAccess(w, r, tenantID) {
+		return
+	}
 
 	var req struct {
 		HardLimit int64 `json:"hard_limit"`
@@ -225,6 +280,9 @@ func (h *Handler) UpsertTenantQuota(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) DeleteTenantQuota(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.PathValue("tenantID")
 	dimension := r.PathValue("dimension")
+	if !enforceTenantAccess(w, r, tenantID) {
+		return
+	}
 
 	if err := h.Store.DeleteTenantQuota(r.Context(), tenantID, dimension); err != nil {
 		http.Error(w, err.Error(), tenancyHTTPStatus(err))
@@ -242,6 +300,9 @@ func (h *Handler) DeleteTenantQuota(w http.ResponseWriter, r *http.Request) {
 // GetTenantUsage handles GET /tenants/{tenantID}/usage
 func (h *Handler) GetTenantUsage(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.PathValue("tenantID")
+	if !enforceTenantAccess(w, r, tenantID) {
+		return
+	}
 	refresh := true
 	if raw := strings.TrimSpace(r.URL.Query().Get("refresh")); raw != "" {
 		if parsed, err := strconv.ParseBool(raw); err == nil {

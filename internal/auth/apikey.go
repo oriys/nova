@@ -20,6 +20,8 @@ type APIKey struct {
 	KeyHash   string                 `json:"key_hash"`   // SHA256 hash of the key
 	Tier      string                 `json:"tier"`       // Rate limit tier
 	Enabled   bool                   `json:"enabled"`    // Whether the key is active
+	TenantID  string                 `json:"tenant_id"`  // Bound tenant scope
+	Namespace string                 `json:"namespace"`  // Bound namespace scope
 	ExpiresAt *time.Time             `json:"expires_at"` // Optional expiration
 	Policies  []domain.PolicyBinding `json:"policies"`   // Authorization policies
 	CreatedAt time.Time              `json:"created_at"`
@@ -148,6 +150,10 @@ func (a *APIKeyAuthenticator) checkStoreKey(ctx context.Context, keyHash string)
 		Tier:     tier,
 		Claims:   map[string]any{"source": "postgres"},
 		Policies: apiKey.Policies,
+		AllowedScopes: []TenantScope{normalizeTenantScopeWithWildcard(TenantScope{
+			TenantID:  apiKey.TenantID,
+			Namespace: apiKey.Namespace,
+		})},
 	}
 }
 

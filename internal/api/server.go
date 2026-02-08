@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -112,10 +113,6 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 	// Add auth middleware
 	if cfg.AuthCfg != nil && cfg.AuthCfg.Enabled {
 		authenticators := buildAuthenticators(cfg.AuthCfg, cfg.Store)
-		if len(authenticators) > 0 {
-			handler = auth.Middleware(authenticators, cfg.AuthCfg.PublicPaths)(handler)
-			logging.Op().Info("authentication enabled", "public_paths", cfg.AuthCfg.PublicPaths)
-		}
 
 		// Add authorization middleware
 		if cfg.AuthCfg.Authorization.Enabled {
@@ -123,6 +120,14 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 			authorizer := authz.New(defaultRole)
 			handler = authz.Middleware(authorizer)(handler)
 			logging.Op().Info("authorization enabled", "default_role", cfg.AuthCfg.Authorization.DefaultRole)
+		}
+
+		// Resolve/enforce effective tenant scope after authentication and before handlers.
+		handler = tenantScopeMiddleware(handler)
+
+		if len(authenticators) > 0 {
+			handler = auth.Middleware(authenticators, cfg.AuthCfg.PublicPaths)(handler)
+			logging.Op().Info("authentication enabled", "public_paths", cfg.AuthCfg.PublicPaths)
 		}
 	}
 
@@ -143,8 +148,9 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 		logging.Op().Info("gateway enabled")
 	}
 
-	// Apply tenant scope as the outermost middleware so every path (including gateway routes)
-	// shares the same tenant context for downstream store operations.
+	// Outer tenant scope pass for all paths (including gateway custom domains).
+	// For authenticated control-plane requests, an inner tenantScopeMiddleware pass runs
+	// after auth and enforces identity-bound scope.
 	handler = tenantScopeMiddleware(handler)
 
 	server := &http.Server{
@@ -163,11 +169,94 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 
 func tenantScopeMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tenantID := r.Header.Get("X-Nova-Tenant")
-		namespace := r.Header.Get("X-Nova-Namespace")
-		ctx := store.WithTenantScope(r.Context(), tenantID, namespace)
+		requestedTenant, requestedNamespace, explicit, err := requestedScopeFromHeaders(r)
+		if err != nil {
+			writeTenantScopeError(w, http.StatusBadRequest, "invalid tenant scope headers")
+			logging.Op().Warn("tenant scope rejected: invalid header", "path", r.URL.Path, "method", r.Method, "error", err.Error())
+			return
+		}
+
+		identity := auth.GetIdentity(r.Context())
+		effectiveTenant := requestedTenant
+		effectiveNamespace := requestedNamespace
+
+		if identity != nil && identity.ScopeRestricted() {
+			if !explicit {
+				primary, ok := identity.PrimaryScope()
+				if !ok {
+					writeTenantScopeError(w, http.StatusForbidden, "tenant scope is required")
+					logging.Op().Warn("tenant scope denied", "subject", identity.Subject, "path", r.URL.Path, "method", r.Method, "reason", "missing_allowed_scope")
+					return
+				}
+				if primary.TenantID == "*" || primary.Namespace == "*" {
+					writeTenantScopeError(w, http.StatusBadRequest, "explicit X-Nova-Tenant and X-Nova-Namespace headers are required")
+					logging.Op().Warn("tenant scope denied", "subject", identity.Subject, "path", r.URL.Path, "method", r.Method, "reason", "ambiguous_scope")
+					return
+				}
+				effectiveTenant = primary.TenantID
+				effectiveNamespace = primary.Namespace
+			}
+
+			if !identity.AllowsScope(effectiveTenant, effectiveNamespace) {
+				writeTenantScopeError(w, http.StatusForbidden, "tenant scope is not allowed for this identity")
+				logging.Op().Warn("tenant scope denied", "subject", identity.Subject, "path", r.URL.Path, "method", r.Method, "tenant_id", effectiveTenant, "namespace", effectiveNamespace, "reason", "out_of_scope")
+				return
+			}
+		}
+
+		logging.Op().Debug("tenant scope resolved", "subject", subjectOrAnonymous(identity), "path", r.URL.Path, "method", r.Method, "tenant_id", effectiveTenant, "namespace", effectiveNamespace, "explicit", explicit)
+		ctx := store.WithTenantScope(r.Context(), effectiveTenant, effectiveNamespace)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func requestedScopeFromHeaders(r *http.Request) (tenantID string, namespace string, explicit bool, err error) {
+	tenantID = strings.TrimSpace(r.Header.Get("X-Nova-Tenant"))
+	namespace = strings.TrimSpace(r.Header.Get("X-Nova-Namespace"))
+
+	if tenantID == "" && namespace == "" {
+		return "", "", false, nil
+	}
+	explicit = true
+
+	if tenantID == "" {
+		tenantID = store.DefaultTenantID
+	}
+	if namespace == "" {
+		namespace = store.DefaultNamespace
+	}
+
+	if !store.IsValidTenantScopePart(tenantID) {
+		return "", "", true, &tenantScopeHeaderError{Field: "X-Nova-Tenant"}
+	}
+	if !store.IsValidTenantScopePart(namespace) {
+		return "", "", true, &tenantScopeHeaderError{Field: "X-Nova-Namespace"}
+	}
+	return tenantID, namespace, true, nil
+}
+
+type tenantScopeHeaderError struct {
+	Field string
+}
+
+func (e *tenantScopeHeaderError) Error() string {
+	return "invalid header: " + e.Field
+}
+
+func writeTenantScopeError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error":   "tenant_scope_error",
+		"message": msg,
+	})
+}
+
+func subjectOrAnonymous(identity *auth.Identity) string {
+	if identity == nil || strings.TrimSpace(identity.Subject) == "" {
+		return "anonymous"
+	}
+	return identity.Subject
 }
 
 // buildAuthenticators creates authenticators based on config.
@@ -218,6 +307,7 @@ func (a *apiKeyStoreAdapter) SaveAPIKey(ctx context.Context, key *auth.APIKey) e
 	permissions, _ := auth.MarshalPolicies(key.Policies)
 	return a.s.SaveAPIKey(ctx, &store.APIKeyRecord{
 		Name: key.Name, KeyHash: key.KeyHash, Tier: key.Tier,
+		TenantID: key.TenantID, Namespace: key.Namespace,
 		Enabled: key.Enabled, ExpiresAt: key.ExpiresAt,
 		Permissions: permissions,
 		CreatedAt:   key.CreatedAt, UpdatedAt: key.UpdatedAt,
@@ -235,6 +325,7 @@ func (a *apiKeyStoreAdapter) GetAPIKeyByHash(ctx context.Context, keyHash string
 	policies, _ := auth.UnmarshalPolicies(rec.Permissions)
 	return &auth.APIKey{
 		Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
+		TenantID: rec.TenantID, Namespace: rec.Namespace,
 		Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
 		Policies:  policies,
 		CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,
@@ -249,6 +340,7 @@ func (a *apiKeyStoreAdapter) GetAPIKeyByName(ctx context.Context, name string) (
 	policies, _ := auth.UnmarshalPolicies(rec.Permissions)
 	return &auth.APIKey{
 		Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
+		TenantID: rec.TenantID, Namespace: rec.Namespace,
 		Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
 		Policies:  policies,
 		CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,
@@ -265,6 +357,7 @@ func (a *apiKeyStoreAdapter) ListAPIKeys(ctx context.Context) ([]*auth.APIKey, e
 		policies, _ := auth.UnmarshalPolicies(rec.Permissions)
 		keys[i] = &auth.APIKey{
 			Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
+			TenantID: rec.TenantID, Namespace: rec.Namespace,
 			Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
 			Policies:  policies,
 			CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,

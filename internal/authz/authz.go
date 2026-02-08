@@ -8,6 +8,8 @@ import (
 
 	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/domain"
+	"github.com/oriys/nova/internal/logging"
+	"github.com/oriys/nova/internal/store"
 )
 
 // Authorizer checks whether an identity has the required permission
@@ -171,6 +173,13 @@ var routeTable = []routePermission{
 
 	// Logs & Metrics
 	{"GET", "/metrics", domain.PermMetricsRead},
+
+	// Tenants / Namespaces / Quotas
+	{"GET", "/tenants", domain.PermConfigRead},
+	{"POST", "/tenants", domain.PermConfigWrite},
+	{"PATCH", "/tenants/", domain.PermConfigWrite},
+	{"PUT", "/tenants/", domain.PermConfigWrite},
+	{"DELETE", "/tenants/", domain.PermConfigWrite},
 }
 
 // resolvePermission determines the required permission for a request.
@@ -246,6 +255,16 @@ func Middleware(authorizer *Authorizer) func(http.Handler) http.Handler {
 			resource := extractFunctionName(r.URL.Path)
 
 			if err := authorizer.Check(identity, perm, resource); err != nil {
+				scope := store.TenantScopeFromContext(r.Context())
+				logging.Op().Warn("authorization denied",
+					"subject", identity.Subject,
+					"permission", perm,
+					"resource", resource,
+					"path", r.URL.Path,
+					"method", r.Method,
+					"tenant_id", scope.TenantID,
+					"namespace", scope.Namespace,
+				)
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusForbidden)
 				json.NewEncoder(w).Encode(map[string]string{
@@ -255,6 +274,16 @@ func Middleware(authorizer *Authorizer) func(http.Handler) http.Handler {
 				return
 			}
 
+			scope := store.TenantScopeFromContext(r.Context())
+			logging.Op().Debug("authorization granted",
+				"subject", identity.Subject,
+				"permission", perm,
+				"resource", resource,
+				"path", r.URL.Path,
+				"method", r.Method,
+				"tenant_id", scope.TenantID,
+				"namespace", scope.Namespace,
+			)
 			next.ServeHTTP(w, r)
 		})
 	}

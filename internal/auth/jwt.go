@@ -97,10 +97,11 @@ func (a *JWTAuthenticator) Authenticate(r *http.Request) *Identity {
 	}
 
 	return &Identity{
-		Subject:  "user:" + subject,
-		Tier:     tier,
-		Claims:   claims,
-		Policies: extractPoliciesFromClaims(claims),
+		Subject:       "user:" + subject,
+		Tier:          tier,
+		Claims:        claims,
+		Policies:      extractPoliciesFromClaims(claims),
+		AllowedScopes: extractTenantScopesFromClaims(claims),
 	}
 }
 

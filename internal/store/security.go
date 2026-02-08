@@ -16,6 +16,8 @@ type APIKeyRecord struct {
 	KeyHash     string          `json:"key_hash"`
 	Tier        string          `json:"tier"`
 	Enabled     bool            `json:"enabled"`
+	TenantID    string          `json:"tenant_id"`
+	Namespace   string          `json:"namespace"`
 	ExpiresAt   *time.Time      `json:"expires_at,omitempty"`
 	Permissions json.RawMessage `json:"permissions,omitempty"` // JSONB policies
 	CreatedAt   time.Time       `json:"created_at"`
@@ -32,6 +34,15 @@ type RateLimitBucket struct {
 // SaveAPIKey creates or updates an API key
 func (s *PostgresStore) SaveAPIKey(ctx context.Context, key *APIKeyRecord) error {
 	scope := tenantScopeFromContext(ctx)
+	tenantID := scope.TenantID
+	namespace := scope.Namespace
+	if strings.TrimSpace(key.TenantID) != "" {
+		tenantID = strings.TrimSpace(key.TenantID)
+	}
+	if strings.TrimSpace(key.Namespace) != "" {
+		namespace = strings.TrimSpace(key.Namespace)
+	}
+	tenantID, namespace = normalizeTenantScope(tenantID, namespace)
 	permissions := key.Permissions
 	if len(permissions) == 0 {
 		permissions = json.RawMessage("[]")
@@ -45,7 +56,7 @@ func (s *PostgresStore) SaveAPIKey(ctx context.Context, key *APIKeyRecord) error
 			permissions = $8,
 			updated_at = NOW()
 		WHERE tenant_id = $1 AND namespace = $2 AND name = $3
-	`, scope.TenantID, scope.Namespace, key.Name, key.KeyHash, key.Tier, key.Enabled, key.ExpiresAt, permissions)
+	`, tenantID, namespace, key.Name, key.KeyHash, key.Tier, key.Enabled, key.ExpiresAt, permissions)
 	if err != nil {
 		return fmt.Errorf("save api key: %w", err)
 	}
@@ -56,7 +67,7 @@ func (s *PostgresStore) SaveAPIKey(ctx context.Context, key *APIKeyRecord) error
 	_, err = s.pool.Exec(ctx, `
 		INSERT INTO api_keys (tenant_id, namespace, name, key_hash, tier, enabled, expires_at, permissions, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	`, scope.TenantID, scope.Namespace, key.Name, key.KeyHash, key.Tier, key.Enabled, key.ExpiresAt, permissions, key.CreatedAt, key.UpdatedAt)
+	`, tenantID, namespace, key.Name, key.KeyHash, key.Tier, key.Enabled, key.ExpiresAt, permissions, key.CreatedAt, key.UpdatedAt)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate key value") {
 			return fmt.Errorf("api key name '%s' already exists in another tenant or namespace", key.Name)
@@ -68,13 +79,12 @@ func (s *PostgresStore) SaveAPIKey(ctx context.Context, key *APIKeyRecord) error
 
 // GetAPIKeyByHash retrieves an API key by its hash
 func (s *PostgresStore) GetAPIKeyByHash(ctx context.Context, keyHash string) (*APIKeyRecord, error) {
-	scope := tenantScopeFromContext(ctx)
 	var key APIKeyRecord
 	err := s.pool.QueryRow(ctx, `
-		SELECT name, key_hash, tier, enabled, expires_at, COALESCE(permissions, '[]'::jsonb), created_at, updated_at
+		SELECT name, key_hash, tier, enabled, tenant_id, namespace, expires_at, COALESCE(permissions, '[]'::jsonb), created_at, updated_at
 		FROM api_keys
-		WHERE key_hash = $1 AND tenant_id = $2 AND namespace = $3
-	`, keyHash, scope.TenantID, scope.Namespace).Scan(&key.Name, &key.KeyHash, &key.Tier, &key.Enabled, &key.ExpiresAt, &key.Permissions, &key.CreatedAt, &key.UpdatedAt)
+		WHERE key_hash = $1
+	`, keyHash).Scan(&key.Name, &key.KeyHash, &key.Tier, &key.Enabled, &key.TenantID, &key.Namespace, &key.ExpiresAt, &key.Permissions, &key.CreatedAt, &key.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -89,10 +99,10 @@ func (s *PostgresStore) GetAPIKeyByName(ctx context.Context, name string) (*APIK
 	scope := tenantScopeFromContext(ctx)
 	var key APIKeyRecord
 	err := s.pool.QueryRow(ctx, `
-		SELECT name, key_hash, tier, enabled, expires_at, COALESCE(permissions, '[]'::jsonb), created_at, updated_at
+		SELECT name, key_hash, tier, enabled, tenant_id, namespace, expires_at, COALESCE(permissions, '[]'::jsonb), created_at, updated_at
 		FROM api_keys
 		WHERE name = $1 AND tenant_id = $2 AND namespace = $3
-	`, name, scope.TenantID, scope.Namespace).Scan(&key.Name, &key.KeyHash, &key.Tier, &key.Enabled, &key.ExpiresAt, &key.Permissions, &key.CreatedAt, &key.UpdatedAt)
+	`, name, scope.TenantID, scope.Namespace).Scan(&key.Name, &key.KeyHash, &key.Tier, &key.Enabled, &key.TenantID, &key.Namespace, &key.ExpiresAt, &key.Permissions, &key.CreatedAt, &key.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("api key not found: %s", name)
 	}
@@ -106,7 +116,7 @@ func (s *PostgresStore) GetAPIKeyByName(ctx context.Context, name string) (*APIK
 func (s *PostgresStore) ListAPIKeys(ctx context.Context) ([]*APIKeyRecord, error) {
 	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
-		SELECT name, key_hash, tier, enabled, expires_at, COALESCE(permissions, '[]'::jsonb), created_at, updated_at
+		SELECT name, key_hash, tier, enabled, tenant_id, namespace, expires_at, COALESCE(permissions, '[]'::jsonb), created_at, updated_at
 		FROM api_keys
 		WHERE tenant_id = $1 AND namespace = $2
 		ORDER BY name
@@ -119,7 +129,7 @@ func (s *PostgresStore) ListAPIKeys(ctx context.Context) ([]*APIKeyRecord, error
 	var keys []*APIKeyRecord
 	for rows.Next() {
 		var key APIKeyRecord
-		if err := rows.Scan(&key.Name, &key.KeyHash, &key.Tier, &key.Enabled, &key.ExpiresAt, &key.Permissions, &key.CreatedAt, &key.UpdatedAt); err != nil {
+		if err := rows.Scan(&key.Name, &key.KeyHash, &key.Tier, &key.Enabled, &key.TenantID, &key.Namespace, &key.ExpiresAt, &key.Permissions, &key.CreatedAt, &key.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan api key: %w", err)
 		}
 		keys = append(keys, &key)
