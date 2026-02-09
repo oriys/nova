@@ -558,7 +558,7 @@ func (h *Handler) Logs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	entries, err := h.Store.ListInvocationLogs(r.Context(), fn.ID, tail)
+	entries, err := h.Store.ListInvocationLogs(r.Context(), fn.ID, tail, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -586,7 +586,7 @@ func (h *Handler) ListAllInvocations(w http.ResponseWriter, r *http.Request) {
 		limit = 500
 	}
 
-	entries, err := h.Store.ListAllInvocationLogs(r.Context(), limit)
+	entries, err := h.Store.ListAllInvocationLogs(r.Context(), limit, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
