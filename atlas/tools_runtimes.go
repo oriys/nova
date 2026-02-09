@@ -8,7 +8,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type ListRuntimesArgs struct{}
+type ListRuntimesArgs struct {
+	Limit  int `json:"limit,omitempty" jsonschema:"Max results to return"`
+	Offset int `json:"offset,omitempty" jsonschema:"Number of results to skip"`
+}
 
 type CreateRuntimeArgs struct {
 	Name    string `json:"name" jsonschema:"Runtime name"`
@@ -25,7 +28,8 @@ func RegisterRuntimeTools(s *mcp.Server, c *NovaClient) {
 		Name:        "nova_list_runtimes",
 		Description: "List all available runtimes",
 	}, c, func(ctx context.Context, args ListRuntimesArgs, c *NovaClient) (json.RawMessage, error) {
-		return c.Get(ctx, "/runtimes")
+		q := queryString(map[string]string{"limit": intStr(args.Limit), "offset": intStr(args.Offset)})
+		return c.Get(ctx, "/runtimes"+q)
 	})
 
 	addToolHelper(s, &mcp.Tool{

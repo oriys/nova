@@ -13,7 +13,10 @@ type CreateLayerArgs struct {
 	Runtime string `json:"runtime" jsonschema:"Runtime this layer is for"`
 	Version string `json:"version,omitempty" jsonschema:"Layer version"`
 }
-type ListLayersArgs struct{}
+type ListLayersArgs struct {
+	Limit  int `json:"limit,omitempty" jsonschema:"Max results to return"`
+	Offset int `json:"offset,omitempty" jsonschema:"Number of results to skip"`
+}
 type GetLayerArgs struct {
 	Name string `json:"name" jsonschema:"Layer name"`
 }
@@ -36,7 +39,8 @@ func RegisterLayerTools(s *mcp.Server, c *NovaClient) {
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_list_layers", Description: "List all shared layers"}, c,
 		func(ctx context.Context, args ListLayersArgs, c *NovaClient) (json.RawMessage, error) {
-			return c.Get(ctx, "/layers")
+			q := queryString(map[string]string{"limit": intStr(args.Limit), "offset": intStr(args.Offset)})
+			return c.Get(ctx, "/layers"+q)
 		})
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_get_layer", Description: "Get layer details"}, c,

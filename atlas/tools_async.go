@@ -11,6 +11,7 @@ import (
 type ListAsyncInvocationsArgs struct {
 	Name   string `json:"name,omitempty" jsonschema:"Function name (omit for all functions)"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"Max results"`
+	Offset int    `json:"offset,omitempty" jsonschema:"Number of results to skip"`
 	Status string `json:"status,omitempty" jsonschema:"Filter by status (queued running succeeded dlq)"`
 }
 
@@ -27,7 +28,7 @@ func RegisterAsyncInvocationTools(s *mcp.Server, c *NovaClient) {
 		Name:        "nova_list_async_invocations",
 		Description: "List async invocations. Optionally filter by function name and status.",
 	}, c, func(ctx context.Context, args ListAsyncInvocationsArgs, c *NovaClient) (json.RawMessage, error) {
-		q := queryString(map[string]string{"limit": intStr(args.Limit), "status": args.Status})
+		q := queryString(map[string]string{"limit": intStr(args.Limit), "offset": intStr(args.Offset), "status": args.Status})
 		if args.Name != "" {
 			return c.Get(ctx, fmt.Sprintf("/functions/%s/async-invocations%s", args.Name, q))
 		}

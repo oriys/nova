@@ -12,7 +12,10 @@ type CreateApiKeyArgs struct {
 	Name   string   `json:"name" jsonschema:"API key name"`
 	Scopes []string `json:"scopes,omitempty" jsonschema:"Permission scopes"`
 }
-type ListApiKeysArgs struct{}
+type ListApiKeysArgs struct {
+	Limit  int `json:"limit,omitempty" jsonschema:"Max results to return"`
+	Offset int `json:"offset,omitempty" jsonschema:"Number of results to skip"`
+}
 type DeleteApiKeyArgs struct {
 	ID string `json:"id" jsonschema:"API key ID"`
 }
@@ -30,7 +33,8 @@ func RegisterApiKeyTools(s *mcp.Server, c *NovaClient) {
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_list_apikeys", Description: "List all API keys"}, c,
 		func(ctx context.Context, args ListApiKeysArgs, c *NovaClient) (json.RawMessage, error) {
-			return c.Get(ctx, "/api-keys")
+			q := queryString(map[string]string{"limit": intStr(args.Limit), "offset": intStr(args.Offset)})
+			return c.Get(ctx, "/api-keys"+q)
 		})
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_delete_apikey", Description: "Revoke an API key"}, c,

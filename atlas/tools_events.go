@@ -13,7 +13,10 @@ type CreateTopicArgs struct {
 	Description    string `json:"description,omitempty" jsonschema:"Topic description"`
 	RetentionHours int    `json:"retention_hours,omitempty" jsonschema:"Message retention hours"`
 }
-type ListTopicsArgs struct{}
+type ListTopicsArgs struct {
+	Limit  int `json:"limit,omitempty" jsonschema:"Max results to return"`
+	Offset int `json:"offset,omitempty" jsonschema:"Number of results to skip"`
+}
 type GetTopicArgs struct {
 	Name string `json:"name" jsonschema:"Topic name"`
 }
@@ -26,7 +29,9 @@ type PublishEventArgs struct {
 	OrderingKey string          `json:"ordering_key,omitempty" jsonschema:"Ordering key for message ordering"`
 }
 type ListMessagesArgs struct {
-	Topic string `json:"topic" jsonschema:"Topic name"`
+	Topic  string `json:"topic" jsonschema:"Topic name"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Max results to return"`
+	Offset int    `json:"offset,omitempty" jsonschema:"Number of results to skip"`
 }
 type CreateSubscriptionArgs struct {
 	Topic        string `json:"topic" jsonschema:"Topic name"`
@@ -36,7 +41,9 @@ type CreateSubscriptionArgs struct {
 	MaxInflight  int    `json:"max_inflight,omitempty" jsonschema:"Max concurrent deliveries"`
 }
 type ListTopicSubscriptionsArgs struct {
-	Topic string `json:"topic" jsonschema:"Topic name"`
+	Topic  string `json:"topic" jsonschema:"Topic name"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Max results to return"`
+	Offset int    `json:"offset,omitempty" jsonschema:"Number of results to skip"`
 }
 type GetSubscriptionArgs struct {
 	ID string `json:"id" jsonschema:"Subscription ID"`
@@ -52,6 +59,8 @@ type DeleteSubscriptionArgs struct {
 }
 type ListDeliveriesArgs struct {
 	SubscriptionID string `json:"subscription_id" jsonschema:"Subscription ID"`
+	Limit          int    `json:"limit,omitempty" jsonschema:"Max results to return"`
+	Offset         int    `json:"offset,omitempty" jsonschema:"Number of results to skip"`
 }
 type ReplayEventsArgs struct {
 	SubscriptionID string `json:"subscription_id" jsonschema:"Subscription ID"`
@@ -77,6 +86,8 @@ type CreateOutboxArgs struct {
 type ListOutboxArgs struct {
 	Topic  string `json:"topic" jsonschema:"Topic name"`
 	Status string `json:"status,omitempty" jsonschema:"Filter by status"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Max results to return"`
+	Offset int    `json:"offset,omitempty" jsonschema:"Number of results to skip"`
 }
 type RetryOutboxArgs struct {
 	ID string `json:"id" jsonschema:"Outbox entry ID"`
@@ -90,7 +101,8 @@ func RegisterEventTools(s *mcp.Server, c *NovaClient) {
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_list_topics", Description: "List all event topics"}, c,
 		func(ctx context.Context, args ListTopicsArgs, c *NovaClient) (json.RawMessage, error) {
-			return c.Get(ctx, "/topics")
+			q := queryString(map[string]string{"limit": intStr(args.Limit), "offset": intStr(args.Offset)})
+			return c.Get(ctx, "/topics"+q)
 		})
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_get_topic", Description: "Get event topic details"}, c,
@@ -112,7 +124,8 @@ func RegisterEventTools(s *mcp.Server, c *NovaClient) {
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_list_messages", Description: "List messages in a topic"}, c,
 		func(ctx context.Context, args ListMessagesArgs, c *NovaClient) (json.RawMessage, error) {
-			return c.Get(ctx, fmt.Sprintf("/topics/%s/messages", args.Topic))
+			q := queryString(map[string]string{"limit": intStr(args.Limit), "offset": intStr(args.Offset)})
+			return c.Get(ctx, fmt.Sprintf("/topics/%s/messages%s", args.Topic, q))
 		})
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_create_subscription", Description: "Subscribe a function to a topic"}, c,
@@ -125,7 +138,8 @@ func RegisterEventTools(s *mcp.Server, c *NovaClient) {
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_list_topic_subscriptions", Description: "List subscriptions for a topic"}, c,
 		func(ctx context.Context, args ListTopicSubscriptionsArgs, c *NovaClient) (json.RawMessage, error) {
-			return c.Get(ctx, fmt.Sprintf("/topics/%s/subscriptions", args.Topic))
+			q := queryString(map[string]string{"limit": intStr(args.Limit), "offset": intStr(args.Offset)})
+			return c.Get(ctx, fmt.Sprintf("/topics/%s/subscriptions%s", args.Topic, q))
 		})
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_get_subscription", Description: "Get subscription details"}, c,
@@ -149,7 +163,8 @@ func RegisterEventTools(s *mcp.Server, c *NovaClient) {
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_list_deliveries", Description: "List event deliveries for a subscription"}, c,
 		func(ctx context.Context, args ListDeliveriesArgs, c *NovaClient) (json.RawMessage, error) {
-			return c.Get(ctx, fmt.Sprintf("/subscriptions/%s/deliveries", args.SubscriptionID))
+			q := queryString(map[string]string{"limit": intStr(args.Limit), "offset": intStr(args.Offset)})
+			return c.Get(ctx, fmt.Sprintf("/subscriptions/%s/deliveries%s", args.SubscriptionID, q))
 		})
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_replay_events", Description: "Replay events from a sequence or time"}, c,
@@ -187,7 +202,7 @@ func RegisterEventTools(s *mcp.Server, c *NovaClient) {
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_list_outbox", Description: "List outbox entries for a topic"}, c,
 		func(ctx context.Context, args ListOutboxArgs, c *NovaClient) (json.RawMessage, error) {
-			q := queryString(map[string]string{"status": args.Status})
+			q := queryString(map[string]string{"status": args.Status, "limit": intStr(args.Limit), "offset": intStr(args.Offset)})
 			return c.Get(ctx, fmt.Sprintf("/topics/%s/outbox%s", args.Topic, q))
 		})
 

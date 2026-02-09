@@ -9,7 +9,9 @@ import (
 )
 
 type ListVersionsArgs struct {
-	Name string `json:"name" jsonschema:"Function name"`
+	Name   string `json:"name" jsonschema:"Function name"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Max results to return"`
+	Offset int    `json:"offset,omitempty" jsonschema:"Number of results to skip"`
 }
 
 type GetVersionArgs struct {
@@ -22,7 +24,8 @@ func RegisterVersionTools(s *mcp.Server, c *NovaClient) {
 		Name:        "nova_list_function_versions",
 		Description: "List all versions of a function",
 	}, c, func(ctx context.Context, args ListVersionsArgs, c *NovaClient) (json.RawMessage, error) {
-		return c.Get(ctx, fmt.Sprintf("/functions/%s/versions", args.Name))
+		q := queryString(map[string]string{"limit": intStr(args.Limit), "offset": intStr(args.Offset)})
+		return c.Get(ctx, fmt.Sprintf("/functions/%s/versions%s", args.Name, q))
 	})
 
 	addToolHelper(s, &mcp.Tool{
