@@ -92,13 +92,15 @@ func (h *GatewayHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 
 func (h *GatewayHandler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 	domainFilter := r.URL.Query().Get("domain")
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
 
 	var routes []*domain.GatewayRoute
 	var err error
 	if domainFilter != "" {
-		routes, err = h.Store.ListRoutesByDomain(r.Context(), domainFilter, 0, 0)
+		routes, err = h.Store.ListRoutesByDomain(r.Context(), domainFilter, limit, offset)
 	} else {
-		routes, err = h.Store.ListGatewayRoutes(r.Context(), 0, 0)
+		routes, err = h.Store.ListGatewayRoutes(r.Context(), limit, offset)
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

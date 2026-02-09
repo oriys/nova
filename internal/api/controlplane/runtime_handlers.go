@@ -16,7 +16,10 @@ import (
 
 // ListRuntimes handles GET /runtimes
 func (h *Handler) ListRuntimes(w http.ResponseWriter, r *http.Request) {
-	runtimes, err := h.Store.ListRuntimes(r.Context(), 0, 0)
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+
+	runtimes, err := h.Store.ListRuntimes(r.Context(), limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

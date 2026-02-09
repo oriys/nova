@@ -62,7 +62,10 @@ func (h *Handler) ListLayers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	layers, err := h.Store.ListLayers(r.Context(), 0, 0)
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+
+	layers, err := h.Store.ListLayers(r.Context(), limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
