@@ -319,7 +319,7 @@ func (h *Handler) ListAsyncInvocations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	invs, err := h.Store.ListAsyncInvocations(r.Context(), limit, statuses)
+	invs, err := h.Store.ListAsyncInvocations(r.Context(), limit, 0, statuses)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -348,7 +348,7 @@ func (h *Handler) ListFunctionAsyncInvocations(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	invs, err := h.Store.ListFunctionAsyncInvocations(r.Context(), fn.ID, limit, statuses)
+	invs, err := h.Store.ListFunctionAsyncInvocations(r.Context(), fn.ID, limit, 0, statuses)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

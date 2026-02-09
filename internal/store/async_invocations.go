@@ -228,13 +228,16 @@ func (s *PostgresStore) GetAsyncInvocation(ctx context.Context, id string) (*Asy
 	return inv, nil
 }
 
-func (s *PostgresStore) ListAsyncInvocations(ctx context.Context, limit int, statuses []AsyncInvocationStatus) ([]*AsyncInvocation, error) {
+func (s *PostgresStore) ListAsyncInvocations(ctx context.Context, limit, offset int, statuses []AsyncInvocationStatus) ([]*AsyncInvocation, error) {
 	limit = normalizeAsyncListLimit(limit)
+	if offset < 0 {
+		offset = 0
+	}
 	scope := tenantScopeFromContext(ctx)
 	query := `
-		SELECT id, tenant_id, namespace, function_id, function_name, payload, status, attempt, max_attempts,
+		SELECT id, tenant_id, namespace, function_id, function_name, NULL::jsonb, status, attempt, max_attempts,
 		       backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
-		       request_id, output, duration_ms, cold_start, last_error, started_at,
+		       request_id, NULL::jsonb, duration_ms, cold_start, last_error, started_at,
 		       completed_at, created_at, updated_at
 		FROM async_invocations
 		WHERE tenant_id = $1 AND namespace = $2
@@ -248,6 +251,8 @@ func (s *PostgresStore) ListAsyncInvocations(ctx context.Context, limit int, sta
 
 	args = append(args, limit)
 	query += " ORDER BY created_at DESC LIMIT $" + strconv.Itoa(len(args))
+	args = append(args, offset)
+	query += " OFFSET $" + strconv.Itoa(len(args))
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -269,13 +274,16 @@ func (s *PostgresStore) ListAsyncInvocations(ctx context.Context, limit int, sta
 	return out, nil
 }
 
-func (s *PostgresStore) ListFunctionAsyncInvocations(ctx context.Context, functionID string, limit int, statuses []AsyncInvocationStatus) ([]*AsyncInvocation, error) {
+func (s *PostgresStore) ListFunctionAsyncInvocations(ctx context.Context, functionID string, limit, offset int, statuses []AsyncInvocationStatus) ([]*AsyncInvocation, error) {
 	limit = normalizeAsyncListLimit(limit)
+	if offset < 0 {
+		offset = 0
+	}
 	scope := tenantScopeFromContext(ctx)
 	query := `
-		SELECT id, tenant_id, namespace, function_id, function_name, payload, status, attempt, max_attempts,
+		SELECT id, tenant_id, namespace, function_id, function_name, NULL::jsonb, status, attempt, max_attempts,
 		       backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
-		       request_id, output, duration_ms, cold_start, last_error, started_at,
+		       request_id, NULL::jsonb, duration_ms, cold_start, last_error, started_at,
 		       completed_at, created_at, updated_at
 		FROM async_invocations
 		WHERE tenant_id = $1 AND namespace = $2 AND function_id = $3
@@ -289,6 +297,8 @@ func (s *PostgresStore) ListFunctionAsyncInvocations(ctx context.Context, functi
 
 	args = append(args, limit)
 	query += " ORDER BY created_at DESC LIMIT $" + strconv.Itoa(len(args))
+	args = append(args, offset)
+	query += " OFFSET $" + strconv.Itoa(len(args))
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
