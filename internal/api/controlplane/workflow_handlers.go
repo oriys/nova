@@ -45,7 +45,7 @@ func (h *Handler) CreateWorkflow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListWorkflows(w http.ResponseWriter, r *http.Request) {
-	wfs, err := h.WorkflowService.ListWorkflows(r.Context())
+	wfs, err := h.WorkflowService.ListWorkflows(r.Context(), 0, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -97,7 +97,7 @@ func (h *Handler) PublishWorkflowVersion(w http.ResponseWriter, r *http.Request)
 
 func (h *Handler) ListWorkflowVersions(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	versions, err := h.WorkflowService.ListVersions(r.Context(), name)
+	versions, err := h.WorkflowService.ListVersions(r.Context(), name, 0, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -145,7 +145,7 @@ func (h *Handler) TriggerWorkflowRun(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListWorkflowRuns(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	runs, err := h.WorkflowService.ListRuns(r.Context(), name)
+	runs, err := h.WorkflowService.ListRuns(r.Context(), name, 0, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

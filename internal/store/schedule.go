@@ -27,8 +27,8 @@ type Schedule struct {
 // ScheduleStore defines schedule persistence operations.
 type ScheduleStore interface {
 	SaveSchedule(ctx context.Context, s *Schedule) error
-	ListSchedulesByFunction(ctx context.Context, functionName string) ([]*Schedule, error)
-	ListAllSchedules(ctx context.Context) ([]*Schedule, error)
+	ListSchedulesByFunction(ctx context.Context, functionName string, limit, offset int) ([]*Schedule, error)
+	ListAllSchedules(ctx context.Context, limit, offset int) ([]*Schedule, error)
 	GetSchedule(ctx context.Context, id string) (*Schedule, error)
 	DeleteSchedule(ctx context.Context, id string) error
 	UpdateScheduleLastRun(ctx context.Context, id string, t time.Time) error
@@ -88,14 +88,20 @@ func (s *PostgresStore) SaveSchedule(ctx context.Context, sched *Schedule) error
 	return nil
 }
 
-func (s *PostgresStore) ListSchedulesByFunction(ctx context.Context, functionName string) ([]*Schedule, error) {
+func (s *PostgresStore) ListSchedulesByFunction(ctx context.Context, functionName string, limit, offset int) ([]*Schedule, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, tenant_id, namespace, function_name, cron_expression, input, enabled, last_run_at, created_at, updated_at
 		FROM schedules
 		WHERE tenant_id = $1 AND namespace = $2 AND function_name = $3
-		ORDER BY created_at DESC
-	`, scope.TenantID, scope.Namespace, functionName)
+		ORDER BY created_at DESC LIMIT $4 OFFSET $5
+	`, scope.TenantID, scope.Namespace, functionName, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list schedules: %w", err)
 	}
@@ -103,11 +109,17 @@ func (s *PostgresStore) ListSchedulesByFunction(ctx context.Context, functionNam
 	return scanSchedules(rows)
 }
 
-func (s *PostgresStore) ListAllSchedules(ctx context.Context) ([]*Schedule, error) {
+func (s *PostgresStore) ListAllSchedules(ctx context.Context, limit, offset int) ([]*Schedule, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, tenant_id, namespace, function_name, cron_expression, input, enabled, last_run_at, created_at, updated_at
-		FROM schedules ORDER BY created_at DESC
-	`)
+		FROM schedules ORDER BY created_at DESC LIMIT $1 OFFSET $2
+	`, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list all schedules: %w", err)
 	}

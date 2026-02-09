@@ -77,7 +77,7 @@ func (h *ScheduleHandler) ListSchedules(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	schedules, err := h.Store.ListSchedulesByFunction(r.Context(), fnName)
+	schedules, err := h.Store.ListSchedulesByFunction(r.Context(), fnName, 0, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

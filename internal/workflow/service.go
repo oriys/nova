@@ -37,8 +37,8 @@ func (s *Service) GetWorkflow(ctx context.Context, name string) (*domain.Workflo
 }
 
 // ListWorkflows lists all non-deleted workflows.
-func (s *Service) ListWorkflows(ctx context.Context) ([]*domain.Workflow, error) {
-	return s.store.ListWorkflows(ctx)
+func (s *Service) ListWorkflows(ctx context.Context, limit, offset int) ([]*domain.Workflow, error) {
+	return s.store.ListWorkflows(ctx, limit, offset)
 }
 
 // DeleteWorkflow soft-deletes a workflow.
@@ -160,12 +160,12 @@ func (s *Service) GetVersion(ctx context.Context, workflowName string, versionNu
 }
 
 // ListVersions lists all versions of a workflow.
-func (s *Service) ListVersions(ctx context.Context, workflowName string) ([]*domain.WorkflowVersion, error) {
+func (s *Service) ListVersions(ctx context.Context, workflowName string, limit, offset int) ([]*domain.WorkflowVersion, error) {
 	w, err := s.store.GetWorkflowByName(ctx, workflowName)
 	if err != nil {
 		return nil, err
 	}
-	return s.store.ListWorkflowVersions(ctx, w.ID)
+	return s.store.ListWorkflowVersions(ctx, w.ID, limit, offset)
 }
 
 // TriggerRun materializes a run from the current (or specified) version.
@@ -256,10 +256,10 @@ func (s *Service) GetRun(ctx context.Context, runID string) (*domain.WorkflowRun
 }
 
 // ListRuns lists runs for a workflow.
-func (s *Service) ListRuns(ctx context.Context, workflowName string) ([]*domain.WorkflowRun, error) {
+func (s *Service) ListRuns(ctx context.Context, workflowName string, limit, offset int) ([]*domain.WorkflowRun, error) {
 	w, err := s.store.GetWorkflowByName(ctx, workflowName)
 	if err != nil {
 		return nil, err
 	}
-	return s.store.ListRuns(ctx, w.ID)
+	return s.store.ListRuns(ctx, w.ID, limit, offset)
 }
