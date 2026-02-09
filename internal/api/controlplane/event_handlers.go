@@ -124,7 +124,7 @@ func (h *Handler) CreateEventTopic(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListEventTopics(w http.ResponseWriter, r *http.Request) {
 	limit := parseEventLimitQuery(r.URL.Query().Get("limit"), store.DefaultEventListLimit, store.MaxEventListLimit)
-	topics, err := h.Store.ListEventTopics(r.Context(), limit)
+	topics, err := h.Store.ListEventTopics(r.Context(), limit, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -287,7 +287,7 @@ func (h *Handler) ListEventOutbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jobs, err := h.Store.ListEventOutbox(r.Context(), topic.ID, limit, statuses)
+	jobs, err := h.Store.ListEventOutbox(r.Context(), topic.ID, limit, 0, statuses)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -312,7 +312,7 @@ func (h *Handler) ListTopicMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parseEventLimitQuery(r.URL.Query().Get("limit"), store.DefaultEventListLimit, store.MaxEventListLimit)
-	messages, err := h.Store.ListEventMessages(r.Context(), topic.ID, limit)
+	messages, err := h.Store.ListEventMessages(r.Context(), topic.ID, limit, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -438,7 +438,7 @@ func (h *Handler) ListEventSubscriptions(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	subs, err := h.Store.ListEventSubscriptions(r.Context(), topic.ID)
+	subs, err := h.Store.ListEventSubscriptions(r.Context(), topic.ID, 100, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -583,7 +583,7 @@ func (h *Handler) ListEventDeliveries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deliveries, err := h.Store.ListEventDeliveries(r.Context(), subscriptionID, limit, statuses)
+	deliveries, err := h.Store.ListEventDeliveries(r.Context(), subscriptionID, limit, 0, statuses)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

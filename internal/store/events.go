@@ -420,16 +420,19 @@ func (s *PostgresStore) GetEventTopicByName(ctx context.Context, name string) (*
 	return topic, nil
 }
 
-func (s *PostgresStore) ListEventTopics(ctx context.Context, limit int) ([]*EventTopic, error) {
+func (s *PostgresStore) ListEventTopics(ctx context.Context, limit, offset int) ([]*EventTopic, error) {
 	limit = normalizeEventListLimit(limit)
+	if offset < 0 {
+		offset = 0
+	}
 	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, tenant_id, namespace, name, description, retention_hours, created_at, updated_at
 		FROM event_topics
 		WHERE tenant_id = $1 AND namespace = $2
 		ORDER BY created_at DESC
-		LIMIT $3
-	`, scope.TenantID, scope.Namespace, limit)
+		LIMIT $3 OFFSET $4
+	`, scope.TenantID, scope.Namespace, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list event topics: %w", err)
 	}
@@ -551,7 +554,13 @@ func (s *PostgresStore) GetEventSubscription(ctx context.Context, id string) (*E
 	return sub, nil
 }
 
-func (s *PostgresStore) ListEventSubscriptions(ctx context.Context, topicID string) ([]*EventSubscription, error) {
+func (s *PostgresStore) ListEventSubscriptions(ctx context.Context, topicID string, limit, offset int) ([]*EventSubscription, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
 		SELECT s.id, s.tenant_id, s.namespace, s.topic_id, t.name, s.name, s.consumer_group, s.function_id, s.function_name, s.workflow_id, s.workflow_name,
@@ -576,7 +585,8 @@ func (s *PostgresStore) ListEventSubscriptions(ctx context.Context, topicID stri
 		) stats ON TRUE
 		WHERE s.topic_id = $1 AND s.tenant_id = $2 AND s.namespace = $3
 		ORDER BY s.created_at ASC
-	`, strings.TrimSpace(topicID), scope.TenantID, scope.Namespace)
+		LIMIT $4 OFFSET $5
+	`, strings.TrimSpace(topicID), scope.TenantID, scope.Namespace, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list event subscriptions: %w", err)
 	}
@@ -842,17 +852,21 @@ func (s *PostgresStore) PublishEvent(ctx context.Context, topicID, orderingKey s
 	return msg, deliveries, nil
 }
 
-func (s *PostgresStore) ListEventMessages(ctx context.Context, topicID string, limit int) ([]*EventMessage, error) {
+func (s *PostgresStore) ListEventMessages(ctx context.Context, topicID string, limit, offset int) ([]*EventMessage, error) {
 	limit = normalizeEventListLimit(limit)
+	if offset < 0 {
+		offset = 0
+	}
 	scope := tenantScopeFromContext(ctx)
+	// NULL::jsonb for payload and headers to avoid reading large fields in list queries
 	rows, err := s.pool.Query(ctx, `
-		SELECT m.id, m.tenant_id, m.namespace, m.topic_id, t.name, m.sequence, m.ordering_key, m.payload, m.headers, m.published_at, m.created_at
+		SELECT m.id, m.tenant_id, m.namespace, m.topic_id, t.name, m.sequence, m.ordering_key, NULL::jsonb, NULL::jsonb, m.published_at, m.created_at
 		FROM event_messages m
 		JOIN event_topics t ON t.id = m.topic_id
 		WHERE m.topic_id = $1 AND m.tenant_id = $2 AND m.namespace = $3
 		ORDER BY m.sequence DESC
-		LIMIT $4
-	`, strings.TrimSpace(topicID), scope.TenantID, scope.Namespace, limit)
+		LIMIT $4 OFFSET $5
+	`, strings.TrimSpace(topicID), scope.TenantID, scope.Namespace, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list event messages: %w", err)
 	}
@@ -1047,15 +1061,18 @@ func (s *PostgresStore) GetEventDelivery(ctx context.Context, id string) (*Event
 	return delivery, nil
 }
 
-func (s *PostgresStore) ListEventDeliveries(ctx context.Context, subscriptionID string, limit int, statuses []EventDeliveryStatus) ([]*EventDelivery, error) {
+func (s *PostgresStore) ListEventDeliveries(ctx context.Context, subscriptionID string, limit, offset int, statuses []EventDeliveryStatus) ([]*EventDelivery, error) {
 	limit = normalizeEventListLimit(limit)
+	if offset < 0 {
+		offset = 0
+	}
 	scope := tenantScopeFromContext(ctx)
 	query := `
 		SELECT d.id, d.tenant_id, d.namespace, d.topic_id, t.name, d.subscription_id, s.name, s.consumer_group,
-		       d.message_id, m.sequence, d.ordering_key, m.payload, m.headers,
+		       d.message_id, m.sequence, d.ordering_key, NULL::jsonb, NULL::jsonb,
 		       d.status, d.attempt, d.max_attempts, d.backoff_base_ms, d.backoff_max_ms,
 		       d.next_run_at, d.locked_by, d.locked_until, d.function_id, d.function_name,
-		       d.request_id, d.output, d.duration_ms, d.cold_start, d.last_error,
+		       d.request_id, NULL::jsonb, d.duration_ms, d.cold_start, d.last_error,
 		       d.started_at, d.completed_at, d.created_at, d.updated_at,
 		       s.type, s.workflow_id, s.workflow_name, s.webhook_url, s.webhook_method, s.webhook_headers, s.webhook_signing_secret, s.webhook_timeout_ms
 		FROM event_deliveries d
@@ -1073,6 +1090,9 @@ func (s *PostgresStore) ListEventDeliveries(ctx context.Context, subscriptionID 
 
 	args = append(args, limit)
 	query += " ORDER BY d.created_at DESC LIMIT $" + strconv.Itoa(len(args))
+
+	args = append(args, offset)
+	query += " OFFSET $" + strconv.Itoa(len(args))
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -1384,11 +1404,14 @@ func (s *PostgresStore) GetEventOutbox(ctx context.Context, id string) (*EventOu
 	return outbox, nil
 }
 
-func (s *PostgresStore) ListEventOutbox(ctx context.Context, topicID string, limit int, statuses []EventOutboxStatus) ([]*EventOutbox, error) {
+func (s *PostgresStore) ListEventOutbox(ctx context.Context, topicID string, limit, offset int, statuses []EventOutboxStatus) ([]*EventOutbox, error) {
 	limit = normalizeEventListLimit(limit)
+	if offset < 0 {
+		offset = 0
+	}
 	scope := tenantScopeFromContext(ctx)
 	query := `
-		SELECT id, tenant_id, namespace, topic_id, topic_name, ordering_key, payload, headers, status, attempt,
+		SELECT id, tenant_id, namespace, topic_id, topic_name, ordering_key, NULL::jsonb, NULL::jsonb, status, attempt,
 		       max_attempts, backoff_base_ms, backoff_max_ms, next_attempt_at,
 		       locked_by, locked_until, message_id, last_error, published_at, created_at, updated_at
 		FROM event_outbox
@@ -1401,6 +1424,9 @@ func (s *PostgresStore) ListEventOutbox(ctx context.Context, topicID string, lim
 	}
 	args = append(args, limit)
 	query += " ORDER BY created_at DESC LIMIT $" + strconv.Itoa(len(args))
+
+	args = append(args, offset)
+	query += " OFFSET $" + strconv.Itoa(len(args))
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
