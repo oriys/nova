@@ -71,8 +71,14 @@ func (s *PostgresStore) GetRouteByDomainPath(ctx context.Context, routeDomain, p
 }
 
 // ListGatewayRoutes returns all gateway routes
-func (s *PostgresStore) ListGatewayRoutes(ctx context.Context) ([]*domain.GatewayRoute, error) {
-	rows, err := s.pool.Query(ctx, `SELECT data FROM gateway_routes ORDER BY domain, path`)
+func (s *PostgresStore) ListGatewayRoutes(ctx context.Context, limit, offset int) ([]*domain.GatewayRoute, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := s.pool.Query(ctx, `SELECT data FROM gateway_routes ORDER BY domain, path LIMIT $1 OFFSET $2`, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list gateway routes: %w", err)
 	}
@@ -94,10 +100,16 @@ func (s *PostgresStore) ListGatewayRoutes(ctx context.Context) ([]*domain.Gatewa
 }
 
 // ListRoutesByDomain returns routes for a specific domain
-func (s *PostgresStore) ListRoutesByDomain(ctx context.Context, routeDomain string) ([]*domain.GatewayRoute, error) {
+func (s *PostgresStore) ListRoutesByDomain(ctx context.Context, routeDomain string, limit, offset int) ([]*domain.GatewayRoute, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT data FROM gateway_routes WHERE domain = $1 ORDER BY path
-	`, routeDomain)
+		SELECT data FROM gateway_routes WHERE domain = $1 ORDER BY path LIMIT $2 OFFSET $3
+	`, routeDomain, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list routes by domain: %w", err)
 	}

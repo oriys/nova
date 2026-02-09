@@ -348,7 +348,7 @@ func (a *apiKeyStoreAdapter) GetAPIKeyByName(ctx context.Context, name string) (
 }
 
 func (a *apiKeyStoreAdapter) ListAPIKeys(ctx context.Context) ([]*auth.APIKey, error) {
-	recs, err := a.s.ListAPIKeys(ctx)
+	recs, err := a.s.ListAPIKeys(ctx, 0, 0)
 	if err != nil {
 		return nil, err
 	}

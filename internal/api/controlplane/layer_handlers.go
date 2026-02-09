@@ -62,7 +62,7 @@ func (h *Handler) ListLayers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	layers, err := h.Store.ListLayers(r.Context())
+	layers, err := h.Store.ListLayers(r.Context(), 0, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

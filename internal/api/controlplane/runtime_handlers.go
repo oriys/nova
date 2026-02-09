@@ -16,7 +16,7 @@ import (
 
 // ListRuntimes handles GET /runtimes
 func (h *Handler) ListRuntimes(w http.ResponseWriter, r *http.Request) {
-	runtimes, err := h.Store.ListRuntimes(r.Context())
+	runtimes, err := h.Store.ListRuntimes(r.Context(), 0, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

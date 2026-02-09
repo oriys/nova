@@ -96,9 +96,9 @@ func (h *GatewayHandler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 	var routes []*domain.GatewayRoute
 	var err error
 	if domainFilter != "" {
-		routes, err = h.Store.ListRoutesByDomain(r.Context(), domainFilter)
+		routes, err = h.Store.ListRoutesByDomain(r.Context(), domainFilter, 0, 0)
 	} else {
-		routes, err = h.Store.ListGatewayRoutes(r.Context())
+		routes, err = h.Store.ListGatewayRoutes(r.Context(), 0, 0)
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

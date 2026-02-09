@@ -20,7 +20,7 @@ func (h *Handler) ListTenants(w http.ResponseWriter, r *http.Request) {
 		err     error
 	)
 	if unrestricted {
-		tenants, err = h.Store.ListTenants(r.Context())
+		tenants, err = h.Store.ListTenants(r.Context(), 0, 0)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -129,7 +129,7 @@ func (h *Handler) ListNamespaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	namespaces, err := h.Store.ListNamespaces(r.Context(), tenantID)
+	namespaces, err := h.Store.ListNamespaces(r.Context(), tenantID, 0, 0)
 	if err != nil {
 		http.Error(w, err.Error(), tenancyHTTPStatus(err))
 		return
