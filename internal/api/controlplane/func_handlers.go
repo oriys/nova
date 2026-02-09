@@ -102,14 +102,24 @@ func (h *Handler) ListFunctions(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = n
 	}
+	offsetRaw := strings.TrimSpace(r.URL.Query().Get("offset"))
+	offset := 0
+	if offsetRaw != "" {
+		n, err := strconv.Atoi(offsetRaw)
+		if err != nil || n < 0 {
+			http.Error(w, "invalid offset", http.StatusBadRequest)
+			return
+		}
+		offset = n
+	}
 
 	var funcs []*domain.Function
 	var err error
 
 	if query != "" {
-		funcs, err = h.Store.SearchFunctions(r.Context(), query)
+		funcs, err = h.Store.SearchFunctions(r.Context(), query, limit, offset)
 	} else {
-		funcs, err = h.Store.ListFunctions(r.Context())
+		funcs, err = h.Store.ListFunctions(r.Context(), limit, offset)
 	}
 
 	if err != nil {
@@ -118,9 +128,6 @@ func (h *Handler) ListFunctions(w http.ResponseWriter, r *http.Request) {
 	}
 	if funcs == nil {
 		funcs = []*domain.Function{}
-	}
-	if limit > 0 && len(funcs) > limit {
-		funcs = funcs[:limit]
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(funcs)
@@ -202,12 +209,12 @@ func (h *Handler) DeleteFunction(w http.ResponseWriter, r *http.Request) {
 	h.Pool.Evict(fn.ID)
 	_ = executor.InvalidateSnapshot(h.Backend.SnapshotDir(), fn.ID)
 
-	versions, _ := h.Store.ListVersions(r.Context(), fn.ID)
+	versions, _ := h.Store.ListVersions(r.Context(), fn.ID, 0, 0)
 	for _, v := range versions {
 		_ = h.Store.DeleteVersion(r.Context(), fn.ID, v.Version)
 	}
 
-	aliases, _ := h.Store.ListAliases(r.Context(), fn.ID)
+	aliases, _ := h.Store.ListAliases(r.Context(), fn.ID, 0, 0)
 	for _, a := range aliases {
 		_ = h.Store.DeleteAlias(r.Context(), fn.ID, a.Name)
 	}

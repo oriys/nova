@@ -158,7 +158,7 @@ func (h *Handler) ListFunctionVersions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	versions, err := h.Store.ListVersions(r.Context(), fn.ID)
+	versions, err := h.Store.ListVersions(r.Context(), fn.ID, 0, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

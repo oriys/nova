@@ -117,7 +117,7 @@ func (s *Server) GetFunction(ctx context.Context, req *novapb.GetFunctionRequest
 
 // ListFunctions returns all registered functions
 func (s *Server) ListFunctions(ctx context.Context, req *novapb.ListFunctionsRequest) (*novapb.ListFunctionsResponse, error) {
-	funcs, err := s.store.ListFunctions(ctx)
+	funcs, err := s.store.ListFunctions(ctx, 0, 0)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list functions: %v", err)
 	}

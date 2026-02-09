@@ -118,14 +118,21 @@ func (s *PostgresStore) DeleteFunction(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *PostgresStore) ListFunctions(ctx context.Context) ([]*domain.Function, error) {
+func (s *PostgresStore) ListFunctions(ctx context.Context, limit, offset int) ([]*domain.Function, error) {
 	scope := tenantScopeFromContext(ctx)
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT data
 		FROM functions
 		WHERE tenant_id = $1 AND namespace = $2
 		ORDER BY name
-	`, scope.TenantID, scope.Namespace)
+		LIMIT $3 OFFSET $4
+	`, scope.TenantID, scope.Namespace, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list functions: %w", err)
 	}
@@ -155,14 +162,21 @@ func (s *PostgresStore) ListFunctions(ctx context.Context) ([]*domain.Function, 
 	return functions, nil
 }
 
-func (s *PostgresStore) SearchFunctions(ctx context.Context, query string) ([]*domain.Function, error) {
+func (s *PostgresStore) SearchFunctions(ctx context.Context, query string, limit, offset int) ([]*domain.Function, error) {
 	scope := tenantScopeFromContext(ctx)
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT data
 		FROM functions
 		WHERE tenant_id = $1 AND namespace = $2 AND name ILIKE $3
 		ORDER BY name
-	`, scope.TenantID, scope.Namespace, "%"+query+"%")
+		LIMIT $4 OFFSET $5
+	`, scope.TenantID, scope.Namespace, "%"+query+"%", limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("search functions: %w", err)
 	}
@@ -296,12 +310,19 @@ func (s *PostgresStore) GetVersion(ctx context.Context, funcID string, version i
 	return &v, nil
 }
 
-func (s *PostgresStore) ListVersions(ctx context.Context, funcID string) ([]*domain.FunctionVersion, error) {
+func (s *PostgresStore) ListVersions(ctx context.Context, funcID string, limit, offset int) ([]*domain.FunctionVersion, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT data FROM function_versions
 		WHERE function_id = $1
 		ORDER BY version ASC
-	`, funcID)
+		LIMIT $2 OFFSET $3
+	`, funcID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list versions: %w", err)
 	}
@@ -390,12 +411,19 @@ func (s *PostgresStore) GetAlias(ctx context.Context, funcID, aliasName string) 
 	return &alias, nil
 }
 
-func (s *PostgresStore) ListAliases(ctx context.Context, funcID string) ([]*domain.FunctionAlias, error) {
+func (s *PostgresStore) ListAliases(ctx context.Context, funcID string, limit, offset int) ([]*domain.FunctionAlias, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT data FROM function_aliases
 		WHERE function_id = $1
 		ORDER BY name ASC
-	`, funcID)
+		LIMIT $2 OFFSET $3
+	`, funcID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list aliases: %w", err)
 	}

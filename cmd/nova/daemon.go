@@ -264,7 +264,7 @@ func daemonCmd() *cobra.Command {
 					return nil
 				case <-ticker.C:
 					ctx := context.Background()
-					funcs, err := s.ListFunctions(ctx)
+					funcs, err := s.ListFunctions(ctx, 0, 0)
 					if err != nil {
 						logging.Op().Error("error listing functions", "error", err)
 					} else {
