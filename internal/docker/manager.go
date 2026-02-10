@@ -574,6 +574,75 @@ func (c *Client) ExecuteWithTrace(reqID string, input json.RawMessage, timeoutS 
 	return nil, errors.New("execute failed")
 }
 
+// ExecuteStream executes a function in streaming mode, calling the callback for each chunk
+func (c *Client) ExecuteStream(reqID string, input json.RawMessage, timeoutS int, traceParent, traceState string, callback func(chunk []byte, isLast bool, err error) error) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	payload, _ := json.Marshal(&backend.ExecPayload{
+		RequestID:   reqID,
+		Input:       input,
+		TimeoutS:    timeoutS,
+		TraceParent: traceParent,
+		TraceState:  traceState,
+		Stream:      true,
+	})
+
+	execMsg := &backend.VsockMessage{Type: backend.MsgTypeExec, Payload: payload}
+
+	// Connect and send request
+	if err := c.redialAndInit(5 * time.Second); err != nil {
+		return err
+	}
+
+	deadline := time.Now().Add(time.Duration(timeoutS+5) * time.Second)
+	_ = c.conn.SetDeadline(deadline)
+
+	if err := c.sendLocked(execMsg); err != nil {
+		_ = c.closeLocked()
+		return err
+	}
+
+	// Receive stream chunks
+	for {
+		resp, err := c.receiveLocked()
+		if err != nil {
+			_ = c.closeLocked()
+			return err
+		}
+
+		if resp.Type != backend.MsgTypeStream {
+			_ = c.closeLocked()
+			return fmt.Errorf("unexpected message type: %d (expected stream)", resp.Type)
+		}
+
+		var chunk backend.StreamChunkPayload
+		if err := json.Unmarshal(resp.Payload, &chunk); err != nil {
+			_ = c.closeLocked()
+			return err
+		}
+
+		// Call callback with chunk
+		var chunkErr error
+		if chunk.Error != "" {
+			chunkErr = fmt.Errorf(chunk.Error)
+		}
+		if err := callback(chunk.Data, chunk.IsLast, chunkErr); err != nil {
+			_ = c.closeLocked()
+			return err
+		}
+
+		// If this is the last chunk, we're done
+		if chunk.IsLast {
+			break
+		}
+	}
+
+	_ = c.conn.SetDeadline(time.Time{})
+	_ = c.closeLocked()
+	return nil
+}
+
 // Ping checks if the agent is responsive.
 func (c *Client) Ping() error {
 	c.mu.Lock()

@@ -78,6 +78,7 @@ const (
 	MsgTypePing   = 4
 	MsgTypeStop   = 5
 	MsgTypeReload = 6 // Hot reload code files
+	MsgTypeStream = 7 // Streaming response chunk
 )
 
 // VsockMessage is the wire format for agent communication.
@@ -107,9 +108,18 @@ type ExecPayload struct {
 	TimeoutS    int             `json:"timeout_s"`
 	TraceParent string          `json:"traceparent,omitempty"`
 	TraceState  string          `json:"tracestate,omitempty"`
+	Stream      bool            `json:"stream,omitempty"` // Enable streaming response
 }
 
 // ReloadPayload is sent to hot-reload function code.
 type ReloadPayload struct {
 	Files map[string][]byte `json:"files"` // relative path -> content
+}
+
+// StreamChunkPayload is sent for streaming responses.
+type StreamChunkPayload struct {
+	RequestID string `json:"request_id"`
+	Data      []byte `json:"data"`      // Chunk of data (can be stdout, binary, or text)
+	IsLast    bool   `json:"is_last"`   // True if this is the final chunk
+	Error     string `json:"error,omitempty"` // Error message if execution failed
 }

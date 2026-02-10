@@ -198,6 +198,15 @@ type MetadataStore interface {
 	SetFunctionLayers(ctx context.Context, funcID string, layerIDs []string) error
 	GetFunctionLayers(ctx context.Context, funcID string) ([]*domain.Layer, error)
 	ListFunctionsByLayer(ctx context.Context, layerID string) ([]string, error)
+
+	// Volumes
+	CreateVolume(ctx context.Context, vol *domain.Volume) error
+	GetVolume(ctx context.Context, id string) (*domain.Volume, error)
+	GetVolumeByName(ctx context.Context, name string) (*domain.Volume, error)
+	ListVolumes(ctx context.Context) ([]*domain.Volume, error)
+	UpdateVolume(ctx context.Context, id string, updates map[string]interface{}) error
+	DeleteVolume(ctx context.Context, id string) error
+	GetFunctionVolumes(ctx context.Context, functionID string) ([]*domain.Volume, error)
 }
 
 // Store wraps the MetadataStore, WorkflowStore, and ScheduleStore (Postgres) for all persistence.

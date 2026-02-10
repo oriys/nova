@@ -2,6 +2,7 @@ package dataplane
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -102,6 +103,7 @@ func writeTenantQuotaExceeded(w http.ResponseWriter, decision *store.TenantQuota
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Function invocation
 	mux.HandleFunc("POST /functions/{name}/invoke", h.InvokeFunction)
+	mux.HandleFunc("POST /functions/{name}/invoke-stream", h.InvokeFunctionStream)
 	mux.HandleFunc("POST /functions/{name}/invoke-async", h.EnqueueAsyncFunction)
 	mux.HandleFunc("GET /functions/{name}/async-invocations", h.ListFunctionAsyncInvocations)
 	mux.HandleFunc("GET /async-invocations/{id}", h.GetAsyncInvocation)
@@ -204,6 +206,126 @@ func (h *Handler) InvokeFunction(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// InvokeFunctionStream handles POST /functions/{name}/invoke-stream with streaming response
+func (h *Handler) InvokeFunctionStream(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	var payload json.RawMessage
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+			return
+		}
+	} else {
+		payload = json.RawMessage("{}")
+	}
+
+	// Check tenant quota
+	scope := store.TenantScopeFromContext(r.Context())
+	invQuotaDecision, err := h.Store.CheckAndConsumeTenantQuota(r.Context(), scope.TenantID, store.TenantDimensionInvocations, 1)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if invQuotaDecision != nil && !invQuotaDecision.Allowed {
+		reason := "tenant_quota_" + invQuotaDecision.Dimension
+		metrics.RecordAdmissionResult(fn.Name, "rejected", reason)
+		metrics.RecordShed(fn.Name, reason)
+		writeTenantQuotaExceeded(w, invQuotaDecision)
+		return
+	}
+
+	// Track queue metrics
+	metrics.SetQueueDepth(fn.Name, h.Pool.QueueDepth(fn.ID))
+	metrics.SetQueueWaitMs(fn.Name, h.Pool.FunctionQueueWaitMs(fn.ID))
+	defer func() {
+		metrics.SetQueueDepth(fn.Name, h.Pool.QueueDepth(fn.ID))
+		metrics.SetQueueWaitMs(fn.Name, h.Pool.FunctionQueueWaitMs(fn.ID))
+	}()
+
+	// Set up streaming response headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// Write headers immediately
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	// Execute in streaming mode
+	execErr := h.Exec.InvokeStream(r.Context(), name, payload, func(chunk []byte, isLast bool, err error) error {
+		if err != nil {
+			// Send error as SSE event
+			fmt.Fprintf(w, "event: error\ndata: %s\n\n", err.Error())
+			flusher.Flush()
+			return err
+		}
+
+		if len(chunk) > 0 {
+			// Send data chunk as SSE event
+			// Base64 encode binary data for safe transport
+			encoded := base64.StdEncoding.EncodeToString(chunk)
+			fmt.Fprintf(w, "data: %s\n\n", encoded)
+			flusher.Flush()
+		}
+
+		if isLast {
+			// Send completion event
+			fmt.Fprintf(w, "event: done\ndata: {}\n\n")
+			flusher.Flush()
+		}
+
+		return nil
+	})
+
+	if execErr != nil {
+		// Handle errors that occur before streaming starts
+		status := http.StatusInternalServerError
+		reason := "internal_error"
+
+		switch {
+		case errors.Is(execErr, pool.ErrQueueFull):
+			status = capacityShedStatus(fn)
+			reason = "queue_full"
+		case errors.Is(execErr, pool.ErrInflightLimit):
+			status = capacityShedStatus(fn)
+			reason = "inflight_limit"
+		case errors.Is(execErr, pool.ErrQueueWaitTimeout):
+			status = capacityShedStatus(fn)
+			reason = "queue_wait_timeout"
+		case errors.Is(execErr, pool.ErrConcurrencyLimit):
+			status = http.StatusServiceUnavailable
+			reason = "concurrency_limit"
+		case errors.Is(execErr, context.DeadlineExceeded):
+			status = http.StatusGatewayTimeout
+			reason = "timeout"
+		}
+
+		metrics.RecordAdmissionResult(fn.Name, "rejected", reason)
+		if status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable {
+			metrics.RecordShed(fn.Name, reason)
+		}
+
+		// Send error event
+		fmt.Fprintf(w, "event: error\ndata: %s\n\n", execErr.Error())
+		flusher.Flush()
+		return
+	}
+	metrics.RecordAdmissionResult(fn.Name, "accepted", "ok")
 }
 
 // EnqueueAsyncFunction handles POST /functions/{name}/invoke-async
