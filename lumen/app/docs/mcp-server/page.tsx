@@ -27,7 +27,7 @@ export default function DocsMCPServerPage() {
 Protocol: MCP
 Transport: stdio
 Tool naming: nova_*
-Target backend: NOVA_URL (default http://localhost:9000)`}
+Target backend: ZENITH_URL (default http://localhost:9000)`}
         />
       </section>
 
@@ -61,7 +61,7 @@ make atlas-linux`}
         </p>
         <CodeBlock
           code={`Environment variables
-NOVA_URL=http://localhost:9000
+ZENITH_URL=http://localhost:9000
 NOVA_API_KEY=<api-key>
 NOVA_TENANT=default
 NOVA_NAMESPACE=default
@@ -77,7 +77,7 @@ X-Nova-Namespace: <NOVA_NAMESPACE>`}
     "atlas": {
       "command": "/absolute/path/to/bin/atlas",
       "env": {
-        "NOVA_URL": "http://localhost:9000",
+        "ZENITH_URL": "http://localhost:9000",
         "NOVA_API_KEY": "<api-key>",
         "NOVA_TENANT": "default",
         "NOVA_NAMESPACE": "default"

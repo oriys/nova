@@ -2,11 +2,23 @@
 
 Nova 是一个极简的 Serverless 平台，基于 [Firecracker](https://github.com/firecracker-microvm/firecracker) microVM 实现函数级别的隔离执行。每次函数调用都运行在独立的轻量虚拟机中，支持 Python、Go、Rust、WASM、Node.js、Ruby、Java、PHP、.NET、Deno、Bun、Lua 等 20+ 运行时。
 
+## 后端拆分
+
+后端已拆分为三个独立服务：
+
+- `nova`（控制平面）
+- `comet`（数据平面，提供 gRPC）
+- `zenith`（网关，供 UI/MCP/CLI 统一接入）
+
+详细启动方式见 `BACKEND_SPLIT.md`。
+
 ## 目录
 
 - [工作原理](#工作原理)
 - [功能特性](#功能特性)
 - [系统架构](#系统架构)
+- [全组件依赖关系图](#全组件依赖关系图)
+- [后端拆分](#后端拆分)
 - [快速开始](#快速开始)
 - [构建与部署](#构建与部署)
 - [编写函数](#编写函数)
@@ -107,13 +119,87 @@ Nova 是一个极简的 Serverless 平台，基于 [Firecracker](https://github.
 
 ## 系统架构
 
-系统由三个组件构成：
+系统按“接入层 -> 网关 -> 控制平面/数据平面 -> 执行后端 -> 存储”组织：
 
 | 组件 | 说明 | 入口 |
 |------|------|------|
-| Nova Daemon | 宿主机守护进程，提供 HTTP API | `cmd/nova/` |
-| Agent | VM 内 PID 1 进程，执行用户函数 | `cmd/agent/` |
-| Lumen | Next.js 15 Web 管理面板 | `lumen/` |
+| Zenith Gateway | 统一 HTTP 入口，转发到 Nova/Comet | `cmd/zenith/` |
+| Nova Control Plane | 控制平面（函数、租户、配置、工作流、路由管理） | `cmd/nova/` |
+| Comet Data Plane | 数据平面（执行、池化、异步），仅提供 gRPC | `cmd/comet/` |
+| Agent | VM/容器内执行进程，负责运行用户函数 | `cmd/agent/` |
+| Lumen / Atlas / Orbit | UI / MCP / CLI 调用方，统一访问 Zenith | `lumen/` / `atlas/` / `orbit/` |
+
+### 全组件依赖关系图
+
+```mermaid
+flowchart LR
+    subgraph "Clients"
+        lumen["Lumen (UI)"]
+        atlas["Atlas (MCP)"]
+        orbit["Orbit (CLI)"]
+        ext["External HTTP Clients"]
+    end
+
+    subgraph "Gateway Layer"
+        zenith["Zenith (HTTP Gateway)"]
+    end
+
+    subgraph "Control Plane"
+        nova["Nova (HTTP Control Plane)"]
+        scheduler["Scheduler"]
+        workflow["Workflow Engine"]
+        compiler["Compiler / Function Service"]
+    end
+
+    subgraph "Data Plane"
+        comet["Comet (gRPC Data Plane)"]
+        executor["Executor"]
+        pool["Worker / VM Pool"]
+        asyncq["Async Queue Workers"]
+        eventbus["Event Bus Workers"]
+    end
+
+    subgraph "Runtime Backends"
+        fc["Firecracker Backend"]
+        docker["Docker Backend"]
+        agent["nova-agent (in VM/container)"]
+        assets["Rootfs / Code / Snapshot Assets"]
+    end
+
+    subgraph "State / Infra"
+        pg["PostgreSQL"]
+        obs["Metrics / Tracing / Logs"]
+    end
+
+    lumen --> zenith
+    atlas --> zenith
+    orbit --> zenith
+    ext --> zenith
+
+    zenith -->|"HTTP management routes"| nova
+    zenith -->|"gRPC invoke/proxy routes"| comet
+
+    nova --> scheduler
+    nova --> workflow
+    nova --> compiler
+    nova --> pg
+    nova --> obs
+
+    comet --> executor
+    comet --> asyncq
+    comet --> eventbus
+    comet --> pg
+    comet --> obs
+
+    executor --> pool
+    executor --> pg
+    pool --> fc
+    pool --> docker
+    fc --> agent
+    docker --> agent
+    fc --> assets
+    docker --> assets
+```
 
 ### 调用流程
 
@@ -288,32 +374,29 @@ Firecracker VM
 ### 本地开发
 
 ```bash
-make dev          # docker compose up --build（Postgres + Nova + Lumen）
+make dev          # docker compose up --build（Postgres + Nova + Comet + Zenith + Lumen）
 make seed         # 注入示例函数
 ```
 
-服务端口：Nova API `:9000`、Lumen Dashboard `:3000`、PostgreSQL `:5432`
+服务端口：Zenith API `:9000`、Nova 控制平面 `:9001`、Comet gRPC `:9090`、Lumen Dashboard `:3000`、PostgreSQL `:5432`
 
 > macOS/无 KVM 环境下主要用于跑 API + Lumen Dashboard，不适合跑 Firecracker VM 执行。
 
 ### Linux 服务器部署
 
 ```bash
-# 1. 服务器上执行一键安装（Firecracker、内核、rootfs、Postgres）
-sudo bash scripts/install.sh
+# 1. 构建 linux 二进制
+make build-linux
 
-# 2. 构建 + 部署
-make deploy SERVER=root@your-server
-
-# 3. 启动守护进程
-nova daemon --http :9000 --pg-dsn "postgres://nova:nova@localhost:5432/nova"
+# 2. 一键部署（安装依赖、初始化 DB、配置 systemd 并启动服务）
+sudo bash scripts/setup.sh
 ```
 
 安装完成后目录结构：
 
 ```
 /opt/nova/
-├── bin/nova, nova-agent
+├── bin/nova, comet, zenith, nova-agent
 ├── kernel/vmlinux
 ├── rootfs/
 │   ├── base.ext4          # Go/Rust/Zig
@@ -353,8 +436,8 @@ nova daemon --idle-ttl 60s
 ### 后端
 
 ```bash
-make build          # 构建 nova (本机) + agent (linux/amd64)
-make build-linux    # 交叉编译 nova + agent 全部为 linux/amd64
+make build          # 构建 nova/comet/zenith (本机) + agent (linux/amd64)
+make build-linux    # 交叉编译 nova/comet/zenith + agent 全部为 linux/amd64
 make agent          # 仅构建 guest agent
 ```
 

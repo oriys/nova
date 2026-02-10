@@ -34,6 +34,11 @@ import { CodeDisplay } from "@/components/code-editor"
 import type { LayoutMap } from "@/components/workflow/dag-layout"
 import { Play, RefreshCw, ArrowLeft, Pencil, X, ExternalLink, Loader2 } from "lucide-react"
 
+type Notice = {
+  kind: "success" | "error" | "info"
+  text: string
+}
+
 export default function WorkflowDetailPage() {
   const params = useParams()
   const name = decodeURIComponent(params.name as string)
@@ -43,6 +48,7 @@ export default function WorkflowDetailPage() {
   const [runs, setRuns] = useState<WorkflowRun[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<Notice | null>(null)
 
   const [functionNames, setFunctionNames] = useState<string[]>([])
   const [publishing, setPublishing] = useState(false)
@@ -128,9 +134,10 @@ export default function WorkflowDetailPage() {
       await workflowsApi.publishVersion(name, def)
       setGraphEditing(false)
       fetchData()
+      setNotice({ kind: "success", text: "Workflow version published" })
     } catch (err) {
       console.error("Failed to publish version:", err)
-      alert(err instanceof Error ? err.message : "Failed to publish")
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to publish" })
     } finally {
       setPublishing(false)
     }
@@ -143,9 +150,10 @@ export default function WorkflowDetailPage() {
       await workflowsApi.triggerRun(name, input)
       setIsTriggerOpen(false)
       fetchData()
+      setNotice({ kind: "success", text: "Workflow run triggered" })
     } catch (err) {
       console.error("Failed to trigger run:", err)
-      alert(err instanceof Error ? err.message : "Failed to trigger")
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to trigger" })
     } finally {
       setTriggering(false)
     }
@@ -211,6 +219,25 @@ export default function WorkflowDetailPage() {
       <Header title={`Workflow: ${name}`} description={workflow?.description} />
 
       <div className="p-6 space-y-6">
+        {notice && (
+          <div
+            className={`rounded-lg border p-4 text-sm ${
+              notice.kind === "success"
+                ? "border-success/50 bg-success/10 text-success"
+                : notice.kind === "error"
+                  ? "border-destructive/50 bg-destructive/10 text-destructive"
+                  : "border-primary/40 bg-primary/10 text-primary"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <p>{notice.text}</p>
+              <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between">
           <Link href="/workflows">
             <Button variant="ghost" size="sm">

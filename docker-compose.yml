@@ -17,36 +17,104 @@ services:
       timeout: 5s
       retries: 10
 
+  rootfs-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile.rootfs
+    container_name: nova-rootfs-builder
+    privileged: true
+    restart: "no"
+    volumes:
+      - nova_rootfs:/opt/nova/rootfs
+
   nova:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: nova-api
+      target: nova-runtime
+    container_name: nova-controlplane
+    command: ["nova", "daemon", "--config", "configs/nova.json", "--http", ":9001"]
     environment:
       NOVA_PG_DSN: postgres://nova:nova@postgres:5432/nova?sslmode=disable
-      NOVA_HTTP_ADDR: ":9000"
       NOVA_LOG_LEVEL: info
       NOVA_ROOTFS_DIR: /opt/nova/rootfs
       NOVA_CODE_DIR: /tmp/nova/code
       NOVA_DOCKER_IMAGE_PREFIX: nova-runtime
       NOVA_DOCKER_NETWORK: nova_default
       NOVA_MASTER_KEY: "1710f674b5e29cd55bba9c1481625ac255886d763ed7dd6aeab8b21382910d1e"
-      # Ensure Nova knows where to put FC sockets/logs
       NOVA_RUN_DIR: /var/lib/nova/run
-    ports:
-      - "9000:9000"
     depends_on:
       postgres:
         condition: service_healthy
       rootfs-builder:
         condition: service_completed_successfully
-    # Docker backend requirements:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - nova_rootfs:/opt/nova/rootfs
       - nova_code:/tmp/nova/code
-      # Persist VM logs and sockets if needed for debugging
       - nova_run:/var/lib/nova/run
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9001/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  comet:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: comet-runtime
+    container_name: comet-dataplane
+    command: ["comet", "daemon", "--config", "configs/nova.json", "--grpc", ":9090"]
+    environment:
+      NOVA_PG_DSN: postgres://nova:nova@postgres:5432/nova?sslmode=disable
+      NOVA_LOG_LEVEL: info
+      NOVA_ROOTFS_DIR: /opt/nova/rootfs
+      NOVA_CODE_DIR: /tmp/nova/code
+      NOVA_DOCKER_IMAGE_PREFIX: nova-runtime
+      NOVA_DOCKER_NETWORK: nova_default
+      NOVA_MASTER_KEY: "1710f674b5e29cd55bba9c1481625ac255886d763ed7dd6aeab8b21382910d1e"
+      NOVA_RUN_DIR: /var/lib/nova/run
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rootfs-builder:
+        condition: service_completed_successfully
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - nova_rootfs:/opt/nova/rootfs
+      - nova_code:/tmp/nova/code
+      - nova_run:/var/lib/nova/run
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9090"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  zenith:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: zenith-runtime
+    container_name: zenith-gateway
+    command:
+      - "zenith"
+      - "serve"
+      - "--listen"
+      - ":9000"
+      - "--nova-url"
+      - "http://nova:9001"
+      - "--comet-grpc"
+      - "comet:9090"
+    environment:
+      NOVA_LOG_LEVEL: info
+    ports:
+      - "9000:9000"
+    depends_on:
+      nova:
+        condition: service_healthy
+      comet:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/health"]
       interval: 5s
@@ -60,17 +128,18 @@ services:
     container_name: lumen
     environment:
       HOSTNAME: "0.0.0.0"
-      BACKEND_URL: http://nova:9000
+      BACKEND_URL: http://zenith:9000
     ports:
       - "3000:3000"
     depends_on:
-      - nova
+      zenith:
+        condition: service_healthy
 
   seeder:
     image: curlimages/curl:latest
     container_name: nova-seeder
     depends_on:
-      nova:
+      zenith:
         condition: service_healthy
     restart: "no"
     entrypoint: ["/bin/sh", "-c"]
@@ -80,19 +149,19 @@ services:
         sleep 2
 
         # hello-python (handler-only style)
-        curl -sf -X POST http://nova:9000/functions -H "Content-Type: application/json" -d '{"name":"hello-python","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"def handler(event, context):\n    name = event.get(\"name\", \"World\")\n    return {\"message\": f\"Hello, {name}!\", \"runtime\": \"python\"}"}' && echo " -> hello-python created" || echo " -> hello-python skipped"
+        curl -sf -X POST http://zenith:9000/functions -H "Content-Type: application/json" -d '{"name":"hello-python","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"def handler(event, context):\n    name = event.get(\"name\", \"World\")\n    return {\n        \"message\": f\"Hello, {name}!\",\n        \"runtime\": \"python\",\n        \"request_id\": context.request_id,\n    }"}' && echo " -> hello-python created" || echo " -> hello-python skipped"
 
         # hello-node (handler-only style)
-        curl -sf -X POST http://nova:9000/functions -H "Content-Type: application/json" -d '{"name":"hello-node","runtime":"node","handler":"handler","memory_mb":256,"timeout_s":30,"code":"function handler(event, context) {\n  const name = event.name || \"World\";\n  return { message: \"Hello, \" + name + \"!\", runtime: \"node\" };\n}\n\nmodule.exports = { handler };"}' && echo " -> hello-node created" || echo " -> hello-node skipped"
+        curl -sf -X POST http://zenith:9000/functions -H "Content-Type: application/json" -d '{"name":"hello-node","runtime":"node","handler":"handler","memory_mb":256,"timeout_s":30,"code":"function handler(event, context) {\n  const name = event.name || \"World\";\n  return {\n    message: \"Hello, \" + name + \"!\",\n    runtime: \"node\",\n    requestId: context.requestId,\n  };\n}\n\nmodule.exports = { handler };"}' && echo " -> hello-node created" || echo " -> hello-node skipped"
 
         # fibonacci (handler-only style)
-        curl -sf -X POST http://nova:9000/functions -H "Content-Type: application/json" -d '{"name":"fibonacci","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"def handler(event, context):\n    def fib(n):\n        if n <= 1:\n            return n\n        a, b = 0, 1\n        for _ in range(2, n + 1):\n            a, b = b, a + b\n        return b\n    n = event.get(\"n\", 10)\n    return {\"n\": n, \"fibonacci\": fib(n)}"}' && echo " -> fibonacci created" || echo " -> fibonacci skipped"
+        curl -sf -X POST http://zenith:9000/functions -H "Content-Type: application/json" -d '{"name":"fibonacci","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"def handler(event, context):\n    def fib(n):\n        if n <= 1:\n            return n\n        a, b = 0, 1\n        for _ in range(2, n + 1):\n            a, b = b, a + b\n        return b\n    n = event.get(\"n\", 10)\n    return {\"n\": n, \"fibonacci\": fib(n)}"}' && echo " -> fibonacci created" || echo " -> fibonacci skipped"
 
         # echo (handler-only style)
-        curl -sf -X POST http://nova:9000/functions -H "Content-Type: application/json" -d '{"name":"echo","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import time\n\ndef handler(event, context):\n    return {\"echo\": event, \"timestamp\": time.time()}"}' && echo " -> echo created" || echo " -> echo skipped"
+        curl -sf -X POST http://zenith:9000/functions -H "Content-Type: application/json" -d '{"name":"echo","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import time\n\ndef handler(event, context):\n    return {\n        \"echo\": event,\n        \"timestamp\": time.time(),\n        \"remaining_ms\": context.get_remaining_time_in_millis(),\n    }"}' && echo " -> echo created" || echo " -> echo skipped"
 
         # prime-checker (handler-only style)
-        curl -sf -X POST http://nova:9000/functions -H "Content-Type: application/json" -d '{"name":"prime-checker","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import math\n\ndef handler(event, context):\n    n = event.get(\"n\", 17)\n    if n < 2:\n        return {\"n\": n, \"is_prime\": False}\n    if n == 2:\n        return {\"n\": n, \"is_prime\": True}\n    if n % 2 == 0:\n        return {\"n\": n, \"is_prime\": False}\n    for i in range(3, int(math.sqrt(n)) + 1, 2):\n        if n % i == 0:\n            return {\"n\": n, \"is_prime\": False}\n    return {\"n\": n, \"is_prime\": True}"}' && echo " -> prime-checker created" || echo " -> prime-checker skipped"
+        curl -sf -X POST http://zenith:9000/functions -H "Content-Type: application/json" -d '{"name":"prime-checker","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import math\n\ndef handler(event, context):\n    n = event.get(\"n\", 17)\n    if n < 2:\n        return {\"n\": n, \"is_prime\": False}\n    if n == 2:\n        return {\"n\": n, \"is_prime\": True}\n    if n % 2 == 0:\n        return {\"n\": n, \"is_prime\": False}\n    for i in range(3, int(math.sqrt(n)) + 1, 2):\n        if n % i == 0:\n            return {\"n\": n, \"is_prime\": False}\n    return {\"n\": n, \"is_prime\": True}"}' && echo " -> prime-checker created" || echo " -> prime-checker skipped"
 
         echo "Sample functions seeding complete!"
 
@@ -105,17 +174,7 @@ services:
     restart: "no"
     volumes:
       - ./scripts:/scripts:ro
-    entrypoint: ["/bin/sh", "/scripts/seed-workflows.sh", "http://nova:9000"]
-
-  rootfs-builder:
-    build:
-      context: .
-      dockerfile: Dockerfile.rootfs
-    container_name: nova-rootfs-builder
-    privileged: true
-    restart: "no"
-    volumes:
-      - nova_rootfs:/opt/nova/rootfs
+    entrypoint: ["/bin/sh", "/scripts/seed-workflows.sh", "http://zenith:9000"]
 
 volumes:
   nova_pg_data:

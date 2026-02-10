@@ -44,20 +44,21 @@ orbit functions --help`}
         </p>
         <CodeBlock
           code={`# Flags
---server      Nova API URL
+--server      Zenith gateway URL (Nova-compatible API endpoint)
 --api-key     API key
 --tenant      Tenant ID
 --namespace   Namespace
 --output      table|wide|json|yaml
 
 # Environment variables
-NOVA_URL
+ZENITH_URL
 NOVA_API_KEY
 NOVA_TENANT
 NOVA_NAMESPACE
 NOVA_OUTPUT
 
 # Persist defaults
+# 9000 is the unified Zenith entrypoint
 orbit config set server http://localhost:9000
 orbit config set tenant default
 orbit config set namespace default

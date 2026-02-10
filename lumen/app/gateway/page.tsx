@@ -19,6 +19,7 @@ import {
   functionsApi,
   gatewayApi,
   type CreateGatewayRouteRequest,
+  type GatewayRateLimitTemplate,
   type GatewayRoute,
   type NovaFunction,
   type UpdateGatewayRouteRequest,
@@ -57,13 +58,25 @@ function toErrorMessage(err: unknown): string {
   return "Unexpected error."
 }
 
+type Notice = {
+  kind: "success" | "error" | "info"
+  text: string
+}
+
 export default function GatewayPage() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<Notice | null>(null)
   const [routes, setRoutes] = useState<GatewayRoute[]>([])
   const [functions, setFunctions] = useState<NovaFunction[]>([])
   const [domainFilter, setDomainFilter] = useState("")
+  const [pendingDeleteRouteID, setPendingDeleteRouteID] = useState<string | null>(null)
+  const [rateLimitTemplate, setRateLimitTemplate] = useState<GatewayRateLimitTemplate | null>(null)
+  const [templateEnabled, setTemplateEnabled] = useState("false")
+  const [templateRps, setTemplateRps] = useState("")
+  const [templateBurst, setTemplateBurst] = useState("")
+  const [templateSaving, setTemplateSaving] = useState(false)
 
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -97,12 +110,17 @@ export default function GatewayPage() {
     setLoading(true)
     setError(null)
     try {
-      const [routeData, functionData] = await Promise.all([
+      const [routeData, functionData, templateData] = await Promise.all([
         gatewayApi.listRoutes(),
         functionsApi.list(),
+        gatewayApi.getRateLimitTemplate(),
       ])
       setRoutes(routeData || [])
       setFunctions(functionData || [])
+      setRateLimitTemplate(templateData)
+      setTemplateEnabled(templateData.enabled ? "true" : "false")
+      setTemplateRps(templateData.requests_per_second > 0 ? String(templateData.requests_per_second) : "")
+      setTemplateBurst(templateData.burst_size > 0 ? String(templateData.burst_size) : "")
       if (!createFunctionName && functionData?.length) {
         setCreateFunctionName(functionData[0].name)
       }
@@ -148,6 +166,43 @@ export default function GatewayPage() {
     return { requests_per_second: rps, burst_size: Math.floor(burst) }
   }
 
+  const handleSaveTemplate = async () => {
+    const enabled = templateEnabled === "true"
+    const rps = Number(templateRps)
+    const burst = Number(templateBurst)
+
+    if (enabled) {
+      if (!Number.isFinite(rps) || rps <= 0) {
+        setError("Default template RPS must be > 0 when enabled.")
+        return
+      }
+      if (!Number.isFinite(burst) || burst <= 0) {
+        setError("Default template burst must be > 0 when enabled.")
+        return
+      }
+    }
+
+    try {
+      setTemplateSaving(true)
+      setError(null)
+      const updated = await gatewayApi.updateRateLimitTemplate({
+        enabled,
+        requests_per_second: enabled ? rps : 0,
+        burst_size: enabled ? Math.floor(burst) : 0,
+      })
+      setRateLimitTemplate(updated)
+      setTemplateEnabled(updated.enabled ? "true" : "false")
+      setTemplateRps(updated.requests_per_second > 0 ? String(updated.requests_per_second) : "")
+      setTemplateBurst(updated.burst_size > 0 ? String(updated.burst_size) : "")
+      setNotice({ kind: "success", text: "Gateway default rate-limit template saved" })
+    } catch (err) {
+      setNotice({ kind: "error", text: toErrorMessage(err) })
+      setError(toErrorMessage(err))
+    } finally {
+      setTemplateSaving(false)
+    }
+  }
+
   const handleCreateRoute = async () => {
     if (!createPath.trim()) {
       setError("Path is required.")
@@ -175,7 +230,9 @@ export default function GatewayPage() {
       setCreateOpen(false)
       resetCreateForm()
       await loadData()
+      setNotice({ kind: "success", text: "Gateway route created" })
     } catch (err) {
+      setNotice({ kind: "error", text: toErrorMessage(err) })
       setError(toErrorMessage(err))
     } finally {
       setBusy(false)
@@ -210,7 +267,9 @@ export default function GatewayPage() {
       setEditOpen(false)
       setEditingRoute(null)
       await loadData()
+      setNotice({ kind: "success", text: "Gateway route updated" })
     } catch (err) {
+      setNotice({ kind: "error", text: toErrorMessage(err) })
       setError(toErrorMessage(err))
     } finally {
       setBusy(false)
@@ -218,13 +277,20 @@ export default function GatewayPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm(`Delete route '${id}'?`)) return
+    if (pendingDeleteRouteID !== id) {
+      setPendingDeleteRouteID(id)
+      setNotice({ kind: "info", text: `Click delete again to confirm route "${id}" deletion` })
+      return
+    }
     try {
       setBusy(true)
       setError(null)
       await gatewayApi.deleteRoute(id)
       await loadData()
+      setPendingDeleteRouteID(null)
+      setNotice({ kind: "success", text: `Route "${id}" deleted` })
     } catch (err) {
+      setNotice({ kind: "error", text: toErrorMessage(err) })
       setError(toErrorMessage(err))
     } finally {
       setBusy(false)
@@ -237,7 +303,9 @@ export default function GatewayPage() {
       setError(null)
       await gatewayApi.updateRoute(route.id, { enabled: !route.enabled })
       await loadData()
+      setNotice({ kind: "success", text: `Route "${route.id}" ${route.enabled ? "disabled" : "enabled"}` })
     } catch (err) {
+      setNotice({ kind: "error", text: toErrorMessage(err) })
       setError(toErrorMessage(err))
     } finally {
       setBusy(false)
@@ -254,6 +322,80 @@ export default function GatewayPage() {
             {error}
           </div>
         )}
+
+        {notice && (
+          <div
+            className={`rounded-lg border p-4 text-sm ${
+              notice.kind === "success"
+                ? "border-success/50 bg-success/10 text-success"
+                : notice.kind === "error"
+                  ? "border-destructive/50 bg-destructive/10 text-destructive"
+                  : "border-primary/40 bg-primary/10 text-primary"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <p>{notice.text}</p>
+              <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <div className="rounded-xl border border-border bg-card p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1">
+              <Label>Default Rate Limit Template</Label>
+              <Select value={templateEnabled} onValueChange={setTemplateEnabled}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="true">enabled</SelectItem>
+                  <SelectItem value="false">disabled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="template-rps">RPS</Label>
+              <Input
+                id="template-rps"
+                type="number"
+                min="0"
+                value={templateRps}
+                onChange={(e) => setTemplateRps(e.target.value)}
+                placeholder="20"
+                className="w-[140px]"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="template-burst">Burst</Label>
+              <Input
+                id="template-burst"
+                type="number"
+                min="0"
+                value={templateBurst}
+                onChange={(e) => setTemplateBurst(e.target.value)}
+                placeholder="40"
+                className="w-[140px]"
+              />
+            </div>
+
+            <Button onClick={handleSaveTemplate} disabled={templateSaving || busy}>
+              {templateSaving ? "Saving..." : "Save Template"}
+            </Button>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            New routes without explicit rate limits will inherit this template.
+          </p>
+          {rateLimitTemplate && rateLimitTemplate.enabled && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Current default: {rateLimitTemplate.requests_per_second}/s, burst {rateLimitTemplate.burst_size}
+            </p>
+          )}
+        </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -490,15 +632,41 @@ export default function GatewayPage() {
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          title="Delete route"
-                          onClick={() => void handleDelete(route.id)}
-                          disabled={busy}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        {pendingDeleteRouteID === route.id ? (
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              title="Confirm delete route"
+                              onClick={() => void handleDelete(route.id)}
+                              disabled={busy}
+                            >
+                              Confirm
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              title="Cancel delete route"
+                              onClick={() => {
+                                setPendingDeleteRouteID(null)
+                                setNotice(null)
+                              }}
+                              disabled={busy}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Delete route"
+                            onClick={() => void handleDelete(route.id)}
+                            disabled={busy}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>

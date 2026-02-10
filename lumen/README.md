@@ -6,14 +6,16 @@ lumen 是 nova 的 Web 管理界面。
 
 ### 前提条件
 
-确保 nova 后端正在运行：
+确保网关 `zenith` 正在运行：
 
 ```bash
-# 在 nova 根目录
-./bin/nova daemon
+# 在 nova 根目录（推荐三服务）
+./bin/nova daemon --http :8081
+./bin/comet daemon --grpc :9090
+./bin/zenith serve --listen :9000 --nova-url http://127.0.0.1:8081 --comet-grpc 127.0.0.1:9090
 ```
 
-后端默认监听 `localhost:9000`。
+前端默认通过 `localhost:9000`（zenith）访问后端。
 
 ### 启动开发服务器
 

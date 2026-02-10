@@ -78,10 +78,17 @@ type ResourceLimits struct {
 
 // NetworkPolicy defines network isolation rules for a function's VMs
 type NetworkPolicy struct {
-	IsolationMode      string       `json:"isolation_mode,omitempty"`       // "none" (default), "egress-only", "strict"
-	EgressRules        []EgressRule `json:"egress_rules,omitempty"`         // Allowed outbound targets
-	AllowedFunctions   []string     `json:"allowed_functions,omitempty"`    // Functions allowed to communicate with
-	DenyExternalAccess bool         `json:"deny_external_access,omitempty"` // Block non-RFC1918 destinations
+	IsolationMode      string        `json:"isolation_mode,omitempty"`       // "none", "egress-only" (default), "strict"
+	IngressRules       []IngressRule `json:"ingress_rules,omitempty"`        // Allowed inbound sources
+	EgressRules        []EgressRule  `json:"egress_rules,omitempty"`         // Allowed outbound targets
+	DenyExternalAccess bool          `json:"deny_external_access,omitempty"` // Block non-RFC1918 destinations
+}
+
+// IngressRule defines an allowed inbound network source
+type IngressRule struct {
+	Source   string `json:"source"`             // Function name, IP, CIDR, or hostname
+	Port     int    `json:"port,omitempty"`     // 0 = any port
+	Protocol string `json:"protocol,omitempty"` // "tcp", "udp", empty = tcp
 }
 
 // EgressRule defines an allowed outbound network target
@@ -89,6 +96,13 @@ type EgressRule struct {
 	Host     string `json:"host"`               // IP, CIDR, or hostname
 	Port     int    `json:"port,omitempty"`     // 0 = any port
 	Protocol string `json:"protocol,omitempty"` // "tcp", "udp", empty = tcp
+}
+
+// RolloutPolicy defines weighted canary rollout behavior for function invocation.
+type RolloutPolicy struct {
+	Enabled        bool   `json:"enabled,omitempty"`
+	CanaryFunction string `json:"canary_function,omitempty"` // Target function name for canary traffic
+	CanaryPercent  int    `json:"canary_percent,omitempty"`  // 0-100
 }
 
 // ScaleThresholds defines metrics thresholds that trigger scaling actions
@@ -147,9 +161,9 @@ type Layer struct {
 
 // VolumeMount represents a persistent volume attached to a function
 type VolumeMount struct {
-	VolumeID  string `json:"volume_id"`            // ID of the volume to mount
-	MountPath string `json:"mount_path"`           // Mount point inside the VM (e.g., /mnt/data)
-	ReadOnly  bool   `json:"read_only,omitempty"`  // Mount as read-only
+	VolumeID  string `json:"volume_id"`           // ID of the volume to mount
+	MountPath string `json:"mount_path"`          // Mount point inside the VM (e.g., /mnt/data)
+	ReadOnly  bool   `json:"read_only,omitempty"` // Mount as read-only
 }
 
 // Volume represents a persistent ext4 volume
@@ -158,9 +172,9 @@ type Volume struct {
 	TenantID    string    `json:"tenant_id,omitempty"`
 	Namespace   string    `json:"namespace,omitempty"`
 	Name        string    `json:"name"`
-	SizeMB      int       `json:"size_mb"`        // Volume size in MB
-	ImagePath   string    `json:"image_path"`     // Path to ext4 image file
-	Shared      bool      `json:"shared"`         // Can be mounted by multiple functions
+	SizeMB      int       `json:"size_mb"`    // Volume size in MB
+	ImagePath   string    `json:"image_path"` // Path to ext4 image file
+	Shared      bool      `json:"shared"`     // Can be mounted by multiple functions
 	Description string    `json:"description,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -182,6 +196,7 @@ type Function struct {
 	Mode                ExecutionMode     `json:"mode,omitempty"`                 // "process" or "persistent"
 	Limits              *ResourceLimits   `json:"limits,omitempty"`
 	NetworkPolicy       *NetworkPolicy    `json:"network_policy,omitempty"`
+	RolloutPolicy       *RolloutPolicy    `json:"rollout_policy,omitempty"`
 	AutoScalePolicy     *AutoScalePolicy  `json:"auto_scale_policy,omitempty"`
 	CapacityPolicy      *CapacityPolicy   `json:"capacity_policy,omitempty"`
 	Layers              []string          `json:"layers,omitempty"` // layer IDs (max 6)

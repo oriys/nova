@@ -3,9 +3,9 @@
 #
 # This script deploys the complete Nova platform on a Linux x86_64 server:
 # - PostgreSQL database + schema initialization
-# - Nova backend (daemon mode, Firecracker backend)
+# - Nova control plane + Comet data plane + Zenith gateway
 # - Lumen frontend (Next.js standalone)
-# - Three systemd services, enabled at boot
+# - Five systemd services, enabled at boot
 #
 # Usage:
 #   # Option 1: Build locally and deploy to remote server
@@ -114,6 +114,8 @@ check_system() {
 
 check_binaries() {
     local nova_bin=""
+    local comet_bin=""
+    local zenith_bin=""
     local agent_bin=""
 
     # Look for binaries in deployment directory first
@@ -123,22 +125,40 @@ check_binaries() {
         nova_bin="${DEPLOY_DIR}/bin/nova"
     fi
 
+    if [[ -f "${DEPLOY_DIR}/bin/comet-linux" ]]; then
+        comet_bin="${DEPLOY_DIR}/bin/comet-linux"
+    elif [[ -f "${DEPLOY_DIR}/bin/comet" ]]; then
+        comet_bin="${DEPLOY_DIR}/bin/comet"
+    fi
+
+    if [[ -f "${DEPLOY_DIR}/bin/zenith-linux" ]]; then
+        zenith_bin="${DEPLOY_DIR}/bin/zenith-linux"
+    elif [[ -f "${DEPLOY_DIR}/bin/zenith" ]]; then
+        zenith_bin="${DEPLOY_DIR}/bin/zenith"
+    fi
+
     if [[ -f "${DEPLOY_DIR}/bin/nova-agent" ]]; then
         agent_bin="${DEPLOY_DIR}/bin/nova-agent"
     fi
 
-    if [[ -z "${nova_bin}" ]] || [[ -z "${agent_bin}" ]]; then
-        err "Nova binaries not found. Please run 'make build-linux' first.
+    if [[ -z "${nova_bin}" ]] || [[ -z "${comet_bin}" ]] || [[ -z "${zenith_bin}" ]] || [[ -z "${agent_bin}" ]]; then
+        err "Backend binaries not found. Please run 'make build-linux' first.
 Expected binaries at:
   ${DEPLOY_DIR}/bin/nova-linux (or nova)
+  ${DEPLOY_DIR}/bin/comet-linux (or comet)
+  ${DEPLOY_DIR}/bin/zenith-linux (or zenith)
   ${DEPLOY_DIR}/bin/nova-agent"
     fi
 
     log "Found Nova binary: ${nova_bin}"
+    log "Found Comet binary: ${comet_bin}"
+    log "Found Zenith binary: ${zenith_bin}"
     log "Found Agent binary: ${agent_bin}"
 
     # Export for later use
     export NOVA_BIN="${nova_bin}"
+    export COMET_BIN="${comet_bin}"
+    export ZENITH_BIN="${zenith_bin}"
     export AGENT_BIN="${agent_bin}"
 }
 
@@ -149,12 +169,18 @@ cleanup_existing_binaries() {
     mkdir -p "${INSTALL_DIR}/bin"
 
     local removed=0
-    local source_nova source_agent
+    local source_nova source_comet source_zenith source_agent
     source_nova="$(readlink -f "${NOVA_BIN}" 2>/dev/null || echo "${NOVA_BIN}")"
+    source_comet="$(readlink -f "${COMET_BIN}" 2>/dev/null || echo "${COMET_BIN}")"
+    source_zenith="$(readlink -f "${ZENITH_BIN}" 2>/dev/null || echo "${ZENITH_BIN}")"
     source_agent="$(readlink -f "${AGENT_BIN}" 2>/dev/null || echo "${AGENT_BIN}")"
     local -a targets=(
         "${INSTALL_DIR}/bin/nova"
         "${INSTALL_DIR}/bin/nova-linux"
+        "${INSTALL_DIR}/bin/comet"
+        "${INSTALL_DIR}/bin/comet-linux"
+        "${INSTALL_DIR}/bin/zenith"
+        "${INSTALL_DIR}/bin/zenith-linux"
         "${INSTALL_DIR}/bin/nova-agent"
         "${INSTALL_DIR}/bin/firecracker"
         "${INSTALL_DIR}/bin/jailer"
@@ -171,7 +197,7 @@ cleanup_existing_binaries() {
         if [[ -e "${f}" || -L "${f}" ]]; then
             local f_real
             f_real="$(readlink -f "${f}" 2>/dev/null || echo "${f}")"
-            if [[ "${f_real}" == "${source_nova}" || "${f_real}" == "${source_agent}" ]]; then
+            if [[ "${f_real}" == "${source_nova}" || "${f_real}" == "${source_comet}" || "${f_real}" == "${source_zenith}" || "${f_real}" == "${source_agent}" ]]; then
                 info "  [keep] ${f} (deployment source binary)"
                 continue
             fi
@@ -218,6 +244,10 @@ cleanup_deploy_build_binaries() {
     local -a files=(
         "${deploy_bin}/nova"
         "${deploy_bin}/nova-linux"
+        "${deploy_bin}/comet"
+        "${deploy_bin}/comet-linux"
+        "${deploy_bin}/zenith"
+        "${deploy_bin}/zenith-linux"
         "${deploy_bin}/nova-agent"
     )
 
@@ -234,11 +264,18 @@ cleanup_deploy_build_binaries() {
 
 stop_existing_services() {
     log "Stopping existing Nova services (if any)..."
+    systemctl stop zenith >/dev/null 2>&1 || true
+    systemctl stop comet >/dev/null 2>&1 || true
     systemctl stop nova >/dev/null 2>&1 || true
     systemctl stop lumen >/dev/null 2>&1 || true
     systemctl stop nova-lumen >/dev/null 2>&1 || true
+    systemctl disable zenith >/dev/null 2>&1 || true
+    systemctl disable comet >/dev/null 2>&1 || true
+    systemctl disable nova >/dev/null 2>&1 || true
     systemctl disable lumen >/dev/null 2>&1 || true
     systemctl disable nova-lumen >/dev/null 2>&1 || true
+    systemctl reset-failed zenith >/dev/null 2>&1 || true
+    systemctl reset-failed comet >/dev/null 2>&1 || true
     systemctl reset-failed nova >/dev/null 2>&1 || true
     systemctl reset-failed lumen >/dev/null 2>&1 || true
     systemctl reset-failed nova-lumen >/dev/null 2>&1 || true
@@ -800,14 +837,16 @@ build_rootfs_images() {
     done
 }
 
-# ─── Nova Backend ────────────────────────────────────────
-deploy_nova_backend() {
-    log "Deploying Nova backend..."
+# ─── Backend Services ────────────────────────────────────
+deploy_backend_services() {
+    log "Deploying backend services..."
 
     # Copy binaries
     install -m 0755 "${NOVA_BIN}" "${INSTALL_DIR}/bin/nova"
+    install -m 0755 "${COMET_BIN}" "${INSTALL_DIR}/bin/comet"
+    install -m 0755 "${ZENITH_BIN}" "${INSTALL_DIR}/bin/zenith"
     install -m 0755 "${AGENT_BIN}" "${INSTALL_DIR}/bin/nova-agent"
-    log "Installed Nova binaries to ${INSTALL_DIR}/bin/"
+    log "Installed backend binaries to ${INSTALL_DIR}/bin/"
 
     # Generate config
     mkdir -p "${INSTALL_DIR}/configs"
@@ -833,16 +872,16 @@ deploy_nova_backend() {
 EOF
     log "Generated config at ${INSTALL_DIR}/configs/nova.json"
 
-    # Create systemd service
+    # Create systemd services
     cat > /etc/systemd/system/nova.service << 'EOF'
 [Unit]
-Description=Nova Serverless Platform
+Description=Nova Control Plane
 After=postgresql.service network.target
 Requires=postgresql.service
 
 [Service]
 Type=simple
-ExecStart=/opt/nova/bin/nova daemon --config /opt/nova/configs/nova.json --http :9000
+ExecStart=/opt/nova/bin/nova daemon --config /opt/nova/configs/nova.json --http 127.0.0.1:9001
 Restart=on-failure
 RestartSec=5
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/nova/bin
@@ -851,6 +890,42 @@ Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/o
 WantedBy=multi-user.target
 EOF
     log "Created systemd service: nova.service"
+
+    cat > /etc/systemd/system/comet.service << 'EOF'
+[Unit]
+Description=Comet Data Plane
+After=postgresql.service network.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+ExecStart=/opt/nova/bin/comet daemon --config /opt/nova/configs/nova.json --grpc 127.0.0.1:9090
+Restart=on-failure
+RestartSec=5
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/nova/bin
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    log "Created systemd service: comet.service"
+
+    cat > /etc/systemd/system/zenith.service << 'EOF'
+[Unit]
+Description=Zenith Gateway
+After=nova.service comet.service network.target
+Requires=nova.service comet.service
+
+[Service]
+Type=simple
+ExecStart=/opt/nova/bin/zenith serve --listen :9000 --nova-url http://127.0.0.1:9001 --comet-grpc 127.0.0.1:9090
+Restart=on-failure
+RestartSec=5
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/nova/bin
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    log "Created systemd service: zenith.service"
 }
 
 # ─── Lumen Frontend ──────────────────────────────────────
@@ -894,7 +969,8 @@ deploy_lumen_frontend() {
     cat > /etc/systemd/system/lumen.service << 'EOF'
 [Unit]
 Description=Lumen Dashboard
-After=nova.service network.target
+After=zenith.service network.target
+Requires=zenith.service
 
 [Service]
 Type=simple
@@ -927,10 +1003,40 @@ start_services() {
 
     # Wait for Nova to be ready
     local retries=10
-    while ! curl -sf http://localhost:9000/health >/dev/null 2>&1; do
+    while ! curl -sf http://localhost:9001/health >/dev/null 2>&1; do
         retries=$((retries - 1))
         if [[ ${retries} -eq 0 ]]; then
             warn "Nova health check failed - check logs with: journalctl -u nova"
+            break
+        fi
+        sleep 1
+    done
+
+    # Enable and start Comet
+    systemctl enable comet >/dev/null 2>&1
+    systemctl start comet
+
+    # Wait for Comet gRPC to be ready
+    retries=10
+    while ! ss -lnt | grep -q ':9090 '; do
+        retries=$((retries - 1))
+        if [[ ${retries} -eq 0 ]]; then
+            warn "Comet port check failed - check logs with: journalctl -u comet"
+            break
+        fi
+        sleep 1
+    done
+
+    # Enable and start Zenith
+    systemctl enable zenith >/dev/null 2>&1
+    systemctl start zenith
+
+    # Wait for Zenith to be ready
+    retries=10
+    while ! curl -sf http://localhost:9000/health >/dev/null 2>&1; do
+        retries=$((retries - 1))
+        if [[ ${retries} -eq 0 ]]; then
+            warn "Zenith health check failed - check logs with: journalctl -u zenith"
             break
         fi
         sleep 1
@@ -957,6 +1063,8 @@ create_sample_functions() {
     log "Creating sample functions for all runtimes..."
 
     local api="http://localhost:9000"
+    local seed_script="${SCRIPT_DIR}/seed-functions.sh"
+    local skip_compiled="${SKIP_COMPILED:-0}"
 
     # Wait for API to be ready
     local retries=10
@@ -969,64 +1077,15 @@ create_sample_functions() {
         sleep 2
     done
 
-    # Python functions
-    info "  Creating Python functions..."
-    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
-        -d '{"name":"hello-python","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import json\nimport sys\n\ndef handler(event):\n    name = event.get(\"name\", \"World\")\n    return {\"message\": f\"Hello, {name}!\", \"runtime\": \"python\"}\n\nif __name__ == \"__main__\":\n    with open(sys.argv[1]) as f:\n        event = json.load(f)\n    result = handler(event)\n    print(json.dumps(result))"}' >/dev/null 2>&1 && log "    hello-python" || true
+    if [[ ! -f "${seed_script}" ]]; then
+        warn "seed-functions.sh not found at ${seed_script}, skipping sample functions"
+        return
+    fi
 
-    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
-        -d '{"name":"fibonacci","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import json\nimport sys\n\ndef fib(n):\n    if n <= 1:\n        return n\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b\n\ndef main():\n    with open(sys.argv[1]) as f:\n        event = json.load(f)\n    n = event.get(\"n\", 10)\n    print(json.dumps({\"n\": n, \"fibonacci\": fib(n)}))\n\nif __name__ == \"__main__\":\n    main()"}' >/dev/null 2>&1 && log "    fibonacci" || true
+    info "  Seeding bootstrap-compatible sample handlers..."
+    SKIP_WORKFLOWS=1 SKIP_COMPILED="${skip_compiled}" bash "${seed_script}" "${api}" || warn "sample function seeding reported errors"
 
-    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
-        -d '{"name":"prime-checker","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import json\nimport sys\nimport math\n\ndef is_prime(n):\n    if n < 2:\n        return False\n    if n == 2:\n        return True\n    if n % 2 == 0:\n        return False\n    for i in range(3, int(math.sqrt(n)) + 1, 2):\n        if n % i == 0:\n            return False\n    return True\n\ndef main():\n    with open(sys.argv[1]) as f:\n        event = json.load(f)\n    n = event.get(\"n\", 17)\n    print(json.dumps({\"n\": n, \"is_prime\": is_prime(n)}))\n\nif __name__ == \"__main__\":\n    main()"}' >/dev/null 2>&1 && log "    prime-checker" || true
-
-    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
-        -d '{"name":"echo","runtime":"python","handler":"handler","memory_mb":128,"timeout_s":30,"code":"import json\nimport sys\nimport time\n\ndef main():\n    with open(sys.argv[1]) as f:\n        event = json.load(f)\n    print(json.dumps({\"echo\": event, \"timestamp\": time.time()}))\n\nif __name__ == \"__main__\":\n    main()"}' >/dev/null 2>&1 && log "    echo" || true
-
-    # Node.js functions
-    info "  Creating Node.js functions..."
-    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
-        -d '{"name":"hello-node","runtime":"node","handler":"handler","memory_mb":256,"timeout_s":30,"code":"const fs = require(\"fs\");\n\nfunction handler(event) {\n  const name = event.name || \"World\";\n  return { message: `Hello, ${name}!`, runtime: \"node\" };\n}\n\nconst event = JSON.parse(fs.readFileSync(process.argv[2], \"utf8\"));\nconsole.log(JSON.stringify(handler(event)));"}' >/dev/null 2>&1 && log "    hello-node" || true
-
-    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
-        -d '{"name":"uuid-generator","runtime":"node","handler":"handler","memory_mb":256,"timeout_s":30,"code":"const fs = require(\"fs\");\nconst crypto = require(\"crypto\");\nconst event = JSON.parse(fs.readFileSync(process.argv[2], \"utf8\"));\nconst count = event.count || 1;\nconst uuids = [];\nfor (let i = 0; i < count; i++) {\n  uuids.push(crypto.randomUUID());\n}\nconsole.log(JSON.stringify({ uuids }));"}' >/dev/null 2>&1 && log "    uuid-generator" || true
-
-    # Ruby functions
-    info "  Creating Ruby functions..."
-    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
-        -d '{"name":"hello-ruby","runtime":"ruby","handler":"handler","memory_mb":128,"timeout_s":30,"code":"require \"json\"\n\ndef handler(event)\n  name = event[\"name\"] || \"World\"\n  { message: \"Hello, #{name}!\", runtime: \"ruby\" }\nend\n\nevent = JSON.parse(File.read(ARGV[0]))\nputs JSON.generate(handler(event))"}' >/dev/null 2>&1 && log "    hello-ruby" || true
-
-    # PHP functions
-    info "  Creating PHP functions..."
-    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
-        -d '{"name":"hello-php","runtime":"php","handler":"handler","memory_mb":128,"timeout_s":30,"code":"<?php\n$event = json_decode(file_get_contents($argv[1]), true);\n$name = $event[\"name\"] ?? \"World\";\necho json_encode([\"message\" => \"Hello, $name!\", \"runtime\" => \"php\"]);"}' >/dev/null 2>&1 && log "    hello-php" || true
-
-    # Deno functions
-    info "  Creating Deno functions..."
-    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
-        -d '{"name":"hello-deno","runtime":"deno","handler":"handler","memory_mb":128,"timeout_s":30,"code":"const event = JSON.parse(await Deno.readTextFile(Deno.args[0]));\nconst name = event.name || \"World\";\nconsole.log(JSON.stringify({ message: `Hello, ${name}!`, runtime: \"deno\" }));"}' >/dev/null 2>&1 && log "    hello-deno" || true
-
-    # Bun functions
-    info "  Creating Bun functions..."
-    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
-        -d '{"name":"hello-bun","runtime":"bun","handler":"handler","memory_mb":128,"timeout_s":30,"code":"const event = JSON.parse(await Bun.file(Bun.argv[2]).text());\nconst name = event.name || \"World\";\nconsole.log(JSON.stringify({ message: `Hello, ${name}!`, runtime: \"bun\" }));"}' >/dev/null 2>&1 && log "    hello-bun" || true
-
-    # Go functions (compiled)
-    info "  Creating Go functions (will be compiled)..."
-    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
-        -d '{"name":"hello-go","runtime":"go","handler":"handler","memory_mb":128,"timeout_s":30,"code":"package main\n\nimport (\n\t\"encoding/json\"\n\t\"fmt\"\n\t\"os\"\n)\n\ntype Event struct {\n\tName string `json:\"name\"`\n}\n\ntype Response struct {\n\tMessage string `json:\"message\"`\n\tRuntime string `json:\"runtime\"`\n}\n\nfunc main() {\n\tdata, _ := os.ReadFile(os.Args[1])\n\tvar event Event\n\tjson.Unmarshal(data, &event)\n\tif event.Name == \"\" {\n\t\tevent.Name = \"World\"\n\t}\n\tresp := Response{Message: fmt.Sprintf(\"Hello, %s!\", event.Name), Runtime: \"go\"}\n\tout, _ := json.Marshal(resp)\n\tfmt.Println(string(out))\n}"}' >/dev/null 2>&1 && log "    hello-go" || true
-
-    # Java functions (compiled)
-    info "  Creating Java functions (will be compiled)..."
-    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
-        -d '{"name":"hello-java","runtime":"java","handler":"handler","memory_mb":256,"timeout_s":60,"code":"import java.nio.file.*;\nimport java.util.regex.*;\n\npublic class Handler {\n    public static void main(String[] args) throws Exception {\n        String content = Files.readString(Path.of(args[0]));\n        Pattern p = Pattern.compile(\"\\\"name\\\"\\\\s*:\\\\s*\\\"([^\\\"]+)\\\"\");\n        Matcher m = p.matcher(content);\n        String name = m.find() ? m.group(1) : \"World\";\n        System.out.println(\"{\\\"message\\\": \\\"Hello, \" + name + \"!\\\", \\\"runtime\\\": \\\"java\\\"}\");\n    }\n}"}' >/dev/null 2>&1 && log "    hello-java" || true
-
-    # .NET functions (compiled)
-    info "  Creating .NET functions (will be compiled)..."
-    curl -sf -X POST "${api}/functions" -H "Content-Type: application/json" \
-        -d '{"name":"hello-dotnet","runtime":"dotnet","handler":"handler","memory_mb":256,"timeout_s":60,"code":"using System.Text.Json;\n\nvar json = File.ReadAllText(args[0]);\nvar doc = JsonDocument.Parse(json);\nvar name = doc.RootElement.TryGetProperty(\"name\", out var n) ? n.GetString() : \"World\";\nConsole.WriteLine(JsonSerializer.Serialize(new { message = $\"Hello, {name}!\", runtime = \"dotnet\" }));"}' >/dev/null 2>&1 && log "    hello-dotnet" || true
-
-    log "Sample functions created (compiled languages may take a moment to build)"
+    log "Sample functions created (bootstrap-compatible handler format)"
 }
 
 # ─── Print Summary ───────────────────────────────────────
@@ -1042,9 +1101,11 @@ print_summary() {
     echo "  Services:"
     echo "  ---------"
 
-    local pg_status nova_status lumen_status
+    local pg_status nova_status comet_status zenith_status lumen_status
     pg_status=$(systemctl is-active postgresql 2>/dev/null || echo "unknown")
     nova_status=$(systemctl is-active nova 2>/dev/null || echo "unknown")
+    comet_status=$(systemctl is-active comet 2>/dev/null || echo "unknown")
+    zenith_status=$(systemctl is-active zenith 2>/dev/null || echo "unknown")
     lumen_status=$(systemctl is-active lumen 2>/dev/null || echo "unknown")
 
     if [[ "${pg_status}" == "active" ]]; then
@@ -1054,9 +1115,21 @@ print_summary() {
     fi
 
     if [[ "${nova_status}" == "active" ]]; then
-        echo -e "  ${GREEN}[OK]${NC} nova            - running on port 9000"
+        echo -e "  ${GREEN}[OK]${NC} nova            - control plane on 127.0.0.1:9001"
     else
         echo -e "  ${RED}[!!]${NC} nova            - ${nova_status}"
+    fi
+
+    if [[ "${comet_status}" == "active" ]]; then
+        echo -e "  ${GREEN}[OK]${NC} comet           - data plane gRPC on 127.0.0.1:9090"
+    else
+        echo -e "  ${RED}[!!]${NC} comet           - ${comet_status}"
+    fi
+
+    if [[ "${zenith_status}" == "active" ]]; then
+        echo -e "  ${GREEN}[OK]${NC} zenith          - gateway on port 9000"
+    else
+        echo -e "  ${RED}[!!]${NC} zenith          - ${zenith_status}"
     fi
 
     if [[ "${lumen_status}" == "active" ]]; then
@@ -1069,16 +1142,20 @@ print_summary() {
     echo "  Access URLs:"
     echo "  ------------"
     echo "  Dashboard:  http://${server_ip}:3000"
-    echo "  API:        http://${server_ip}:9000"
+    echo "  API:        http://${server_ip}:9000 (Zenith)"
     echo "  Health:     http://${server_ip}:9000/health"
     echo ""
     echo "  Installation Directory: ${INSTALL_DIR}"
     echo ""
     echo "  Useful Commands:"
     echo "  ----------------"
-    echo "  journalctl -u nova -f          # View Nova logs"
+    echo "  journalctl -u nova -f          # View Nova control plane logs"
+    echo "  journalctl -u comet -f         # View Comet data plane logs"
+    echo "  journalctl -u zenith -f        # View Zenith gateway logs"
     echo "  journalctl -u lumen -f         # View Lumen logs"
     echo "  systemctl restart nova         # Restart Nova"
+    echo "  systemctl restart comet        # Restart Comet"
+    echo "  systemctl restart zenith       # Restart Zenith"
     echo "  systemctl restart lumen        # Restart Lumen"
     echo ""
 
@@ -1087,7 +1164,7 @@ print_summary() {
         echo -e "  ${GREEN}API Health Check: OK${NC}"
     else
         echo -e "  ${RED}API Health Check: FAILED${NC}"
-        echo "  Run 'journalctl -u nova' to check for errors"
+        echo "  Run 'journalctl -u zenith' to check for errors"
     fi
     echo ""
 }
@@ -1122,8 +1199,8 @@ main() {
     log "Running Firecracker + kernel setup in parallel..."
     run_parallel_functions install_firecracker download_kernel
 
-    # Deploy Nova binaries first (so agent is available for rootfs)
-    deploy_nova_backend
+    # Deploy backend binaries first (so agent is available for rootfs)
+    deploy_backend_services
     cleanup_deploy_build_binaries
 
     # Build steps are independent at this stage.

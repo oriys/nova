@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:9000";
+const BACKEND_URL =
+  process.env.BACKEND_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.ZENITH_URL ||
+  "http://localhost:9000";
 
 async function handler(req: NextRequest) {
   const path = req.nextUrl.pathname.replace(/^\/api/, "");

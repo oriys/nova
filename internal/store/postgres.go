@@ -51,6 +51,20 @@ func (s *PostgresStore) Ping(ctx context.Context) error {
 }
 
 func (s *PostgresStore) ensureSchema(ctx context.Context) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin schema transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	// Serialize schema initialization across processes to avoid Postgres catalog
+	// races when multiple services start at the same time.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, int64(0x6e6f7661)); err != nil {
+		return fmt.Errorf("acquire schema lock: %w", err)
+	}
+
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS tenants (
 			id TEXT PRIMARY KEY,
@@ -156,6 +170,14 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_invocation_logs_function_id ON invocation_logs(function_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_invocation_logs_created_at ON invocation_logs(created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_invocation_logs_func_time ON invocation_logs(function_id, created_at DESC)`,
+		`DELETE FROM invocation_logs l
+			WHERE NOT EXISTS (
+				SELECT 1
+				FROM functions f
+				WHERE f.id = l.function_id
+				  AND f.tenant_id = l.tenant_id
+				  AND f.namespace = l.namespace
+			)`,
 		`CREATE TABLE IF NOT EXISTS async_invocations (
 			id TEXT PRIMARY KEY,
 			function_id TEXT NOT NULL,
@@ -645,9 +667,12 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 	}
 
 	for _, stmt := range stmts {
-		if _, err := s.pool.Exec(ctx, stmt); err != nil {
+		if _, err := tx.Exec(ctx, stmt); err != nil {
 			return fmt.Errorf("ensure schema: %w", err)
 		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit schema transaction: %w", err)
 	}
 	return nil
 }

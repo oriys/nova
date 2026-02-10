@@ -25,20 +25,22 @@ func NewFunctionService(s *store.Store, c *compiler.Compiler) *FunctionService {
 }
 
 type CreateFunctionRequest struct {
-	Name                string
-	Runtime             string
-	Handler             string
-	Code                string // Source code (required)
-	MemoryMB            int
-	TimeoutS            int
-	MinReplicas         int
-	MaxReplicas         int
-	Mode                string
-	InstanceConcurrency int
-	EnvVars             map[string]string
-	Limits              *domain.ResourceLimits
-	AutoScalePolicy     *domain.AutoScalePolicy
-	CapacityPolicy      *domain.CapacityPolicy
+	Name                string                  `json:"name"`
+	Runtime             string                  `json:"runtime"`
+	Handler             string                  `json:"handler,omitempty"`
+	Code                string                  `json:"code"` // Source code (required)
+	MemoryMB            int                     `json:"memory_mb,omitempty"`
+	TimeoutS            int                     `json:"timeout_s,omitempty"`
+	MinReplicas         int                     `json:"min_replicas,omitempty"`
+	MaxReplicas         int                     `json:"max_replicas,omitempty"`
+	Mode                string                  `json:"mode,omitempty"`
+	InstanceConcurrency int                     `json:"instance_concurrency,omitempty"`
+	EnvVars             map[string]string       `json:"env_vars,omitempty"`
+	Limits              *domain.ResourceLimits  `json:"limits,omitempty"`
+	NetworkPolicy       *domain.NetworkPolicy   `json:"network_policy,omitempty"`
+	RolloutPolicy       *domain.RolloutPolicy   `json:"rollout_policy,omitempty"`
+	AutoScalePolicy     *domain.AutoScalePolicy `json:"auto_scale_policy,omitempty"`
+	CapacityPolicy      *domain.CapacityPolicy  `json:"capacity_policy,omitempty"`
 }
 
 func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunctionRequest) (*domain.Function, string, error) {
@@ -92,6 +94,8 @@ func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunction
 		InstanceConcurrency: req.InstanceConcurrency,
 		EnvVars:             req.EnvVars,
 		Limits:              req.Limits,
+		NetworkPolicy:       req.NetworkPolicy,
+		RolloutPolicy:       req.RolloutPolicy,
 		AutoScalePolicy:     req.AutoScalePolicy,
 		CapacityPolicy:      req.CapacityPolicy,
 		CreatedAt:           time.Now(),

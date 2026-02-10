@@ -38,6 +38,7 @@ const functionEndpoints: ApiEndpointDoc[] = [
         { name: "mode", type: "process|persistent", required: false, description: "Execution mode." },
         { name: "env_vars", type: "object<string,string>", required: false, description: "Environment variable map." },
         { name: "limits", type: "object", required: false, description: "Resource limits (vcpus, disk/network constraints)." },
+        { name: "network_policy", type: "object", required: false, description: "Network isolation policy (isolation_mode, ingress_rules, egress_rules, deny_external_access)." },
       ],
       responseFields: [
         { name: "id", type: "string", required: true, description: "Function ID." },
@@ -63,7 +64,17 @@ const functionEndpoints: ApiEndpointDoc[] = [
   "timeout_s": 30,
   "min_replicas": 1,
   "max_replicas": 5,
-  "instance_concurrency": 10
+  "instance_concurrency": 10,
+  "network_policy": {
+    "isolation_mode": "strict",
+    "deny_external_access": true,
+    "ingress_rules": [
+      { "source": "auth-fn", "port": 443, "protocol": "tcp" }
+    ],
+    "egress_rules": [
+      { "host": "example.com", "port": 443, "protocol": "tcp" }
+    ]
+  }
 }`,
       responseExample: `{
   "id": "fn_01",
@@ -135,6 +146,7 @@ const functionEndpoints: ApiEndpointDoc[] = [
         { name: "mode", type: "process|persistent", required: false, description: "Execution mode." },
         { name: "env_vars", type: "object<string,string>", required: false, description: "Environment map replacement." },
         { name: "limits", type: "object", required: false, description: "Resource limits replacement." },
+        { name: "network_policy", type: "object", required: false, description: "Network policy replacement." },
         { name: "code", type: "string", required: false, description: "Inline source update." },
       ],
       responseFields: [
@@ -151,6 +163,15 @@ const functionEndpoints: ApiEndpointDoc[] = [
   "memory_mb": 512,
   "timeout_s": 60,
   "max_replicas": 20,
+  "network_policy": {
+    "isolation_mode": "egress-only",
+    "ingress_rules": [
+      { "source": "billing-fn", "port": 443, "protocol": "tcp" }
+    ],
+    "egress_rules": [
+      { "host": "api.internal.local", "port": 443, "protocol": "tcp" }
+    ]
+  },
   "code": "def handler(event, context):\\n    return {'updated': True}"
 }`,
       responseExample: `{

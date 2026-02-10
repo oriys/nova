@@ -48,6 +48,11 @@ function statusBadgeVariant(status: EventDeliveryStatus): "default" | "secondary
   }
 }
 
+type Notice = {
+  kind: "success" | "error" | "info"
+  text: string
+}
+
 export default function EventsPage() {
   const [topics, setTopics] = useState<EventTopic[]>([])
   const [functions, setFunctions] = useState<NovaFunction[]>([])
@@ -60,6 +65,9 @@ export default function EventsPage() {
   const [deliveries, setDeliveries] = useState<EventDelivery[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<Notice | null>(null)
+  const [pendingTopicDelete, setPendingTopicDelete] = useState<string | null>(null)
+  const [pendingSubscriptionDelete, setPendingSubscriptionDelete] = useState<string | null>(null)
 
   const [createTopicName, setCreateTopicName] = useState("")
   const [createTopicDesc, setCreateTopicDesc] = useState("")
@@ -210,6 +218,10 @@ export default function EventsPage() {
   }, [selectedTopicName, fetchTopicDetails])
 
   useEffect(() => {
+    setPendingSubscriptionDelete(null)
+  }, [selectedTopicName])
+
+  useEffect(() => {
     fetchDeliveries(selectedSubscriptionID)
   }, [selectedSubscriptionID, fetchDeliveries])
 
@@ -238,7 +250,7 @@ export default function EventsPage() {
 
   const handleCreateTopic = async () => {
     if (!createTopicName.trim()) {
-      alert("Topic name is required")
+      setNotice({ kind: "error", text: "Topic name is required" })
       return
     }
     try {
@@ -253,23 +265,30 @@ export default function EventsPage() {
       setCreateTopicRetentionHours("168")
       await fetchBaseData()
       setSelectedTopicName(createTopicName.trim())
+      setNotice({ kind: "success", text: `Topic "${createTopicName.trim()}" created` })
     } catch (err) {
       console.error("Failed to create topic:", err)
-      alert(err instanceof Error ? err.message : "Failed to create topic")
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to create topic" })
     } finally {
       setBusy(false)
     }
   }
 
   const handleDeleteTopic = async (topicName: string) => {
-    if (!confirm(`Delete topic "${topicName}" and all subscriptions/messages?`)) return
+    if (pendingTopicDelete !== topicName) {
+      setPendingTopicDelete(topicName)
+      setNotice({ kind: "info", text: `Click delete again to confirm topic "${topicName}" deletion` })
+      return
+    }
     try {
       setBusy(true)
       await eventsApi.deleteTopic(topicName)
       await fetchBaseData()
+      setPendingTopicDelete(null)
+      setNotice({ kind: "success", text: `Topic "${topicName}" deleted` })
     } catch (err) {
       console.error("Failed to delete topic:", err)
-      alert(err instanceof Error ? err.message : "Failed to delete topic")
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to delete topic" })
     } finally {
       setBusy(false)
     }
@@ -277,19 +296,19 @@ export default function EventsPage() {
 
   const handleCreateSubscription = async () => {
     if (!selectedTopicName) {
-      alert("Select a topic first")
+      setNotice({ kind: "error", text: "Select a topic first" })
       return
     }
     if (!newSubName.trim()) {
-      alert("Subscription name is required")
+      setNotice({ kind: "error", text: "Subscription name is required" })
       return
     }
     if (newSubType === "function" && !newSubFunction) {
-      alert("Select a function")
+      setNotice({ kind: "error", text: "Select a function" })
       return
     }
     if (newSubType === "workflow" && !newSubWorkflow) {
-      alert("Select a workflow")
+      setNotice({ kind: "error", text: "Select a workflow" })
       return
     }
 
@@ -339,9 +358,10 @@ export default function EventsPage() {
       setNewSubMaxInflight("0")
       setNewSubRateLimitPerS("0")
       await fetchTopicDetails(selectedTopicName)
+      setNotice({ kind: "success", text: `Subscription "${newSubName.trim()}" created` })
     } catch (err) {
       console.error("Failed to create subscription:", err)
-      alert(err instanceof Error ? err.message : "Failed to create subscription")
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to create subscription" })
     } finally {
       setBusy(false)
     }
@@ -352,23 +372,30 @@ export default function EventsPage() {
       setBusy(true)
       await eventsApi.updateSubscription(sub.id, { enabled: !sub.enabled })
       await fetchTopicDetails(selectedTopicName)
+      setNotice({ kind: "success", text: `Subscription "${sub.name}" ${sub.enabled ? "disabled" : "enabled"}` })
     } catch (err) {
       console.error("Failed to update subscription:", err)
-      alert(err instanceof Error ? err.message : "Failed to update subscription")
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to update subscription" })
     } finally {
       setBusy(false)
     }
   }
 
   const handleDeleteSubscription = async (sub: EventSubscription) => {
-    if (!confirm(`Delete subscription "${sub.name}"?`)) return
+    if (pendingSubscriptionDelete !== sub.id) {
+      setPendingSubscriptionDelete(sub.id)
+      setNotice({ kind: "info", text: `Click delete again to confirm subscription "${sub.name}" deletion` })
+      return
+    }
     try {
       setBusy(true)
       await eventsApi.deleteSubscription(sub.id)
       await fetchTopicDetails(selectedTopicName)
+      setPendingSubscriptionDelete(null)
+      setNotice({ kind: "success", text: `Subscription "${sub.name}" deleted` })
     } catch (err) {
       console.error("Failed to delete subscription:", err)
-      alert(err instanceof Error ? err.message : "Failed to delete subscription")
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to delete subscription" })
     } finally {
       setBusy(false)
     }
@@ -376,7 +403,7 @@ export default function EventsPage() {
 
   const handleSaveSubscriptionFlow = async () => {
     if (!selectedSubscriptionID) {
-      alert("Select a subscription first")
+      setNotice({ kind: "error", text: "Select a subscription first" })
       return
     }
     try {
@@ -386,9 +413,10 @@ export default function EventsPage() {
         rate_limit_per_sec: Math.max(0, Number(editSubRateLimitPerS) || 0),
       })
       await fetchTopicDetails(selectedTopicName)
+      setNotice({ kind: "success", text: "Subscription flow controls updated" })
     } catch (err) {
       console.error("Failed to update subscription flow controls:", err)
-      alert(err instanceof Error ? err.message : "Failed to update subscription flow controls")
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to update subscription flow controls" })
     } finally {
       setBusy(false)
     }
@@ -396,7 +424,7 @@ export default function EventsPage() {
 
   const handlePublish = async () => {
     if (!selectedTopicName) {
-      alert("Select a topic first")
+      setNotice({ kind: "error", text: "Select a topic first" })
       return
     }
     try {
@@ -412,10 +440,10 @@ export default function EventsPage() {
       if (selectedSubscriptionID) {
         await fetchDeliveries(selectedSubscriptionID)
       }
-      alert(`Published message #${result.message.sequence} with ${result.deliveries} delivery fanout`) 
+      setNotice({ kind: "success", text: `Published message #${result.message.sequence} with ${result.deliveries} delivery fanout` })
     } catch (err) {
       console.error("Failed to publish event:", err)
-      alert(err instanceof Error ? err.message : "Failed to publish event")
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to publish event" })
     } finally {
       setBusy(false)
     }
@@ -423,7 +451,7 @@ export default function EventsPage() {
 
   const handleEnqueueOutbox = async () => {
     if (!selectedTopicName) {
-      alert("Select a topic first")
+      setNotice({ kind: "error", text: "Select a topic first" })
       return
     }
     try {
@@ -439,10 +467,10 @@ export default function EventsPage() {
         backoff_max_ms: Math.max(1, Number(outboxBackoffMax) || 60000),
       })
       await fetchTopicDetails(selectedTopicName)
-      alert(`Outbox enqueued: ${job.id}`)
+      setNotice({ kind: "success", text: `Outbox enqueued: ${job.id}` })
     } catch (err) {
       console.error("Failed to enqueue outbox event:", err)
-      alert(err instanceof Error ? err.message : "Failed to enqueue outbox event")
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to enqueue outbox event" })
     } finally {
       setBusy(false)
     }
@@ -450,7 +478,7 @@ export default function EventsPage() {
 
   const handleReplay = async () => {
     if (!selectedSubscriptionID) {
-      alert("Select a subscription first")
+      setNotice({ kind: "error", text: "Select a subscription first" })
       return
     }
 
@@ -467,10 +495,10 @@ export default function EventsPage() {
       )
       await fetchTopicDetails(selectedTopicName)
       await fetchDeliveries(selectedSubscriptionID)
-      alert(`Replay queued ${response.queued} deliveries`)
+      setNotice({ kind: "success", text: `Replay queued ${response.queued} deliveries` })
     } catch (err) {
       console.error("Failed to replay:", err)
-      alert(err instanceof Error ? err.message : "Failed to replay")
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to replay" })
     } finally {
       setBusy(false)
     }
@@ -478,7 +506,7 @@ export default function EventsPage() {
 
   const handleSeek = async () => {
     if (!selectedSubscriptionID) {
-      alert("Select a subscription first")
+      setNotice({ kind: "error", text: "Select a subscription first" })
       return
     }
     try {
@@ -490,10 +518,10 @@ export default function EventsPage() {
       )
       await fetchTopicDetails(selectedTopicName)
       await fetchDeliveries(selectedSubscriptionID)
-      alert(`Cursor moved. Next replay/invoke starts from sequence ${result.from_sequence}`)
+      setNotice({ kind: "success", text: `Cursor moved. Next replay/invoke starts from sequence ${result.from_sequence}` })
     } catch (err) {
       console.error("Failed to seek subscription cursor:", err)
-      alert(err instanceof Error ? err.message : "Failed to seek subscription cursor")
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to seek subscription cursor" })
     } finally {
       setBusy(false)
     }
@@ -504,9 +532,10 @@ export default function EventsPage() {
       setBusy(true)
       await eventsApi.retryDelivery(deliveryID)
       await fetchDeliveries(selectedSubscriptionID)
+      setNotice({ kind: "success", text: "Delivery retry queued" })
     } catch (err) {
       console.error("Failed to retry delivery:", err)
-      alert(err instanceof Error ? err.message : "Failed to retry delivery")
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to retry delivery" })
     } finally {
       setBusy(false)
     }
@@ -517,9 +546,10 @@ export default function EventsPage() {
       setBusy(true)
       await eventsApi.retryOutbox(outboxID)
       await fetchTopicDetails(selectedTopicName)
+      setNotice({ kind: "success", text: "Outbox retry queued" })
     } catch (err) {
       console.error("Failed to retry outbox:", err)
-      alert(err instanceof Error ? err.message : "Failed to retry outbox")
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to retry outbox" })
     } finally {
       setBusy(false)
     }
@@ -534,6 +564,25 @@ export default function EventsPage() {
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
             <p className="font-medium">Failed to load event bus</p>
             <p className="text-sm mt-1">{error}</p>
+          </div>
+        )}
+
+        {notice && (
+          <div
+            className={`rounded-lg border p-4 text-sm ${
+              notice.kind === "success"
+                ? "border-success/50 bg-success/10 text-success"
+                : notice.kind === "error"
+                  ? "border-destructive/50 bg-destructive/10 text-destructive"
+                  : "border-primary/40 bg-primary/10 text-primary"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <p>{notice.text}</p>
+              <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
+                Dismiss
+              </Button>
+            </div>
           </div>
         )}
 
@@ -604,17 +653,45 @@ export default function EventsPage() {
                             <p className="text-xs text-muted-foreground mt-1">{topic.description || "-"}</p>
                             <p className="text-xs text-muted-foreground mt-1">Retention: {topic.retention_hours}h</p>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleDeleteTopic(topic.name)
-                            }}
-                            disabled={busy}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
+                          {pendingTopicDelete === topic.name ? (
+                            <div className="flex items-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleDeleteTopic(topic.name)
+                                }}
+                                disabled={busy}
+                              >
+                                Confirm
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setPendingTopicDelete(null)
+                                  setNotice(null)
+                                }}
+                                disabled={busy}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleDeleteTopic(topic.name)
+                              }}
+                              disabled={busy}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          )}
                         </div>
                       </div>
                     )
@@ -941,14 +1018,38 @@ export default function EventsPage() {
                                     >
                                       {sub.enabled ? "Disable" : "Enable"}
                                     </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      onClick={() => handleDeleteSubscription(sub)}
-                                      disabled={busy}
-                                    >
-                                      <Trash2 className="h-4 w-4 text-destructive" />
-                                    </Button>
+                                    {pendingSubscriptionDelete === sub.id ? (
+                                      <div className="flex items-center gap-1">
+                                        <Button
+                                          size="sm"
+                                          variant="destructive"
+                                          onClick={() => handleDeleteSubscription(sub)}
+                                          disabled={busy}
+                                        >
+                                          Confirm
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => {
+                                            setPendingSubscriptionDelete(null)
+                                            setNotice(null)
+                                          }}
+                                          disabled={busy}
+                                        >
+                                          Cancel
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => handleDeleteSubscription(sub)}
+                                        disabled={busy}
+                                      >
+                                        <Trash2 className="h-4 w-4 text-destructive" />
+                                      </Button>
+                                    )}
                                   </div>
                                 </td>
                               </tr>

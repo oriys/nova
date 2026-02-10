@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { healthApi, snapshotsApi, configApi } from "@/lib/api"
+import { healthApi, snapshotsApi, configApi, type HealthStatus } from "@/lib/api"
 import { RefreshCw, Server, Database, HardDrive, Trash2, Save, CheckCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAutoRefresh } from "@/lib/use-auto-refresh"
@@ -29,24 +29,24 @@ interface Snapshot {
   created_at: string
 }
 
-interface HealthStatus {
-  status: string
-  components?: {
-    postgres: boolean
-    pool: {
-      active_vms: number
-      total_pools: number | null
-    }
-  }
-  uptime_seconds?: number
-}
-
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B"
   const k = 1024
   const sizes = ["B", "KB", "MB", "GB"]
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i]
+}
+
+function isHealthyComponent(value: unknown): boolean {
+  if (typeof value === "boolean") return value
+  if (typeof value === "string") return value.toLowerCase().startsWith("healthy")
+  return false
+}
+
+function componentStatusText(value: unknown): string {
+  if (typeof value === "string" && value.trim() !== "") return value
+  if (typeof value === "boolean") return value ? "healthy" : "unhealthy"
+  return "unknown"
 }
 
 export default function ConfigurationsPage() {
@@ -202,12 +202,63 @@ export default function ConfigurationsPage() {
                 <Badge
                   variant="secondary"
                   className={cn(
-                    health?.components?.postgres
+                    isHealthyComponent(health?.components?.postgres)
                       ? "bg-success/10 text-success border-0"
                       : "bg-destructive/10 text-destructive border-0"
                   )}
                 >
-                  {loading ? "..." : health?.components?.postgres ? "Connected" : "Disconnected"}
+                  {loading ? "..." : isHealthyComponent(health?.components?.postgres) ? "Connected" : "Disconnected"}
+                </Badge>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
+              <Server className="h-8 w-8 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">Zenith</p>
+                <Badge
+                  variant="secondary"
+                  className={cn(
+                    isHealthyComponent(health?.components?.zenith)
+                      ? "bg-success/10 text-success border-0"
+                      : "bg-destructive/10 text-destructive border-0"
+                  )}
+                >
+                  {loading ? "..." : componentStatusText(health?.components?.zenith)}
+                </Badge>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
+              <Server className="h-8 w-8 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">Nova</p>
+                <Badge
+                  variant="secondary"
+                  className={cn(
+                    isHealthyComponent(health?.components?.nova)
+                      ? "bg-success/10 text-success border-0"
+                      : "bg-destructive/10 text-destructive border-0"
+                  )}
+                >
+                  {loading ? "..." : componentStatusText(health?.components?.nova)}
+                </Badge>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
+              <Server className="h-8 w-8 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">Comet</p>
+                <Badge
+                  variant="secondary"
+                  className={cn(
+                    isHealthyComponent(health?.components?.comet)
+                      ? "bg-success/10 text-success border-0"
+                      : "bg-destructive/10 text-destructive border-0"
+                  )}
+                >
+                  {loading ? "..." : componentStatusText(health?.components?.comet)}
                 </Badge>
               </div>
             </div>

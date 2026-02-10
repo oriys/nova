@@ -26,6 +26,8 @@ import {
   snapshotsApi,
   type AutoScalePolicy,
   type CapacityPolicy,
+  type NetworkPolicy,
+  type RolloutPolicy,
   type ResourceLimits,
   type ScaleThresholds,
 } from "@/lib/api"
@@ -79,6 +81,40 @@ function normalizeCapacityPolicy(policy: CapacityPolicy | undefined): CapacityPo
   }
 }
 
+type EditableEgressRule = {
+  host: string
+  port: string
+  protocol: string
+}
+
+type EditableIngressRule = {
+  source: string
+  port: string
+  protocol: string
+}
+
+function normalizeIngressRules(policy: NetworkPolicy | undefined): EditableIngressRule[] {
+  if (!policy?.ingress_rules || policy.ingress_rules.length === 0) {
+    return []
+  }
+  return policy.ingress_rules.map((rule) => ({
+    source: rule.source || "",
+    port: rule.port ? String(rule.port) : "",
+    protocol: rule.protocol || "tcp",
+  }))
+}
+
+function normalizeEgressRules(policy: NetworkPolicy | undefined): EditableEgressRule[] {
+  if (!policy?.egress_rules || policy.egress_rules.length === 0) {
+    return []
+  }
+  return policy.egress_rules.map((rule) => ({
+    host: rule.host || "",
+    port: rule.port ? String(rule.port) : "",
+    protocol: rule.protocol || "tcp",
+  }))
+}
+
 export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
   const router = useRouter()
   const [memory, setMemory] = useState(func.memory.toString())
@@ -93,6 +129,19 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
   const [diskBandwidth, setDiskBandwidth] = useState((func.limits?.disk_bandwidth || 0).toString())
   const [netRx, setNetRx] = useState((func.limits?.net_rx_bandwidth || 0).toString())
   const [netTx, setNetTx] = useState((func.limits?.net_tx_bandwidth || 0).toString())
+
+  // Network policy state
+  const [isolationMode, setIsolationMode] = useState(func.networkPolicy?.isolation_mode || "egress-only")
+  const [denyExternalAccess, setDenyExternalAccess] = useState(func.networkPolicy?.deny_external_access ? "true" : "false")
+  const [ingressRules, setIngressRules] = useState<EditableIngressRule[]>(
+    normalizeIngressRules(func.networkPolicy)
+  )
+  const [egressRules, setEgressRules] = useState<EditableEgressRule[]>(
+    normalizeEgressRules(func.networkPolicy)
+  )
+  const [rolloutEnabled, setRolloutEnabled] = useState(func.rolloutPolicy?.enabled ? "true" : "false")
+  const [canaryFunction, setCanaryFunction] = useState(func.rolloutPolicy?.canary_function || "")
+  const [canaryPercent, setCanaryPercent] = useState(String(func.rolloutPolicy?.canary_percent ?? 10))
 
   // Environment variables state
   const [envVarsState, setEnvVarsState] = useState<Record<string, string>>(func.envVars || {})
@@ -251,6 +300,34 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
     }
   }
 
+  const addEgressRule = () => {
+    setEgressRules((prev) => [...prev, { host: "", port: "", protocol: "tcp" }])
+  }
+
+  const addIngressRule = () => {
+    setIngressRules((prev) => [...prev, { source: "", port: "", protocol: "tcp" }])
+  }
+
+  const updateEgressRule = (index: number, field: keyof EditableEgressRule, value: string) => {
+    setEgressRules((prev) =>
+      prev.map((rule, i) => (i === index ? { ...rule, [field]: value } : rule))
+    )
+  }
+
+  const removeEgressRule = (index: number) => {
+    setEgressRules((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const updateIngressRule = (index: number, field: keyof EditableIngressRule, value: string) => {
+    setIngressRules((prev) =>
+      prev.map((rule, i) => (i === index ? { ...rule, [field]: value } : rule))
+    )
+  }
+
+  const removeIngressRule = (index: number) => {
+    setIngressRules((prev) => prev.filter((_, i) => i !== index))
+  }
+
   const handleSave = async () => {
     try {
       setSaving(true)
@@ -261,11 +338,57 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
         net_rx_bandwidth: parseInt(netRx) || 0,
         net_tx_bandwidth: parseInt(netTx) || 0,
       }
+      const parsedIngressRules: NonNullable<NetworkPolicy["ingress_rules"]> = []
+      for (const rule of ingressRules) {
+        const source = rule.source.trim()
+        if (!source) {
+          continue
+        }
+        const port = Number.parseInt(rule.port, 10)
+        const protocol = rule.protocol.trim().toLowerCase()
+        parsedIngressRules.push({
+          source,
+          port: Number.isFinite(port) && port > 0 ? port : undefined,
+          protocol: protocol === "udp" ? "udp" : "tcp",
+        })
+      }
+      const parsedEgressRules: NonNullable<NetworkPolicy["egress_rules"]> = []
+      for (const rule of egressRules) {
+        const host = rule.host.trim()
+        if (!host) {
+          continue
+        }
+        const port = Number.parseInt(rule.port, 10)
+        const protocol = rule.protocol.trim().toLowerCase()
+        parsedEgressRules.push({
+          host,
+          port: Number.isFinite(port) && port > 0 ? port : undefined,
+          protocol: protocol === "udp" ? "udp" : "tcp",
+        })
+      }
+      const networkPolicy: NetworkPolicy = {
+        isolation_mode: isolationMode,
+        ingress_rules: parsedIngressRules,
+        egress_rules: parsedEgressRules,
+        deny_external_access: denyExternalAccess === "true",
+      }
+      const parsedCanaryPercentRaw = Number.parseInt(canaryPercent, 10)
+      const parsedCanaryPercent = Number.isFinite(parsedCanaryPercentRaw)
+        ? Math.max(0, Math.min(100, parsedCanaryPercentRaw))
+        : 0
+      const trimmedCanaryFunction = canaryFunction.trim()
+      const rolloutPolicy: RolloutPolicy = {
+        enabled: rolloutEnabled === "true" && trimmedCanaryFunction.length > 0 && parsedCanaryPercent > 0,
+        canary_function: trimmedCanaryFunction,
+        canary_percent: parsedCanaryPercent,
+      }
       await functionsApi.update(func.name, {
         handler,
         memory_mb: parseInt(memory),
         timeout_s: parseInt(timeout),
         limits,
+        network_policy: networkPolicy,
+        rollout_policy: rolloutPolicy,
       })
       onUpdate?.()
     } catch (err) {
@@ -491,6 +614,246 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
             <p className="text-xs text-muted-foreground">
               Max outbound network throughput
             </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Network Policy */}
+      <div className="rounded-xl border border-border bg-card p-6">
+        <h3 className="text-lg font-semibold text-card-foreground mb-1">
+          Network Policy
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Configure ingress and egress controls.
+        </p>
+
+        <div className="grid gap-6 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="isolationMode">Isolation Mode</Label>
+            <Select value={isolationMode} onValueChange={setIsolationMode}>
+              <SelectTrigger id="isolationMode">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">none</SelectItem>
+                <SelectItem value="egress-only">egress-only</SelectItem>
+                <SelectItem value="strict">strict</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              `egress-only` is the default. `strict` blocks all outbound unless explicitly allowed.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="denyExternalAccess">Deny External Access</Label>
+            <Select value={denyExternalAccess} onValueChange={setDenyExternalAccess}>
+              <SelectTrigger id="denyExternalAccess">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="false">false</SelectItem>
+                <SelectItem value="true">true</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              When true, blocks non-private external destinations.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <Label>Ingress Rules</Label>
+            <Button variant="outline" size="sm" onClick={addIngressRule}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Rule
+            </Button>
+          </div>
+
+          {ingressRules.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No ingress rules configured.
+            </p>
+          ) : (
+            ingressRules.map((rule, index) => (
+              <div key={`ingress-rule-${index}`} className="grid gap-3 sm:grid-cols-[1fr_120px_140px_auto] items-end">
+                <div className="space-y-1">
+                  <Label>Source</Label>
+                  <Input
+                    value={rule.source}
+                    onChange={(e) => updateIngressRule(index, "source", e.target.value)}
+                    placeholder="caller-func or 10.0.0.0/8"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Port</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="65535"
+                    value={rule.port}
+                    onChange={(e) => updateIngressRule(index, "port", e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Protocol</Label>
+                  <Select
+                    value={rule.protocol || "tcp"}
+                    onValueChange={(value) => updateIngressRule(index, "protocol", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="tcp">tcp</SelectItem>
+                      <SelectItem value="udp">udp</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => removeIngressRule(index)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <Label>Egress Rules</Label>
+            <Button variant="outline" size="sm" onClick={addEgressRule}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Rule
+            </Button>
+          </div>
+
+          {egressRules.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No egress rules configured. Behavior depends on isolation mode.
+            </p>
+          ) : (
+            egressRules.map((rule, index) => (
+              <div key={`egress-rule-${index}`} className="grid gap-3 sm:grid-cols-[1fr_120px_140px_auto] items-end">
+                <div className="space-y-1">
+                  <Label>Host / CIDR</Label>
+                  <Input
+                    value={rule.host}
+                    onChange={(e) => updateEgressRule(index, "host", e.target.value)}
+                    placeholder="example.com or 10.0.0.0/8"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Port</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="65535"
+                    value={rule.port}
+                    onChange={(e) => updateEgressRule(index, "port", e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Protocol</Label>
+                  <Select
+                    value={rule.protocol || "tcp"}
+                    onValueChange={(value) => updateEgressRule(index, "protocol", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="tcp">tcp</SelectItem>
+                      <SelectItem value="udp">udp</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => removeEgressRule(index)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Canary Rollout */}
+      <div className="rounded-xl border border-border bg-card p-6">
+        <h3 className="text-lg font-semibold text-card-foreground mb-1">
+          Canary Rollout
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Split invocation traffic from this function to a canary function.
+        </p>
+
+        <div className="grid gap-6 sm:grid-cols-3">
+          <div className="space-y-2">
+            <Label>Enabled</Label>
+            <Select value={rolloutEnabled} onValueChange={setRolloutEnabled}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="true">enabled</SelectItem>
+                <SelectItem value="false">disabled</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="canaryFunction">Canary Function</Label>
+            <Input
+              id="canaryFunction"
+              value={canaryFunction}
+              onChange={(e) => setCanaryFunction(e.target.value)}
+              placeholder="function name"
+            />
+            <p className="text-xs text-muted-foreground">
+              Requests for this function will be partially routed to this target function.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          <Label htmlFor="canaryPercent">Canary Traffic (%)</Label>
+          <Input
+            id="canaryPercent"
+            type="number"
+            min="0"
+            max="100"
+            value={canaryPercent}
+            onChange={(e) => setCanaryPercent(e.target.value)}
+            placeholder="10"
+          />
+          <div className="flex flex-wrap gap-2">
+            {[1, 10, 25, 50].map((v) => (
+              <Button key={`canary-${v}`} type="button" variant="outline" size="sm" onClick={() => setCanaryPercent(String(v))}>
+                {v}%
+              </Button>
+            ))}
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setRolloutEnabled("false")
+                setCanaryPercent("0")
+              }}
+            >
+              Rollback
+            </Button>
           </div>
         </div>
       </div>

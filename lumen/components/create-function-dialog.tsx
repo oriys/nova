@@ -22,8 +22,8 @@ import {
 } from "@/components/ui/select"
 import { CodeEditor } from "@/components/code-editor"
 import { RuntimeInfo } from "@/lib/types"
-import { functionsApi, CompileStatus, type ResourceLimits } from "@/lib/api"
-import { Loader2, Check, AlertCircle } from "lucide-react"
+import { functionsApi, CompileStatus, type NetworkPolicy, type ResourceLimits } from "@/lib/api"
+import { Loader2, Check, AlertCircle, Trash2 } from "lucide-react"
 
 // Code templates for each runtime (handler-only style)
 const CODE_TEMPLATES: Record<string, string> = {
@@ -141,9 +141,22 @@ interface CreateFunctionDialogProps {
     memory: number,
     timeout: number,
     code: string,
-    limits?: ResourceLimits
+    limits?: ResourceLimits,
+    networkPolicy?: NetworkPolicy
   ) => Promise<void>
   runtimes?: RuntimeInfo[]
+}
+
+type EditableEgressRule = {
+  host: string
+  port: string
+  protocol: string
+}
+
+type EditableIngressRule = {
+  source: string
+  port: string
+  protocol: string
 }
 
 export function CreateFunctionDialog({
@@ -163,6 +176,10 @@ export function CreateFunctionDialog({
   const [diskBandwidth, setDiskBandwidth] = useState("0")
   const [netRx, setNetRx] = useState("0")
   const [netTx, setNetTx] = useState("0")
+  const [isolationMode, setIsolationMode] = useState("egress-only")
+  const [denyExternalAccess, setDenyExternalAccess] = useState("false")
+  const [ingressRules, setIngressRules] = useState<EditableIngressRule[]>([])
+  const [egressRules, setEgressRules] = useState<EditableEgressRule[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -216,7 +233,41 @@ export function CreateFunctionDialog({
         net_rx_bandwidth: parseInt(netRx) || 0,
         net_tx_bandwidth: parseInt(netTx) || 0,
       }
-      await onCreate(name, runtime, handler, parseInt(memory), parseInt(timeout), codeValue, limits)
+      const parsedIngressRules: NonNullable<NetworkPolicy["ingress_rules"]> = []
+      for (const rule of ingressRules) {
+        const source = rule.source.trim()
+        if (!source) {
+          continue
+        }
+        const port = Number.parseInt(rule.port, 10)
+        const protocol = rule.protocol.trim().toLowerCase()
+        parsedIngressRules.push({
+          source,
+          port: Number.isFinite(port) && port > 0 ? port : undefined,
+          protocol: protocol === "udp" ? "udp" : "tcp",
+        })
+      }
+      const parsedEgressRules: NonNullable<NetworkPolicy["egress_rules"]> = []
+      for (const rule of egressRules) {
+        const host = rule.host.trim()
+        if (!host) {
+          continue
+        }
+        const port = Number.parseInt(rule.port, 10)
+        const protocol = rule.protocol.trim().toLowerCase()
+        parsedEgressRules.push({
+          host,
+          port: Number.isFinite(port) && port > 0 ? port : undefined,
+          protocol: protocol === "udp" ? "udp" : "tcp",
+        })
+      }
+      const networkPolicy: NetworkPolicy = {
+        isolation_mode: isolationMode,
+        deny_external_access: denyExternalAccess === "true",
+        ingress_rules: parsedIngressRules,
+        egress_rules: parsedEgressRules,
+      }
+      await onCreate(name, runtime, handler, parseInt(memory), parseInt(timeout), codeValue, limits, networkPolicy)
 
       // If it's a compiled language, track compile status
       if (needsCompilation(runtime)) {
@@ -246,9 +297,37 @@ export function CreateFunctionDialog({
     setDiskBandwidth("0")
     setNetRx("0")
     setNetTx("0")
+    setIsolationMode("egress-only")
+    setDenyExternalAccess("false")
+    setIngressRules([])
+    setEgressRules([])
     setCreatedFunctionName(null)
     setCompileStatus(undefined)
     setCompileError(undefined)
+  }
+
+  const addEgressRule = () => {
+    setEgressRules((prev) => [...prev, { host: "", port: "", protocol: "tcp" }])
+  }
+
+  const addIngressRule = () => {
+    setIngressRules((prev) => [...prev, { source: "", port: "", protocol: "tcp" }])
+  }
+
+  const updateEgressRule = (index: number, field: keyof EditableEgressRule, value: string) => {
+    setEgressRules((prev) => prev.map((rule, i) => (i === index ? { ...rule, [field]: value } : rule)))
+  }
+
+  const removeEgressRule = (index: number) => {
+    setEgressRules((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const updateIngressRule = (index: number, field: keyof EditableIngressRule, value: string) => {
+    setIngressRules((prev) => prev.map((rule, i) => (i === index ? { ...rule, [field]: value } : rule)))
+  }
+
+  const removeIngressRule = (index: number) => {
+    setIngressRules((prev) => prev.filter((_, i) => i !== index))
   }
 
   const handleClose = () => {
@@ -500,6 +579,129 @@ export function CreateFunctionDialog({
                   placeholder="0"
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Network Policy */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Network Policy</Label>
+            <p className="text-xs text-muted-foreground mb-2">
+              Configure ingress/egress policy at creation time.
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Isolation Mode</Label>
+                <Select value={isolationMode} onValueChange={setIsolationMode}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">none</SelectItem>
+                    <SelectItem value="egress-only">egress-only</SelectItem>
+                    <SelectItem value="strict">strict</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Deny External Access</Label>
+                <Select value={denyExternalAccess} onValueChange={setDenyExternalAccess}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="false">false</SelectItem>
+                    <SelectItem value="true">true</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="pt-2 space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Ingress Rules</Label>
+                <Button type="button" variant="outline" size="sm" onClick={addIngressRule}>
+                  Add Rule
+                </Button>
+              </div>
+              {ingressRules.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No ingress rules configured.</p>
+              ) : (
+                ingressRules.map((rule, index) => (
+                  <div key={`create-ingress-${index}`} className="grid grid-cols-[1fr_100px_110px_auto] gap-2 items-end">
+                    <Input
+                      className="h-9"
+                      value={rule.source}
+                      onChange={(e) => updateIngressRule(index, "source", e.target.value)}
+                      placeholder="caller-func or 10.0.0.0/8"
+                    />
+                    <Input
+                      className="h-9"
+                      type="number"
+                      min="0"
+                      max="65535"
+                      value={rule.port}
+                      onChange={(e) => updateIngressRule(index, "port", e.target.value)}
+                      placeholder="0"
+                    />
+                    <Select value={rule.protocol} onValueChange={(value) => updateIngressRule(index, "protocol", value)}>
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="tcp">tcp</SelectItem>
+                        <SelectItem value="udp">udp</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => removeIngressRule(index)}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="pt-2 space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Egress Rules</Label>
+                <Button type="button" variant="outline" size="sm" onClick={addEgressRule}>
+                  Add Rule
+                </Button>
+              </div>
+              {egressRules.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No egress rules configured.</p>
+              ) : (
+                egressRules.map((rule, index) => (
+                  <div key={`create-egress-${index}`} className="grid grid-cols-[1fr_100px_110px_auto] gap-2 items-end">
+                    <Input
+                      className="h-9"
+                      value={rule.host}
+                      onChange={(e) => updateEgressRule(index, "host", e.target.value)}
+                      placeholder="example.com or 10.0.0.0/8"
+                    />
+                    <Input
+                      className="h-9"
+                      type="number"
+                      min="0"
+                      max="65535"
+                      value={rule.port}
+                      onChange={(e) => updateEgressRule(index, "port", e.target.value)}
+                      placeholder="0"
+                    />
+                    <Select value={rule.protocol} onValueChange={(value) => updateEgressRule(index, "protocol", value)}>
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="tcp">tcp</SelectItem>
+                        <SelectItem value="udp">udp</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => removeEgressRule(index)}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 

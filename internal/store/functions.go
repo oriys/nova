@@ -105,7 +105,81 @@ func (s *PostgresStore) GetFunctionByName(ctx context.Context, name string) (*do
 
 func (s *PostgresStore) DeleteFunction(ctx context.Context, id string) error {
 	scope := tenantScopeFromContext(ctx)
-	ct, err := s.pool.Exec(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := s.acquireDeleteOperationLock(ctx, tx); err != nil {
+		return err
+	}
+
+	var fnName string
+	if err := tx.QueryRow(ctx, `
+		SELECT name
+		FROM functions
+		WHERE id = $1 AND tenant_id = $2 AND namespace = $3
+	`, id, scope.TenantID, scope.Namespace).Scan(&fnName); err != nil {
+		if err == pgx.ErrNoRows {
+			return fmt.Errorf("function not found: %s", id)
+		}
+		return fmt.Errorf("get function before delete: %w", err)
+	}
+
+	cleanup := []struct {
+		name string
+		sql  string
+		args []any
+	}{
+		{
+			name: "schedules",
+			sql:  `DELETE FROM schedules WHERE tenant_id = $1 AND namespace = $2 AND function_name = $3`,
+			args: []any{scope.TenantID, scope.Namespace, fnName},
+		},
+		{
+			name: "gateway routes",
+			sql:  `DELETE FROM gateway_routes WHERE function_name = $1`,
+			args: []any{fnName},
+		},
+		{
+			name: "triggers",
+			sql:  `DELETE FROM triggers WHERE tenant_id = $1 AND namespace = $2 AND (function_id = $3 OR function_name = $4)`,
+			args: []any{scope.TenantID, scope.Namespace, id, fnName},
+		},
+		{
+			name: "event subscriptions",
+			sql:  `DELETE FROM event_subscriptions WHERE tenant_id = $1 AND namespace = $2 AND type = 'function' AND (function_id = $3 OR function_name = $4)`,
+			args: []any{scope.TenantID, scope.Namespace, id, fnName},
+		},
+		{
+			name: "async invocations",
+			sql:  `DELETE FROM async_invocations WHERE tenant_id = $1 AND namespace = $2 AND (function_id = $3 OR function_name = $4)`,
+			args: []any{scope.TenantID, scope.Namespace, id, fnName},
+		},
+		{
+			name: "invocation logs",
+			sql:  `DELETE FROM invocation_logs WHERE tenant_id = $1 AND namespace = $2 AND (function_id = $3 OR function_name = $4)`,
+			args: []any{scope.TenantID, scope.Namespace, id, fnName},
+		},
+		{
+			name: "idempotency keys",
+			sql:  `DELETE FROM idempotency_keys WHERE scope = 'invoke_async' AND scope_id = $1`,
+			args: []any{id},
+		},
+		{
+			name: "function layers",
+			sql:  `DELETE FROM function_layers WHERE function_id = $1`,
+			args: []any{id},
+		},
+	}
+
+	for _, stmt := range cleanup {
+		if _, err := tx.Exec(ctx, stmt.sql, stmt.args...); err != nil {
+			return fmt.Errorf("delete function %s: %w", stmt.name, err)
+		}
+	}
+
+	ct, err := tx.Exec(ctx, `
 		DELETE FROM functions
 		WHERE id = $1 AND tenant_id = $2 AND namespace = $3
 	`, id, scope.TenantID, scope.Namespace)
@@ -114,6 +188,10 @@ func (s *PostgresStore) DeleteFunction(ctx context.Context, id string) error {
 	}
 	if ct.RowsAffected() == 0 {
 		return fmt.Errorf("function not found: %s", id)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit delete function tx: %w", err)
 	}
 	return nil
 }
@@ -239,6 +317,9 @@ func (s *PostgresStore) UpdateFunction(ctx context.Context, name string, update 
 	}
 	if update.NetworkPolicy != nil {
 		fn.NetworkPolicy = update.NetworkPolicy
+	}
+	if update.RolloutPolicy != nil {
+		fn.RolloutPolicy = update.RolloutPolicy
 	}
 	if update.AutoScalePolicy != nil {
 		fn.AutoScalePolicy = update.AutoScalePolicy

@@ -19,14 +19,21 @@ import { Textarea } from "@/components/ui/textarea"
 import { workflowsApi, type Workflow } from "@/lib/api"
 import { Plus, RefreshCw, Trash2, GitBranch } from "lucide-react"
 
+type Notice = {
+  kind: "success" | "error" | "info"
+  text: string
+}
+
 export default function WorkflowsPage() {
   const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<Notice | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [createName, setCreateName] = useState("")
   const [createDesc, setCreateDesc] = useState("")
   const [creating, setCreating] = useState(false)
+  const [pendingDeleteWorkflow, setPendingDeleteWorkflow] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     try {
@@ -48,27 +55,37 @@ export default function WorkflowsPage() {
 
   const handleCreate = async () => {
     if (!createName.trim()) return
+    const workflowName = createName.trim()
     try {
       setCreating(true)
-      await workflowsApi.create({ name: createName.trim(), description: createDesc.trim() })
+      await workflowsApi.create({ name: workflowName, description: createDesc.trim() })
       setIsCreateOpen(false)
       setCreateName("")
       setCreateDesc("")
       fetchData()
+      setNotice({ kind: "success", text: `Workflow "${workflowName}" created` })
     } catch (err) {
       console.error("Failed to create workflow:", err)
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to create workflow" })
     } finally {
       setCreating(false)
     }
   }
 
   const handleDelete = async (name: string) => {
-    if (!confirm(`Delete workflow "${name}"?`)) return
+    if (pendingDeleteWorkflow !== name) {
+      setPendingDeleteWorkflow(name)
+      setNotice({ kind: "info", text: `Click delete again to confirm workflow "${name}" deletion` })
+      return
+    }
     try {
       await workflowsApi.delete(name)
       fetchData()
+      setPendingDeleteWorkflow(null)
+      setNotice({ kind: "success", text: `Workflow "${name}" deleted` })
     } catch (err) {
       console.error("Failed to delete workflow:", err)
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to delete workflow" })
     }
   }
 
@@ -91,6 +108,25 @@ export default function WorkflowsPage() {
       <Header title="Workflows" description="DAG workflow orchestration" />
 
       <div className="p-6 space-y-6">
+        {notice && (
+          <div
+            className={`rounded-lg border p-4 text-sm ${
+              notice.kind === "success"
+                ? "border-success/50 bg-success/10 text-success"
+                : notice.kind === "error"
+                  ? "border-destructive/50 bg-destructive/10 text-destructive"
+                  : "border-primary/40 bg-primary/10 text-primary"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <p>{notice.text}</p>
+              <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={fetchData} disabled={loading}>
@@ -178,13 +214,31 @@ export default function WorkflowsPage() {
                         {new Date(wf.updated_at).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDelete(wf.name)}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        {pendingDeleteWorkflow === wf.name ? (
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="destructive" size="sm" onClick={() => handleDelete(wf.name)}>
+                              Confirm
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setPendingDeleteWorkflow(null)
+                                setNotice(null)
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDelete(wf.name)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   ))

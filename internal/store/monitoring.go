@@ -151,8 +151,16 @@ func (s *PostgresStore) ListAllInvocationLogs(ctx context.Context, limit, offset
 
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, tenant_id, namespace, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, created_at
-		FROM invocation_logs
-		WHERE tenant_id = $1 AND namespace = $2
+		FROM invocation_logs l
+		WHERE l.tenant_id = $1
+		  AND l.namespace = $2
+		  AND EXISTS (
+			SELECT 1
+			FROM functions f
+			WHERE f.id = l.function_id
+			  AND f.tenant_id = l.tenant_id
+			  AND f.namespace = l.namespace
+		  )
 		ORDER BY created_at DESC
 		LIMIT $3 OFFSET $4
 	`, scope.TenantID, scope.Namespace, limit, offset)
@@ -346,6 +354,13 @@ func (s *PostgresStore) GetGlobalDailyHeatmap(ctx context.Context, weeks int) ([
 			ON l.tenant_id = $2
 			AND l.namespace = $3
 			AND l.created_at::date = d.day
+			AND EXISTS (
+				SELECT 1
+				FROM functions f
+				WHERE f.id = l.function_id
+				  AND f.tenant_id = l.tenant_id
+				  AND f.namespace = l.namespace
+			)
 		GROUP BY d.day
 		ORDER BY d.day ASC
 	`, days, scope.TenantID, scope.Namespace)
@@ -391,10 +406,17 @@ func (s *PostgresStore) GetGlobalTimeSeries(ctx context.Context, rangeSeconds, b
 				COUNT(*) AS invocations,
 				COUNT(*) FILTER (WHERE NOT success) AS errors,
 				AVG(duration_ms) AS avg_duration
-			FROM invocation_logs
-			WHERE tenant_id = $3
-			  AND namespace = $4
-			  AND created_at >= NOW() - make_interval(secs => $1::double precision)
+			FROM invocation_logs l
+			WHERE l.tenant_id = $3
+			  AND l.namespace = $4
+			  AND l.created_at >= NOW() - make_interval(secs => $1::double precision)
+			  AND EXISTS (
+				SELECT 1
+				FROM functions f
+				WHERE f.id = l.function_id
+				  AND f.tenant_id = l.tenant_id
+				  AND f.namespace = l.namespace
+			  )
 			GROUP BY bucket
 		)
 		SELECT

@@ -12,6 +12,7 @@ import { FunctionMetrics } from "@/components/function-metrics"
 import { FunctionCode } from "@/components/function-code"
 import { FunctionLogs } from "@/components/function-logs"
 import { FunctionConfig } from "@/components/function-config"
+import { FunctionDiagnosticsPanel } from "@/components/function-diagnostics"
 import { InvocationHeatmap } from "@/components/invocation-heatmap"
 import {
   Dialog,
@@ -295,6 +296,12 @@ export default function FunctionDetailPage({
               Logs
             </TabsTrigger>
             <TabsTrigger
+              value="diagnostics"
+              className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
+            >
+              Diagnostics
+            </TabsTrigger>
+            <TabsTrigger
               value="config"
               className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
             >
@@ -346,6 +353,10 @@ export default function FunctionDetailPage({
 
           <TabsContent value="logs" className="mt-0">
             <FunctionLogs logs={logs} onRefresh={fetchData} />
+          </TabsContent>
+
+          <TabsContent value="diagnostics" className="mt-0">
+            <FunctionDiagnosticsPanel functionName={func.name} />
           </TabsContent>
 
           <TabsContent value="config" className="mt-0">

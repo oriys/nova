@@ -256,7 +256,7 @@ Reference
           execution path.
         </p>
         <CodeBlock
-          code={`# 1) Verify backend health
+          code={`# 1) Verify backend health (Zenith entrypoint)
 curl -s http://localhost:9000/health | jq
 
 # 2) Configure Orbit once

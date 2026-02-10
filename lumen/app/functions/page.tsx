@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { functionsApi, metricsApi, runtimesApi, type ResourceLimits } from "@/lib/api"
+import { functionsApi, metricsApi, runtimesApi, type NetworkPolicy, type ResourceLimits } from "@/lib/api"
 import { transformFunction, FunctionData, RuntimeInfo, transformRuntime } from "@/lib/types"
 import {
   FUNCTION_SEARCH_EVENT,
@@ -140,7 +140,16 @@ export default function FunctionsPage() {
 
   const pagedFunctions = filteredFunctions.slice((page - 1) * pageSize, page * pageSize)
 
-  const handleCreate = async (name: string, runtime: string, handler: string, memory: number, timeout: number, code: string, limits?: ResourceLimits) => {
+  const handleCreate = async (
+    name: string,
+    runtime: string,
+    handler: string,
+    memory: number,
+    timeout: number,
+    code: string,
+    limits?: ResourceLimits,
+    networkPolicy?: NetworkPolicy
+  ) => {
     try {
       await functionsApi.create({
         name,
@@ -150,6 +159,7 @@ export default function FunctionsPage() {
         memory_mb: memory,
         timeout_s: timeout,
         limits,
+        network_policy: networkPolicy,
       })
       setIsCreateOpen(false)
       fetchData() // Refresh the list

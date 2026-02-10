@@ -11,20 +11,21 @@ import (
 
 // FunctionUpdate contains optional fields for updating a function.
 type FunctionUpdate struct {
-	Handler             *string
-	Code                *string // inline code update
-	MemoryMB            *int
-	TimeoutS            *int
-	MinReplicas         *int
-	MaxReplicas         *int
-	InstanceConcurrency *int
-	Mode                *domain.ExecutionMode
-	Limits              *domain.ResourceLimits
-	NetworkPolicy       *domain.NetworkPolicy
-	AutoScalePolicy     *domain.AutoScalePolicy
-	CapacityPolicy      *domain.CapacityPolicy
-	EnvVars             map[string]string
-	MergeEnvVars        bool
+	Handler             *string                 `json:"handler,omitempty"`
+	Code                *string                 `json:"code,omitempty"` // inline code update
+	MemoryMB            *int                    `json:"memory_mb,omitempty"`
+	TimeoutS            *int                    `json:"timeout_s,omitempty"`
+	MinReplicas         *int                    `json:"min_replicas,omitempty"`
+	MaxReplicas         *int                    `json:"max_replicas,omitempty"`
+	InstanceConcurrency *int                    `json:"instance_concurrency,omitempty"`
+	Mode                *domain.ExecutionMode   `json:"mode,omitempty"`
+	Limits              *domain.ResourceLimits  `json:"limits,omitempty"`
+	NetworkPolicy       *domain.NetworkPolicy   `json:"network_policy,omitempty"`
+	RolloutPolicy       *domain.RolloutPolicy   `json:"rollout_policy,omitempty"`
+	AutoScalePolicy     *domain.AutoScalePolicy `json:"auto_scale_policy,omitempty"`
+	CapacityPolicy      *domain.CapacityPolicy  `json:"capacity_policy,omitempty"`
+	EnvVars             map[string]string       `json:"env_vars,omitempty"`
+	MergeEnvVars        bool                    `json:"merge_env_vars,omitempty"`
 }
 
 // MetadataStore is the durable metadata store (functions, versions, aliases).

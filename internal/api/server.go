@@ -29,6 +29,14 @@ import (
 	"github.com/oriys/nova/internal/workflow"
 )
 
+type PlaneMode string
+
+const (
+	PlaneModeAll          PlaneMode = "all"
+	PlaneModeControlPlane PlaneMode = "controlplane"
+	PlaneModeDataPlane    PlaneMode = "dataplane"
+)
+
 // ServerConfig contains dependencies for the HTTP server.
 type ServerConfig struct {
 	Store           *store.Store
@@ -45,45 +53,48 @@ type ServerConfig struct {
 	Scheduler       *scheduler.Scheduler
 	RootfsDir       string
 	LayerManager    *layer.Manager
+	PlaneMode       PlaneMode
 }
 
 // StartHTTPServer creates and starts the HTTP server with control plane and data plane handlers.
 func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 	mux := http.NewServeMux()
+	mode := normalizePlaneMode(cfg.PlaneMode)
+	controlPlaneEnabled := mode == PlaneModeAll || mode == PlaneModeControlPlane
+	dataPlaneEnabled := mode == PlaneModeAll || mode == PlaneModeDataPlane
+	gatewayRouteMgmtEnabled := cfg.GatewayCfg != nil && cfg.GatewayCfg.Enabled
 
-	// Create compiler
-	comp := compiler.New(cfg.Store)
-
-	// Create services
-	funcService := service.NewFunctionService(cfg.Store, comp)
-
-	gatewayEnabled := cfg.GatewayCfg != nil && cfg.GatewayCfg.Enabled
-
-	// Register control plane routes
-	cpHandler := &controlplane.Handler{
-		Store:           cfg.Store,
-		Pool:            cfg.Pool,
-		Backend:         cfg.Backend,
-		FCAdapter:       cfg.FCAdapter,
-		Compiler:        comp,
-		FunctionService: funcService,
-		WorkflowService: cfg.WorkflowService,
-		APIKeyManager:   cfg.APIKeyManager,
-		SecretsStore:    cfg.SecretsStore,
-		Scheduler:       cfg.Scheduler,
-		RootfsDir:       cfg.RootfsDir,
-		GatewayEnabled:  gatewayEnabled,
-		LayerManager:    cfg.LayerManager,
+	if controlPlaneEnabled {
+		comp := compiler.New(cfg.Store)
+		funcService := service.NewFunctionService(cfg.Store, comp)
+		cpHandler := &controlplane.Handler{
+			Store:           cfg.Store,
+			Pool:            cfg.Pool,
+			Backend:         cfg.Backend,
+			FCAdapter:       cfg.FCAdapter,
+			Compiler:        comp,
+			FunctionService: funcService,
+			WorkflowService: cfg.WorkflowService,
+			APIKeyManager:   cfg.APIKeyManager,
+			SecretsStore:    cfg.SecretsStore,
+			Scheduler:       cfg.Scheduler,
+			RootfsDir:       cfg.RootfsDir,
+			GatewayEnabled:  gatewayRouteMgmtEnabled,
+			LayerManager:    cfg.LayerManager,
+		}
+		cpHandler.RegisterRoutes(mux)
 	}
-	cpHandler.RegisterRoutes(mux)
 
-	// Register data plane routes
-	dpHandler := &dataplane.Handler{
-		Store: cfg.Store,
-		Exec:  cfg.Exec,
-		Pool:  cfg.Pool,
+	if dataPlaneEnabled {
+		dpHandler := &dataplane.Handler{
+			Store: cfg.Store,
+			Exec:  cfg.Exec,
+			Pool:  cfg.Pool,
+		}
+		dpHandler.RegisterRoutes(mux)
+	} else {
+		registerControlPlaneHealthRoutes(mux, cfg.Store)
 	}
-	dpHandler.RegisterRoutes(mux)
 
 	// Wrap with tracing middleware
 	var handler http.Handler = mux
@@ -132,7 +143,8 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 	}
 
 	// Set up gateway host router if enabled
-	if gatewayEnabled && cfg.Exec != nil {
+	gatewayHostRoutingEnabled := gatewayRouteMgmtEnabled && dataPlaneEnabled && cfg.Exec != nil
+	if gatewayHostRoutingEnabled {
 		var authenticators []auth.Authenticator
 		if cfg.AuthCfg != nil && cfg.AuthCfg.Enabled {
 			authenticators = buildAuthenticators(cfg.AuthCfg, cfg.Store)
@@ -165,6 +177,53 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 	}()
 
 	return server
+}
+
+func normalizePlaneMode(mode PlaneMode) PlaneMode {
+	switch mode {
+	case PlaneModeControlPlane, PlaneModeDataPlane, PlaneModeAll:
+		return mode
+	default:
+		return PlaneModeAll
+	}
+}
+
+func registerControlPlaneHealthRoutes(mux *http.ServeMux, s *store.Store) {
+	healthHandler := func(w http.ResponseWriter, r *http.Request) {
+		components := map[string]string{
+			"http": "healthy",
+		}
+		statusText := "ok"
+		code := http.StatusOK
+
+		if s != nil {
+			if err := s.Ping(r.Context()); err != nil {
+				components["postgres"] = "unhealthy: " + err.Error()
+				statusText = "degraded"
+				code = http.StatusServiceUnavailable
+			} else {
+				components["postgres"] = "healthy"
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(code)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":     statusText,
+			"components": components,
+		})
+	}
+
+	liveHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}
+
+	mux.HandleFunc("GET /health", healthHandler)
+	mux.HandleFunc("GET /health/ready", healthHandler)
+	mux.HandleFunc("GET /health/live", liveHandler)
+	mux.HandleFunc("GET /health/startup", liveHandler)
 }
 
 func tenantScopeMiddleware(next http.Handler) http.Handler {

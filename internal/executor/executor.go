@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -80,6 +82,15 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	fn, err := e.store.GetFunctionByName(ctx, funcName)
 	if err != nil {
 		return nil, fmt.Errorf("get function: %w", err)
+	}
+	requestedFunction := fn.Name
+	fn = e.selectRolloutTarget(ctx, fn)
+	if fn.Name != requestedFunction {
+		logging.Op().Debug(
+			"rollout canary selected",
+			"requested_function", requestedFunction,
+			"target_function", fn.Name,
+		)
 	}
 
 	rtCfg, err := e.store.GetRuntime(ctx, string(fn.Runtime))
@@ -288,6 +299,41 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		DurationMs: durationMs,
 		ColdStart:  pvm.ColdStart,
 	}, nil
+}
+
+func (e *Executor) selectRolloutTarget(ctx context.Context, primary *domain.Function) *domain.Function {
+	if primary == nil || primary.RolloutPolicy == nil || !primary.RolloutPolicy.Enabled {
+		return primary
+	}
+
+	canaryName := strings.TrimSpace(primary.RolloutPolicy.CanaryFunction)
+	if canaryName == "" || strings.EqualFold(canaryName, primary.Name) {
+		return primary
+	}
+
+	percent := primary.RolloutPolicy.CanaryPercent
+	if percent <= 0 {
+		return primary
+	}
+	if percent > 100 {
+		percent = 100
+	}
+
+	if rand.IntN(100) >= percent {
+		return primary
+	}
+
+	canary, err := e.store.GetFunctionByName(ctx, canaryName)
+	if err != nil {
+		logging.Op().Warn(
+			"rollout canary not found, fallback to primary",
+			"primary_function", primary.Name,
+			"canary_function", canaryName,
+			"error", err.Error(),
+		)
+		return primary
+	}
+	return canary
 }
 
 // InvokeStream executes a function in streaming mode, calling the callback for each chunk

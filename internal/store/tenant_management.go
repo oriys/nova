@@ -217,20 +217,110 @@ func (s *PostgresStore) DeleteTenant(ctx context.Context, id string) error {
 		return fmt.Errorf("default tenant cannot be deleted")
 	}
 
-	inUse, err := s.tenantHasManagedResources(ctx, tenantID)
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin tenant delete tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := s.acquireDeleteOperationLock(ctx, tx); err != nil {
+		return err
+	}
+
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM tenants WHERE id = $1)`, tenantID).Scan(&exists); err != nil {
+		return fmt.Errorf("check tenant exists: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("tenant not found: %s", tenantID)
+	}
+
+	functionIDs, functionNames, err := listTenantFunctionsTx(ctx, tx, tenantID)
 	if err != nil {
 		return err
 	}
-	if inUse {
-		return fmt.Errorf("tenant %s still has managed resources", tenantID)
+
+	if err := cleanupFunctionsResidualsTx(ctx, tx, functionIDs, functionNames); err != nil {
+		return err
 	}
 
-	ct, err := s.pool.Exec(ctx, `DELETE FROM tenants WHERE id = $1`, tenantID)
+	tenantDeletes := []struct {
+		name string
+		sql  string
+		args []any
+	}{
+		{
+			name: "invocation_logs",
+			sql:  `DELETE FROM invocation_logs WHERE tenant_id = $1`,
+			args: []any{tenantID},
+		},
+		{
+			name: "async_invocations",
+			sql:  `DELETE FROM async_invocations WHERE tenant_id = $1`,
+			args: []any{tenantID},
+		},
+		{
+			name: "schedules",
+			sql:  `DELETE FROM schedules WHERE tenant_id = $1`,
+			args: []any{tenantID},
+		},
+		{
+			name: "triggers",
+			sql:  `DELETE FROM triggers WHERE tenant_id = $1`,
+			args: []any{tenantID},
+		},
+		{
+			name: "api_keys",
+			sql:  `DELETE FROM api_keys WHERE tenant_id = $1`,
+			args: []any{tenantID},
+		},
+		{
+			name: "secrets",
+			sql:  `DELETE FROM secrets WHERE tenant_id = $1`,
+			args: []any{tenantID},
+		},
+		{
+			name: "volumes",
+			sql:  `DELETE FROM volumes WHERE tenant_id = $1`,
+			args: []any{tenantID},
+		},
+		{
+			name: "event_topics",
+			sql:  `DELETE FROM event_topics WHERE tenant_id = $1`,
+			args: []any{tenantID},
+		},
+		{
+			name: "event_subscriptions",
+			sql:  `DELETE FROM event_subscriptions WHERE tenant_id = $1`,
+			args: []any{tenantID},
+		},
+		{
+			name: "dag_workflows",
+			sql:  `DELETE FROM dag_workflows WHERE tenant_id = $1`,
+			args: []any{tenantID},
+		},
+		{
+			name: "functions",
+			sql:  `DELETE FROM functions WHERE tenant_id = $1`,
+			args: []any{tenantID},
+		},
+	}
+
+	for _, stmt := range tenantDeletes {
+		if _, err := tx.Exec(ctx, stmt.sql, stmt.args...); err != nil {
+			return fmt.Errorf("delete tenant %s: %w", stmt.name, err)
+		}
+	}
+
+	ct, err := tx.Exec(ctx, `DELETE FROM tenants WHERE id = $1`, tenantID)
 	if err != nil {
 		return fmt.Errorf("delete tenant: %w", err)
 	}
 	if ct.RowsAffected() == 0 {
 		return fmt.Errorf("tenant not found: %s", tenantID)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit tenant delete tx: %w", err)
 	}
 	return nil
 }
@@ -402,14 +492,6 @@ func (s *PostgresStore) DeleteNamespace(ctx context.Context, tenantID, name stri
 		return fmt.Errorf("default namespace cannot be deleted")
 	}
 
-	inUse, err := s.namespaceHasManagedResources(ctx, scopedTenantID, namespaceName)
-	if err != nil {
-		return err
-	}
-	if inUse {
-		return fmt.Errorf("namespace %s/%s still has managed resources", scopedTenantID, namespaceName)
-	}
-
 	var count int
 	if err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM namespaces WHERE tenant_id = $1`, scopedTenantID).Scan(&count); err != nil {
 		return fmt.Errorf("count namespaces for tenant %s: %w", scopedTenantID, err)
@@ -418,12 +500,195 @@ func (s *PostgresStore) DeleteNamespace(ctx context.Context, tenantID, name stri
 		return fmt.Errorf("cannot delete the last namespace of tenant %s", scopedTenantID)
 	}
 
-	ct, err := s.pool.Exec(ctx, `DELETE FROM namespaces WHERE tenant_id = $1 AND name = $2`, scopedTenantID, namespaceName)
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin namespace delete tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := s.acquireDeleteOperationLock(ctx, tx); err != nil {
+		return err
+	}
+
+	var nsExists bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM namespaces WHERE tenant_id = $1 AND name = $2
+		)
+	`, scopedTenantID, namespaceName).Scan(&nsExists); err != nil {
+		return fmt.Errorf("check namespace exists: %w", err)
+	}
+	if !nsExists {
+		return fmt.Errorf("namespace not found: %s/%s", scopedTenantID, namespaceName)
+	}
+
+	functionIDs, functionNames, err := listNamespaceFunctionsTx(ctx, tx, scopedTenantID, namespaceName)
+	if err != nil {
+		return err
+	}
+
+	if err := cleanupFunctionsResidualsTx(ctx, tx, functionIDs, functionNames); err != nil {
+		return err
+	}
+
+	namespaceDeletes := []struct {
+		name string
+		sql  string
+		args []any
+	}{
+		{
+			name: "invocation_logs",
+			sql:  `DELETE FROM invocation_logs WHERE tenant_id = $1 AND namespace = $2`,
+			args: []any{scopedTenantID, namespaceName},
+		},
+		{
+			name: "async_invocations",
+			sql:  `DELETE FROM async_invocations WHERE tenant_id = $1 AND namespace = $2`,
+			args: []any{scopedTenantID, namespaceName},
+		},
+		{
+			name: "schedules",
+			sql:  `DELETE FROM schedules WHERE tenant_id = $1 AND namespace = $2`,
+			args: []any{scopedTenantID, namespaceName},
+		},
+		{
+			name: "triggers",
+			sql:  `DELETE FROM triggers WHERE tenant_id = $1 AND namespace = $2`,
+			args: []any{scopedTenantID, namespaceName},
+		},
+		{
+			name: "api_keys",
+			sql:  `DELETE FROM api_keys WHERE tenant_id = $1 AND namespace = $2`,
+			args: []any{scopedTenantID, namespaceName},
+		},
+		{
+			name: "secrets",
+			sql:  `DELETE FROM secrets WHERE tenant_id = $1 AND namespace = $2`,
+			args: []any{scopedTenantID, namespaceName},
+		},
+		{
+			name: "volumes",
+			sql:  `DELETE FROM volumes WHERE tenant_id = $1 AND namespace = $2`,
+			args: []any{scopedTenantID, namespaceName},
+		},
+		{
+			name: "event_topics",
+			sql:  `DELETE FROM event_topics WHERE tenant_id = $1 AND namespace = $2`,
+			args: []any{scopedTenantID, namespaceName},
+		},
+		{
+			name: "event_subscriptions",
+			sql:  `DELETE FROM event_subscriptions WHERE tenant_id = $1 AND namespace = $2`,
+			args: []any{scopedTenantID, namespaceName},
+		},
+		{
+			name: "dag_workflows",
+			sql:  `DELETE FROM dag_workflows WHERE tenant_id = $1 AND namespace = $2`,
+			args: []any{scopedTenantID, namespaceName},
+		},
+		{
+			name: "functions",
+			sql:  `DELETE FROM functions WHERE tenant_id = $1 AND namespace = $2`,
+			args: []any{scopedTenantID, namespaceName},
+		},
+	}
+
+	for _, stmt := range namespaceDeletes {
+		if _, err := tx.Exec(ctx, stmt.sql, stmt.args...); err != nil {
+			return fmt.Errorf("delete namespace %s: %w", stmt.name, err)
+		}
+	}
+
+	ct, err := tx.Exec(ctx, `DELETE FROM namespaces WHERE tenant_id = $1 AND name = $2`, scopedTenantID, namespaceName)
 	if err != nil {
 		return fmt.Errorf("delete namespace: %w", err)
 	}
 	if ct.RowsAffected() == 0 {
 		return fmt.Errorf("namespace not found: %s/%s", scopedTenantID, namespaceName)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit namespace delete tx: %w", err)
+	}
+	return nil
+}
+
+func listTenantFunctionsTx(ctx context.Context, tx pgx.Tx, tenantID string) ([]string, []string, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT id, name
+		FROM functions
+		WHERE tenant_id = $1
+	`, tenantID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list tenant functions: %w", err)
+	}
+	defer rows.Close()
+
+	functionIDs := make([]string, 0)
+	functionNames := make([]string, 0)
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, nil, fmt.Errorf("scan tenant function: %w", err)
+		}
+		functionIDs = append(functionIDs, id)
+		functionNames = append(functionNames, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("iterate tenant functions: %w", err)
+	}
+	return functionIDs, functionNames, nil
+}
+
+func listNamespaceFunctionsTx(ctx context.Context, tx pgx.Tx, tenantID, namespace string) ([]string, []string, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT id, name
+		FROM functions
+		WHERE tenant_id = $1 AND namespace = $2
+	`, tenantID, namespace)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list namespace functions: %w", err)
+	}
+	defer rows.Close()
+
+	functionIDs := make([]string, 0)
+	functionNames := make([]string, 0)
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, nil, fmt.Errorf("scan namespace function: %w", err)
+		}
+		functionIDs = append(functionIDs, id)
+		functionNames = append(functionNames, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("iterate namespace functions: %w", err)
+	}
+	return functionIDs, functionNames, nil
+}
+
+func cleanupFunctionsResidualsTx(ctx context.Context, tx pgx.Tx, functionIDs, functionNames []string) error {
+	if len(functionIDs) > 0 {
+		if _, err := tx.Exec(ctx, `
+			DELETE FROM idempotency_keys
+			WHERE scope = 'invoke_async' AND scope_id = ANY($1::text[])
+		`, functionIDs); err != nil {
+			return fmt.Errorf("delete function idempotency keys: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `
+			DELETE FROM function_layers
+			WHERE function_id = ANY($1::text[])
+		`, functionIDs); err != nil {
+			return fmt.Errorf("delete function layers: %w", err)
+		}
+	}
+
+	if len(functionNames) > 0 {
+		if _, err := tx.Exec(ctx, `
+			DELETE FROM gateway_routes
+			WHERE function_name = ANY($1::text[])
+		`, functionNames); err != nil {
+			return fmt.Errorf("delete gateway routes for functions: %w", err)
+		}
 	}
 	return nil
 }

@@ -11,7 +11,7 @@ type Config struct {
 }
 
 func LoadConfig() *Config {
-	url := os.Getenv("NOVA_URL")
+	url := os.Getenv("ZENITH_URL")
 	if url == "" {
 		url = "http://localhost:9000"
 	}

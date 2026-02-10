@@ -18,6 +18,8 @@ export interface NovaFunction {
   mode?: string;
   limits?: ResourceLimits;
   env_vars?: Record<string, string>;
+  network_policy?: NetworkPolicy;
+  rollout_policy?: RolloutPolicy;
   auto_scale_policy?: AutoScalePolicy;
   capacity_policy?: CapacityPolicy;
   created_at: string;
@@ -51,6 +53,31 @@ export interface ResourceLimits {
   disk_bandwidth?: number;
   net_rx_bandwidth?: number;
   net_tx_bandwidth?: number;
+}
+
+export interface EgressRule {
+  host: string;
+  port?: number;
+  protocol?: string;
+}
+
+export interface IngressRule {
+  source: string;
+  port?: number;
+  protocol?: string;
+}
+
+export interface NetworkPolicy {
+  isolation_mode?: string;
+  ingress_rules?: IngressRule[];
+  egress_rules?: EgressRule[];
+  deny_external_access?: boolean;
+}
+
+export interface RolloutPolicy {
+  enabled?: boolean;
+  canary_function?: string;
+  canary_percent?: number;
 }
 
 export interface ScaleThresholds {
@@ -103,6 +130,12 @@ export interface Runtime {
 }
 
 export interface RouteRateLimit {
+  requests_per_second: number;
+  burst_size: number;
+}
+
+export interface GatewayRateLimitTemplate {
+  enabled: boolean;
   requests_per_second: number;
   burst_size: number;
 }
@@ -423,6 +456,33 @@ export interface FunctionMetrics {
   timeseries?: TimeSeriesPoint[];
 }
 
+export interface FunctionDiagnosticsSlowInvocation {
+  id: string;
+  created_at: string;
+  duration_ms: number;
+  cold_start: boolean;
+  success: boolean;
+  error_message?: string;
+}
+
+export interface FunctionDiagnostics {
+  function_id: string;
+  function_name: string;
+  window_seconds: number;
+  sample_size: number;
+  total_invocations: number;
+  avg_duration_ms: number;
+  p50_duration_ms: number;
+  p95_duration_ms: number;
+  p99_duration_ms: number;
+  max_duration_ms: number;
+  error_rate_pct: number;
+  cold_start_rate_pct: number;
+  slow_threshold_ms: number;
+  slow_count: number;
+  slow_invocations: FunctionDiagnosticsSlowInvocation[];
+}
+
 export interface GlobalMetrics {
   uptime_seconds: number;
   invocations: {
@@ -459,11 +519,15 @@ export interface GlobalMetrics {
 export interface HealthStatus {
   status: string;
   components?: {
-    postgres: boolean;
-    pool: {
-      active_vms: number;
-      total_pools: number;
+    postgres?: boolean | string;
+    pool?: {
+      active_vms?: number;
+      total_pools?: number | null;
     };
+    zenith?: string;
+    nova?: string;
+    comet?: string;
+    [key: string]: unknown;
   };
   uptime_seconds?: number;
 }
@@ -480,6 +544,8 @@ export interface CreateFunctionRequest {
   mode?: string;
   env_vars?: Record<string, string>;
   limits?: ResourceLimits;
+  network_policy?: NetworkPolicy;
+  rollout_policy?: RolloutPolicy;
 }
 
 export interface UpdateFunctionRequest {
@@ -492,6 +558,8 @@ export interface UpdateFunctionRequest {
   mode?: string;
   env_vars?: Record<string, string>;
   limits?: ResourceLimits;
+  network_policy?: NetworkPolicy;
+  rollout_policy?: RolloutPolicy;
 }
 
 export interface CreateRuntimeRequest {
@@ -635,6 +703,11 @@ export const functionsApi = {
 
   metrics: (name: string) =>
     request<FunctionMetrics>(`/functions/${encodeURIComponent(name)}/metrics`),
+
+  diagnostics: (name: string, window: string = "24h", sample: number = 1000) =>
+    request<FunctionDiagnostics>(
+      `/functions/${encodeURIComponent(name)}/diagnostics?window=${encodeURIComponent(window)}&sample=${Math.max(1, Math.floor(sample))}`
+    ),
 
   getCode: (name: string) =>
     request<FunctionCodeResponse>(`/functions/${encodeURIComponent(name)}/code`),
@@ -1065,6 +1138,15 @@ export const gatewayApi = {
   deleteRoute: (id: string) =>
     request<{ status: string; id: string }>(`/gateway/routes/${encodeURIComponent(id)}`, {
       method: "DELETE",
+    }),
+
+  getRateLimitTemplate: () =>
+    request<GatewayRateLimitTemplate>("/gateway/rate-limit-template"),
+
+  updateRateLimitTemplate: (data: Partial<GatewayRateLimitTemplate>) =>
+    request<GatewayRateLimitTemplate>("/gateway/rate-limit-template", {
+      method: "PUT",
+      body: JSON.stringify(data),
     }),
 };
 

@@ -14,6 +14,7 @@ set -e
 
 API_URL="${1:-http://localhost:9000}"
 SKIP_COMPILED="${SKIP_COMPILED:-0}"
+SKIP_WORKFLOWS="${SKIP_WORKFLOWS:-0}"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -172,9 +173,13 @@ main() {
     echo ""
 
     # Seed DAG workflows (multi-language pipelines)
-    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-    if [ -x "${SCRIPT_DIR}/seed-workflows.sh" ]; then
-        "${SCRIPT_DIR}/seed-workflows.sh" "${API_URL}"
+    if [[ "${SKIP_WORKFLOWS}" == "1" ]]; then
+        warn "Skipping workflow seeding (SKIP_WORKFLOWS=1)"
+    else
+        SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+        if [ -x "${SCRIPT_DIR}/seed-workflows.sh" ]; then
+            "${SCRIPT_DIR}/seed-workflows.sh" "${API_URL}"
+        fi
     fi
 }
 

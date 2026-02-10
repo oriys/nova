@@ -29,7 +29,7 @@ export default function DocsInstallationPage() {
           <li>Privileges: root (run with <code>sudo</code>)</li>
           <li>Hardware: <code>/dev/kvm</code> recommended for Firecracker VM execution</li>
           <li>Build toolchain: Go <code>1.24+</code>, make, git, curl, unzip, e2fsprogs</li>
-          <li>Ports: <code>9000</code> (Nova API), <code>3000</code> (Lumen UI), <code>5432</code> (PostgreSQL)</li>
+          <li>Ports: <code>9000</code> (Zenith gateway/API entrypoint), <code>3000</code> (Lumen UI), <code>5432</code> (PostgreSQL)</li>
         </ul>
         <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-400">
           <p className="font-medium">Data safety note</p>
@@ -65,7 +65,7 @@ export default function DocsInstallationPage() {
           code={`git clone https://github.com/oriys/nova.git
 cd nova
 
-# Start full stack (postgres + nova + lumen + seeders)
+# Start full stack (postgres + nova + comet + zenith + lumen + seeders)
 make dev
 
 # Open UI and docs
@@ -220,7 +220,7 @@ ssh user@server 'sudo bash /tmp/nova-deploy/scripts/setup.sh'`}
         <h2 className="text-3xl font-semibold tracking-tight">Verify Installation</h2>
         <ol className="mt-4 list-decimal space-y-3 pl-6 text-lg leading-8">
           <li>Check systemd status for <code>postgresql</code>, <code>nova</code>, and <code>lumen</code>.</li>
-          <li>Check Nova health endpoints.</li>
+          <li>Check backend health endpoints (Zenith entrypoint).</li>
           <li>Call API once to confirm function lifecycle works.</li>
         </ol>
         <CodeBlock
@@ -249,6 +249,7 @@ curl -s -X POST http://127.0.0.1:9000/functions \
         <CodeBlock
           code={`# Orbit CLI
 make orbit
+# 9000 is the unified Zenith entrypoint
 ./orbit/target/debug/orbit config set server http://127.0.0.1:9000
 ./orbit/target/debug/orbit config set tenant default
 ./orbit/target/debug/orbit config set namespace default
@@ -256,7 +257,7 @@ make orbit
 # Atlas MCP server
 make atlas-linux
 # binary: ./bin/atlas-linux
-# run with NOVA_URL/NOVA_API_KEY/NOVA_TENANT/NOVA_NAMESPACE env`}
+# run with ZENITH_URL/NOVA_API_KEY/NOVA_TENANT/NOVA_NAMESPACE env`}
         />
       </section>
 

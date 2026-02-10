@@ -74,6 +74,8 @@ func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 		"instance_concurrency": fn.InstanceConcurrency,
 		"env_vars":             fn.EnvVars,
 		"limits":               fn.Limits,
+		"network_policy":       fn.NetworkPolicy,
+		"rollout_policy":       fn.RolloutPolicy,
 		"auto_scale_policy":    fn.AutoScalePolicy,
 		"capacity_policy":      fn.CapacityPolicy,
 		"created_at":           fn.CreatedAt,
@@ -209,29 +211,19 @@ func (h *Handler) DeleteFunction(w http.ResponseWriter, r *http.Request) {
 	h.Pool.Evict(fn.ID)
 	_ = executor.InvalidateSnapshot(h.Backend.SnapshotDir(), fn.ID)
 
-	versions, _ := h.Store.ListVersions(r.Context(), fn.ID, 0, 0)
-	for _, v := range versions {
-		_ = h.Store.DeleteVersion(r.Context(), fn.ID, v.Version)
-	}
-
-	aliases, _ := h.Store.ListAliases(r.Context(), fn.ID, 0, 0)
-	for _, a := range aliases {
-		_ = h.Store.DeleteAlias(r.Context(), fn.ID, a.Name)
-	}
-
-	_ = h.Store.DeleteFunctionCode(r.Context(), fn.ID)
-
 	if err := h.Store.DeleteFunction(r.Context(), fn.ID); err != nil {
+		if strings.Contains(err.Error(), "function not found") {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":           "deleted",
-		"name":             name,
-		"versions_deleted": len(versions),
-		"aliases_deleted":  len(aliases),
+		"status": "deleted",
+		"name":   name,
 	})
 }
 

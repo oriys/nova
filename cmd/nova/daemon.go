@@ -43,8 +43,8 @@ func daemonCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "daemon",
-		Short: "Run as daemon (keeps VMs warm, optional HTTP API)",
-		Long:  "Run nova as a daemon that maintains warm VMs and optionally exposes an HTTP API",
+		Short: "Run Nova control plane daemon",
+		Long:  "Run Nova as a control plane daemon with management APIs and workers",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := config.DefaultConfig()
 			if configFile != "" {
@@ -225,6 +225,7 @@ func daemonCmd() *cobra.Command {
 					Scheduler:       sched,
 					RootfsDir:       cfg.Firecracker.RootfsDir,
 					LayerManager:    layerManager,
+					PlaneMode:       api.PlaneModeControlPlane,
 				})
 				logging.Op().Info("HTTP API started", "addr", cfg.Daemon.HTTPAddr)
 			}
@@ -234,7 +235,7 @@ func daemonCmd() *cobra.Command {
 				// Create compiler for control plane
 				comp := compiler.New(s)
 				funcService := service.NewFunctionService(s, comp)
-				
+
 				grpcUnifiedServer, err = novagrpc.NewUnifiedServer(&novagrpc.Config{
 					Address:         cfg.GRPC.Addr,
 					Store:           s,
@@ -246,7 +247,7 @@ func daemonCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("create gRPC server: %w", err)
 				}
-				
+
 				if err := grpcUnifiedServer.Start(cfg.GRPC.Addr); err != nil {
 					return fmt.Errorf("start gRPC server: %w", err)
 				}

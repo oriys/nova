@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -19,8 +21,11 @@ import (
 )
 
 const (
-	defaultRangeSeconds = 3600 // 1 hour
-	maxDataPoints       = 30
+	defaultRangeSeconds             = 3600 // 1 hour
+	maxDataPoints                   = 30
+	defaultDiagnosticsWindowSeconds = 24 * 3600
+	defaultDiagnosticsSampleSize    = 1000
+	maxDiagnosticsSampleSize        = 5000
 )
 
 // parseRangeParam parses a range string like "1m", "5m", "1h", "24h" into
@@ -58,6 +63,82 @@ func parseRangeParam(raw string) (int, int) {
 	return rangeSeconds, bucketSeconds
 }
 
+func parseWindowParam(raw string, fallback int) int {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return fallback
+	}
+	if seconds, err := strconv.Atoi(raw); err == nil && seconds > 0 {
+		return seconds
+	}
+	if len(raw) < 2 {
+		return fallback
+	}
+	unit := raw[len(raw)-1]
+	numStr := raw[:len(raw)-1]
+	num, err := strconv.Atoi(numStr)
+	if err != nil || num <= 0 {
+		return fallback
+	}
+	switch unit {
+	case 'm':
+		return num * 60
+	case 'h':
+		return num * 3600
+	case 'd':
+		return num * 86400
+	default:
+		return fallback
+	}
+}
+
+func percentile(sortedValues []int64, p float64) int64 {
+	if len(sortedValues) == 0 {
+		return 0
+	}
+	if p <= 0 {
+		return sortedValues[0]
+	}
+	if p >= 1 {
+		return sortedValues[len(sortedValues)-1]
+	}
+	index := int(math.Ceil(p*float64(len(sortedValues)))) - 1
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(sortedValues) {
+		index = len(sortedValues) - 1
+	}
+	return sortedValues[index]
+}
+
+type slowInvocationSummary struct {
+	ID           string    `json:"id"`
+	CreatedAt    time.Time `json:"created_at"`
+	DurationMs   int64     `json:"duration_ms"`
+	ColdStart    bool      `json:"cold_start"`
+	Success      bool      `json:"success"`
+	ErrorMessage string    `json:"error_message,omitempty"`
+}
+
+type functionDiagnosticsResponse struct {
+	FunctionID       string                  `json:"function_id"`
+	FunctionName     string                  `json:"function_name"`
+	WindowSeconds    int                     `json:"window_seconds"`
+	SampleSize       int                     `json:"sample_size"`
+	TotalInvocations int                     `json:"total_invocations"`
+	AvgDurationMs    float64                 `json:"avg_duration_ms"`
+	P50DurationMs    int64                   `json:"p50_duration_ms"`
+	P95DurationMs    int64                   `json:"p95_duration_ms"`
+	P99DurationMs    int64                   `json:"p99_duration_ms"`
+	MaxDurationMs    int64                   `json:"max_duration_ms"`
+	ErrorRatePct     float64                 `json:"error_rate_pct"`
+	ColdStartRatePct float64                 `json:"cold_start_rate_pct"`
+	SlowThresholdMs  int64                   `json:"slow_threshold_ms"`
+	SlowCount        int                     `json:"slow_count"`
+	SlowInvocations  []slowInvocationSummary `json:"slow_invocations"`
+}
+
 // Handler handles data plane HTTP requests (invocations and observability).
 type Handler struct {
 	Store *store.Store
@@ -89,12 +170,12 @@ func writeTenantQuotaExceeded(w http.ResponseWriter, decision *store.TenantQuota
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusTooManyRequests)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"error":        "tenant quota exceeded",
-		"tenant_id":    decision.TenantID,
-		"dimension":    decision.Dimension,
-		"used":         decision.Used,
-		"limit":        decision.Limit,
-		"window_s":     decision.WindowS,
+		"error":         "tenant quota exceeded",
+		"tenant_id":     decision.TenantID,
+		"dimension":     decision.Dimension,
+		"used":          decision.Used,
+		"limit":         decision.Limit,
+		"window_s":      decision.WindowS,
 		"retry_after_s": decision.RetryAfterS,
 	})
 }
@@ -124,6 +205,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /invocations", h.ListAllInvocations)
 	mux.HandleFunc("GET /functions/{name}/logs", h.Logs)
 	mux.HandleFunc("GET /functions/{name}/metrics", h.FunctionMetrics)
+	mux.HandleFunc("GET /functions/{name}/diagnostics", h.FunctionDiagnostics)
 	mux.HandleFunc("GET /functions/{name}/heatmap", h.FunctionHeatmap)
 	mux.HandleFunc("GET /metrics/heatmap", h.GlobalHeatmap)
 }
@@ -134,6 +216,10 @@ func (h *Handler) InvokeFunction(w http.ResponseWriter, r *http.Request) {
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if err := h.enforceIngressPolicy(r.Context(), r, fn); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 
@@ -214,6 +300,10 @@ func (h *Handler) InvokeFunctionStream(w http.ResponseWriter, r *http.Request) {
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if err := h.enforceIngressPolicy(r.Context(), r, fn); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 
@@ -334,6 +424,10 @@ func (h *Handler) EnqueueAsyncFunction(w http.ResponseWriter, r *http.Request) {
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if err := h.enforceIngressPolicy(r.Context(), r, fn); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 
@@ -770,6 +864,132 @@ func (h *Handler) FunctionMetrics(w http.ResponseWriter, r *http.Request) {
 		"invocations":   funcStats,
 		"pool":          poolStats,
 		"timeseries":    timeSeries,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// FunctionDiagnostics handles GET /functions/{name}/diagnostics
+func (h *Handler) FunctionDiagnostics(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	windowSeconds := parseWindowParam(r.URL.Query().Get("window"), defaultDiagnosticsWindowSeconds)
+	sampleSize := parseLimitQuery(r.URL.Query().Get("sample"), defaultDiagnosticsSampleSize, maxDiagnosticsSampleSize)
+	cutoff := time.Now().Add(-time.Duration(windowSeconds) * time.Second)
+
+	entries, err := h.Store.ListInvocationLogs(r.Context(), fn.ID, sampleSize, 0)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	filtered := make([]*store.InvocationLog, 0, len(entries))
+	for _, entry := range entries {
+		if entry.CreatedAt.Before(cutoff) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+
+	result := functionDiagnosticsResponse{
+		FunctionID:      fn.ID,
+		FunctionName:    fn.Name,
+		WindowSeconds:   windowSeconds,
+		SampleSize:      sampleSize,
+		SlowThresholdMs: 500,
+		SlowInvocations: []slowInvocationSummary{},
+	}
+
+	if len(filtered) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
+		return
+	}
+
+	durations := make([]int64, 0, len(filtered))
+	var totalDuration int64
+	var maxDuration int64
+	errorCount := 0
+	coldStartCount := 0
+
+	for _, entry := range filtered {
+		duration := entry.DurationMs
+		if duration < 0 {
+			duration = 0
+		}
+		durations = append(durations, duration)
+		totalDuration += duration
+		if duration > maxDuration {
+			maxDuration = duration
+		}
+		if !entry.Success {
+			errorCount++
+		}
+		if entry.ColdStart {
+			coldStartCount++
+		}
+	}
+	sort.Slice(durations, func(i, j int) bool { return durations[i] < durations[j] })
+
+	p50 := percentile(durations, 0.50)
+	p95 := percentile(durations, 0.95)
+	p99 := percentile(durations, 0.99)
+	slowThreshold := int64(math.Max(float64(p95)*1.5, 500))
+
+	slowCount := 0
+	slowCandidates := make([]*store.InvocationLog, 0, len(filtered))
+	for _, entry := range filtered {
+		if entry.DurationMs >= slowThreshold {
+			slowCount++
+			slowCandidates = append(slowCandidates, entry)
+		}
+	}
+	sort.Slice(slowCandidates, func(i, j int) bool {
+		if slowCandidates[i].DurationMs == slowCandidates[j].DurationMs {
+			return slowCandidates[i].CreatedAt.After(slowCandidates[j].CreatedAt)
+		}
+		return slowCandidates[i].DurationMs > slowCandidates[j].DurationMs
+	})
+
+	if len(slowCandidates) > 10 {
+		slowCandidates = slowCandidates[:10]
+	}
+	slowInvocations := make([]slowInvocationSummary, 0, len(slowCandidates))
+	for _, entry := range slowCandidates {
+		slowInvocations = append(slowInvocations, slowInvocationSummary{
+			ID:           entry.ID,
+			CreatedAt:    entry.CreatedAt,
+			DurationMs:   entry.DurationMs,
+			ColdStart:    entry.ColdStart,
+			Success:      entry.Success,
+			ErrorMessage: entry.ErrorMessage,
+		})
+	}
+
+	total := float64(len(filtered))
+	result = functionDiagnosticsResponse{
+		FunctionID:       fn.ID,
+		FunctionName:     fn.Name,
+		WindowSeconds:    windowSeconds,
+		SampleSize:       sampleSize,
+		TotalInvocations: len(filtered),
+		AvgDurationMs:    float64(totalDuration) / total,
+		P50DurationMs:    p50,
+		P95DurationMs:    p95,
+		P99DurationMs:    p99,
+		MaxDurationMs:    maxDuration,
+		ErrorRatePct:     float64(errorCount) * 100 / total,
+		ColdStartRatePct: float64(coldStartCount) * 100 / total,
+		SlowThresholdMs:  slowThreshold,
+		SlowCount:        slowCount,
+		SlowInvocations:  slowInvocations,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

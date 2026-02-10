@@ -14,17 +14,14 @@ var (
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:   "nova",
-		Short: "Nova backend service",
-		Long:  "Run Nova control plane services via the daemon command",
+		Use:   "comet",
+		Short: "Comet data plane service",
+		Long:  "Run Comet data plane services (executor/pool/gRPC) via the daemon command",
 	}
 
 	rootCmd.PersistentFlags().StringVar(&pgDSN, "pg-dsn", "", "Postgres DSN")
 	rootCmd.PersistentFlags().StringVar(&configFile, "config", "", "Path to config file")
-
-	rootCmd.AddCommand(
-		daemonCmd(),
-	)
+	rootCmd.AddCommand(daemonCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

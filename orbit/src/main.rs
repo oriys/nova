@@ -28,8 +28,8 @@ use commands::{
     about = "CLI for the Nova serverless platform"
 )]
 struct Cli {
-    /// Nova server URL
-    #[arg(long, env = "NOVA_URL", global = true)]
+    /// Zenith gateway URL (or Nova-compatible API endpoint)
+    #[arg(long, env = "ZENITH_URL", global = true)]
     server: Option<String>,
 
     /// API key for authentication

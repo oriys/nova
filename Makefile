@@ -5,6 +5,10 @@
 BINARY_DIR   := bin
 NOVA_BIN     := $(BINARY_DIR)/nova
 NOVA_LINUX   := $(BINARY_DIR)/nova-linux
+COMET_BIN    := $(BINARY_DIR)/comet
+COMET_LINUX  := $(BINARY_DIR)/comet-linux
+ZENITH_BIN   := $(BINARY_DIR)/zenith
+ZENITH_LINUX := $(BINARY_DIR)/zenith-linux
 AGENT_BIN    := $(BINARY_DIR)/nova-agent
 ATLAS_BIN    := $(BINARY_DIR)/atlas
 ATLAS_LINUX  := $(BINARY_DIR)/atlas-linux
@@ -13,13 +17,20 @@ PREFIX       ?= nova-runtime
 
 # ─── Backend ──────────────────────────────────────────────────────────────────
 
-.PHONY: build build-linux agent
+.PHONY: build build-linux agent comet comet-linux zenith zenith-linux proto
 
-build: $(NOVA_BIN) $(AGENT_BIN)  ## Build nova (native) + agent (linux/amd64)
+proto:  ## Generate gRPC/protobuf code via buf (nova.proto)
+	cd api/proto && buf generate --path nova.proto
 
-build-linux: $(NOVA_LINUX) $(AGENT_BIN)  ## Cross-compile nova + agent for linux/amd64
+build: $(NOVA_BIN) $(COMET_BIN) $(ZENITH_BIN) $(AGENT_BIN)  ## Build nova/comet/zenith (native) + agent (linux/amd64)
+
+build-linux: $(NOVA_LINUX) $(COMET_LINUX) $(ZENITH_LINUX) $(AGENT_BIN)  ## Cross-compile nova/comet/zenith + agent for linux/amd64
 
 agent: $(AGENT_BIN)  ## Build only the guest agent (linux/amd64)
+comet: $(COMET_BIN)  ## Build Comet data plane (native)
+comet-linux: $(COMET_LINUX)  ## Cross-compile Comet for linux/amd64
+zenith: $(ZENITH_BIN)  ## Build Zenith gateway (native)
+zenith-linux: $(ZENITH_LINUX)  ## Cross-compile Zenith for linux/amd64
 
 $(NOVA_BIN): cmd/nova/main.go internal/**/*.go
 	@mkdir -p $(BINARY_DIR)
@@ -28,6 +39,22 @@ $(NOVA_BIN): cmd/nova/main.go internal/**/*.go
 $(NOVA_LINUX): cmd/nova/main.go internal/**/*.go
 	@mkdir -p $(BINARY_DIR)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $@ ./cmd/nova
+
+$(COMET_BIN): cmd/comet/main.go cmd/comet/daemon.go internal/**/*.go
+	@mkdir -p $(BINARY_DIR)
+	CGO_ENABLED=0 go build -o $@ ./cmd/comet
+
+$(COMET_LINUX): cmd/comet/main.go cmd/comet/daemon.go internal/**/*.go
+	@mkdir -p $(BINARY_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $@ ./cmd/comet
+
+$(ZENITH_BIN): cmd/zenith/main.go cmd/zenith/serve.go internal/**/*.go api/proto/novapb/*.go
+	@mkdir -p $(BINARY_DIR)
+	CGO_ENABLED=0 go build -o $@ ./cmd/zenith
+
+$(ZENITH_LINUX): cmd/zenith/main.go cmd/zenith/serve.go internal/**/*.go api/proto/novapb/*.go
+	@mkdir -p $(BINARY_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $@ ./cmd/zenith
 
 $(AGENT_BIN): cmd/agent/main.go
 	@mkdir -p $(BINARY_DIR)
@@ -115,7 +142,7 @@ all: build orbit atlas frontend docker-backend docker-frontend docker-runtimes  
 
 .PHONY: dev seed
 
-dev: download-assets  ## Start full stack via docker compose (Postgres + Nova + Lumen)
+dev: download-assets  ## Start full stack via docker compose (Postgres + Nova + Comet + Zenith + Lumen)
 	docker-compose up --build
 
 seed:  ## Seed sample functions via scripts/seed-functions.sh

@@ -1,8 +1,11 @@
 package controlplane
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,12 +18,26 @@ type GatewayHandler struct {
 	Store *store.Store
 }
 
+const (
+	gatewayDefaultRPSKey    = "gateway.default_rate_limit_rps"
+	gatewayDefaultBurstKey  = "gateway.default_rate_limit_burst"
+	gatewayDefaultEnableKey = "gateway.default_rate_limit_enabled"
+)
+
+type gatewayRateLimitTemplate struct {
+	Enabled           bool    `json:"enabled"`
+	RequestsPerSecond float64 `json:"requests_per_second"`
+	BurstSize         int     `json:"burst_size"`
+}
+
 func (h *GatewayHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /gateway/routes", h.CreateRoute)
 	mux.HandleFunc("GET /gateway/routes", h.ListRoutes)
 	mux.HandleFunc("GET /gateway/routes/{id}", h.GetRoute)
 	mux.HandleFunc("PATCH /gateway/routes/{id}", h.UpdateRoute)
 	mux.HandleFunc("DELETE /gateway/routes/{id}", h.DeleteRoute)
+	mux.HandleFunc("GET /gateway/rate-limit-template", h.GetRateLimitTemplate)
+	mux.HandleFunc("PUT /gateway/rate-limit-template", h.UpdateRateLimitTemplate)
 }
 
 func (h *GatewayHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +79,14 @@ func (h *GatewayHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 
 	if req.AuthStrategy == "" {
 		req.AuthStrategy = "none"
+	}
+	if req.RateLimit == nil {
+		if tpl, err := h.loadRateLimitTemplate(r.Context()); err == nil && tpl.Enabled {
+			req.RateLimit = &domain.RouteRateLimit{
+				RequestsPerSecond: tpl.RequestsPerSecond,
+				BurstSize:         tpl.BurstSize,
+			}
+		}
 	}
 
 	now := time.Now()
@@ -200,4 +225,104 @@ func (h *GatewayHandler) DeleteRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": id})
+}
+
+func (h *GatewayHandler) GetRateLimitTemplate(w http.ResponseWriter, r *http.Request) {
+	tpl, err := h.loadRateLimitTemplate(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(tpl)
+}
+
+func (h *GatewayHandler) UpdateRateLimitTemplate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled           *bool    `json:"enabled"`
+		RequestsPerSecond *float64 `json:"requests_per_second"`
+		BurstSize         *int     `json:"burst_size"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	current, err := h.loadRateLimitTemplate(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	next := current
+	if req.Enabled != nil {
+		next.Enabled = *req.Enabled
+	}
+	if req.RequestsPerSecond != nil {
+		next.RequestsPerSecond = *req.RequestsPerSecond
+	}
+	if req.BurstSize != nil {
+		next.BurstSize = *req.BurstSize
+	}
+
+	if next.RequestsPerSecond < 0 {
+		http.Error(w, "requests_per_second must be >= 0", http.StatusBadRequest)
+		return
+	}
+	if next.BurstSize < 0 {
+		http.Error(w, "burst_size must be >= 0", http.StatusBadRequest)
+		return
+	}
+
+	if !next.Enabled || next.RequestsPerSecond <= 0 || next.BurstSize <= 0 {
+		next.Enabled = false
+		next.RequestsPerSecond = 0
+		next.BurstSize = 0
+	}
+
+	if err := h.Store.SetConfig(r.Context(), gatewayDefaultEnableKey, strconv.FormatBool(next.Enabled)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := h.Store.SetConfig(r.Context(), gatewayDefaultRPSKey, strconv.FormatFloat(next.RequestsPerSecond, 'f', -1, 64)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := h.Store.SetConfig(r.Context(), gatewayDefaultBurstKey, strconv.Itoa(next.BurstSize)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(next)
+}
+
+func (h *GatewayHandler) loadRateLimitTemplate(ctx context.Context) (*gatewayRateLimitTemplate, error) {
+	cfg, err := h.Store.GetConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	tpl := &gatewayRateLimitTemplate{}
+	if v, ok := cfg[gatewayDefaultEnableKey]; ok {
+		tpl.Enabled = strings.EqualFold(strings.TrimSpace(v), "true")
+	}
+	if v, ok := cfg[gatewayDefaultRPSKey]; ok {
+		if parsed, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && parsed > 0 {
+			tpl.RequestsPerSecond = parsed
+		}
+	}
+	if v, ok := cfg[gatewayDefaultBurstKey]; ok {
+		if parsed, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && parsed > 0 {
+			tpl.BurstSize = parsed
+		}
+	}
+
+	if tpl.RequestsPerSecond <= 0 || tpl.BurstSize <= 0 {
+		tpl.Enabled = false
+		tpl.RequestsPerSecond = 0
+		tpl.BurstSize = 0
+	}
+
+	return tpl, nil
 }
