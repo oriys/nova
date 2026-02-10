@@ -15,6 +15,7 @@ import (
 	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/service"
 	"github.com/oriys/nova/internal/store"
+	"github.com/oriys/nova/internal/volume"
 	"github.com/oriys/nova/internal/workflow"
 )
 
@@ -33,6 +34,7 @@ type Handler struct {
 	RootfsDir       string         // Directory where rootfs ext4 images are stored
 	GatewayEnabled  bool           // Whether gateway route management is enabled
 	LayerManager    *layer.Manager // Optional: for shared dependency layers
+	VolumeManager   *volume.Manager // Optional: for persistent volume management
 }
 
 // RegisterRoutes registers all control plane routes on the given mux.
@@ -146,6 +148,14 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		mux.HandleFunc("DELETE /layers/{name}", h.DeleteLayer)
 		mux.HandleFunc("PUT /functions/{name}/layers", h.SetFunctionLayers)
 		mux.HandleFunc("GET /functions/{name}/layers", h.GetFunctionLayers)
+	}
+
+	// Volumes
+	if h.VolumeManager != nil {
+		mux.HandleFunc("POST /volumes", h.CreateVolume)
+		mux.HandleFunc("GET /volumes", h.ListVolumes)
+		mux.HandleFunc("GET /volumes/{name}", h.GetVolume)
+		mux.HandleFunc("DELETE /volumes/{name}", h.DeleteVolume)
 	}
 }
 
