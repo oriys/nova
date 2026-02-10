@@ -77,7 +77,10 @@ func (h *ScheduleHandler) ListSchedules(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	schedules, err := h.Store.ListSchedulesByFunction(r.Context(), fnName)
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+
+	schedules, err := h.Store.ListSchedulesByFunction(r.Context(), fnName, limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

@@ -36,18 +36,18 @@ type MetadataStore interface {
 	GetFunction(ctx context.Context, id string) (*domain.Function, error)
 	GetFunctionByName(ctx context.Context, name string) (*domain.Function, error)
 	DeleteFunction(ctx context.Context, id string) error
-	ListFunctions(ctx context.Context) ([]*domain.Function, error)
-	SearchFunctions(ctx context.Context, query string) ([]*domain.Function, error)
+	ListFunctions(ctx context.Context, limit, offset int) ([]*domain.Function, error)
+	SearchFunctions(ctx context.Context, query string, limit, offset int) ([]*domain.Function, error)
 	UpdateFunction(ctx context.Context, name string, update *FunctionUpdate) (*domain.Function, error)
 
 	// Tenancy (tenant / namespace)
-	ListTenants(ctx context.Context) ([]*TenantRecord, error)
+	ListTenants(ctx context.Context, limit, offset int) ([]*TenantRecord, error)
 	GetTenant(ctx context.Context, id string) (*TenantRecord, error)
 	CreateTenant(ctx context.Context, tenant *TenantRecord) (*TenantRecord, error)
 	UpdateTenant(ctx context.Context, id string, update *TenantUpdate) (*TenantRecord, error)
 	DeleteTenant(ctx context.Context, id string) error
 
-	ListNamespaces(ctx context.Context, tenantID string) ([]*NamespaceRecord, error)
+	ListNamespaces(ctx context.Context, tenantID string, limit, offset int) ([]*NamespaceRecord, error)
 	GetNamespace(ctx context.Context, tenantID, name string) (*NamespaceRecord, error)
 	CreateNamespace(ctx context.Context, namespace *NamespaceRecord) (*NamespaceRecord, error)
 	UpdateNamespace(ctx context.Context, tenantID, name string, update *NamespaceUpdate) (*NamespaceRecord, error)
@@ -66,19 +66,19 @@ type MetadataStore interface {
 
 	PublishVersion(ctx context.Context, funcID string, version *domain.FunctionVersion) error
 	GetVersion(ctx context.Context, funcID string, version int) (*domain.FunctionVersion, error)
-	ListVersions(ctx context.Context, funcID string) ([]*domain.FunctionVersion, error)
+	ListVersions(ctx context.Context, funcID string, limit, offset int) ([]*domain.FunctionVersion, error)
 	DeleteVersion(ctx context.Context, funcID string, version int) error
 
 	SetAlias(ctx context.Context, alias *domain.FunctionAlias) error
 	GetAlias(ctx context.Context, funcID, aliasName string) (*domain.FunctionAlias, error)
-	ListAliases(ctx context.Context, funcID string) ([]*domain.FunctionAlias, error)
+	ListAliases(ctx context.Context, funcID string, limit, offset int) ([]*domain.FunctionAlias, error)
 	DeleteAlias(ctx context.Context, funcID, aliasName string) error
 
 	// Invocation logs
 	SaveInvocationLog(ctx context.Context, log *InvocationLog) error
 	SaveInvocationLogs(ctx context.Context, logs []*InvocationLog) error
-	ListInvocationLogs(ctx context.Context, functionID string, limit int) ([]*InvocationLog, error)
-	ListAllInvocationLogs(ctx context.Context, limit int) ([]*InvocationLog, error)
+	ListInvocationLogs(ctx context.Context, functionID string, limit, offset int) ([]*InvocationLog, error)
+	ListAllInvocationLogs(ctx context.Context, limit, offset int) ([]*InvocationLog, error)
 	GetInvocationLog(ctx context.Context, requestID string) (*InvocationLog, error)
 	GetFunctionTimeSeries(ctx context.Context, functionID string, rangeSeconds, bucketSeconds int) ([]TimeSeriesBucket, error)
 	GetGlobalTimeSeries(ctx context.Context, rangeSeconds, bucketSeconds int) ([]TimeSeriesBucket, error)
@@ -88,8 +88,8 @@ type MetadataStore interface {
 	// Async invocations (queue + retries + DLQ)
 	EnqueueAsyncInvocation(ctx context.Context, inv *AsyncInvocation) error
 	GetAsyncInvocation(ctx context.Context, id string) (*AsyncInvocation, error)
-	ListAsyncInvocations(ctx context.Context, limit int, statuses []AsyncInvocationStatus) ([]*AsyncInvocation, error)
-	ListFunctionAsyncInvocations(ctx context.Context, functionID string, limit int, statuses []AsyncInvocationStatus) ([]*AsyncInvocation, error)
+	ListAsyncInvocations(ctx context.Context, limit, offset int, statuses []AsyncInvocationStatus) ([]*AsyncInvocation, error)
+	ListFunctionAsyncInvocations(ctx context.Context, functionID string, limit, offset int, statuses []AsyncInvocationStatus) ([]*AsyncInvocation, error)
 	AcquireDueAsyncInvocation(ctx context.Context, workerID string, leaseDuration time.Duration) (*AsyncInvocation, error)
 	MarkAsyncInvocationSucceeded(ctx context.Context, id, requestID string, output json.RawMessage, durationMS int64, coldStart bool) error
 	MarkAsyncInvocationForRetry(ctx context.Context, id, lastError string, nextRunAt time.Time) error
@@ -101,21 +101,21 @@ type MetadataStore interface {
 	CreateEventTopic(ctx context.Context, topic *EventTopic) error
 	GetEventTopic(ctx context.Context, id string) (*EventTopic, error)
 	GetEventTopicByName(ctx context.Context, name string) (*EventTopic, error)
-	ListEventTopics(ctx context.Context, limit int) ([]*EventTopic, error)
+	ListEventTopics(ctx context.Context, limit, offset int) ([]*EventTopic, error)
 	DeleteEventTopicByName(ctx context.Context, name string) error
 
 	CreateEventSubscription(ctx context.Context, sub *EventSubscription) error
 	GetEventSubscription(ctx context.Context, id string) (*EventSubscription, error)
-	ListEventSubscriptions(ctx context.Context, topicID string) ([]*EventSubscription, error)
+	ListEventSubscriptions(ctx context.Context, topicID string, limit, offset int) ([]*EventSubscription, error)
 	UpdateEventSubscription(ctx context.Context, id string, update *EventSubscriptionUpdate) (*EventSubscription, error)
 	DeleteEventSubscription(ctx context.Context, id string) error
 
 	PublishEvent(ctx context.Context, topicID, orderingKey string, payload, headers json.RawMessage) (*EventMessage, int, error)
-	ListEventMessages(ctx context.Context, topicID string, limit int) ([]*EventMessage, error)
+	ListEventMessages(ctx context.Context, topicID string, limit, offset int) ([]*EventMessage, error)
 	PublishEventFromOutbox(ctx context.Context, outboxID, topicID, orderingKey string, payload, headers json.RawMessage) (*EventMessage, int, bool, error)
 
 	GetEventDelivery(ctx context.Context, id string) (*EventDelivery, error)
-	ListEventDeliveries(ctx context.Context, subscriptionID string, limit int, statuses []EventDeliveryStatus) ([]*EventDelivery, error)
+	ListEventDeliveries(ctx context.Context, subscriptionID string, limit, offset int, statuses []EventDeliveryStatus) ([]*EventDelivery, error)
 	AcquireDueEventDelivery(ctx context.Context, workerID string, leaseDuration time.Duration) (*EventDelivery, error)
 	MarkEventDeliverySucceeded(ctx context.Context, id, requestID string, output json.RawMessage, durationMS int64, coldStart bool) error
 	MarkEventDeliveryForRetry(ctx context.Context, id, lastError string, nextRunAt time.Time) error
@@ -127,7 +127,7 @@ type MetadataStore interface {
 
 	CreateEventOutbox(ctx context.Context, outbox *EventOutbox) error
 	GetEventOutbox(ctx context.Context, id string) (*EventOutbox, error)
-	ListEventOutbox(ctx context.Context, topicID string, limit int, statuses []EventOutboxStatus) ([]*EventOutbox, error)
+	ListEventOutbox(ctx context.Context, topicID string, limit, offset int, statuses []EventOutboxStatus) ([]*EventOutbox, error)
 	AcquireDueEventOutbox(ctx context.Context, workerID string, leaseDuration time.Duration) (*EventOutbox, error)
 	MarkEventOutboxPublished(ctx context.Context, id, messageID string) error
 	MarkEventOutboxForRetry(ctx context.Context, id, lastError string, nextRunAt time.Time) error
@@ -141,7 +141,7 @@ type MetadataStore interface {
 	// Runtimes
 	SaveRuntime(ctx context.Context, rt *RuntimeRecord) error
 	GetRuntime(ctx context.Context, id string) (*RuntimeRecord, error)
-	ListRuntimes(ctx context.Context) ([]*RuntimeRecord, error)
+	ListRuntimes(ctx context.Context, limit, offset int) ([]*RuntimeRecord, error)
 	DeleteRuntime(ctx context.Context, id string) error
 
 	// Config
@@ -152,7 +152,7 @@ type MetadataStore interface {
 	SaveAPIKey(ctx context.Context, key *APIKeyRecord) error
 	GetAPIKeyByHash(ctx context.Context, keyHash string) (*APIKeyRecord, error)
 	GetAPIKeyByName(ctx context.Context, name string) (*APIKeyRecord, error)
-	ListAPIKeys(ctx context.Context) ([]*APIKeyRecord, error)
+	ListAPIKeys(ctx context.Context, limit, offset int) ([]*APIKeyRecord, error)
 	DeleteAPIKey(ctx context.Context, name string) error
 
 	// Secrets
@@ -183,8 +183,8 @@ type MetadataStore interface {
 	SaveGatewayRoute(ctx context.Context, route *domain.GatewayRoute) error
 	GetGatewayRoute(ctx context.Context, id string) (*domain.GatewayRoute, error)
 	GetRouteByDomainPath(ctx context.Context, domain, path string) (*domain.GatewayRoute, error)
-	ListGatewayRoutes(ctx context.Context) ([]*domain.GatewayRoute, error)
-	ListRoutesByDomain(ctx context.Context, domain string) ([]*domain.GatewayRoute, error)
+	ListGatewayRoutes(ctx context.Context, limit, offset int) ([]*domain.GatewayRoute, error)
+	ListRoutesByDomain(ctx context.Context, domain string, limit, offset int) ([]*domain.GatewayRoute, error)
 	DeleteGatewayRoute(ctx context.Context, id string) error
 	UpdateGatewayRoute(ctx context.Context, id string, route *domain.GatewayRoute) error
 
@@ -193,7 +193,7 @@ type MetadataStore interface {
 	GetLayer(ctx context.Context, id string) (*domain.Layer, error)
 	GetLayerByName(ctx context.Context, name string) (*domain.Layer, error)
 	GetLayerByContentHash(ctx context.Context, hash string) (*domain.Layer, error)
-	ListLayers(ctx context.Context) ([]*domain.Layer, error)
+	ListLayers(ctx context.Context, limit, offset int) ([]*domain.Layer, error)
 	DeleteLayer(ctx context.Context, id string) error
 	SetFunctionLayers(ctx context.Context, funcID string, layerIDs []string) error
 	GetFunctionLayers(ctx context.Context, funcID string) ([]*domain.Layer, error)

@@ -34,7 +34,7 @@ func New(s *store.Store, exec *executor.Executor) *Scheduler {
 // Start loads all enabled schedules from the store and starts the cron scheduler.
 func (s *Scheduler) Start() error {
 	ctx := context.Background()
-	schedules, err := s.store.ListAllSchedules(ctx)
+	schedules, err := s.store.ListAllSchedules(ctx, 0, 0)
 	if err != nil {
 		return err
 	}

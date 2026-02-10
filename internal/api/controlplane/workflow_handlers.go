@@ -45,7 +45,9 @@ func (h *Handler) CreateWorkflow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListWorkflows(w http.ResponseWriter, r *http.Request) {
-	wfs, err := h.WorkflowService.ListWorkflows(r.Context())
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+	wfs, err := h.WorkflowService.ListWorkflows(r.Context(), limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -97,7 +99,9 @@ func (h *Handler) PublishWorkflowVersion(w http.ResponseWriter, r *http.Request)
 
 func (h *Handler) ListWorkflowVersions(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	versions, err := h.WorkflowService.ListVersions(r.Context(), name)
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+	versions, err := h.WorkflowService.ListVersions(r.Context(), name, limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -145,7 +149,9 @@ func (h *Handler) TriggerWorkflowRun(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListWorkflowRuns(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	runs, err := h.WorkflowService.ListRuns(r.Context(), name)
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+	runs, err := h.WorkflowService.ListRuns(r.Context(), name, limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

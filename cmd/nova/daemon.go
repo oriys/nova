@@ -264,7 +264,7 @@ func daemonCmd() *cobra.Command {
 					return nil
 				case <-ticker.C:
 					ctx := context.Background()
-					funcs, err := s.ListFunctions(ctx)
+					funcs, err := s.ListFunctions(ctx, 0, 0)
 					if err != nil {
 						logging.Op().Error("error listing functions", "error", err)
 					} else {
@@ -341,7 +341,7 @@ func (a *apiKeyStoreAdapterDaemon) GetAPIKeyByName(ctx context.Context, name str
 }
 
 func (a *apiKeyStoreAdapterDaemon) ListAPIKeys(ctx context.Context) ([]*auth.APIKey, error) {
-	recs, err := a.s.ListAPIKeys(ctx)
+	recs, err := a.s.ListAPIKeys(ctx, 0, 0)
 	if err != nil {
 		return nil, err
 	}

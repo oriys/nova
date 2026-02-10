@@ -19,8 +19,11 @@ func (h *Handler) ListTenants(w http.ResponseWriter, r *http.Request) {
 		tenants []*store.TenantRecord
 		err     error
 	)
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+
 	if unrestricted {
-		tenants, err = h.Store.ListTenants(r.Context())
+		tenants, err = h.Store.ListTenants(r.Context(), limit, offset)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -129,7 +132,10 @@ func (h *Handler) ListNamespaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	namespaces, err := h.Store.ListNamespaces(r.Context(), tenantID)
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+
+	namespaces, err := h.Store.ListNamespaces(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), tenancyHTTPStatus(err))
 		return

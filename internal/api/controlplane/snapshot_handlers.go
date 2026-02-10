@@ -13,7 +13,7 @@ import (
 
 // ListSnapshots handles GET /snapshots
 func (h *Handler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
-	funcs, err := h.Store.ListFunctions(r.Context())
+	funcs, err := h.Store.ListFunctions(r.Context(), 0, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

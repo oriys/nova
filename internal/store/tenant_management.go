@@ -40,12 +40,19 @@ type NamespaceUpdate struct {
 	Name *string `json:"name,omitempty"`
 }
 
-func (s *PostgresStore) ListTenants(ctx context.Context) ([]*TenantRecord, error) {
+func (s *PostgresStore) ListTenants(ctx context.Context, limit, offset int) ([]*TenantRecord, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, name, status, tier, created_at, updated_at
 		FROM tenants
 		ORDER BY id
-	`)
+		LIMIT $1 OFFSET $2
+	`, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list tenants: %w", err)
 	}
@@ -228,7 +235,13 @@ func (s *PostgresStore) DeleteTenant(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *PostgresStore) ListNamespaces(ctx context.Context, tenantID string) ([]*NamespaceRecord, error) {
+func (s *PostgresStore) ListNamespaces(ctx context.Context, tenantID string, limit, offset int) ([]*NamespaceRecord, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	scopedTenantID, err := validateScopeIdentifier("tenant id", tenantID)
 	if err != nil {
 		return nil, err
@@ -243,7 +256,8 @@ func (s *PostgresStore) ListNamespaces(ctx context.Context, tenantID string) ([]
 		FROM namespaces
 		WHERE tenant_id = $1
 		ORDER BY name
-	`, scopedTenantID)
+		LIMIT $2 OFFSET $3
+	`, scopedTenantID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list namespaces: %w", err)
 	}

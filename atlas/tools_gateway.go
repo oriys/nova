@@ -15,7 +15,10 @@ type CreateRouteArgs struct {
 	Methods      []string `json:"methods,omitempty" jsonschema:"HTTP methods (empty = all)"`
 	AuthStrategy string   `json:"auth_strategy,omitempty" jsonschema:"Auth strategy (none inherit apikey jwt)"`
 }
-type ListRoutesArgs struct{}
+type ListRoutesArgs struct {
+	Limit  int `json:"limit,omitempty" jsonschema:"Max results to return"`
+	Offset int `json:"offset,omitempty" jsonschema:"Number of results to skip"`
+}
 type GetRouteArgs struct {
 	ID string `json:"id" jsonschema:"Route ID"`
 }
@@ -38,7 +41,8 @@ func RegisterGatewayTools(s *mcp.Server, c *NovaClient) {
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_list_gateway_routes", Description: "List all API gateway routes"}, c,
 		func(ctx context.Context, args ListRoutesArgs, c *NovaClient) (json.RawMessage, error) {
-			return c.Get(ctx, "/gateway/routes")
+			q := queryString(map[string]string{"limit": intStr(args.Limit), "offset": intStr(args.Offset)})
+			return c.Get(ctx, "/gateway/routes"+q)
 		})
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_get_gateway_route", Description: "Get gateway route details"}, c,

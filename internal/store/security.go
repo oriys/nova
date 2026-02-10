@@ -113,14 +113,21 @@ func (s *PostgresStore) GetAPIKeyByName(ctx context.Context, name string) (*APIK
 }
 
 // ListAPIKeys returns all API keys
-func (s *PostgresStore) ListAPIKeys(ctx context.Context) ([]*APIKeyRecord, error) {
+func (s *PostgresStore) ListAPIKeys(ctx context.Context, limit, offset int) ([]*APIKeyRecord, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
 		SELECT name, key_hash, tier, enabled, tenant_id, namespace, expires_at, COALESCE(permissions, '[]'::jsonb), created_at, updated_at
 		FROM api_keys
 		WHERE tenant_id = $1 AND namespace = $2
 		ORDER BY name
-	`, scope.TenantID, scope.Namespace)
+		LIMIT $3 OFFSET $4
+	`, scope.TenantID, scope.Namespace, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list api keys: %w", err)
 	}

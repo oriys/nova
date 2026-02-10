@@ -17,7 +17,7 @@ type WorkflowStore interface {
 	CreateWorkflow(ctx context.Context, w *domain.Workflow) error
 	GetWorkflow(ctx context.Context, id string) (*domain.Workflow, error)
 	GetWorkflowByName(ctx context.Context, name string) (*domain.Workflow, error)
-	ListWorkflows(ctx context.Context) ([]*domain.Workflow, error)
+	ListWorkflows(ctx context.Context, limit, offset int) ([]*domain.Workflow, error)
 	DeleteWorkflow(ctx context.Context, id string) error
 	UpdateWorkflowVersion(ctx context.Context, id string, version int) error
 
@@ -25,7 +25,7 @@ type WorkflowStore interface {
 	CreateWorkflowVersion(ctx context.Context, v *domain.WorkflowVersion) error
 	GetWorkflowVersion(ctx context.Context, id string) (*domain.WorkflowVersion, error)
 	GetWorkflowVersionByNumber(ctx context.Context, workflowID string, version int) (*domain.WorkflowVersion, error)
-	ListWorkflowVersions(ctx context.Context, workflowID string) ([]*domain.WorkflowVersion, error)
+	ListWorkflowVersions(ctx context.Context, workflowID string, limit, offset int) ([]*domain.WorkflowVersion, error)
 
 	// Nodes & Edges (bulk create)
 	CreateWorkflowNodes(ctx context.Context, nodes []domain.WorkflowNode) error
@@ -37,7 +37,7 @@ type WorkflowStore interface {
 	// Runs
 	CreateRun(ctx context.Context, run *domain.WorkflowRun) error
 	GetRun(ctx context.Context, id string) (*domain.WorkflowRun, error)
-	ListRuns(ctx context.Context, workflowID string) ([]*domain.WorkflowRun, error)
+	ListRuns(ctx context.Context, workflowID string, limit, offset int) ([]*domain.WorkflowRun, error)
 	UpdateRunStatus(ctx context.Context, id string, status domain.RunStatus, errMsg string, output json.RawMessage) error
 
 	// Run Nodes
@@ -101,14 +101,20 @@ func (s *PostgresStore) GetWorkflowByName(ctx context.Context, name string) (*do
 	return w, err
 }
 
-func (s *PostgresStore) ListWorkflows(ctx context.Context) ([]*domain.Workflow, error) {
+func (s *PostgresStore) ListWorkflows(ctx context.Context, limit, offset int) ([]*domain.Workflow, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, name, description, status, current_version, created_at, updated_at
 		 FROM dag_workflows
 		 WHERE status != 'deleted' AND tenant_id = $1 AND namespace = $2
-		 ORDER BY created_at DESC`,
-		scope.TenantID, scope.Namespace)
+		 ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
+		scope.TenantID, scope.Namespace, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -195,10 +201,16 @@ func (s *PostgresStore) GetWorkflowVersionByNumber(ctx context.Context, workflow
 	return v, err
 }
 
-func (s *PostgresStore) ListWorkflowVersions(ctx context.Context, workflowID string) ([]*domain.WorkflowVersion, error) {
+func (s *PostgresStore) ListWorkflowVersions(ctx context.Context, workflowID string, limit, offset int) ([]*domain.WorkflowVersion, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, workflow_id, version, definition, created_at
-		 FROM dag_workflow_versions WHERE workflow_id = $1 ORDER BY version DESC`, workflowID)
+		 FROM dag_workflow_versions WHERE workflow_id = $1 ORDER BY version DESC LIMIT $2 OFFSET $3`, workflowID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +367,13 @@ func (s *PostgresStore) GetRun(ctx context.Context, id string) (*domain.Workflow
 	return r, err
 }
 
-func (s *PostgresStore) ListRuns(ctx context.Context, workflowID string) ([]*domain.WorkflowRun, error) {
+func (s *PostgresStore) ListRuns(ctx context.Context, workflowID string, limit, offset int) ([]*domain.WorkflowRun, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx,
 		`SELECT r.id, r.workflow_id, w.name, r.version_id, v.version, r.status, r.trigger_type,
@@ -364,8 +382,8 @@ func (s *PostgresStore) ListRuns(ctx context.Context, workflowID string) ([]*dom
 		 JOIN dag_workflows w ON w.id = r.workflow_id
 		 JOIN dag_workflow_versions v ON v.id = r.version_id
 		 WHERE r.workflow_id = $1 AND w.tenant_id = $2 AND w.namespace = $3
-		 ORDER BY r.created_at DESC LIMIT 100`,
-		workflowID, scope.TenantID, scope.Namespace)
+		 ORDER BY r.created_at DESC LIMIT $4 OFFSET $5`,
+		workflowID, scope.TenantID, scope.Namespace, limit, offset)
 	if err != nil {
 		return nil, err
 	}

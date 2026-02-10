@@ -158,7 +158,10 @@ func (h *Handler) ListFunctionVersions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	versions, err := h.Store.ListVersions(r.Context(), fn.ID)
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+
+	versions, err := h.Store.ListVersions(r.Context(), fn.ID, limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

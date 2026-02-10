@@ -8,7 +8,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type ListTenantsArgs struct{}
+type ListTenantsArgs struct {
+	Limit  int `json:"limit,omitempty" jsonschema:"Max results to return"`
+	Offset int `json:"offset,omitempty" jsonschema:"Number of results to skip"`
+}
 type CreateTenantArgs struct {
 	Name string `json:"name" jsonschema:"Tenant name"`
 	Tier string `json:"tier,omitempty" jsonschema:"Tier (free pro enterprise)"`
@@ -24,6 +27,8 @@ type DeleteTenantArgs struct {
 }
 type ListNamespacesArgs struct {
 	TenantID string `json:"tenant_id" jsonschema:"Tenant ID"`
+	Limit    int    `json:"limit,omitempty" jsonschema:"Max results to return"`
+	Offset   int    `json:"offset,omitempty" jsonschema:"Number of results to skip"`
 }
 type CreateNamespaceArgs struct {
 	TenantID string `json:"tenant_id" jsonschema:"Tenant ID"`
@@ -40,6 +45,8 @@ type DeleteNamespaceArgs struct {
 }
 type ListQuotasArgs struct {
 	TenantID string `json:"tenant_id" jsonschema:"Tenant ID"`
+	Limit    int    `json:"limit,omitempty" jsonschema:"Max results to return"`
+	Offset   int    `json:"offset,omitempty" jsonschema:"Number of results to skip"`
 }
 type SetQuotaArgs struct {
 	TenantID  string `json:"tenant_id" jsonschema:"Tenant ID"`
@@ -60,7 +67,8 @@ func RegisterTenantTools(s *mcp.Server, c *NovaClient) {
 		Name:        "nova_list_tenants",
 		Description: "List all tenants",
 	}, c, func(ctx context.Context, args ListTenantsArgs, c *NovaClient) (json.RawMessage, error) {
-		return c.Get(ctx, "/tenants")
+		q := queryString(map[string]string{"limit": intStr(args.Limit), "offset": intStr(args.Offset)})
+		return c.Get(ctx, "/tenants"+q)
 	})
 
 	addToolHelper(s, &mcp.Tool{
@@ -88,7 +96,8 @@ func RegisterTenantTools(s *mcp.Server, c *NovaClient) {
 		Name:        "nova_list_namespaces",
 		Description: "List namespaces in a tenant",
 	}, c, func(ctx context.Context, args ListNamespacesArgs, c *NovaClient) (json.RawMessage, error) {
-		return c.Get(ctx, fmt.Sprintf("/tenants/%s/namespaces", args.TenantID))
+		q := queryString(map[string]string{"limit": intStr(args.Limit), "offset": intStr(args.Offset)})
+		return c.Get(ctx, fmt.Sprintf("/tenants/%s/namespaces%s", args.TenantID, q))
 	})
 
 	addToolHelper(s, &mcp.Tool{
@@ -116,7 +125,8 @@ func RegisterTenantTools(s *mcp.Server, c *NovaClient) {
 		Name:        "nova_list_quotas",
 		Description: "List quotas for a tenant",
 	}, c, func(ctx context.Context, args ListQuotasArgs, c *NovaClient) (json.RawMessage, error) {
-		return c.Get(ctx, fmt.Sprintf("/tenants/%s/quotas", args.TenantID))
+		q := queryString(map[string]string{"limit": intStr(args.Limit), "offset": intStr(args.Offset)})
+		return c.Get(ctx, fmt.Sprintf("/tenants/%s/quotas%s", args.TenantID, q))
 	})
 
 	addToolHelper(s, &mcp.Tool{

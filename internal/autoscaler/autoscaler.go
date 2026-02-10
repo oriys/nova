@@ -89,7 +89,7 @@ func (a *Autoscaler) loop() {
 
 func (a *Autoscaler) evaluate() {
 	ctx := context.Background()
-	funcs, err := a.store.ListFunctions(ctx)
+	funcs, err := a.store.ListFunctions(ctx, 0, 0)
 	if err != nil {
 		logging.Op().Error("autoscaler: list functions", "error", err)
 		return

@@ -572,6 +572,21 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			position INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (function_id, layer_id)
 		)`,
+
+		// Additional indexes for list query optimization
+		`CREATE INDEX IF NOT EXISTS idx_gateway_routes_domain_path ON gateway_routes(domain, path)`,
+		`CREATE INDEX IF NOT EXISTS idx_layers_name ON layers(name)`,
+		`CREATE INDEX IF NOT EXISTS idx_runtimes_name_version ON runtimes(name, version DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_keys_tenant_namespace ON api_keys(tenant_id, namespace)`,
+		`CREATE INDEX IF NOT EXISTS idx_secrets_tenant_namespace ON secrets(tenant_id, namespace)`,
+		`CREATE INDEX IF NOT EXISTS idx_invocation_logs_tenant_ns_func_created ON invocation_logs(tenant_id, namespace, function_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_async_invocations_tenant_ns_status ON async_invocations(tenant_id, namespace, status)`,
+		`DROP INDEX IF EXISTS idx_dag_workflows_tenant_namespace_name`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_dag_workflows_tenant_namespace_name_unique ON dag_workflows(tenant_id, namespace, name)`,
+
+		// pg_trgm GIN index for ILIKE text search on function names
+		`CREATE EXTENSION IF NOT EXISTS pg_trgm`,
+		`CREATE INDEX IF NOT EXISTS idx_functions_name_trgm ON functions USING gin(name gin_trgm_ops)`,
 	}
 
 	for _, stmt := range stmts {

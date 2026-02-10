@@ -20,7 +20,7 @@ import (
 
 // GatewayStore is the interface the gateway needs from the store
 type GatewayStore interface {
-	ListGatewayRoutes(ctx context.Context) ([]*domain.GatewayRoute, error)
+	ListGatewayRoutes(ctx context.Context, limit, offset int) ([]*domain.GatewayRoute, error)
 	GetRouteByDomainPath(ctx context.Context, domain, path string) (*domain.GatewayRoute, error)
 }
 
@@ -88,7 +88,7 @@ func New(store GatewayStore, exec *executor.Executor, authenticators []auth.Auth
 
 // ReloadRoutes refreshes the in-memory route cache from the database
 func (g *Gateway) ReloadRoutes(ctx context.Context) error {
-	routes, err := g.store.ListGatewayRoutes(ctx)
+	routes, err := g.store.ListGatewayRoutes(ctx, 0, 0)
 	if err != nil {
 		return err
 	}

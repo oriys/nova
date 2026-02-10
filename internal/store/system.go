@@ -72,7 +72,13 @@ func (s *PostgresStore) GetRuntime(ctx context.Context, id string) (*RuntimeReco
 	return &rt, nil
 }
 
-func (s *PostgresStore) ListRuntimes(ctx context.Context) ([]*RuntimeRecord, error) {
+func (s *PostgresStore) ListRuntimes(ctx context.Context, limit, offset int) ([]*RuntimeRecord, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
 		SELECT r.id, r.name, r.version, r.status, COALESCE(r.image_name, ''), r.entrypoint, COALESCE(r.file_extension, ''), COALESCE(r.env_vars, '{}'::jsonb), r.created_at, COUNT(f.id) as functions_count
@@ -83,7 +89,8 @@ func (s *PostgresStore) ListRuntimes(ctx context.Context) ([]*RuntimeRecord, err
 		 AND f.namespace = $2
 		GROUP BY r.id, r.name, r.version, r.status, r.image_name, r.entrypoint, r.file_extension, r.env_vars, r.created_at
 		ORDER BY r.name, r.version DESC
-	`, scope.TenantID, scope.Namespace)
+		LIMIT $3 OFFSET $4
+	`, scope.TenantID, scope.Namespace, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list runtimes: %w", err)
 	}

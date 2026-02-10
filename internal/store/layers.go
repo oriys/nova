@@ -97,11 +97,18 @@ func (s *PostgresStore) GetLayerByContentHash(ctx context.Context, hash string) 
 }
 
 // ListLayers returns all layers ordered by name
-func (s *PostgresStore) ListLayers(ctx context.Context) ([]*domain.Layer, error) {
+func (s *PostgresStore) ListLayers(ctx context.Context, limit, offset int) ([]*domain.Layer, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, name, runtime, version, size_mb, files, image_path, content_hash, created_at, updated_at
 		FROM layers ORDER BY name
-	`)
+		LIMIT $1 OFFSET $2
+	`, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list layers: %w", err)
 	}

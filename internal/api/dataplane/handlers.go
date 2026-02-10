@@ -313,13 +313,14 @@ func (h *Handler) GetAsyncInvocation(w http.ResponseWriter, r *http.Request) {
 // ListAsyncInvocations handles GET /async-invocations
 func (h *Handler) ListAsyncInvocations(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimitQuery(r.URL.Query().Get("limit"), store.DefaultAsyncListLimit, store.MaxAsyncListLimit)
+	offset := parseLimitQuery(r.URL.Query().Get("offset"), 0, 0)
 	statuses, err := parseAsyncStatuses(r.URL.Query().Get("status"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	invs, err := h.Store.ListAsyncInvocations(r.Context(), limit, statuses)
+	invs, err := h.Store.ListAsyncInvocations(r.Context(), limit, offset, statuses)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -342,13 +343,14 @@ func (h *Handler) ListFunctionAsyncInvocations(w http.ResponseWriter, r *http.Re
 	}
 
 	limit := parseLimitQuery(r.URL.Query().Get("limit"), store.DefaultAsyncListLimit, store.MaxAsyncListLimit)
+	offset := parseLimitQuery(r.URL.Query().Get("offset"), 0, 0)
 	statuses, err := parseAsyncStatuses(r.URL.Query().Get("status"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	invs, err := h.Store.ListFunctionAsyncInvocations(r.Context(), fn.ID, limit, statuses)
+	invs, err := h.Store.ListFunctionAsyncInvocations(r.Context(), fn.ID, limit, offset, statuses)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -558,7 +560,8 @@ func (h *Handler) Logs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	entries, err := h.Store.ListInvocationLogs(r.Context(), fn.ID, tail)
+	offset := parseLimitQuery(r.URL.Query().Get("offset"), 0, 0)
+	entries, err := h.Store.ListInvocationLogs(r.Context(), fn.ID, tail, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -585,8 +588,9 @@ func (h *Handler) ListAllInvocations(w http.ResponseWriter, r *http.Request) {
 	if limit > 500 {
 		limit = 500
 	}
+	offset := parseLimitQuery(r.URL.Query().Get("offset"), 0, 0)
 
-	entries, err := h.Store.ListAllInvocationLogs(r.Context(), limit)
+	entries, err := h.Store.ListAllInvocationLogs(r.Context(), limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

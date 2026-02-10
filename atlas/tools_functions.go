@@ -23,6 +23,7 @@ type CreateFunctionArgs struct {
 type ListFunctionsArgs struct {
 	Search string `json:"search,omitempty" jsonschema:"Search filter"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"Max results to return"`
+	Offset int    `json:"offset,omitempty" jsonschema:"Number of results to skip"`
 }
 
 type GetFunctionArgs struct {
@@ -55,7 +56,7 @@ func RegisterFunctionTools(s *mcp.Server, c *NovaClient) {
 		Name:        "nova_list_functions",
 		Description: "List all functions. Supports search and limit filters.",
 	}, c, func(ctx context.Context, args ListFunctionsArgs, c *NovaClient) (json.RawMessage, error) {
-		q := queryString(map[string]string{"search": args.Search, "limit": intStr(args.Limit)})
+		q := queryString(map[string]string{"search": args.Search, "limit": intStr(args.Limit), "offset": intStr(args.Offset)})
 		return c.Get(ctx, "/functions"+q)
 	})
 

@@ -124,7 +124,8 @@ func (h *Handler) CreateEventTopic(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListEventTopics(w http.ResponseWriter, r *http.Request) {
 	limit := parseEventLimitQuery(r.URL.Query().Get("limit"), store.DefaultEventListLimit, store.MaxEventListLimit)
-	topics, err := h.Store.ListEventTopics(r.Context(), limit)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+	topics, err := h.Store.ListEventTopics(r.Context(), limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -281,13 +282,14 @@ func (h *Handler) ListEventOutbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit := parseEventLimitQuery(r.URL.Query().Get("limit"), store.DefaultEventListLimit, store.MaxEventListLimit)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
 	statuses, err := parseOutboxStatuses(r.URL.Query().Get("status"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	jobs, err := h.Store.ListEventOutbox(r.Context(), topic.ID, limit, statuses)
+	jobs, err := h.Store.ListEventOutbox(r.Context(), topic.ID, limit, offset, statuses)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -312,7 +314,8 @@ func (h *Handler) ListTopicMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parseEventLimitQuery(r.URL.Query().Get("limit"), store.DefaultEventListLimit, store.MaxEventListLimit)
-	messages, err := h.Store.ListEventMessages(r.Context(), topic.ID, limit)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+	messages, err := h.Store.ListEventMessages(r.Context(), topic.ID, limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -438,7 +441,9 @@ func (h *Handler) ListEventSubscriptions(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	subs, err := h.Store.ListEventSubscriptions(r.Context(), topic.ID)
+	limit := parseEventLimitQuery(r.URL.Query().Get("limit"), store.DefaultEventListLimit, store.MaxEventListLimit)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+	subs, err := h.Store.ListEventSubscriptions(r.Context(), topic.ID, limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -577,13 +582,14 @@ func (h *Handler) GetEventDelivery(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListEventDeliveries(w http.ResponseWriter, r *http.Request) {
 	subscriptionID := r.PathValue("id")
 	limit := parseEventLimitQuery(r.URL.Query().Get("limit"), store.DefaultEventListLimit, store.MaxEventListLimit)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
 	statuses, err := parseEventStatuses(r.URL.Query().Get("status"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	deliveries, err := h.Store.ListEventDeliveries(r.Context(), subscriptionID, limit, statuses)
+	deliveries, err := h.Store.ListEventDeliveries(r.Context(), subscriptionID, limit, offset, statuses)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -763,6 +769,20 @@ func (h *Handler) RetryEventOutbox(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(job)
+}
+
+func parsePaginationParam(raw string, fallback, max int) int {
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n < 0 {
+		return fallback
+	}
+	if max > 0 && n > max {
+		return max
+	}
+	return n
 }
 
 func parseEventLimitQuery(raw string, fallback, max int) int {

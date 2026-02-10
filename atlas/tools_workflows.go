@@ -13,7 +13,10 @@ type CreateWorkflowArgs struct {
 	Description string          `json:"description,omitempty" jsonschema:"Workflow description"`
 	Definition  json.RawMessage `json:"definition,omitempty" jsonschema:"Workflow definition (JSON DAG)"`
 }
-type ListWorkflowsArgs struct{}
+type ListWorkflowsArgs struct {
+	Limit  int `json:"limit,omitempty" jsonschema:"Max results to return"`
+	Offset int `json:"offset,omitempty" jsonschema:"Number of results to skip"`
+}
 type GetWorkflowArgs struct {
 	Name string `json:"name" jsonschema:"Workflow name"`
 }
@@ -30,7 +33,9 @@ type PublishWorkflowVersionArgs struct {
 	Definition json.RawMessage `json:"definition,omitempty" jsonschema:"Version definition"`
 }
 type ListWorkflowVersionsArgs struct {
-	Name string `json:"name" jsonschema:"Workflow name"`
+	Name   string `json:"name" jsonschema:"Workflow name"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Max results to return"`
+	Offset int    `json:"offset,omitempty" jsonschema:"Number of results to skip"`
 }
 type GetWorkflowVersionArgs struct {
 	Name    string `json:"name" jsonschema:"Workflow name"`
@@ -41,7 +46,9 @@ type RunWorkflowArgs struct {
 	Input json.RawMessage `json:"input,omitempty" jsonschema:"Input JSON"`
 }
 type ListWorkflowRunsArgs struct {
-	Name string `json:"name" jsonschema:"Workflow name"`
+	Name   string `json:"name" jsonschema:"Workflow name"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Max results to return"`
+	Offset int    `json:"offset,omitempty" jsonschema:"Number of results to skip"`
 }
 type GetWorkflowRunArgs struct {
 	Name string `json:"name" jsonschema:"Workflow name"`
@@ -60,7 +67,8 @@ func RegisterWorkflowTools(s *mcp.Server, c *NovaClient) {
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_list_workflows", Description: "List all workflows"}, c,
 		func(ctx context.Context, args ListWorkflowsArgs, c *NovaClient) (json.RawMessage, error) {
-			return c.Get(ctx, "/workflows")
+			q := queryString(map[string]string{"limit": intStr(args.Limit), "offset": intStr(args.Offset)})
+			return c.Get(ctx, "/workflows"+q)
 		})
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_get_workflow", Description: "Get workflow details"}, c,
@@ -85,7 +93,8 @@ func RegisterWorkflowTools(s *mcp.Server, c *NovaClient) {
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_list_workflow_versions", Description: "List workflow versions"}, c,
 		func(ctx context.Context, args ListWorkflowVersionsArgs, c *NovaClient) (json.RawMessage, error) {
-			return c.Get(ctx, fmt.Sprintf("/workflows/%s/versions", args.Name))
+			q := queryString(map[string]string{"limit": intStr(args.Limit), "offset": intStr(args.Offset)})
+			return c.Get(ctx, fmt.Sprintf("/workflows/%s/versions%s", args.Name, q))
 		})
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_get_workflow_version", Description: "Get a specific workflow version"}, c,
@@ -102,7 +111,8 @@ func RegisterWorkflowTools(s *mcp.Server, c *NovaClient) {
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_list_workflow_runs", Description: "List runs of a workflow"}, c,
 		func(ctx context.Context, args ListWorkflowRunsArgs, c *NovaClient) (json.RawMessage, error) {
-			return c.Get(ctx, fmt.Sprintf("/workflows/%s/runs", args.Name))
+			q := queryString(map[string]string{"limit": intStr(args.Limit), "offset": intStr(args.Offset)})
+			return c.Get(ctx, fmt.Sprintf("/workflows/%s/runs%s", args.Name, q))
 		})
 
 	addToolHelper(s, &mcp.Tool{Name: "nova_get_workflow_run", Description: "Get details of a workflow run"}, c,
