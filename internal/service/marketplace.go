@@ -266,9 +266,8 @@ func (m *MarketplaceService) PlanInstallation(ctx context.Context, req *domain.I
 		}
 	}
 
-	// Check quota - simplified check
-	_ = len(manifest.Functions) // functionCount for quota check
-	// TODO: Implement proper quota check when tenant quota methods are available
+	// Check quota - simplified check for now
+	// TODO: Implement proper quota check when tenant quota methods are exposed at store level
 	plan.QuotaCheck.FunctionsUsed = 0
 	plan.QuotaCheck.FunctionsLimit = 0
 	plan.QuotaCheck.OK = true
@@ -327,7 +326,7 @@ func (m *MarketplaceService) Install(ctx context.Context, req *domain.InstallReq
 		InstallName: req.InstallName,
 		Status:      domain.InstallStatusPending,
 		ValuesJSON:  valuesJSON,
-		CreatedBy:   "system", // TODO: get from auth context
+		CreatedBy:   "system", // TODO: Extract from auth context when available
 	}
 
 	if err := m.store.CreateInstallation(ctx, installation); err != nil {
@@ -738,7 +737,19 @@ func (m *MarketplaceService) downloadBundle(ctx context.Context, artifactURI str
 			return "", fmt.Errorf("read tar: %w", err)
 		}
 
-		target := filepath.Join(tmpDir, header.Name)
+		// Prevent path traversal attacks
+		if strings.Contains(header.Name, "..") {
+			os.RemoveAll(tmpDir)
+			return "", fmt.Errorf("invalid path in archive: %s", header.Name)
+		}
+
+		target := filepath.Join(tmpDir, filepath.Clean(header.Name))
+		
+		// Ensure target is within tmpDir
+		if !strings.HasPrefix(target, filepath.Clean(tmpDir)+string(os.PathSeparator)) {
+			os.RemoveAll(tmpDir)
+			return "", fmt.Errorf("path traversal detected: %s", header.Name)
+		}
 
 		switch header.Typeflag {
 		case tar.TypeDir:

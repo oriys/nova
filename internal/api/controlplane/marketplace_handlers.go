@@ -44,8 +44,9 @@ func (h *Handler) CreateApp(w http.ResponseWriter, r *http.Request) {
 		visibility = domain.AppVisibility(req.Visibility)
 	}
 
-	// Get owner from context (in real implementation, get from auth)
-	owner := "system" // TODO: extract from auth context
+	// Get owner from context
+	// TODO: Extract from auth context when authentication is integrated
+	owner := "system"
 
 	app := &domain.App{
 		Slug:        req.Slug,
@@ -188,7 +189,8 @@ func (h *Handler) PublishRelease(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get owner from context
-	owner := "system" // TODO: extract from auth context
+	// TODO: Extract from auth context when authentication is integrated
+	owner := "system"
 
 	// Publish via service
 	if h.MarketplaceService == nil {

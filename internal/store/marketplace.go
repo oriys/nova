@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -503,11 +504,10 @@ func (s *PostgresStore) ReleaseInstallLock(ctx context.Context, tenantID, namesp
 
 // hashToInt64 converts a string to a 64-bit integer for advisory locks
 func hashToInt64(s string) int64 {
-	h := int64(0)
-	for i := 0; i < len(s); i++ {
-		h = 31*h + int64(s[i])
-	}
-	return h
+	h := sha256.Sum256([]byte(s))
+	// Use first 8 bytes as int64
+	return int64(h[0]) | int64(h[1])<<8 | int64(h[2])<<16 | int64(h[3])<<24 |
+		int64(h[4])<<32 | int64(h[5])<<40 | int64(h[6])<<48 | int64(h[7])<<56
 }
 
 // GetManifestFromRelease parses and returns the manifest from a release
