@@ -1,0 +1,236 @@
+syntax = "proto3";
+
+package nova.v1;
+
+option go_package = "github.com/oriys/nova/api/proto/novapb";
+
+// Marketplace service for app publishing and installation
+service Marketplace {
+  // CreateApp creates a new app in the marketplace
+  rpc CreateApp(CreateAppRequest) returns (AppInfo);
+
+  // GetApp retrieves an app by slug
+  rpc GetApp(GetAppRequest) returns (AppInfo);
+
+  // ListApps lists all apps
+  rpc ListApps(ListAppsRequest) returns (ListAppsResponse);
+
+  // DeleteApp deletes an app
+  rpc DeleteApp(DeleteAppRequest) returns (DeleteAppResponse);
+
+  // PublishRelease publishes a new release for an app
+  rpc PublishRelease(PublishReleaseRequest) returns (ReleaseInfo);
+
+  // GetRelease retrieves a specific release
+  rpc GetRelease(GetReleaseRequest) returns (ReleaseInfo);
+
+  // ListReleases lists all releases for an app
+  rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
+
+  // PlanInstall performs a dry-run installation
+  rpc PlanInstall(InstallRequest) returns (InstallPlan);
+
+  // Install installs an app into a tenant/namespace
+  rpc Install(InstallRequest) returns (InstallResponse);
+
+  // GetInstallation retrieves installation details
+  rpc GetInstallation(GetInstallationRequest) returns (InstallationInfo);
+
+  // ListInstallations lists all installations
+  rpc ListInstallations(ListInstallationsRequest) returns (ListInstallationsResponse);
+
+  // Uninstall removes an installation
+  rpc Uninstall(UninstallRequest) returns (UninstallResponse);
+
+  // GetInstallJob retrieves job status
+  rpc GetInstallJob(GetInstallJobRequest) returns (InstallJobInfo);
+}
+
+message CreateAppRequest {
+  string slug = 1;
+  string title = 2;
+  string summary = 3;
+  string description = 4;
+  repeated string tags = 5;
+  string icon_url = 6;
+  string source_url = 7;
+  string homepage_url = 8;
+  string visibility = 9; // "public" or "private"
+}
+
+message AppInfo {
+  string id = 1;
+  string slug = 2;
+  string owner = 3;
+  string visibility = 4;
+  string title = 5;
+  string summary = 6;
+  string description = 7;
+  repeated string tags = 8;
+  string icon_url = 9;
+  string source_url = 10;
+  string homepage_url = 11;
+  string created_at = 12;
+  string updated_at = 13;
+}
+
+message GetAppRequest {
+  string slug = 1;
+}
+
+message ListAppsRequest {
+  string visibility = 1; // Filter by visibility
+  string owner = 2;      // Filter by owner
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message ListAppsResponse {
+  repeated AppInfo apps = 1;
+  int32 total = 2;
+}
+
+message DeleteAppRequest {
+  string slug = 1;
+}
+
+message DeleteAppResponse {
+  bool success = 1;
+}
+
+message PublishReleaseRequest {
+  string app_slug = 1;
+  string version = 2;
+  bytes manifest_json = 3;
+  bytes artifact_data = 4;
+  string changelog = 5;
+}
+
+message ReleaseInfo {
+  string id = 1;
+  string app_id = 2;
+  string version = 3;
+  bytes manifest_json = 4;
+  string artifact_uri = 5;
+  string artifact_digest = 6;
+  string status = 7;
+  string changelog = 8;
+  string created_at = 9;
+}
+
+message GetReleaseRequest {
+  string app_slug = 1;
+  string version = 2;
+}
+
+message ListReleasesRequest {
+  string app_slug = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message ListReleasesResponse {
+  repeated ReleaseInfo releases = 1;
+  int32 total = 2;
+}
+
+message InstallRequest {
+  string app_slug = 1;
+  string version = 2;
+  string tenant_id = 3;
+  string namespace = 4;
+  string install_name = 5;
+  string name_prefix = 6;
+  map<string, string> values = 7;
+  bool dry_run = 8;
+}
+
+message InstallPlan {
+  bool valid = 1;
+  repeated ResourceConflict conflicts = 2;
+  repeated PlannedResource to_create = 3;
+  QuotaCheck quota_check = 4;
+  repeated string missing_runtimes = 5;
+  repeated string errors = 6;
+}
+
+message ResourceConflict {
+  string resource_type = 1;
+  string resource_name = 2;
+  string existing_id = 3;
+  string reason = 4;
+}
+
+message PlannedResource {
+  string resource_type = 1;
+  string resource_name = 2;
+  string runtime = 3;
+  string description = 4;
+}
+
+message QuotaCheck {
+  bool ok = 1;
+  int32 functions_used = 2;
+  int32 functions_limit = 3;
+  string reason = 4;
+}
+
+message InstallResponse {
+  string installation_id = 1;
+  string job_id = 2;
+  string status = 3;
+}
+
+message GetInstallationRequest {
+  string installation_id = 1;
+}
+
+message InstallationInfo {
+  string id = 1;
+  string tenant_id = 2;
+  string namespace = 3;
+  string app_id = 4;
+  string release_id = 5;
+  string install_name = 6;
+  string status = 7;
+  bytes values_json = 8;
+  string created_by = 9;
+  string created_at = 10;
+  string updated_at = 11;
+}
+
+message ListInstallationsRequest {
+  string tenant_id = 1;
+  string namespace = 2;
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message ListInstallationsResponse {
+  repeated InstallationInfo installations = 1;
+  int32 total = 2;
+}
+
+message UninstallRequest {
+  string installation_id = 1;
+  bool force = 2;
+}
+
+message UninstallResponse {
+  bool success = 1;
+}
+
+message GetInstallJobRequest {
+  string job_id = 1;
+}
+
+message InstallJobInfo {
+  string id = 1;
+  string installation_id = 2;
+  string operation = 3;
+  string status = 4;
+  string step = 5;
+  string error = 6;
+  string started_at = 7;
+  string finished_at = 8;
+}
