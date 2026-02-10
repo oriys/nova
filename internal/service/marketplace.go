@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/oriys/nova/internal/domain"
@@ -481,7 +482,7 @@ func (m *MarketplaceService) executeInstallation(ctx context.Context, installati
 	// Mark as succeeded
 	job.Status = domain.InstallStatusSucceeded
 	job.Step = "Installation complete"
-	finishedAt := job.StartedAt.Add(1000)
+	finishedAt := time.Now()
 	job.FinishedAt = &finishedAt
 	m.store.UpdateInstallJob(ctx, job)
 	m.store.UpdateInstallationStatus(ctx, installation.ID, domain.InstallStatusSucceeded)
@@ -798,7 +799,7 @@ func (m *MarketplaceService) failJob(ctx context.Context, job *domain.InstallJob
 	job.Status = domain.InstallStatusFailed
 	job.Step = step
 	job.Error = err.Error()
-	finishedAt := job.StartedAt.Add(1000)
+	finishedAt := time.Now()
 	job.FinishedAt = &finishedAt
 	m.store.UpdateInstallJob(ctx, job)
 }
