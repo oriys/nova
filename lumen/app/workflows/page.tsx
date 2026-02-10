@@ -4,9 +4,11 @@ import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
+import { EmptyState } from "@/components/empty-state"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { ErrorBanner } from "@/components/ui/error-banner"
 import {
   Dialog,
   DialogContent,
@@ -17,6 +19,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { workflowsApi, type Workflow } from "@/lib/api"
+import { toUserErrorMessage } from "@/lib/error-map"
 import { Plus, RefreshCw, Trash2, GitBranch } from "lucide-react"
 
 type Notice = {
@@ -43,7 +46,7 @@ export default function WorkflowsPage() {
       setWorkflows(wfs)
     } catch (err) {
       console.error("Failed to fetch workflows:", err)
-      setError(err instanceof Error ? err.message : "Failed to load workflows")
+      setError(toUserErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -66,7 +69,7 @@ export default function WorkflowsPage() {
       setNotice({ kind: "success", text: `Workflow "${workflowName}" created` })
     } catch (err) {
       console.error("Failed to create workflow:", err)
-      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to create workflow" })
+      setNotice({ kind: "error", text: toUserErrorMessage(err) })
     } finally {
       setCreating(false)
     }
@@ -85,7 +88,7 @@ export default function WorkflowsPage() {
       setNotice({ kind: "success", text: `Workflow "${name}" deleted` })
     } catch (err) {
       console.error("Failed to delete workflow:", err)
-      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to delete workflow" })
+      setNotice({ kind: "error", text: toUserErrorMessage(err) })
     }
   }
 
@@ -94,10 +97,7 @@ export default function WorkflowsPage() {
       <DashboardLayout>
         <Header title="Workflows" description="DAG workflow orchestration" />
         <div className="p-6">
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
-            <p className="font-medium">Failed to load workflows</p>
-            <p className="text-sm mt-1">{error}</p>
-          </div>
+          <ErrorBanner error={error} title="加载工作流失败" onRetry={fetchData} />
         </div>
       </DashboardLayout>
     )
@@ -161,35 +161,36 @@ export default function WorkflowsPage() {
           </div>
         </div>
 
-        <div className="rounded-lg border border-border bg-card">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Name</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Description</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Status</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Version</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Updated</th>
-                  <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                      Loading...
-                    </td>
+        {!loading && workflows.length === 0 ? (
+          <EmptyState
+            title="还没有工作流"
+            description="创建工作流后可串联多个函数形成 DAG。"
+            icon={GitBranch}
+            primaryAction={{ label: "创建工作流", onClick: () => setIsCreateOpen(true) }}
+          />
+        ) : (
+          <div className="rounded-lg border border-border bg-card">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Name</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Description</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Status</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Version</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Updated</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Actions</th>
                   </tr>
-                ) : workflows.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                      <GitBranch className="mx-auto h-8 w-8 mb-2 opacity-50" />
-                      No workflows yet. Create one to get started.
-                    </td>
-                  </tr>
-                ) : (
-                  workflows.map((wf) => (
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                        Loading...
+                      </td>
+                    </tr>
+                  ) : (
+                    workflows.map((wf) => (
                     <tr key={wf.id} className="border-b border-border last:border-0 hover:bg-muted/50">
                       <td className="px-4 py-3">
                         <Link
@@ -241,12 +242,13 @@ export default function WorkflowsPage() {
                         )}
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        )}
 
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogContent>

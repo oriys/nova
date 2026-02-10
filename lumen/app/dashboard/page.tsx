@@ -1,21 +1,26 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import { useRouter } from "next/navigation"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { StatsCard } from "@/components/stats-card"
 import { DashboardCharts, TimeSeriesData, type TimeRange } from "@/components/dashboard-charts"
 import { ActiveFunctionsTable } from "@/components/active-functions-table"
 import { RecentLogs } from "@/components/recent-logs"
+import { OnboardingFlow } from "@/components/onboarding-flow"
+import { ErrorBanner } from "@/components/ui/error-banner"
 import { Activity, Zap, AlertTriangle, Clock, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { functionsApi, metricsApi } from "@/lib/api"
+import { functionsApi, gatewayApi, metricsApi } from "@/lib/api"
 import { transformFunction, transformLog, FunctionData, LogEntry } from "@/lib/types"
 import { useAutoRefresh } from "@/lib/use-auto-refresh"
+import { syncOnboardingStateFromData } from "@/lib/onboarding-state"
 import { cn } from "@/lib/utils"
 import { GlobalHeatmap } from "@/components/global-heatmap"
 
 export default function DashboardPage() {
+  const router = useRouter()
   const [functions, setFunctions] = useState<FunctionData[]>([])
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [timeSeries, setTimeSeries] = useState<TimeSeriesData[]>([])
@@ -29,6 +34,7 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [timeRange, setTimeRange] = useState<TimeRange>("1h")
+  const [gatewayRouteCount, setGatewayRouteCount] = useState(0)
 
   const fetchData = useCallback(async (isRefresh = false, range?: TimeRange) => {
     try {
@@ -42,10 +48,11 @@ export default function DashboardPage() {
       const currentRange = range || timeRange
 
       // Fetch functions, metrics, and time-series in parallel
-      const [funcs, metrics, timeSeriesData] = await Promise.all([
+      const [funcs, metrics, timeSeriesData, routes] = await Promise.all([
         functionsApi.list(),
         metricsApi.global(),
         metricsApi.timeseries(currentRange).catch(() => []),
+        gatewayApi.listRoutes().catch(() => []),
       ])
 
       // Transform functions with their metrics
@@ -60,6 +67,7 @@ export default function DashboardPage() {
       })
 
       setFunctions(transformedFuncs)
+      setGatewayRouteCount(routes.length || 0)
 
       // Transform time-series data (tenant-scoped from backend store)
       const chartData: TimeSeriesData[] = timeSeriesData.map((point) => ({
@@ -79,6 +87,11 @@ export default function DashboardPage() {
         success: Math.max(0, total - failed),
         failed,
         avgLatency: total > 0 ? Math.round(weightedDuration / total) : 0,
+      })
+      syncOnboardingStateFromData({
+        hasFunctionCreated: transformedFuncs.length > 0,
+        hasFunctionInvoked: total > 0,
+        hasGatewayRouteCreated: (routes?.length || 0) > 0,
       })
 
       // Fetch logs for active functions (take first few)
@@ -121,13 +134,7 @@ export default function DashboardPage() {
       <DashboardLayout>
         <Header title="Dashboard" description="Overview of your serverless functions" />
         <div className="p-6">
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
-            <p className="font-medium">Failed to load dashboard</p>
-            <p className="text-sm mt-1">{error}</p>
-            <p className="text-sm mt-2 text-muted-foreground">
-              Make sure the nova backend is running on port 9000
-            </p>
-          </div>
+          <ErrorBanner error={error} title="加载仪表盘失败" onRetry={() => fetchData(false)} />
         </div>
       </DashboardLayout>
     )
@@ -156,6 +163,13 @@ export default function DashboardPage() {
             Refresh
           </Button>
         </div>
+
+        <OnboardingFlow
+          hasFunctionCreated={functions.length > 0}
+          hasFunctionInvoked={globalMetrics.total > 0}
+          hasGatewayRouteCreated={gatewayRouteCount > 0}
+          onCreateFunction={() => router.push("/functions")}
+        />
 
         {/* Stats Grid */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

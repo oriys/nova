@@ -7,6 +7,9 @@ import { Header } from "@/components/header"
 import { FunctionsTable } from "@/components/functions-table"
 import { Pagination } from "@/components/pagination"
 import { CreateFunctionDialog } from "@/components/create-function-dialog"
+import { EmptyState } from "@/components/empty-state"
+import { OnboardingFlow } from "@/components/onboarding-flow"
+import { ErrorBanner } from "@/components/ui/error-banner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -16,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { functionsApi, metricsApi, runtimesApi, type NetworkPolicy, type ResourceLimits } from "@/lib/api"
+import { functionsApi, gatewayApi, metricsApi, runtimesApi, type NetworkPolicy, type ResourceLimits } from "@/lib/api"
 import { transformFunction, FunctionData, RuntimeInfo, transformRuntime } from "@/lib/types"
 import {
   FUNCTION_SEARCH_EVENT,
@@ -24,6 +27,7 @@ import {
   dispatchFunctionSearch,
   readFunctionSearchFromLocation,
 } from "@/lib/function-search"
+import { markOnboardingStep, syncOnboardingStateFromData } from "@/lib/onboarding-state"
 import { Plus, Search, Filter, RefreshCw } from "lucide-react"
 
 export default function FunctionsPage() {
@@ -39,6 +43,8 @@ export default function FunctionsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [hasInvocations, setHasInvocations] = useState(false)
+  const [hasGatewayRoutes, setHasGatewayRoutes] = useState(false)
 
   // Debounce search query
   useEffect(() => {
@@ -90,10 +96,11 @@ export default function FunctionsPage() {
       setLoading(true)
       setError(null)
 
-      const [funcs, metrics, rts] = await Promise.all([
+      const [funcs, metrics, rts, routes] = await Promise.all([
         functionsApi.list(debouncedSearchQuery),
         metricsApi.global(),
         runtimesApi.list(),
+        gatewayApi.listRoutes().catch(() => []),
       ])
 
       // Transform functions with their metrics
@@ -109,6 +116,15 @@ export default function FunctionsPage() {
 
       setFunctions(transformedFuncs)
       setRuntimes(rts.map(transformRuntime))
+      const nextHasInvocations = (metrics.invocations?.total || 0) > 0
+      const nextHasGatewayRoutes = (routes?.length || 0) > 0
+      setHasInvocations(nextHasInvocations)
+      setHasGatewayRoutes(nextHasGatewayRoutes)
+      syncOnboardingStateFromData({
+        hasFunctionCreated: transformedFuncs.length > 0,
+        hasFunctionInvoked: nextHasInvocations,
+        hasGatewayRouteCreated: nextHasGatewayRoutes,
+      })
     } catch (err) {
       console.error("Failed to fetch functions:", err)
       setError(err instanceof Error ? err.message : "Failed to load functions")
@@ -161,6 +177,7 @@ export default function FunctionsPage() {
         limits,
         network_policy: networkPolicy,
       })
+      markOnboardingStep("function_created", true)
       setIsCreateOpen(false)
       fetchData() // Refresh the list
     } catch (err) {
@@ -183,17 +200,19 @@ export default function FunctionsPage() {
       <DashboardLayout>
         <Header title="Functions" description="Manage and monitor your serverless functions" />
         <div className="p-6">
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
-            <p className="font-medium">Failed to load functions</p>
-            <p className="text-sm mt-1">{error}</p>
-            <p className="text-sm mt-2 text-muted-foreground">
-              Make sure the nova backend is running on port 9000
-            </p>
-          </div>
+          <ErrorBanner error={error} title="加载函数失败" onRetry={fetchData} />
         </div>
       </DashboardLayout>
     )
   }
+
+  const noFunctions =
+    !loading &&
+    functions.length === 0 &&
+    !searchQuery.trim() &&
+    statusFilter === "all" &&
+    runtimeFilter === "all"
+  const noFilterResult = !loading && functions.length > 0 && filteredFunctions.length === 0
 
   return (
     <DashboardLayout>
@@ -203,6 +222,13 @@ export default function FunctionsPage() {
       />
 
       <div className="p-6 space-y-6">
+        <OnboardingFlow
+          hasFunctionCreated={functions.length > 0}
+          hasFunctionInvoked={hasInvocations}
+          hasGatewayRouteCreated={hasGatewayRoutes}
+          onCreateFunction={() => setIsCreateOpen(true)}
+        />
+
         {/* Actions Bar */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-1 items-center gap-3">
@@ -258,11 +284,33 @@ export default function FunctionsPage() {
         </div>
 
         {/* Functions Table */}
-        <FunctionsTable
-          functions={pagedFunctions}
-          onDelete={handleDelete}
-          loading={loading}
-        />
+        {noFunctions ? (
+          <EmptyState
+            title="还没有函数"
+            description="先创建第一个函数，然后可以直接调用并挂到网关。"
+            primaryAction={{ label: "创建函数", onClick: () => setIsCreateOpen(true) }}
+            secondaryAction={{ label: "查看文档", href: "/docs/installation" }}
+          />
+        ) : noFilterResult ? (
+          <EmptyState
+            title="没有匹配的函数"
+            description="当前筛选条件下没有结果，试试清空筛选。"
+            primaryAction={{
+              label: "清空筛选",
+              onClick: () => {
+                setSearchQuery("")
+                setStatusFilter("all")
+                setRuntimeFilter("all")
+              },
+            }}
+          />
+        ) : (
+          <FunctionsTable
+            functions={pagedFunctions}
+            onDelete={handleDelete}
+            loading={loading}
+          />
+        )}
 
         {!loading && filteredFunctions.length > 0 && (
           <Pagination

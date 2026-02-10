@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { functionsApi, schedulesApi } from "@/lib/api"
+import { markOnboardingStep } from "@/lib/onboarding-state"
 import { transformFunction, transformLog, FunctionData, LogEntry } from "@/lib/types"
 import type {
   FunctionMetrics as FunctionMetricsType,
@@ -144,6 +145,7 @@ export default function FunctionDetailPage({
 
       if (invokeMode === "async") {
         const job = await functionsApi.invokeAsync(func.name, payload)
+        markOnboardingStep("function_invoked", true)
         setInvokeOutput(
           JSON.stringify(
             {
@@ -160,6 +162,7 @@ export default function FunctionDetailPage({
         refreshAsyncJobs(func.name)
       } else {
         const response = await functionsApi.invoke(func.name, payload)
+        markOnboardingStep("function_invoked", true)
         setInvokeOutput(JSON.stringify(response.output ?? null, null, 2))
         setInvokeMeta(
           `request_id: ${response.request_id} · duration: ${response.duration_ms} ms · ${response.cold_start ? "cold" : "warm"} start`

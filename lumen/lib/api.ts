@@ -582,8 +582,14 @@ export interface UploadRuntimeRequest {
   env_vars?: Record<string, string>;
 }
 
-class ApiError extends Error {
-  constructor(public status: number, message: string) {
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+    public code?: string,
+    public hint?: string,
+    public details?: unknown
+  ) {
     super(message);
     this.name = "ApiError";
   }
@@ -607,8 +613,40 @@ async function request<T>(
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new ApiError(response.status, text || response.statusText);
+    const contentType = response.headers.get("content-type") || "";
+    const rawBody = await response.text();
+    let message = response.statusText || "Request failed";
+    let code: string | undefined;
+    let hint: string | undefined;
+    let details: unknown;
+
+    if (contentType.includes("application/json") && rawBody.trim()) {
+      try {
+        const payload = JSON.parse(rawBody) as Record<string, unknown>;
+        details = payload;
+        if (typeof payload.error === "string" && payload.error.trim()) {
+          message = payload.error.trim();
+        } else if (typeof payload.message === "string" && payload.message.trim()) {
+          message = payload.message.trim();
+        }
+        if (typeof payload.code === "string" && payload.code.trim()) {
+          code = payload.code.trim();
+        }
+        if (typeof payload.hint === "string" && payload.hint.trim()) {
+          hint = payload.hint.trim();
+        }
+      } catch {
+        if (rawBody.trim()) {
+          message = rawBody.trim();
+        }
+      }
+    } else {
+      if (rawBody.trim()) {
+        message = rawBody.trim();
+      }
+    }
+
+    throw new ApiError(response.status, message, code, hint, details);
   }
 
   return response.json();
@@ -1597,5 +1635,3 @@ export const schedulesApi = {
       body: JSON.stringify({ cron_expression: cronExpression }),
     }),
 };
-
-export { ApiError };

@@ -1,8 +1,11 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
+import { EmptyState } from "@/components/empty-state"
+import { OnboardingFlow } from "@/components/onboarding-flow"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -15,15 +18,19 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
+import { ErrorBanner } from "@/components/ui/error-banner"
 import {
   functionsApi,
   gatewayApi,
+  metricsApi,
   type CreateGatewayRouteRequest,
   type GatewayRateLimitTemplate,
   type GatewayRoute,
   type NovaFunction,
   type UpdateGatewayRouteRequest,
 } from "@/lib/api"
+import { toUserErrorMessage } from "@/lib/error-map"
+import { markOnboardingStep, syncOnboardingStateFromData } from "@/lib/onboarding-state"
 import { cn } from "@/lib/utils"
 import { Plus, RefreshCw, Trash2, ToggleLeft, ToggleRight, Pencil } from "lucide-react"
 
@@ -53,17 +60,13 @@ function formatDate(ts?: string): string {
   return date.toLocaleString()
 }
 
-function toErrorMessage(err: unknown): string {
-  if (err instanceof Error && err.message.trim()) return err.message.trim()
-  return "Unexpected error."
-}
-
 type Notice = {
   kind: "success" | "error" | "info"
   text: string
 }
 
 export default function GatewayPage() {
+  const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -77,6 +80,7 @@ export default function GatewayPage() {
   const [templateRps, setTemplateRps] = useState("")
   const [templateBurst, setTemplateBurst] = useState("")
   const [templateSaving, setTemplateSaving] = useState(false)
+  const [hasInvocations, setHasInvocations] = useState(false)
 
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -110,10 +114,11 @@ export default function GatewayPage() {
     setLoading(true)
     setError(null)
     try {
-      const [routeData, functionData, templateData] = await Promise.all([
+      const [routeData, functionData, templateData, metrics] = await Promise.all([
         gatewayApi.listRoutes(),
         functionsApi.list(),
         gatewayApi.getRateLimitTemplate(),
+        metricsApi.global().catch(() => null),
       ])
       setRoutes(routeData || [])
       setFunctions(functionData || [])
@@ -121,11 +126,18 @@ export default function GatewayPage() {
       setTemplateEnabled(templateData.enabled ? "true" : "false")
       setTemplateRps(templateData.requests_per_second > 0 ? String(templateData.requests_per_second) : "")
       setTemplateBurst(templateData.burst_size > 0 ? String(templateData.burst_size) : "")
+      const nextHasInvocations = Boolean((metrics?.invocations?.total || 0) > 0)
+      setHasInvocations(nextHasInvocations)
+      syncOnboardingStateFromData({
+        hasFunctionCreated: (functionData?.length || 0) > 0,
+        hasFunctionInvoked: nextHasInvocations,
+        hasGatewayRouteCreated: (routeData?.length || 0) > 0,
+      })
       if (!createFunctionName && functionData?.length) {
         setCreateFunctionName(functionData[0].name)
       }
     } catch (err) {
-      setError(toErrorMessage(err))
+      setError(toUserErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -196,8 +208,8 @@ export default function GatewayPage() {
       setTemplateBurst(updated.burst_size > 0 ? String(updated.burst_size) : "")
       setNotice({ kind: "success", text: "Gateway default rate-limit template saved" })
     } catch (err) {
-      setNotice({ kind: "error", text: toErrorMessage(err) })
-      setError(toErrorMessage(err))
+      setNotice({ kind: "error", text: toUserErrorMessage(err) })
+      setError(toUserErrorMessage(err))
     } finally {
       setTemplateSaving(false)
     }
@@ -227,13 +239,14 @@ export default function GatewayPage() {
       setBusy(true)
       setError(null)
       await gatewayApi.createRoute(payload)
+      markOnboardingStep("gateway_route_created", true)
       setCreateOpen(false)
       resetCreateForm()
       await loadData()
       setNotice({ kind: "success", text: "Gateway route created" })
     } catch (err) {
-      setNotice({ kind: "error", text: toErrorMessage(err) })
-      setError(toErrorMessage(err))
+      setNotice({ kind: "error", text: toUserErrorMessage(err) })
+      setError(toUserErrorMessage(err))
     } finally {
       setBusy(false)
     }
@@ -269,8 +282,8 @@ export default function GatewayPage() {
       await loadData()
       setNotice({ kind: "success", text: "Gateway route updated" })
     } catch (err) {
-      setNotice({ kind: "error", text: toErrorMessage(err) })
-      setError(toErrorMessage(err))
+      setNotice({ kind: "error", text: toUserErrorMessage(err) })
+      setError(toUserErrorMessage(err))
     } finally {
       setBusy(false)
     }
@@ -290,8 +303,8 @@ export default function GatewayPage() {
       setPendingDeleteRouteID(null)
       setNotice({ kind: "success", text: `Route "${id}" deleted` })
     } catch (err) {
-      setNotice({ kind: "error", text: toErrorMessage(err) })
-      setError(toErrorMessage(err))
+      setNotice({ kind: "error", text: toUserErrorMessage(err) })
+      setError(toUserErrorMessage(err))
     } finally {
       setBusy(false)
     }
@@ -305,8 +318,8 @@ export default function GatewayPage() {
       await loadData()
       setNotice({ kind: "success", text: `Route "${route.id}" ${route.enabled ? "disabled" : "enabled"}` })
     } catch (err) {
-      setNotice({ kind: "error", text: toErrorMessage(err) })
-      setError(toErrorMessage(err))
+      setNotice({ kind: "error", text: toUserErrorMessage(err) })
+      setError(toUserErrorMessage(err))
     } finally {
       setBusy(false)
     }
@@ -317,10 +330,16 @@ export default function GatewayPage() {
       <Header title="Gateway" description="Manage HTTP routes mapped to Nova functions" />
 
       <div className="space-y-6 p-6">
+        <OnboardingFlow
+          hasFunctionCreated={functions.length > 0}
+          hasFunctionInvoked={hasInvocations}
+          hasGatewayRouteCreated={routes.length > 0}
+          onCreateFunction={() => router.push("/functions")}
+          onCreateGatewayRoute={() => setCreateOpen(true)}
+        />
+
         {error && (
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-            {error}
-          </div>
+          <ErrorBanner error={error} title="加载网关配置失败" onRetry={loadData} />
         )}
 
         {notice && (
@@ -546,39 +565,56 @@ export default function GatewayPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
-          <table className="w-full min-w-[980px]">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">ID</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Domain</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Path</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Methods</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Function</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Auth</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Rate Limit</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Status</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Updated</th>
-                <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                Array.from({ length: 3 }).map((_, i) => (
-                  <tr key={i} className="border-b border-border">
-                    <td className="px-4 py-3" colSpan={10}>
-                      <div className="h-4 animate-pulse rounded bg-muted" />
-                    </td>
-                  </tr>
-                ))
-              ) : filteredRoutes.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-8 text-center text-sm text-muted-foreground" colSpan={10}>
-                    No gateway routes.
-                  </td>
+        {!loading && routes.length === 0 ? (
+          <EmptyState
+            title="还没有网关路由"
+            description="创建路由后，UI / CLI / MCP 都可以通过 Zenith 统一调用。"
+            primaryAction={{
+              label: functions.length > 0 ? "新增路由" : "先创建函数",
+              onClick: () => {
+                if (functions.length > 0) {
+                  setCreateOpen(true)
+                } else {
+                  router.push("/functions")
+                }
+              },
+            }}
+          />
+        ) : !loading && routes.length > 0 && filteredRoutes.length === 0 ? (
+          <EmptyState
+            title="没有匹配的路由"
+            description="当前域名筛选没有命中路由。"
+            primaryAction={{ label: "清空筛选", onClick: () => setDomainFilter("") }}
+            compact
+          />
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-border bg-card">
+            <table className="w-full min-w-[980px]">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">ID</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Domain</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Path</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Methods</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Function</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Auth</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Rate Limit</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Status</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Updated</th>
+                  <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Actions</th>
                 </tr>
-              ) : (
-                filteredRoutes.map((route) => (
+              </thead>
+              <tbody>
+                {loading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <tr key={i} className="border-b border-border">
+                      <td className="px-4 py-3" colSpan={10}>
+                        <div className="h-4 animate-pulse rounded bg-muted" />
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  filteredRoutes.map((route) => (
                   <tr key={route.id} className="border-b border-border last:border-0 hover:bg-muted/50">
                     <td className="px-4 py-3 text-sm font-mono">{route.id}</td>
                     <td className="px-4 py-3 text-sm">{route.domain || "-"}</td>
@@ -670,11 +706,12 @@ export default function GatewayPage() {
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>

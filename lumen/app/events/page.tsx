@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
+import { EmptyState } from "@/components/empty-state"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
+import { ErrorBanner } from "@/components/ui/error-banner"
 import {
   Select,
   SelectContent,
@@ -28,6 +30,7 @@ import {
   type NovaFunction,
   type Workflow,
 } from "@/lib/api"
+import { toUserErrorMessage } from "@/lib/error-map"
 import { Plus, RefreshCw, Send, Trash2, RotateCcw } from "lucide-react"
 
 function formatDate(ts?: string) {
@@ -152,7 +155,7 @@ export default function EventsPage() {
       }
     } catch (err) {
       console.error("Failed to load event bus data:", err)
-      setError(err instanceof Error ? err.message : "Failed to load event bus data")
+      setError(toUserErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -191,7 +194,7 @@ export default function EventsPage() {
       }
     } catch (err) {
       console.error("Failed to load topic details:", err)
-      setError(err instanceof Error ? err.message : "Failed to load topic details")
+      setError(toUserErrorMessage(err))
     }
   }, [])
 
@@ -205,7 +208,7 @@ export default function EventsPage() {
       setDeliveries(data)
     } catch (err) {
       console.error("Failed to load deliveries:", err)
-      setError(err instanceof Error ? err.message : "Failed to load deliveries")
+      setError(toUserErrorMessage(err))
     }
   }, [])
 
@@ -268,7 +271,7 @@ export default function EventsPage() {
       setNotice({ kind: "success", text: `Topic "${createTopicName.trim()}" created` })
     } catch (err) {
       console.error("Failed to create topic:", err)
-      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to create topic" })
+      setNotice({ kind: "error", text: toUserErrorMessage(err) })
     } finally {
       setBusy(false)
     }
@@ -288,7 +291,7 @@ export default function EventsPage() {
       setNotice({ kind: "success", text: `Topic "${topicName}" deleted` })
     } catch (err) {
       console.error("Failed to delete topic:", err)
-      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to delete topic" })
+      setNotice({ kind: "error", text: toUserErrorMessage(err) })
     } finally {
       setBusy(false)
     }
@@ -561,10 +564,7 @@ export default function EventsPage() {
 
       <div className="p-6 space-y-6">
         {error && (
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
-            <p className="font-medium">Failed to load event bus</p>
-            <p className="text-sm mt-1">{error}</p>
-          </div>
+          <ErrorBanner error={error} title="加载 Event Bus 失败" onRetry={fetchBaseData} />
         )}
 
         {notice && (
@@ -636,7 +636,13 @@ export default function EventsPage() {
             </div>
             <div className="max-h-[520px] overflow-auto">
               {topics.length === 0 ? (
-                <div className="p-4 text-sm text-muted-foreground">No topics yet.</div>
+                <div className="p-4">
+                  <EmptyState
+                    compact
+                    title="还没有 Topic"
+                    description="先创建一个 Topic，再配置订阅和投递策略。"
+                  />
+                </div>
               ) : (
                 <div className="divide-y divide-border">
                   {topics.map((topic) => {
@@ -703,9 +709,11 @@ export default function EventsPage() {
 
           <div className="space-y-6 lg:col-span-2">
             {!selectedTopic ? (
-              <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
-                Select a topic to manage subscriptions and publish events.
-              </div>
+              <EmptyState
+                title="请选择 Topic"
+                description="选中左侧 Topic 后，才能发布消息和管理订阅。"
+                compact
+              />
             ) : (
               <>
                 <div className="rounded-lg border border-border bg-card p-4 space-y-3">

@@ -4,10 +4,12 @@ import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
+import { EmptyState } from "@/components/empty-state"
 import { Pagination } from "@/components/pagination"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { ErrorBanner } from "@/components/ui/error-banner"
 import {
   Select,
   SelectContent,
@@ -32,6 +34,7 @@ import {
   Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { toUserErrorMessage } from "@/lib/error-map"
 
 interface InvocationRecord {
   id: string
@@ -115,7 +118,7 @@ export default function HistoryPage() {
       setInvocations(records)
     } catch (err) {
       console.error("Failed to fetch history:", err)
-      setError(err instanceof Error ? err.message : "Failed to load history")
+      setError(toUserErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -194,10 +197,7 @@ export default function HistoryPage() {
       <DashboardLayout>
         <Header title="History" description="Invocation history and trends" />
         <div className="p-6">
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
-            <p className="font-medium">Failed to load history</p>
-            <p className="text-sm mt-1">{error}</p>
-          </div>
+          <ErrorBanner error={error} title="加载调用历史失败" onRetry={fetchData} />
         </div>
       </DashboardLayout>
     )
@@ -305,6 +305,13 @@ export default function HistoryPage() {
         </div>
 
         {/* Invocations Table */}
+        {!loading && invocations.length === 0 ? (
+          <EmptyState
+            title="还没有调用记录"
+            description="先调用一次函数，这里会展示完整的调用历史。"
+            primaryAction={{ label: "去函数页调用", href: "/functions" }}
+          />
+        ) : (
         <div className="rounded-xl border border-border bg-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -481,6 +488,7 @@ export default function HistoryPage() {
             </div>
           )}
         </div>
+        )}
       </div>
     </DashboardLayout>
   )
