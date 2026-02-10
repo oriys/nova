@@ -28,6 +28,7 @@ const (
 	MsgTypePing   = 4
 	MsgTypeStop   = 5
 	MsgTypeReload = 6 // Hot reload code files
+	MsgTypeStream = 7 // Streaming response chunk
 
 	VsockPort = 9999
 
@@ -86,6 +87,7 @@ type ExecPayload struct {
 	TimeoutS    int             `json:"timeout_s"`
 	TraceParent string          `json:"traceparent,omitempty"`
 	TraceState  string          `json:"tracestate,omitempty"`
+	Stream      bool            `json:"stream,omitempty"` // Enable streaming response
 }
 
 type RespPayload struct {
@@ -100,6 +102,14 @@ type RespPayload struct {
 // ReloadPayload is sent to hot-reload function code
 type ReloadPayload struct {
 	Files map[string][]byte `json:"files"` // relative path -> content
+}
+
+// StreamChunkPayload is sent for streaming responses
+type StreamChunkPayload struct {
+	RequestID string `json:"request_id"`
+	Data      []byte `json:"data"`            // Chunk of data
+	IsLast    bool   `json:"is_last"`         // True if this is the final chunk
+	Error     string `json:"error,omitempty"` // Error message if execution failed
 }
 
 type Agent struct {
@@ -187,11 +197,19 @@ func handleConnection(conn net.Conn) {
 			os.Exit(0)
 		}
 
-		resp, err := agent.handleMessage(msg)
+		resp, err := agent.handleMessage(conn, msg)
 		if err != nil {
 			resp = &Message{
 				Type:    MsgTypeResp,
 				Payload: json.RawMessage(fmt.Sprintf(`{"error":"%s"}`, err.Error())),
+			}
+		}
+
+		// For streaming, response is already sent via chunks, no final response needed
+		if msg.Type == MsgTypeExec {
+			var execPayload ExecPayload
+			if err := json.Unmarshal(msg.Payload, &execPayload); err == nil && execPayload.Stream {
+				continue // Skip writing final response, already streamed
 			}
 		}
 
@@ -202,12 +220,12 @@ func handleConnection(conn net.Conn) {
 	}
 }
 
-func (a *Agent) handleMessage(msg *Message) (*Message, error) {
+func (a *Agent) handleMessage(conn net.Conn, msg *Message) (*Message, error) {
 	switch msg.Type {
 	case MsgTypeInit:
 		return a.handleInit(msg.Payload)
 	case MsgTypeExec:
-		return a.handleExec(msg.Payload)
+		return a.handleExec(conn, msg.Payload)
 	case MsgTypePing:
 		return &Message{Type: MsgTypeResp, Payload: json.RawMessage(`{"status":"ok"}`)}, nil
 	case MsgTypeReload:
@@ -404,7 +422,7 @@ func (a *Agent) handleReload(payload json.RawMessage) (*Message, error) {
 	}, nil
 }
 
-func (a *Agent) handleExec(payload json.RawMessage) (*Message, error) {
+func (a *Agent) handleExec(conn net.Conn, payload json.RawMessage) (*Message, error) {
 	if a.function == nil {
 		return nil, fmt.Errorf("function not initialized")
 	}
@@ -416,11 +434,17 @@ func (a *Agent) handleExec(payload json.RawMessage) (*Message, error) {
 
 	// Log trace context if available
 	if req.TraceParent != "" {
-		fmt.Printf("[agent] exec request_id=%s trace_parent=%s\n", req.RequestID, req.TraceParent)
+		fmt.Printf("[agent] exec request_id=%s trace_parent=%s stream=%v\n", req.RequestID, req.TraceParent, req.Stream)
 	} else {
-		fmt.Printf("[agent] exec request_id=%s\n", req.RequestID)
+		fmt.Printf("[agent] exec request_id=%s stream=%v\n", req.RequestID, req.Stream)
 	}
 
+	// Handle streaming mode
+	if req.Stream {
+		return a.handleStreamingExec(conn, &req)
+	}
+
+	// Normal non-streaming mode
 	start := time.Now()
 	output, stdout, stderr, execErr := a.executeFunction(req.Input, req.TimeoutS, req.RequestID)
 	duration := time.Since(start).Milliseconds()
@@ -558,6 +582,135 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID s
 	}
 	result, _ := json.Marshal(string(output))
 	return result, "", stderr, nil
+}
+
+// handleStreamingExec executes function in streaming mode, sending chunks via MsgTypeStream
+func (a *Agent) handleStreamingExec(conn net.Conn, req *ExecPayload) (*Message, error) {
+	start := time.Now()
+	
+	// Helper to send stream chunk
+	sendChunk := func(data []byte, isLast bool, errMsg string) error {
+		chunk := StreamChunkPayload{
+			RequestID: req.RequestID,
+			Data:      data,
+			IsLast:    isLast,
+			Error:     errMsg,
+		}
+		chunkData, _ := json.Marshal(chunk)
+		msg := &Message{Type: MsgTypeStream, Payload: chunkData}
+		return writeMessage(conn, msg)
+	}
+
+	// Write input to file
+	if err := os.WriteFile("/tmp/input.json", req.Input, 0644); err != nil {
+		sendChunk(nil, true, err.Error())
+		return nil, err
+	}
+
+	// Build command
+	var cmd *exec.Cmd
+	var cancel context.CancelFunc
+	ctx := context.Background()
+	if req.TimeoutS > 0 {
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(req.TimeoutS)*time.Second)
+		defer cancel()
+	}
+
+	if len(a.function.Command) > 0 {
+		args := append([]string(nil), a.function.Command...)
+		if a.function.Extension != "" {
+			args = append(args, CodePath+a.function.Extension)
+		} else {
+			args = append(args, CodePath)
+		}
+		args = append(args, "/tmp/input.json")
+		cmd = exec.CommandContext(ctx, args[0], args[1:]...)
+	} else {
+		switch a.function.Runtime {
+		case "python":
+			cmd = exec.CommandContext(ctx, resolveBinary(pythonPath, "python3"), "/tmp/_bootstrap.py", "/tmp/input.json")
+		case "node":
+			cmd = exec.CommandContext(ctx, resolveBinary(nodePath, "node"), "/tmp/_bootstrap.js", "/tmp/input.json")
+		case "ruby":
+			cmd = exec.CommandContext(ctx, resolveBinary(rubyPath, "ruby"), "/tmp/_bootstrap.rb", "/tmp/input.json")
+		case "go", "rust", "zig", "swift":
+			cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
+		default:
+			errMsg := fmt.Sprintf("streaming not supported for runtime: %s", a.function.Runtime)
+			sendChunk(nil, true, errMsg)
+			return nil, fmt.Errorf(errMsg)
+		}
+	}
+
+	// Setup environment
+	cmd.Env = append(defaultEnv(), "NOVA_CODE_DIR="+CodeMountPoint, "NOVA_STREAMING=true")
+	cmd.Env = append(cmd.Env,
+		"NOVA_REQUEST_ID="+req.RequestID,
+		"NOVA_FUNCTION_NAME="+a.function.FunctionName,
+		fmt.Sprintf("NOVA_FUNCTION_VERSION=%d", a.function.FunctionVersion),
+		fmt.Sprintf("NOVA_MEMORY_LIMIT_MB=%d", a.function.MemoryMB),
+		fmt.Sprintf("NOVA_TIMEOUT_S=%d", a.function.TimeoutS),
+		"NOVA_RUNTIME="+a.function.Runtime,
+	)
+	cmd.Env = appendDependencyEnv(cmd.Env, a.function.Runtime)
+	for k, v := range a.function.EnvVars {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	// Get stdout pipe for streaming
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		sendChunk(nil, true, err.Error())
+		return nil, err
+	}
+	cmd.Stderr = os.Stderr
+
+	// Start process
+	if err := cmd.Start(); err != nil {
+		sendChunk(nil, true, err.Error())
+		return nil, err
+	}
+
+	// Stream stdout in chunks (4KB buffer)
+	buf := make([]byte, 4096)
+	for {
+		n, err := stdout.Read(buf)
+		if n > 0 {
+			chunk := make([]byte, n)
+			copy(chunk, buf[:n])
+			if sendErr := sendChunk(chunk, false, ""); sendErr != nil {
+				fmt.Fprintf(os.Stderr, "[agent] Failed to send chunk: %v\n", sendErr)
+				cmd.Process.Kill()
+				return nil, sendErr
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			sendChunk(nil, true, err.Error())
+			return nil, err
+		}
+	}
+
+	// Wait for process completion
+	execErr := cmd.Wait()
+	duration := time.Since(start).Milliseconds()
+
+	// Send final chunk
+	if execErr != nil {
+		errMsg := execErr.Error()
+		if ctx.Err() == context.DeadlineExceeded {
+			errMsg = fmt.Sprintf("timeout after %ds", req.TimeoutS)
+		}
+		sendChunk(nil, true, errMsg)
+		fmt.Printf("[agent] streaming exec completed request_id=%s duration_ms=%d error=%s\n", req.RequestID, duration, errMsg)
+	} else {
+		sendChunk(nil, true, "")
+		fmt.Printf("[agent] streaming exec completed request_id=%s duration_ms=%d\n", req.RequestID, duration)
+	}
+
+	return nil, nil
 }
 
 func enrichExecError(err error, runtime string) error {

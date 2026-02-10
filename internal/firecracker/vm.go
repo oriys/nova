@@ -1804,6 +1804,7 @@ const (
 	MsgTypePing   = 4
 	MsgTypeStop   = 5
 	MsgTypeReload = 6 // Hot reload code files
+	MsgTypeStream = 7 // Streaming response chunk
 )
 
 type VsockMessage struct {
@@ -1831,6 +1832,7 @@ type ExecPayload struct {
 	TimeoutS    int             `json:"timeout_s"`
 	TraceParent string          `json:"traceparent,omitempty"` // W3C TraceContext
 	TraceState  string          `json:"tracestate,omitempty"`  // W3C TraceContext
+	Stream      bool            `json:"stream,omitempty"`       // Enable streaming response
 }
 
 type RespPayload struct {
@@ -1840,6 +1842,14 @@ type RespPayload struct {
 	DurationMs int64           `json:"duration_ms"`
 	Stdout     string          `json:"stdout,omitempty"` // Captured stdout
 	Stderr     string          `json:"stderr,omitempty"` // Captured stderr
+}
+
+// StreamChunkPayload is used for streaming responses
+type StreamChunkPayload struct {
+	RequestID string `json:"request_id"`
+	Data      []byte `json:"data"`            // Chunk of data
+	IsLast    bool   `json:"is_last"`         // True if this is the final chunk
+	Error     string `json:"error,omitempty"` // Error message if execution failed
 }
 
 type VsockClient struct {
@@ -2075,6 +2085,75 @@ func (c *VsockClient) ExecuteWithTrace(reqID string, input json.RawMessage, time
 		return nil, lastErr
 	}
 	return nil, errors.New("vsock execute failed")
+}
+
+// ExecuteStream executes a function in streaming mode, calling the callback for each chunk
+func (c *VsockClient) ExecuteStream(reqID string, input json.RawMessage, timeoutS int, traceParent, traceState string, callback func(chunk []byte, isLast bool, err error) error) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	payload, _ := json.Marshal(&ExecPayload{
+		RequestID:   reqID,
+		Input:       input,
+		TimeoutS:    timeoutS,
+		TraceParent: traceParent,
+		TraceState:  traceState,
+		Stream:      true,
+	})
+
+	execMsg := &VsockMessage{Type: MsgTypeExec, Payload: payload}
+
+	// Connect and send request
+	if err := c.redialAndInitLocked(5 * time.Second); err != nil {
+		return err
+	}
+
+	deadline := time.Now().Add(time.Duration(timeoutS+5) * time.Second)
+	_ = c.conn.SetDeadline(deadline)
+
+	if err := c.sendLocked(execMsg); err != nil {
+		_ = c.closeLocked()
+		return err
+	}
+
+	// Receive stream chunks
+	for {
+		resp, err := c.receiveLocked()
+		if err != nil {
+			_ = c.closeLocked()
+			return err
+		}
+
+		if resp.Type != MsgTypeStream {
+			_ = c.closeLocked()
+			return fmt.Errorf("unexpected message type: %d (expected stream)", resp.Type)
+		}
+
+		var chunk StreamChunkPayload
+		if err := json.Unmarshal(resp.Payload, &chunk); err != nil {
+			_ = c.closeLocked()
+			return err
+		}
+
+		// Call callback with chunk
+		var chunkErr error
+		if chunk.Error != "" {
+			chunkErr = fmt.Errorf(chunk.Error)
+		}
+		if err := callback(chunk.Data, chunk.IsLast, chunkErr); err != nil {
+			_ = c.closeLocked()
+			return err
+		}
+
+		// If this is the last chunk, we're done
+		if chunk.IsLast {
+			break
+		}
+	}
+
+	_ = c.conn.SetDeadline(time.Time{})
+	_ = c.closeLocked()
+	return nil
 }
 
 func (c *VsockClient) Ping() error {
