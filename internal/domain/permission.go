@@ -22,6 +22,10 @@ const (
 	PermGatewayManage   Permission = "gateway:manage"
 	PermLogRead         Permission = "log:read"
 	PermMetricsRead     Permission = "metrics:read"
+	PermAppPublish      Permission = "app:publish"
+	PermAppRead         Permission = "app:read"
+	PermAppInstall      Permission = "app:install"
+	PermAppManage       Permission = "app:manage"
 )
 
 // Role represents a named set of permissions
@@ -59,6 +63,7 @@ var RolePermissions = map[Role][]Permission{
 		PermAPIKeyManage, PermSecretManage,
 		PermWorkflowManage, PermScheduleManage, PermGatewayManage,
 		PermLogRead, PermMetricsRead,
+		PermAppPublish, PermAppRead, PermAppInstall, PermAppManage,
 	},
 	RoleOperator: {
 		PermFunctionCreate, PermFunctionRead, PermFunctionUpdate, PermFunctionDelete, PermFunctionInvoke,
@@ -66,15 +71,18 @@ var RolePermissions = map[Role][]Permission{
 		PermSnapshotRead, PermSnapshotWrite,
 		PermWorkflowManage, PermScheduleManage,
 		PermLogRead, PermMetricsRead,
+		PermAppRead, PermAppInstall,
 	},
 	RoleInvoker: {
 		PermFunctionRead, PermFunctionInvoke,
 		PermLogRead,
+		PermAppRead,
 	},
 	RoleViewer: {
 		PermFunctionRead,
 		PermRuntimeRead,
 		PermLogRead, PermMetricsRead,
+		PermAppRead,
 	},
 }
 

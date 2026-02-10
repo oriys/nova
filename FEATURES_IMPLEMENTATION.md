@@ -318,3 +318,144 @@ Feature 4 (Cluster):
 
 Total: 19 files, ~1850 lines of new/modified code
 ```
+
+---
+
+## Feature 5: Marketplace / App Store (NEW) ✅ COMPLETE
+
+### Implementation Overview
+A comprehensive marketplace system enabling developers to package, publish, and install reusable function/workflow bundles. Supports one-click installation, dependency resolution, versioning, and lifecycle management.
+
+### Components Implemented
+
+**Domain Models (`internal/domain/marketplace.go`):**
+- `App` - marketplace application entity
+- `AppRelease` - versioned releases with SemVer
+- `Installation` - installed app instances in tenant/namespace
+- `InstallationResource` - resource tracking (functions/workflows)
+- `InstallJob` - async installation job tracking
+- `BundleManifest` - package metadata and structure
+- `InstallPlan` - dry-run planning with conflict detection
+
+**Database Schema (`internal/store/postgres.go`):**
+- `app_store_apps` - app catalog
+- `app_store_releases` - versioned releases with artifact URIs
+- `app_store_installations` - installation records per tenant
+- `app_store_installation_resources` - resource ownership mapping
+- `app_store_jobs` - async job status tracking
+
+**Store Layer (`internal/store/marketplace.go`):**
+- Full CRUD operations for apps, releases, installations
+- Advisory locks for serialized install/uninstall
+- Resource tracking with managed modes (exclusive/shared)
+- Job lifecycle management
+
+**Service Layer (`internal/service/marketplace.go`):**
+- `PublishBundle()` - validates and publishes bundles
+- `PlanInstallation()` - dry-run with conflict/quota checks
+- `Install()` - async installation with function-first ordering
+- `Uninstall()` - reverse-order resource cleanup
+- Bundle validation (manifest, DAG cycles, dependencies)
+- Function reference resolution for workflows
+- Artifact storage abstraction (local/S3 ready)
+
+**HTTP API (`internal/api/controlplane/marketplace_handlers.go`):**
+```
+POST   /store/apps                            - Create app
+GET    /store/apps                            - List apps
+GET    /store/apps/{slug}                     - Get app details
+DELETE /store/apps/{slug}                     - Delete app
+POST   /store/apps/{slug}/releases            - Publish release
+GET    /store/apps/{slug}/releases            - List releases
+GET    /store/apps/{slug}/releases/{version}  - Get release
+POST   /store/installations:plan              - Dry-run install
+POST   /store/installations                   - Install app
+GET    /store/installations                   - List installations
+GET    /store/installations/{id}              - Get installation
+DELETE /store/installations/{id}              - Uninstall
+GET    /store/jobs/{id}                       - Get job status
+```
+
+**Protobuf API (`api/proto/marketplace.proto`):**
+- Complete gRPC service definition
+- 40+ message types for request/response
+- Ready for Zenith gateway integration
+
+**Permissions (`internal/domain/permission.go`):**
+- `app:publish` - publish apps to marketplace
+- `app:read` - browse marketplace
+- `app:install` - install apps
+- `app:manage` - full marketplace admin
+- Integrated into RBAC roles (admin, operator, viewer)
+
+### Bundle Structure
+
+A bundle is a `.tar.gz` archive with this structure:
+
+```
+my-app-1.0.0.tar.gz
+├── manifest.yaml              # Package metadata
+├── functions/                 # Function code
+│   ├── validator/
+│   │   └── handler.py
+│   └── processor/
+│       └── main.go
+├── definition.json            # Workflow DAG (optional)
+└── README.md                  # Documentation
+```
+
+### Key Features
+
+1. **Function Reference Resolution** - Workflow nodes use `function_ref` to reference bundle functions
+2. **Installation Planning** - Dry-run mode with conflict detection and quota checking
+3. **Async Installation** - Jobs tracked in database with status updates
+4. **Resource Management** - Tracks all installed resources with ownership modes
+5. **Versioning & Upgrades** - SemVer versioning with immutable releases
+6. **Security** - SHA256 digests, optional signatures, tenant isolation, RBAC
+
+### Usage Examples
+
+**Publishing:**
+```bash
+tar -czf my-app-1.0.0.tar.gz manifest.yaml functions/
+curl -X POST http://localhost:9000/store/apps/my-app/releases \
+  -F "version=1.0.0" \
+  -F "bundle=@my-app-1.0.0.tar.gz"
+```
+
+**Installing:**
+```bash
+curl -X POST http://localhost:9000/store/installations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "app_slug": "my-app",
+    "version": "1.0.0",
+    "install_name": "prod-app"
+  }'
+```
+
+### Statistics
+
+```
+Files added: 6
+Lines added: ~2800
+Database tables: 5
+HTTP endpoints: 13
+Protobuf messages: 40+
+Permissions: 4
+Example bundle: examples/marketplace/hello-bundle/
+```
+
+---
+
+## Total Implementation Statistics
+
+```
+Overall:
+  - Features: 5 complete
+  - Files added: 25+
+  - Lines added: ~4650
+  - Database tables: 10+
+  - HTTP endpoints: 30+
+  - gRPC services: 2
+```

@@ -1,0 +1,16 @@
+name: hello-world
+version: 1.0.0
+type: function_bundle
+description: A simple hello world function bundle
+
+functions:
+  - key: hello
+    runtime: python
+    handler: handler.py
+    files:
+      - functions/hello/handler.py
+    memory_mb: 128
+    timeout_s: 30
+    env_vars:
+      GREETING: "Hello"
+    description: Simple Python function that returns a greeting
