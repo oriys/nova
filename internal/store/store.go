@@ -215,6 +215,7 @@ type Store struct {
 	MetadataStore
 	WorkflowStore
 	ScheduleStore
+	Marketplace *PostgresStore // Direct access to marketplace methods
 }
 
 func NewStore(meta MetadataStore) *Store {
@@ -227,6 +228,9 @@ func NewStore(meta MetadataStore) *Store {
 	}
 	if ss, ok := meta.(ScheduleStore); ok {
 		s.ScheduleStore = ss
+	}
+	if ps, ok := meta.(*PostgresStore); ok {
+		s.Marketplace = ps
 	}
 	return s
 }

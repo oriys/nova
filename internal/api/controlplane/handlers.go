@@ -21,20 +21,21 @@ import (
 
 // Handler handles control plane HTTP requests (function lifecycle and snapshot management).
 type Handler struct {
-	Store           *store.Store
-	Pool            *pool.Pool
-	Backend         backend.Backend
-	FCAdapter       *firecracker.Adapter // Optional: for Firecracker-specific features
-	Compiler        *compiler.Compiler
-	FunctionService *service.FunctionService
-	WorkflowService *workflow.Service
-	APIKeyManager   *auth.APIKeyManager
-	SecretsStore    *secrets.Store
-	Scheduler       *scheduler.Scheduler
-	RootfsDir       string         // Directory where rootfs ext4 images are stored
-	GatewayEnabled  bool           // Whether gateway route management is enabled
-	LayerManager    *layer.Manager // Optional: for shared dependency layers
-	VolumeManager   *volume.Manager // Optional: for persistent volume management
+	Store              *store.Store
+	Pool               *pool.Pool
+	Backend            backend.Backend
+	FCAdapter          *firecracker.Adapter // Optional: for Firecracker-specific features
+	Compiler           *compiler.Compiler
+	FunctionService    *service.FunctionService
+	WorkflowService    *workflow.Service
+	MarketplaceService *service.MarketplaceService // Optional: for marketplace features
+	APIKeyManager      *auth.APIKeyManager
+	SecretsStore       *secrets.Store
+	Scheduler          *scheduler.Scheduler
+	RootfsDir          string         // Directory where rootfs ext4 images are stored
+	GatewayEnabled     bool           // Whether gateway route management is enabled
+	LayerManager       *layer.Manager // Optional: for shared dependency layers
+	VolumeManager      *volume.Manager // Optional: for persistent volume management
 }
 
 // RegisterRoutes registers all control plane routes on the given mux.
