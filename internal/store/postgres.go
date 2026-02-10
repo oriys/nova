@@ -608,6 +608,26 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_triggers_function ON triggers(function_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_triggers_enabled ON triggers(enabled)`,
 
+		// Cluster nodes table
+		`CREATE TABLE IF NOT EXISTS cluster_nodes (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			address TEXT NOT NULL,
+			state TEXT NOT NULL DEFAULT 'active',
+			cpu_cores INTEGER NOT NULL DEFAULT 0,
+			memory_mb INTEGER NOT NULL DEFAULT 0,
+			max_vms INTEGER NOT NULL DEFAULT 0,
+			active_vms INTEGER NOT NULL DEFAULT 0,
+			queue_depth INTEGER NOT NULL DEFAULT 0,
+			version TEXT NOT NULL DEFAULT '',
+			labels JSONB NOT NULL DEFAULT '{}'::jsonb,
+			last_heartbeat TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_cluster_nodes_state ON cluster_nodes(state)`,
+		`CREATE INDEX IF NOT EXISTS idx_cluster_nodes_heartbeat ON cluster_nodes(last_heartbeat DESC)`,
+
 		// Additional indexes for list query optimization
 		`CREATE INDEX IF NOT EXISTS idx_gateway_routes_domain_path ON gateway_routes(domain, path)`,
 		`CREATE INDEX IF NOT EXISTS idx_layers_name ON layers(name)`,
