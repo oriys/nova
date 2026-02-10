@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package nova.v1;
+
+option go_package = "github.com/oriys/nova/api/proto/novapb";
+
+// DataPlane service handles function invocation and observability
+service DataPlane {
+  // Invoke calls a function synchronously and returns the result
+  rpc Invoke(InvokeRequest) returns (InvokeResponse);
+
+  // InvokeAsync enqueues a function for asynchronous execution
+  rpc InvokeAsync(InvokeAsyncRequest) returns (InvokeAsyncResponse);
+
+  // Health returns service health status
+  rpc Health(HealthRequest) returns (HealthResponse);
+
+  // GetMetrics returns function execution metrics
+  rpc GetMetrics(GetMetricsRequest) returns (GetMetricsResponse);
+
+  // ListInvocations returns recent invocation history
+  rpc ListInvocations(ListInvocationsRequest) returns (ListInvocationsResponse);
+}
+
+message InvokeRequest {
+  string function = 1;
+  bytes payload = 2;
+  int32 timeout_s = 3;
+  map<string, string> metadata = 4;
+}
+
+message InvokeResponse {
+  string request_id = 1;
+  bytes output = 2;
+  string error = 3;
+  int64 duration_ms = 4;
+  bool cold_start = 5;
+}
+
+message InvokeAsyncRequest {
+  string function = 1;
+  bytes payload = 2;
+  int32 max_attempts = 3;
+  int32 backoff_base_ms = 4;
+  int32 backoff_max_ms = 5;
+  string idempotency_key = 6;
+}
+
+message InvokeAsyncResponse {
+  string invocation_id = 1;
+  string status = 2;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+  map<string, string> components = 2;
+}
+
+message GetMetricsRequest {
+  string function = 1;
+  int32 range_seconds = 2;
+}
+
+message GetMetricsResponse {
+  int64 total_invocations = 1;
+  int64 successful_invocations = 2;
+  int64 failed_invocations = 3;
+  double avg_duration_ms = 4;
+  double p50_duration_ms = 5;
+  double p95_duration_ms = 6;
+  double p99_duration_ms = 7;
+}
+
+message ListInvocationsRequest {
+  string function = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message InvocationLog {
+  string id = 1;
+  string function_name = 2;
+  int64 duration_ms = 3;
+  bool success = 4;
+  bool cold_start = 5;
+  string error = 6;
+  string created_at = 7;
+}
+
+message ListInvocationsResponse {
+  repeated InvocationLog invocations = 1;
+  int32 total = 2;
+}

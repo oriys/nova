@@ -14,6 +14,7 @@ import (
 	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/autoscaler"
 	"github.com/oriys/nova/internal/backend"
+	"github.com/oriys/nova/internal/compiler"
 	"github.com/oriys/nova/internal/config"
 	"github.com/oriys/nova/internal/docker"
 	"github.com/oriys/nova/internal/eventbus"
@@ -27,6 +28,7 @@ import (
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/scheduler"
 	"github.com/oriys/nova/internal/secrets"
+	"github.com/oriys/nova/internal/service"
 	"github.com/oriys/nova/internal/store"
 	"github.com/oriys/nova/internal/workflow"
 	"github.com/spf13/cobra"
@@ -227,13 +229,28 @@ func daemonCmd() *cobra.Command {
 				logging.Op().Info("HTTP API started", "addr", cfg.Daemon.HTTPAddr)
 			}
 
-			var grpcServer *novagrpc.Server
+			var grpcUnifiedServer *novagrpc.UnifiedServer
 			if cfg.GRPC.Enabled {
-				grpcServer = novagrpc.NewServer(s, exec)
-				if err := grpcServer.Start(cfg.GRPC.Addr); err != nil {
+				// Create compiler for control plane
+				comp := compiler.New(s)
+				funcService := service.NewFunctionService(s, comp)
+				
+				grpcUnifiedServer, err = novagrpc.NewUnifiedServer(&novagrpc.Config{
+					Address:         cfg.GRPC.Addr,
+					Store:           s,
+					Executor:        exec,
+					Pool:            p,
+					FunctionService: funcService,
+					Compiler:        comp,
+				})
+				if err != nil {
+					return fmt.Errorf("create gRPC server: %w", err)
+				}
+				
+				if err := grpcUnifiedServer.Start(cfg.GRPC.Addr); err != nil {
 					return fmt.Errorf("start gRPC server: %w", err)
 				}
-				logging.Op().Info("gRPC API started", "addr", cfg.GRPC.Addr)
+				logging.Op().Info("unified gRPC API started", "addr", cfg.GRPC.Addr, "mode", cfg.GRPC.Mode)
 			}
 
 			sigCh := make(chan os.Signal, 1)
@@ -246,8 +263,8 @@ func daemonCmd() *cobra.Command {
 				select {
 				case <-sigCh:
 					logging.Op().Info("shutdown signal received")
-					if grpcServer != nil {
-						grpcServer.Stop()
+					if grpcUnifiedServer != nil {
+						grpcUnifiedServer.Stop()
 					}
 					if httpServer != nil {
 						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

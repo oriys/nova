@@ -81,6 +81,7 @@ type ObservabilityConfig struct {
 type GRPCConfig struct {
 	Enabled bool   `json:"enabled"` // Default: false
 	Addr    string `json:"addr"`    // :9090
+	Mode    string `json:"mode"`    // unified (default), dataplane, controlplane
 }
 
 // AuthConfig holds authentication settings
@@ -238,6 +239,7 @@ func DefaultConfig() *Config {
 		GRPC: GRPCConfig{
 			Enabled: false,
 			Addr:    ":9090",
+			Mode:    "unified",
 		},
 		Auth: AuthConfig{
 			Enabled: false,

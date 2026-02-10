@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+package nova.v1;
+
+option go_package = "github.com/oriys/nova/api/proto/novapb";
+
+// ControlPlane service handles function and configuration management
+service ControlPlane {
+  // CreateFunction creates a new function
+  rpc CreateFunction(CreateFunctionRequest) returns (FunctionInfo);
+
+  // GetFunction returns function metadata
+  rpc GetFunction(GetFunctionRequest) returns (FunctionInfo);
+
+  // ListFunctions returns all registered functions
+  rpc ListFunctions(ListFunctionsRequest) returns (ListFunctionsResponse);
+
+  // UpdateFunction updates function configuration
+  rpc UpdateFunction(UpdateFunctionRequest) returns (FunctionInfo);
+
+  // DeleteFunction deletes a function
+  rpc DeleteFunction(DeleteFunctionRequest) returns (DeleteFunctionResponse);
+
+  // UpdateFunctionCode updates function code
+  rpc UpdateFunctionCode(UpdateFunctionCodeRequest) returns (UpdateFunctionCodeResponse);
+
+  // ListRuntimes returns available runtimes
+  rpc ListRuntimes(ListRuntimesRequest) returns (ListRuntimesResponse);
+}
+
+message CreateFunctionRequest {
+  string name = 1;
+  string runtime = 2;
+  string handler = 3;
+  bytes code = 4;
+  int32 memory_mb = 5;
+  int32 timeout_s = 6;
+  map<string, string> env_vars = 7;
+  string mode = 8;
+}
+
+message GetFunctionRequest {
+  string name = 1;
+}
+
+message FunctionInfo {
+  string id = 1;
+  string name = 2;
+  string runtime = 3;
+  string handler = 4;
+  int32 memory_mb = 5;
+  int32 timeout_s = 6;
+  string mode = 7;
+  int32 min_replicas = 8;
+  int32 version = 9;
+  string created_at = 10;
+  string updated_at = 11;
+}
+
+message ListFunctionsRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+}
+
+message ListFunctionsResponse {
+  repeated FunctionInfo functions = 1;
+  int32 total = 2;
+}
+
+message UpdateFunctionRequest {
+  string name = 1;
+  int32 memory_mb = 2;
+  int32 timeout_s = 3;
+  map<string, string> env_vars = 4;
+  int32 min_replicas = 5;
+  int32 max_replicas = 6;
+}
+
+message DeleteFunctionRequest {
+  string name = 1;
+}
+
+message DeleteFunctionResponse {
+  bool success = 1;
+}
+
+message UpdateFunctionCodeRequest {
+  string name = 1;
+  bytes code = 2;
+}
+
+message UpdateFunctionCodeResponse {
+  bool success = 1;
+  string code_hash = 2;
+}
+
+message ListRuntimesRequest {}
+
+message RuntimeInfo {
+  string id = 1;
+  string name = 2;
+  string version = 3;
+  string image_name = 4;
+  repeated string entrypoint = 5;
+}
+
+message ListRuntimesResponse {
+  repeated RuntimeInfo runtimes = 1;
+}
