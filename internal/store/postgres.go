@@ -589,6 +589,25 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_volumes_tenant_namespace ON volumes(tenant_id, namespace)`,
 
+		// Triggers tables
+		`CREATE TABLE IF NOT EXISTS triggers (
+			id TEXT PRIMARY KEY,
+			tenant_id TEXT NOT NULL DEFAULT 'default',
+			namespace TEXT NOT NULL DEFAULT 'default',
+			name TEXT NOT NULL,
+			type TEXT NOT NULL,
+			function_id TEXT NOT NULL,
+			function_name TEXT NOT NULL,
+			enabled BOOLEAN NOT NULL DEFAULT TRUE,
+			config JSONB NOT NULL DEFAULT '{}'::jsonb,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE(tenant_id, namespace, name)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_triggers_tenant_namespace ON triggers(tenant_id, namespace)`,
+		`CREATE INDEX IF NOT EXISTS idx_triggers_function ON triggers(function_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_triggers_enabled ON triggers(enabled)`,
+
 		// Additional indexes for list query optimization
 		`CREATE INDEX IF NOT EXISTS idx_gateway_routes_domain_path ON gateway_routes(domain, path)`,
 		`CREATE INDEX IF NOT EXISTS idx_layers_name ON layers(name)`,
