@@ -18,5 +18,8 @@
   },
   "pool": {
     "idle_ttl": 60000000000
+  },
+  "gateway": {
+    "enabled": true
   }
 }

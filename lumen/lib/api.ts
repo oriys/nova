@@ -739,6 +739,9 @@ export const functionsApi = {
   logs: (name: string, tail: number = 10) =>
     request<LogEntry[]>(`/functions/${encodeURIComponent(name)}/logs?tail=${tail}`),
 
+  logsByRequest: (name: string, requestID: string) =>
+    request<LogEntry>(`/functions/${encodeURIComponent(name)}/logs?request_id=${encodeURIComponent(requestID)}`),
+
   metrics: (name: string) =>
     request<FunctionMetrics>(`/functions/${encodeURIComponent(name)}/metrics`),
 

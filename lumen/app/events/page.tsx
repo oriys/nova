@@ -564,7 +564,7 @@ export default function EventsPage() {
 
       <div className="p-6 space-y-6">
         {error && (
-          <ErrorBanner error={error} title="加载 Event Bus 失败" onRetry={fetchBaseData} />
+          <ErrorBanner error={error} title="Failed to Load Event Bus" onRetry={fetchBaseData} />
         )}
 
         {notice && (
@@ -639,8 +639,8 @@ export default function EventsPage() {
                 <div className="p-4">
                   <EmptyState
                     compact
-                    title="还没有 Topic"
-                    description="先创建一个 Topic，再配置订阅和投递策略。"
+                    title="No Topics Yet"
+                    description="Create a topic first, then configure subscriptions and delivery policies."
                   />
                 </div>
               ) : (
@@ -710,8 +710,8 @@ export default function EventsPage() {
           <div className="space-y-6 lg:col-span-2">
             {!selectedTopic ? (
               <EmptyState
-                title="请选择 Topic"
-                description="选中左侧 Topic 后，才能发布消息和管理订阅。"
+                title="Select a Topic"
+                description="Choose a topic on the left before publishing messages or managing subscriptions."
                 compact
               />
             ) : (

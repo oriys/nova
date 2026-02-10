@@ -16,9 +16,21 @@ interface FunctionsTableProps {
   functions: FunctionData[]
   onDelete: (name: string) => void
   loading?: boolean
+  selectedNames?: Set<string>
+  onToggleSelect?: (name: string, checked: boolean) => void
+  onToggleSelectAll?: (checked: boolean, names: string[]) => void
 }
 
-export function FunctionsTable({ functions, onDelete, loading }: FunctionsTableProps) {
+export function FunctionsTable({
+  functions,
+  onDelete,
+  loading,
+  selectedNames,
+  onToggleSelect,
+  onToggleSelectAll,
+}: FunctionsTableProps) {
+  const allSelected = functions.length > 0 && functions.every((fn) => selectedNames?.has(fn.name))
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
       month: "short",
@@ -73,6 +85,14 @@ export function FunctionsTable({ functions, onDelete, loading }: FunctionsTableP
         <table className="w-full">
           <thead>
             <tr className="border-b border-border bg-muted/30">
+              <th className="px-4 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={(event) => onToggleSelectAll?.(event.target.checked, functions.map((fn) => fn.name))}
+                  className="h-4 w-4 rounded border-border"
+                />
+              </th>
               <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Function
               </th>
@@ -108,8 +128,17 @@ export function FunctionsTable({ functions, onDelete, loading }: FunctionsTableP
           <tbody className="divide-y divide-border">
             {functions.map((fn) => {
               const ioInfo = formatIO(fn)
+              const checked = Boolean(selectedNames?.has(fn.name))
               return (
               <tr key={fn.id} className="hover:bg-muted/20 transition-colors">
+                <td className="px-4 py-4">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(event) => onToggleSelect?.(fn.name, event.target.checked)}
+                    className="h-4 w-4 rounded border-border"
+                  />
+                </td>
                 <td className="px-6 py-4">
                   <Link
                     href={`/functions/${fn.name}`}

@@ -17,6 +17,7 @@ import {
 } from "@/lib/function-search"
 import { ThemeToggle } from "./theme-toggle"
 import { GlobalScopeSwitcher } from "./global-scope-switcher"
+import { CommandPalette } from "./command-palette"
 
 interface HeaderProps {
   title: string
@@ -333,6 +334,8 @@ export function Header({ title, description }: HeaderProps) {
             </div>
           )}
         </div>
+
+        <CommandPalette />
 
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5 text-muted-foreground" />

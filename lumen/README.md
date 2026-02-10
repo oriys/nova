@@ -1,23 +1,23 @@
 # lumen - frontend for nova
 
-lumen 是 nova 的 Web 管理界面。
+Lumen is the web management console for Nova.
 
-## 开发
+## Development
 
-### 前提条件
+### Prerequisites
 
-确保网关 `zenith` 正在运行：
+Make sure the `zenith` gateway is running:
 
 ```bash
-# 在 nova 根目录（推荐三服务）
+# from the nova project root (recommended 3-service setup)
 ./bin/nova daemon --http :8081
 ./bin/comet daemon --grpc :9090
 ./bin/zenith serve --listen :9000 --nova-url http://127.0.0.1:8081 --comet-grpc 127.0.0.1:9090
 ```
 
-前端默认通过 `localhost:9000`（zenith）访问后端。
+The frontend uses `localhost:9000` (Zenith) as its backend entrypoint by default.
 
-### 启动开发服务器
+### Start the dev server
 
 ```bash
 cd lumen
@@ -25,36 +25,36 @@ npm install
 npm run dev
 ```
 
-前端默认监听 `http://localhost:3000`，会自动代理 `/api/*` 请求到后端。
+The frontend listens on `http://localhost:3000` and proxies `/api/*` requests automatically.
 
-## API 端点
+## API Endpoints
 
-前端使用以下后端 API：
+The frontend uses the following backend APIs:
 
 ### Control Plane
-- `GET /functions` - 列出所有函数
-- `POST /functions` - 创建函数
-- `GET /functions/{name}` - 获取函数详情
-- `PATCH /functions/{name}` - 更新函数
-- `DELETE /functions/{name}` - 删除函数
-- `GET /runtimes` - 获取可用运行时
+- `GET /functions` - list functions
+- `POST /functions` - create function
+- `GET /functions/{name}` - get function details
+- `PATCH /functions/{name}` - update function
+- `DELETE /functions/{name}` - delete function
+- `GET /runtimes` - list available runtimes
 
 ### Data Plane
-- `POST /functions/{name}/invoke` - 调用函数
-- `GET /functions/{name}/logs` - 获取函数日志
-- `GET /functions/{name}/metrics` - 获取函数指标
-- `GET /metrics` - 全局指标
-- `GET /health` - 健康检查
+- `POST /functions/{name}/invoke` - invoke function
+- `GET /functions/{name}/logs` - get function logs
+- `GET /functions/{name}/metrics` - get function metrics
+- `GET /metrics` - global metrics
+- `GET /health` - health check
 
 ### Snapshots
-- `GET /snapshots` - 列出快照
-- `POST /functions/{name}/snapshot` - 创建快照
-- `DELETE /functions/{name}/snapshot` - 删除快照
+- `GET /snapshots` - list snapshots
+- `POST /functions/{name}/snapshot` - create snapshot
+- `DELETE /functions/{name}/snapshot` - delete snapshot
 
-## 技术栈
+## Tech Stack
 
 - Next.js 15
 - React 19
 - Tailwind CSS
-- Recharts (图表)
-- shadcn/ui (组件库)
+- Recharts (charts)
+- shadcn/ui (component library)

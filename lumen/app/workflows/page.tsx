@@ -97,7 +97,7 @@ export default function WorkflowsPage() {
       <DashboardLayout>
         <Header title="Workflows" description="DAG workflow orchestration" />
         <div className="p-6">
-          <ErrorBanner error={error} title="加载工作流失败" onRetry={fetchData} />
+          <ErrorBanner error={error} title="Failed to Load Workflows" onRetry={fetchData} />
         </div>
       </DashboardLayout>
     )
@@ -163,10 +163,10 @@ export default function WorkflowsPage() {
 
         {!loading && workflows.length === 0 ? (
           <EmptyState
-            title="还没有工作流"
-            description="创建工作流后可串联多个函数形成 DAG。"
+            title="No Workflows Yet"
+            description="Create a workflow to orchestrate multiple functions as a DAG."
             icon={GitBranch}
-            primaryAction={{ label: "创建工作流", onClick: () => setIsCreateOpen(true) }}
+            primaryAction={{ label: "Create Workflow", onClick: () => setIsCreateOpen(true) }}
           />
         ) : (
           <div className="rounded-lg border border-border bg-card">

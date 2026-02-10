@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -165,6 +166,15 @@ export function FunctionDiagnosticsPanel({ functionName }: FunctionDiagnosticsPr
                       ) : (
                         <span className="text-destructive">{entry.error_message || "failed"}</span>
                       )}
+                    </div>
+                    <div className="sm:col-span-4 flex justify-end">
+                      <Button asChild variant="outline" size="sm">
+                        <Link
+                          href={`/functions/${encodeURIComponent(functionName)}?tab=logs&request_id=${encodeURIComponent(entry.id)}`}
+                        >
+                          View Logs
+                        </Link>
+                      </Button>
                     </div>
                   </div>
                 ))}

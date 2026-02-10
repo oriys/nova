@@ -10,19 +10,19 @@ interface ErrorBannerProps {
 }
 
 export function ErrorBanner({ error, title, onRetry }: ErrorBannerProps) {
-  const resolved = resolveUserError(error, title || "请求失败")
+  const resolved = resolveUserError(error, title || "Request failed")
 
   return (
     <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
       <p className="font-medium">{resolved.title}</p>
       <p className="mt-1 text-sm">{resolved.message}</p>
       {resolved.hint && (
-        <p className="mt-2 text-sm text-destructive/90">建议：{resolved.hint}</p>
+        <p className="mt-2 text-sm text-destructive/90">Hint: {resolved.hint}</p>
       )}
       {onRetry && (
         <div className="mt-3">
           <Button variant="outline" size="sm" onClick={onRetry}>
-            重试
+            Retry
           </Button>
         </div>
       )}

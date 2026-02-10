@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
@@ -32,7 +32,7 @@ import {
 import { toUserErrorMessage } from "@/lib/error-map"
 import { markOnboardingStep, syncOnboardingStateFromData } from "@/lib/onboarding-state"
 import { cn } from "@/lib/utils"
-import { Plus, RefreshCw, Trash2, ToggleLeft, ToggleRight, Pencil } from "lucide-react"
+import { Plus, RefreshCw, Trash2, ToggleLeft, ToggleRight, Pencil, Download, Upload } from "lucide-react"
 
 type AuthStrategy = "none" | "inherit" | "apikey" | "jwt"
 
@@ -65,10 +65,136 @@ type Notice = {
   text: string
 }
 
+type JsonObject = Record<string, unknown>
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function readStringMap(value: unknown): Record<string, string> | undefined {
+  if (!isJsonObject(value)) {
+    return undefined
+  }
+  const entries = Object.entries(value).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string"
+  )
+  if (entries.length === 0) {
+    return undefined
+  }
+  return Object.fromEntries(entries)
+}
+
+function readMethods(value: unknown): string[] | undefined {
+  if (typeof value === "string") {
+    const parsed = parseMethods(value)
+    return parsed.length > 0 ? parsed : undefined
+  }
+  if (!Array.isArray(value)) {
+    return undefined
+  }
+  const parsed = Array.from(
+    new Set(
+      value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim().toUpperCase())
+        .filter(Boolean)
+    )
+  )
+  return parsed.length > 0 ? parsed : undefined
+}
+
+function parseRouteImportPayload(payload: unknown): {
+  items: CreateGatewayRouteRequest[]
+  invalid: number
+} {
+  const rows: unknown[] = Array.isArray(payload)
+    ? payload
+    : isJsonObject(payload) && Array.isArray(payload.routes)
+      ? payload.routes
+      : []
+  const items: CreateGatewayRouteRequest[] = []
+  let invalid = 0
+
+  rows.forEach((row) => {
+    if (!isJsonObject(row)) {
+      invalid += 1
+      return
+    }
+
+    const path = typeof row.path === "string" ? row.path.trim() : ""
+    const functionName =
+      typeof row.function_name === "string"
+        ? row.function_name.trim()
+        : typeof row.function === "string"
+          ? row.function.trim()
+          : ""
+    if (!path || !functionName) {
+      invalid += 1
+      return
+    }
+
+    const req: CreateGatewayRouteRequest = {
+      path,
+      function_name: functionName,
+      methods: readMethods(row.methods),
+      auth_strategy:
+        typeof row.auth_strategy === "string" && row.auth_strategy.trim()
+          ? row.auth_strategy.trim()
+          : "none",
+      enabled: typeof row.enabled === "boolean" ? row.enabled : true,
+    }
+
+    const domain = typeof row.domain === "string" ? row.domain.trim() : ""
+    if (domain) {
+      req.domain = domain
+    }
+
+    const authConfig = readStringMap(row.auth_config ?? row.authConfig)
+    if (authConfig) {
+      req.auth_config = authConfig
+    }
+
+    if (row.request_schema !== undefined) {
+      req.request_schema = row.request_schema
+    } else if (row.requestSchema !== undefined) {
+      req.request_schema = row.requestSchema
+    }
+
+    const rateLimitRaw = row.rate_limit ?? row.rateLimit
+    if (isJsonObject(rateLimitRaw)) {
+      const rps = Number(rateLimitRaw.requests_per_second ?? rateLimitRaw.rps)
+      const burst = Number(rateLimitRaw.burst_size ?? rateLimitRaw.burst)
+      if (Number.isFinite(rps) && rps > 0 && Number.isFinite(burst) && burst > 0) {
+        req.rate_limit = {
+          requests_per_second: rps,
+          burst_size: Math.floor(burst),
+        }
+      }
+    }
+
+    items.push(req)
+  })
+
+  return { items, invalid }
+}
+
+function downloadJSON(filename: string, payload: unknown) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function GatewayPage() {
   const router = useRouter()
+  const createOpenedByQueryRef = useRef(false)
+  const importInputRef = useRef<HTMLInputElement | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [ioBusy, setIoBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [routes, setRoutes] = useState<GatewayRoute[]>([])
@@ -81,6 +207,9 @@ export default function GatewayPage() {
   const [templateBurst, setTemplateBurst] = useState("")
   const [templateSaving, setTemplateSaving] = useState(false)
   const [hasInvocations, setHasInvocations] = useState(false)
+  const [selectedRouteIDs, setSelectedRouteIDs] = useState<Set<string>>(new Set())
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
 
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -146,6 +275,33 @@ export default function GatewayPage() {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const shouldOpenCreate = params.get("create") === "1"
+    if (!shouldOpenCreate || createOpenedByQueryRef.current) {
+      return
+    }
+    createOpenedByQueryRef.current = true
+    setCreateOpen(true)
+    params.delete("create")
+    const qs = params.toString()
+    router.replace(qs ? `/gateway?${qs}` : "/gateway", { scroll: false })
+  }, [router])
+
+  useEffect(() => {
+    setSelectedRouteIDs((prev) => {
+      const valid = new Set(filteredRoutes.map((route) => route.id))
+      const next = new Set<string>()
+      prev.forEach((id) => {
+        if (valid.has(id)) {
+          next.add(id)
+        }
+      })
+      return next
+    })
+    setConfirmBulkDelete(false)
+  }, [filteredRoutes])
 
   const resetCreateForm = () => {
     setCreateDomain("")
@@ -325,6 +481,180 @@ export default function GatewayPage() {
     }
   }
 
+  const toggleSelectRoute = (routeID: string, checked: boolean) => {
+    setSelectedRouteIDs((prev) => {
+      const next = new Set(prev)
+      if (checked) {
+        next.add(routeID)
+      } else {
+        next.delete(routeID)
+      }
+      return next
+    })
+    setConfirmBulkDelete(false)
+  }
+
+  const toggleSelectAllRoutes = (checked: boolean) => {
+    setSelectedRouteIDs((prev) => {
+      const next = new Set(prev)
+      if (checked) {
+        filteredRoutes.forEach((route) => next.add(route.id))
+      } else {
+        filteredRoutes.forEach((route) => next.delete(route.id))
+      }
+      return next
+    })
+    setConfirmBulkDelete(false)
+  }
+
+  const selectedRoutes = filteredRoutes.filter((route) => selectedRouteIDs.has(route.id))
+  const allFilteredSelected =
+    filteredRoutes.length > 0 && filteredRoutes.every((route) => selectedRouteIDs.has(route.id))
+
+  const applyBulkEnableState = async (enabled: boolean) => {
+    const targets = Array.from(selectedRouteIDs)
+    if (targets.length === 0) return
+    try {
+      setBulkBusy(true)
+      setError(null)
+      const results = await Promise.allSettled(
+        targets.map((id) => gatewayApi.updateRoute(id, { enabled }))
+      )
+      const failed = results.filter((result) => result.status === "rejected")
+      if (failed.length > 0) {
+        setNotice({
+          kind: "error",
+          text: `Bulk update completed with ${failed.length} failed route(s).`,
+        })
+      } else {
+        setNotice({
+          kind: "success",
+          text: `Bulk ${enabled ? "enabled" : "disabled"} ${targets.length} route(s).`,
+        })
+      }
+      await loadData()
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    const targets = Array.from(selectedRouteIDs)
+    if (targets.length === 0) return
+    if (!confirmBulkDelete) {
+      setConfirmBulkDelete(true)
+      return
+    }
+    try {
+      setBulkBusy(true)
+      setError(null)
+      const results = await Promise.allSettled(targets.map((id) => gatewayApi.deleteRoute(id)))
+      const failed = results.filter((result) => result.status === "rejected")
+      if (failed.length > 0) {
+        setNotice({
+          kind: "error",
+          text: `Bulk delete completed with ${failed.length} failed route(s).`,
+        })
+      } else {
+        setNotice({
+          kind: "success",
+          text: `Deleted ${targets.length} route(s).`,
+        })
+      }
+      setSelectedRouteIDs(new Set())
+      setConfirmBulkDelete(false)
+      await loadData()
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  const handleExportRoutes = () => {
+    const selectedTargets = selectedRouteIDs.size > 0
+      ? routes.filter((route) => selectedRouteIDs.has(route.id))
+      : filteredRoutes
+    if (selectedTargets.length === 0) {
+      setNotice({ kind: "info", text: "No routes available for export." })
+      return
+    }
+
+    const rows = selectedTargets.map((route) => ({
+      domain: route.domain || undefined,
+      path: route.path,
+      methods: route.methods,
+      function_name: route.function_name,
+      auth_strategy: route.auth_strategy,
+      auth_config: route.auth_config,
+      request_schema: route.request_schema,
+      rate_limit: route.rate_limit,
+      enabled: route.enabled,
+    }))
+    const ts = new Date().toISOString().replace(/[:.]/g, "-")
+    downloadJSON(`zenith-routes-${ts}.json`, {
+      kind: "zenith.gateway.routes.export",
+      version: 1,
+      exported_at: new Date().toISOString(),
+      count: rows.length,
+      routes: rows,
+    })
+    setNotice({ kind: "success", text: `Exported ${rows.length} route(s).` })
+  }
+
+  const handleImportRoutes = async (input: HTMLInputElement) => {
+    const file = input.files?.[0]
+    input.value = ""
+    if (!file) {
+      return
+    }
+
+    try {
+      setIoBusy(true)
+      setError(null)
+      setNotice(null)
+
+      const rawText = await file.text()
+      const parsed: unknown = JSON.parse(rawText)
+      const { items, invalid } = parseRouteImportPayload(parsed)
+
+      if (items.length === 0) {
+        setError("No valid route definitions were found in the import file.")
+        setNotice({ kind: "error", text: "Import failed: invalid file format or missing required fields." })
+        return
+      }
+
+      const results = await Promise.allSettled(items.map((item) => gatewayApi.createRoute(item)))
+      const failed = results.filter((result) => result.status === "rejected").length
+      const succeeded = results.length - failed
+      const invalidSuffix = invalid > 0 ? `, skipped ${invalid} invalid record(s)` : ""
+
+      setSelectedRouteIDs(new Set())
+      setConfirmBulkDelete(false)
+      await loadData()
+
+      if (succeeded > 0) {
+        markOnboardingStep("gateway_route_created", true)
+      }
+
+      if (failed > 0) {
+        setNotice({
+          kind: "error",
+          text: `Import finished: ${succeeded} succeeded, ${failed} failed${invalidSuffix}.`,
+        })
+      } else {
+        setNotice({
+          kind: "success",
+          text: `Import succeeded: ${succeeded} route(s)${invalidSuffix}.`,
+        })
+      }
+    } catch (err) {
+      const message = toUserErrorMessage(err)
+      setError(message)
+      setNotice({ kind: "error", text: `Import failed: ${message}` })
+    } finally {
+      setIoBusy(false)
+    }
+  }
+
   return (
     <DashboardLayout>
       <Header title="Gateway" description="Manage HTTP routes mapped to Nova functions" />
@@ -339,7 +669,7 @@ export default function GatewayPage() {
         />
 
         {error && (
-          <ErrorBanner error={error} title="加载网关配置失败" onRetry={loadData} />
+          <ErrorBanner error={error} title="Failed to Load Gateway Configuration" onRetry={loadData} />
         )}
 
         {notice && (
@@ -426,6 +756,33 @@ export default function GatewayPage() {
             />
           </div>
           <div className="flex items-center gap-2">
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              onChange={(event) => {
+                void handleImportRoutes(event.target)
+              }}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportRoutes}
+              disabled={loading || busy || bulkBusy || ioBusy || filteredRoutes.length === 0}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              {selectedRouteIDs.size > 0 ? `Export Selected (${selectedRouteIDs.size})` : "Export Filtered"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => importInputRef.current?.click()}
+              disabled={loading || busy || bulkBusy || ioBusy}
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              Import JSON
+            </Button>
             <Dialog
               open={createOpen}
               onOpenChange={(open) => {
@@ -436,7 +793,7 @@ export default function GatewayPage() {
               }}
             >
               <DialogTrigger asChild>
-                <Button size="sm">
+                <Button size="sm" disabled={busy || bulkBusy || ioBusy}>
                   <Plus className="mr-2 h-4 w-4" />
                   Add Route
                 </Button>
@@ -558,19 +915,89 @@ export default function GatewayPage() {
               </DialogContent>
             </Dialog>
 
-            <Button variant="outline" size="sm" onClick={loadData} disabled={loading || busy}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadData}
+              disabled={loading || busy || bulkBusy || ioBusy}
+            >
               <RefreshCw className={cn("mr-2 h-4 w-4", (loading || busy) && "animate-spin")} />
               Refresh
             </Button>
           </div>
         </div>
 
+        {selectedRouteIDs.size > 0 && (
+          <div className="rounded-lg border border-border bg-card p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-muted-foreground">
+                Selected <span className="font-medium text-foreground">{selectedRoutes.length}</span> route(s)
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => applyBulkEnableState(true)}
+                  disabled={busy || bulkBusy}
+                >
+                  Bulk Enable
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => applyBulkEnableState(false)}
+                  disabled={busy || bulkBusy}
+                >
+                  Bulk Disable
+                </Button>
+                {confirmBulkDelete ? (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={handleBulkDelete}
+                      disabled={busy || bulkBusy}
+                    >
+                      Confirm Bulk Delete
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setConfirmBulkDelete(false)}
+                      disabled={busy || bulkBusy}
+                    >
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleBulkDelete}
+                    disabled={busy || bulkBusy}
+                  >
+                    Bulk Delete
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSelectedRouteIDs(new Set())}
+                  disabled={busy || bulkBusy}
+                >
+                  Clear Selection
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {!loading && routes.length === 0 ? (
           <EmptyState
-            title="还没有网关路由"
-            description="创建路由后，UI / CLI / MCP 都可以通过 Zenith 统一调用。"
+            title="No Gateway Routes Yet"
+            description="Create a route so UI / CLI / MCP can call through Zenith."
             primaryAction={{
-              label: functions.length > 0 ? "新增路由" : "先创建函数",
+              label: functions.length > 0 ? "Add Route" : "Create Function First",
               onClick: () => {
                 if (functions.length > 0) {
                   setCreateOpen(true)
@@ -582,9 +1009,9 @@ export default function GatewayPage() {
           />
         ) : !loading && routes.length > 0 && filteredRoutes.length === 0 ? (
           <EmptyState
-            title="没有匹配的路由"
-            description="当前域名筛选没有命中路由。"
-            primaryAction={{ label: "清空筛选", onClick: () => setDomainFilter("") }}
+            title="No Matching Routes"
+            description="No routes match the current domain filter."
+            primaryAction={{ label: "Clear Filter", onClick: () => setDomainFilter("") }}
             compact
           />
         ) : (
@@ -592,6 +1019,14 @@ export default function GatewayPage() {
             <table className="w-full min-w-[980px]">
               <thead>
                 <tr className="border-b border-border">
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={(event) => toggleSelectAllRoutes(event.target.checked)}
+                      className="h-4 w-4 rounded border-border"
+                    />
+                  </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">ID</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Domain</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Path</th>
@@ -608,14 +1043,28 @@ export default function GatewayPage() {
                 {loading ? (
                   Array.from({ length: 3 }).map((_, i) => (
                     <tr key={i} className="border-b border-border">
-                      <td className="px-4 py-3" colSpan={10}>
+                      <td className="px-4 py-3" colSpan={11}>
                         <div className="h-4 animate-pulse rounded bg-muted" />
                       </td>
                     </tr>
                   ))
                 ) : (
                   filteredRoutes.map((route) => (
-                  <tr key={route.id} className="border-b border-border last:border-0 hover:bg-muted/50">
+                  <tr
+                    key={route.id}
+                    className={cn(
+                      "border-b border-border last:border-0 hover:bg-muted/50",
+                      selectedRouteIDs.has(route.id) && "bg-muted/40"
+                    )}
+                  >
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedRouteIDs.has(route.id)}
+                        onChange={(event) => toggleSelectRoute(route.id, event.target.checked)}
+                        className="h-4 w-4 rounded border-border"
+                      />
+                    </td>
                     <td className="px-4 py-3 text-sm font-mono">{route.id}</td>
                     <td className="px-4 py-3 text-sm">{route.domain || "-"}</td>
                     <td className="px-4 py-3 text-sm font-mono">{route.path}</td>
@@ -648,7 +1097,7 @@ export default function GatewayPage() {
                           size="sm"
                           title={route.enabled ? "Disable route" : "Enable route"}
                           onClick={() => void handleToggleEnabled(route)}
-                          disabled={busy}
+                          disabled={busy || bulkBusy}
                         >
                           {route.enabled ? (
                             <ToggleRight className="h-4 w-4 text-success" />
@@ -664,7 +1113,7 @@ export default function GatewayPage() {
                             setEditFromRoute(route)
                             setEditOpen(true)
                           }}
-                          disabled={busy}
+                          disabled={busy || bulkBusy}
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -675,7 +1124,7 @@ export default function GatewayPage() {
                               size="sm"
                               title="Confirm delete route"
                               onClick={() => void handleDelete(route.id)}
-                              disabled={busy}
+                              disabled={busy || bulkBusy}
                             >
                               Confirm
                             </Button>
@@ -687,7 +1136,7 @@ export default function GatewayPage() {
                                 setPendingDeleteRouteID(null)
                                 setNotice(null)
                               }}
-                              disabled={busy}
+                              disabled={busy || bulkBusy}
                             >
                               Cancel
                             </Button>
@@ -698,7 +1147,7 @@ export default function GatewayPage() {
                             size="sm"
                             title="Delete route"
                             onClick={() => void handleDelete(route.id)}
-                            disabled={busy}
+                            disabled={busy || bulkBusy}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>

@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useEffect, useState, useCallback } from "react"
+import { use, useEffect, useMemo, useState, useCallback } from "react"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
@@ -45,11 +45,36 @@ import {
 
 export default function FunctionDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ tab?: string; request_id?: string }>
 }) {
   const { id } = use(params)
-  const [activeTab, setActiveTab] = useState("overview")
+  const query = use(searchParams)
+  const requestedLogID =
+    typeof query.request_id === "string" ? query.request_id.trim() : ""
+  const requestedTab = typeof query.tab === "string" ? query.tab.trim() : ""
+  const normalizedTab = useMemo(() => {
+    const validTabs = new Set([
+      "overview",
+      "code",
+      "logs",
+      "diagnostics",
+      "config",
+      "versions",
+      "schedules",
+    ])
+    if (validTabs.has(requestedTab)) {
+      return requestedTab
+    }
+    if (requestedLogID) {
+      return "logs"
+    }
+    return "overview"
+  }, [requestedLogID, requestedTab])
+
+  const [activeTab, setActiveTab] = useState(normalizedTab)
   const [func, setFunc] = useState<FunctionData | null>(null)
   const [metrics, setMetrics] = useState<FunctionMetricsType | null>(null)
   const [logs, setLogs] = useState<LogEntry[]>([])
@@ -96,9 +121,12 @@ export default function FunctionDetailPage({
 
       // id could be function ID or name, try to get by name first
       const fn = await functionsApi.get(id)
-      const [fnMetrics, fnLogs] = await Promise.all([
+      const [fnMetrics, fnLogs, requestedLog] = await Promise.all([
         functionsApi.metrics(fn.name).catch(() => null),
         functionsApi.logs(fn.name, 20).catch(() => []),
+        requestedLogID
+          ? functionsApi.logsByRequest(fn.name, requestedLogID).catch(() => null)
+          : Promise.resolve(null),
       ])
 
       // Fetch versions and schedules (non-blocking)
@@ -108,18 +136,25 @@ export default function FunctionDetailPage({
 
       setMetrics(fnMetrics)
       setFunc(transformFunction(fn, fnMetrics ?? undefined))
-      setLogs(fnLogs.map(transformLog))
+      const mergedLogs = requestedLog
+        ? [requestedLog, ...fnLogs.filter((entry) => entry.id !== requestedLog.id)]
+        : fnLogs
+      setLogs(mergedLogs.map(transformLog))
     } catch (err) {
       console.error("Failed to fetch function:", err)
       setError(err instanceof Error ? err.message : "Failed to load function")
     } finally {
       setLoading(false)
     }
-  }, [id, refreshAsyncJobs])
+  }, [id, refreshAsyncJobs, requestedLogID])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  useEffect(() => {
+    setActiveTab(normalizedTab)
+  }, [normalizedTab])
 
   const handleInvoke = async () => {
     if (!func) return
@@ -355,7 +390,7 @@ export default function FunctionDetailPage({
           </TabsContent>
 
           <TabsContent value="logs" className="mt-0">
-            <FunctionLogs logs={logs} onRefresh={fetchData} />
+            <FunctionLogs logs={logs} onRefresh={fetchData} highlightedRequestId={requestedLogID || undefined} />
           </TabsContent>
 
           <TabsContent value="diagnostics" className="mt-0">

@@ -134,7 +134,7 @@ export default function DashboardPage() {
       <DashboardLayout>
         <Header title="Dashboard" description="Overview of your serverless functions" />
         <div className="p-6">
-          <ErrorBanner error={error} title="加载仪表盘失败" onRetry={() => fetchData(false)} />
+          <ErrorBanner error={error} title="Failed to Load Dashboard" onRetry={() => fetchData(false)} />
         </div>
       </DashboardLayout>
     )

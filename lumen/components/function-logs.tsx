@@ -19,6 +19,7 @@ interface FunctionLogsProps {
   logs: LogEntry[]
   onRefresh?: () => void
   loading?: boolean
+  highlightedRequestId?: string
 }
 
 const levelConfig = {
@@ -28,7 +29,7 @@ const levelConfig = {
   debug: { icon: Bug, color: "text-muted-foreground", bg: "bg-muted", label: "DEBUG" },
 }
 
-export function FunctionLogs({ logs, onRefresh, loading }: FunctionLogsProps) {
+export function FunctionLogs({ logs, onRefresh, loading, highlightedRequestId }: FunctionLogsProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [levelFilter, setLevelFilter] = useState("all")
   const [isLive, setIsLive] = useState(false)
@@ -83,6 +84,12 @@ export function FunctionLogs({ logs, onRefresh, loading }: FunctionLogsProps) {
 
   return (
     <div className="space-y-4">
+      {highlightedRequestId && (
+        <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs text-primary">
+          Highlighted request_id: <code>{highlightedRequestId}</code>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
@@ -164,7 +171,10 @@ export function FunctionLogs({ logs, onRefresh, loading }: FunctionLogsProps) {
               return (
                 <div
                   key={log.id}
-                  className="flex items-start gap-4 px-4 py-3 hover:bg-muted/20 transition-colors font-mono text-sm"
+                  className={cn(
+                    "flex items-start gap-4 px-4 py-3 hover:bg-muted/20 transition-colors font-mono text-sm",
+                    highlightedRequestId && log.requestId === highlightedRequestId && "bg-primary/10 ring-1 ring-primary/40"
+                  )}
                 >
                   <div className="flex items-center gap-2 shrink-0">
                     <div className={cn("rounded px-1.5 py-0.5 text-xs font-medium", config.bg, config.color)}>

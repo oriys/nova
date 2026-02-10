@@ -197,7 +197,7 @@ export default function HistoryPage() {
       <DashboardLayout>
         <Header title="History" description="Invocation history and trends" />
         <div className="p-6">
-          <ErrorBanner error={error} title="加载调用历史失败" onRetry={fetchData} />
+          <ErrorBanner error={error} title="Failed to Load Invocation History" onRetry={fetchData} />
         </div>
       </DashboardLayout>
     )
@@ -307,9 +307,9 @@ export default function HistoryPage() {
         {/* Invocations Table */}
         {!loading && invocations.length === 0 ? (
           <EmptyState
-            title="还没有调用记录"
-            description="先调用一次函数，这里会展示完整的调用历史。"
-            primaryAction={{ label: "去函数页调用", href: "/functions" }}
+            title="No Invocation Records Yet"
+            description="Invoke a function once to see the full invocation history here."
+            primaryAction={{ label: "Go to Functions", href: "/functions" }}
           />
         ) : (
         <div className="rounded-xl border border-border bg-card overflow-hidden">

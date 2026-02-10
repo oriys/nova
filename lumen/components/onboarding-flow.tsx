@@ -62,20 +62,20 @@ export function OnboardingFlow({
     {
       key: "function_created",
       done: merged.function_created,
-      title: "创建第一个函数",
-      description: "先把业务逻辑放进函数。",
+      title: "Create your first function",
+      description: "Add your business logic as a function.",
     },
     {
       key: "function_invoked",
       done: merged.function_invoked,
-      title: "完成一次函数调用",
-      description: "确认函数可执行并有调用记录。",
+      title: "Run a function once",
+      description: "Verify it executes and produces an invocation record.",
     },
     {
       key: "gateway_route_created",
       done: merged.gateway_route_created,
-      title: "创建网关路由",
-      description: "把 HTTP 路由绑定到函数。",
+      title: "Create a gateway route",
+      description: "Bind an HTTP route to your function.",
     },
   ]
 
@@ -85,16 +85,16 @@ export function OnboardingFlow({
         <div>
           <p className="flex items-center gap-2 text-sm font-medium text-foreground">
             <Sparkles className="h-4 w-4 text-primary" />
-            新手引导
+            Getting Started
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">已完成 {completedCount}/3</p>
+          <p className="mt-1 text-xs text-muted-foreground">Completed {completedCount}/3</p>
         </div>
         <Button
           variant="ghost"
           size="sm"
           onClick={() => dismissOnboarding(true)}
         >
-          稍后再说
+          Dismiss
         </Button>
       </div>
 
@@ -117,22 +117,22 @@ export function OnboardingFlow({
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {!merged.function_created && onCreateFunction && (
           <Button size="sm" onClick={onCreateFunction}>
-            创建函数
+            Create Function
           </Button>
         )}
         {!merged.function_invoked && (
           <Button asChild variant="outline" size="sm">
-            <Link href="/functions">去调用函数</Link>
+            <Link href="/functions">Invoke Function</Link>
           </Button>
         )}
         {!merged.gateway_route_created && onCreateGatewayRoute && (
           <Button variant="outline" size="sm" onClick={onCreateGatewayRoute}>
-            创建路由
+            Create Route
           </Button>
         )}
         {!merged.gateway_route_created && !onCreateGatewayRoute && (
           <Button asChild variant="outline" size="sm">
-            <Link href="/gateway">去网关配置</Link>
+            <Link href="/gateway">Open Gateway</Link>
           </Button>
         )}
       </div>

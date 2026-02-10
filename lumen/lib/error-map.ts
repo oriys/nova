@@ -15,27 +15,27 @@ function inferHint(status: number | undefined, message: string, code?: string): 
   const normalizedCode = (code || "").toLowerCase()
 
   if (normalizedCode === "invalid_json" || normalized.includes("invalid json") || normalized.includes("valid json")) {
-    return "请检查请求体是否为合法 JSON，并确认字段类型与示例一致。"
+    return "Check that the request body is valid JSON and that field types match the API examples."
   }
   if (status === 403 || normalized.includes("ingress") || normalized.includes("network policy")) {
-    return "请检查函数的 Network Policy（ingress/egress 规则）是否允许当前来源。"
+    return "Check whether the function network policy (ingress/egress rules) allows the current source."
   }
   if (status === 404 && normalized.includes("function")) {
-    return "请先在 Functions 页面确认函数名存在，且租户/namespace 作用域正确。"
+    return "Confirm the function exists and that your tenant/namespace scope is correct."
   }
   if (status === 429 || normalized.includes("quota exceeded") || normalized.includes("rate limit")) {
-    return "请调整限流/配额，或稍后重试。"
+    return "Adjust rate limits/quotas or retry later."
   }
   if (status === 502 || status === 503 || normalized.includes("unavailable")) {
-    return "请先检查 Zenith / Nova / Comet 容器状态与 /health 接口。"
+    return "Check Zenith / Nova / Comet container status and their /health endpoints."
   }
   if (status === 504 || normalized.includes("timeout")) {
-    return "请求超时，可尝试增大超时或降低函数执行耗时。"
+    return "The request timed out. Increase timeout or reduce function execution time."
   }
   return undefined
 }
 
-export function resolveUserError(error: unknown, fallbackTitle: string = "请求失败"): UserError {
+export function resolveUserError(error: unknown, fallbackTitle: string = "Request failed"): UserError {
   if (error instanceof ApiError) {
     const title = fallbackTitle
     const message = error.message || "Request failed"
@@ -68,7 +68,7 @@ export function resolveUserError(error: unknown, fallbackTitle: string = "请求
 export function toUserErrorMessage(error: unknown, fallbackTitle?: string): string {
   const resolved = resolveUserError(error, fallbackTitle)
   if (resolved.hint) {
-    return `${resolved.message} 建议：${resolved.hint}`
+    return `${resolved.message} Hint: ${resolved.hint}`
   }
   return resolved.message
 }
