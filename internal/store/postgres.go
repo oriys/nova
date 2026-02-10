@@ -573,6 +573,22 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			PRIMARY KEY (function_id, layer_id)
 		)`,
 
+		// Volumes tables
+		`CREATE TABLE IF NOT EXISTS volumes (
+			id TEXT PRIMARY KEY,
+			tenant_id TEXT NOT NULL DEFAULT 'default',
+			namespace TEXT NOT NULL DEFAULT 'default',
+			name TEXT NOT NULL,
+			size_mb INTEGER NOT NULL,
+			image_path TEXT NOT NULL,
+			shared BOOLEAN NOT NULL DEFAULT FALSE,
+			description TEXT,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE(tenant_id, namespace, name)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_volumes_tenant_namespace ON volumes(tenant_id, namespace)`,
+
 		// Additional indexes for list query optimization
 		`CREATE INDEX IF NOT EXISTS idx_gateway_routes_domain_path ON gateway_routes(domain, path)`,
 		`CREATE INDEX IF NOT EXISTS idx_layers_name ON layers(name)`,

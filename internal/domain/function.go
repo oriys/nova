@@ -145,6 +145,27 @@ type Layer struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// VolumeMount represents a persistent volume attached to a function
+type VolumeMount struct {
+	VolumeID  string `json:"volume_id"`            // ID of the volume to mount
+	MountPath string `json:"mount_path"`           // Mount point inside the VM (e.g., /mnt/data)
+	ReadOnly  bool   `json:"read_only,omitempty"`  // Mount as read-only
+}
+
+// Volume represents a persistent ext4 volume
+type Volume struct {
+	ID          string    `json:"id"`
+	TenantID    string    `json:"tenant_id,omitempty"`
+	Namespace   string    `json:"namespace,omitempty"`
+	Name        string    `json:"name"`
+	SizeMB      int       `json:"size_mb"`        // Volume size in MB
+	ImagePath   string    `json:"image_path"`     // Path to ext4 image file
+	Shared      bool      `json:"shared"`         // Can be mounted by multiple functions
+	Description string    `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
 type Function struct {
 	ID                  string            `json:"id"`
 	TenantID            string            `json:"tenant_id,omitempty"`
@@ -165,6 +186,7 @@ type Function struct {
 	CapacityPolicy      *CapacityPolicy   `json:"capacity_policy,omitempty"`
 	Layers              []string          `json:"layers,omitempty"` // layer IDs (max 6)
 	LayerPaths          []string          `json:"-"`                // resolved at invocation time
+	Mounts              []VolumeMount     `json:"mounts,omitempty"` // persistent volume mounts
 	EnvVars             map[string]string `json:"env_vars,omitempty"`
 	CreatedAt           time.Time         `json:"created_at"`
 	UpdatedAt           time.Time         `json:"updated_at"`
