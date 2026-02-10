@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/oriys/nova/internal/api/controlplane"
@@ -67,20 +69,31 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 	if controlPlaneEnabled {
 		comp := compiler.New(cfg.Store)
 		funcService := service.NewFunctionService(cfg.Store, comp)
+		var marketplaceService *service.MarketplaceService
+		if cfg.Store != nil && cfg.Store.Marketplace != nil {
+			artifactDir := filepath.Join(os.TempDir(), "nova", "appstore", "artifacts")
+			marketplaceService = service.NewMarketplaceService(
+				cfg.Store.Marketplace,
+				funcService,
+				cfg.WorkflowService,
+				service.NewLocalArtifactStore(artifactDir),
+			)
+		}
 		cpHandler := &controlplane.Handler{
-			Store:           cfg.Store,
-			Pool:            cfg.Pool,
-			Backend:         cfg.Backend,
-			FCAdapter:       cfg.FCAdapter,
-			Compiler:        comp,
-			FunctionService: funcService,
-			WorkflowService: cfg.WorkflowService,
-			APIKeyManager:   cfg.APIKeyManager,
-			SecretsStore:    cfg.SecretsStore,
-			Scheduler:       cfg.Scheduler,
-			RootfsDir:       cfg.RootfsDir,
-			GatewayEnabled:  gatewayRouteMgmtEnabled,
-			LayerManager:    cfg.LayerManager,
+			Store:              cfg.Store,
+			Pool:               cfg.Pool,
+			Backend:            cfg.Backend,
+			FCAdapter:          cfg.FCAdapter,
+			Compiler:           comp,
+			FunctionService:    funcService,
+			WorkflowService:    cfg.WorkflowService,
+			MarketplaceService: marketplaceService,
+			APIKeyManager:      cfg.APIKeyManager,
+			SecretsStore:       cfg.SecretsStore,
+			Scheduler:          cfg.Scheduler,
+			RootfsDir:          cfg.RootfsDir,
+			GatewayEnabled:     gatewayRouteMgmtEnabled,
+			LayerManager:       cfg.LayerManager,
 		}
 		cpHandler.RegisterRoutes(mux)
 	}

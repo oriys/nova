@@ -11,6 +11,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/pkg/crypto"
 	"github.com/oriys/nova/internal/store"
+	"github.com/oriys/nova/internal/workflow"
 	"gopkg.in/yaml.v3"
 )
 
@@ -25,6 +28,7 @@ import (
 type MarketplaceService struct {
 	store         *store.PostgresStore
 	functionSvc   *FunctionService
+	workflowSvc   *workflow.Service
 	artifactStore ArtifactStore
 }
 
@@ -84,10 +88,11 @@ func (s *LocalArtifactStore) Delete(ctx context.Context, uri string) error {
 	return os.Remove(path)
 }
 
-func NewMarketplaceService(store *store.PostgresStore, functionSvc *FunctionService, artifactStore ArtifactStore) *MarketplaceService {
+func NewMarketplaceService(store *store.PostgresStore, functionSvc *FunctionService, workflowSvc *workflow.Service, artifactStore ArtifactStore) *MarketplaceService {
 	return &MarketplaceService{
 		store:         store,
 		functionSvc:   functionSvc,
+		workflowSvc:   workflowSvc,
 		artifactStore: artifactStore,
 	}
 }
@@ -163,6 +168,338 @@ func (m *MarketplaceService) PublishBundle(ctx context.Context, appSlug, version
 	return release, nil
 }
 
+var bundleKeySanitizer = regexp.MustCompile(`[^a-z0-9_-]+`)
+
+// PublishFromResources builds a release bundle from existing functions/workflows and publishes it.
+func (m *MarketplaceService) PublishFromResources(
+	ctx context.Context,
+	appSlug string,
+	version string,
+	owner string,
+	functionNames []string,
+	workflowNames []string,
+) (*domain.AppRelease, error) {
+	bundlePath, err := m.buildBundleFromResources(ctx, appSlug, version, functionNames, workflowNames)
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(bundlePath)
+
+	return m.PublishBundle(ctx, appSlug, version, bundlePath, owner)
+}
+
+func normalizeNames(input []string) []string {
+	out := make([]string, 0, len(input))
+	seen := make(map[string]struct{}, len(input))
+	for _, raw := range input {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	return out
+}
+
+func sanitizeBundleKey(name string) string {
+	normalized := strings.ToLower(strings.TrimSpace(name))
+	normalized = bundleKeySanitizer.ReplaceAllString(normalized, "-")
+	normalized = strings.Trim(normalized, "-")
+	if normalized == "" {
+		return "fn"
+	}
+	return normalized
+}
+
+func runtimeSourceFilename(runtime domain.Runtime) string {
+	rt := strings.ToLower(string(runtime))
+	switch {
+	case strings.HasPrefix(rt, "python"):
+		return "handler.py"
+	case strings.HasPrefix(rt, "node"):
+		return "handler.js"
+	case strings.HasPrefix(rt, "deno"):
+		return "handler.ts"
+	case strings.HasPrefix(rt, "go"):
+		return "main.go"
+	case strings.HasPrefix(rt, "rust"):
+		return "main.rs"
+	case strings.HasPrefix(rt, "ruby"):
+		return "handler.rb"
+	case strings.HasPrefix(rt, "java"):
+		return "Main.java"
+	case strings.HasPrefix(rt, "bun"):
+		return "handler.ts"
+	case strings.HasPrefix(rt, "php"):
+		return "handler.php"
+	case strings.HasPrefix(rt, "dotnet"):
+		return "Handler.cs"
+	case strings.HasPrefix(rt, "elixir"):
+		return "handler.exs"
+	case strings.HasPrefix(rt, "kotlin"):
+		return "Main.kt"
+	case strings.HasPrefix(rt, "swift"):
+		return "main.swift"
+	case strings.HasPrefix(rt, "zig"):
+		return "main.zig"
+	case strings.HasPrefix(rt, "lua"):
+		return "handler.lua"
+	case strings.HasPrefix(rt, "perl"):
+		return "handler.pl"
+	case strings.HasPrefix(rt, "julia"):
+		return "handler.jl"
+	case rt == "r":
+		return "handler.r"
+	case strings.HasPrefix(rt, "scala"):
+		return "Main.scala"
+	case strings.HasPrefix(rt, "wasm"):
+		return "module.wasm"
+	default:
+		return "handler.txt"
+	}
+}
+
+func (m *MarketplaceService) buildBundleFromResources(
+	ctx context.Context,
+	appSlug string,
+	version string,
+	functionNames []string,
+	workflowNames []string,
+) (string, error) {
+	functionNames = normalizeNames(functionNames)
+	workflowNames = normalizeNames(workflowNames)
+
+	if len(functionNames) == 0 && len(workflowNames) == 0 {
+		return "", fmt.Errorf("at least one function or workflow must be selected")
+	}
+	if len(workflowNames) > 1 {
+		return "", fmt.Errorf("only one workflow can be selected per release")
+	}
+
+	files := make(map[string]string)
+	functionSpecs := make([]domain.FunctionSpec, 0, len(functionNames)+8)
+	functionKeyByName := make(map[string]string)
+	usedKeys := make(map[string]struct{})
+
+	addFunction := func(functionName string) error {
+		if _, exists := functionKeyByName[functionName]; exists {
+			return nil
+		}
+
+		fn, err := m.store.GetFunctionByName(ctx, functionName)
+		if err != nil {
+			return fmt.Errorf("function not found: %s", functionName)
+		}
+
+		code, err := m.store.GetFunctionCode(ctx, fn.ID)
+		if err != nil {
+			return fmt.Errorf("read function code %s: %w", functionName, err)
+		}
+		if strings.TrimSpace(code.SourceCode) == "" {
+			return fmt.Errorf("function %s has empty source code", functionName)
+		}
+
+		baseKey := sanitizeBundleKey(fn.Name)
+		key := baseKey
+		suffix := 2
+		for {
+			if _, ok := usedKeys[key]; !ok {
+				break
+			}
+			key = fmt.Sprintf("%s-%d", baseKey, suffix)
+			suffix++
+		}
+		usedKeys[key] = struct{}{}
+		functionKeyByName[fn.Name] = key
+
+		filePath := fmt.Sprintf("functions/%s/%s", key, runtimeSourceFilename(fn.Runtime))
+		files[filePath] = code.SourceCode
+
+		spec := domain.FunctionSpec{
+			Key:         key,
+			Runtime:     fn.Runtime,
+			Handler:     fn.Handler,
+			Files:       []string{filePath},
+			MemoryMB:    fn.MemoryMB,
+			TimeoutS:    fn.TimeoutS,
+			EnvVars:     fn.EnvVars,
+			Description: fmt.Sprintf("Imported from function %s", fn.Name),
+		}
+		functionSpecs = append(functionSpecs, spec)
+		return nil
+	}
+
+	for _, name := range functionNames {
+		if err := addFunction(name); err != nil {
+			return "", err
+		}
+	}
+
+	var workflowSpec *domain.WorkflowSpec
+	if len(workflowNames) == 1 {
+		wfName := workflowNames[0]
+		wf, err := m.store.GetWorkflowByName(ctx, wfName)
+		if err != nil {
+			return "", fmt.Errorf("workflow not found: %s", wfName)
+		}
+		if wf.CurrentVersion <= 0 {
+			return "", fmt.Errorf("workflow %s has no published version", wfName)
+		}
+
+		versionEntry, err := m.store.GetWorkflowVersionByNumber(ctx, wf.ID, wf.CurrentVersion)
+		if err != nil {
+			return "", fmt.Errorf("read workflow version %s@%d: %w", wfName, wf.CurrentVersion, err)
+		}
+
+		var def domain.WorkflowDefinition
+		if err := json.Unmarshal(versionEntry.Definition, &def); err != nil {
+			return "", fmt.Errorf("parse workflow definition %s: %w", wfName, err)
+		}
+
+		bundleNodes := make([]domain.BundleNodeDefinition, 0, len(def.Nodes))
+		for _, node := range def.Nodes {
+			if node.FunctionName == "" {
+				return "", fmt.Errorf("workflow %s contains node %s without function_name", wfName, node.NodeKey)
+			}
+			if err := addFunction(node.FunctionName); err != nil {
+				return "", err
+			}
+
+			functionRef, ok := functionKeyByName[node.FunctionName]
+			if !ok {
+				return "", fmt.Errorf("failed to resolve function reference for %s", node.FunctionName)
+			}
+
+			bundleNodes = append(bundleNodes, domain.BundleNodeDefinition{
+				NodeKey:      node.NodeKey,
+				FunctionRef:  functionRef,
+				InputMapping: node.InputMapping,
+				RetryPolicy:  node.RetryPolicy,
+				TimeoutS:     node.TimeoutS,
+			})
+		}
+
+		workflowSpec = &domain.WorkflowSpec{
+			Description: wf.Description,
+			Definition: domain.WorkflowBundleDAG{
+				Nodes: bundleNodes,
+				Edges: def.Edges,
+			},
+		}
+	}
+
+	if len(functionSpecs) == 0 {
+		return "", fmt.Errorf("no functions were selected for this release")
+	}
+
+	sort.Slice(functionSpecs, func(i, j int) bool {
+		return functionSpecs[i].Key < functionSpecs[j].Key
+	})
+
+	manifestName := appSlug
+	manifestDescription := "Generated from existing resources"
+	if app, err := m.store.GetApp(ctx, appSlug); err == nil {
+		if strings.TrimSpace(app.Title) != "" {
+			manifestName = app.Title
+		}
+		if strings.TrimSpace(app.Summary) != "" {
+			manifestDescription = app.Summary
+		}
+	}
+
+	manifestType := domain.BundleTypeFunction
+	if workflowSpec != nil {
+		manifestType = domain.BundleTypeWorkflow
+	}
+
+	manifest := &domain.BundleManifest{
+		Name:        manifestName,
+		Version:     version,
+		Type:        manifestType,
+		Description: manifestDescription,
+		Functions:   functionSpecs,
+		Workflow:    workflowSpec,
+	}
+
+	return writeGeneratedBundle(manifest, files)
+}
+
+func writeGeneratedBundle(manifest *domain.BundleManifest, files map[string]string) (string, error) {
+	tmpFile, err := os.CreateTemp("", "bundle-generated-*.tar.gz")
+	if err != nil {
+		return "", fmt.Errorf("create temp bundle: %w", err)
+	}
+	defer tmpFile.Close()
+
+	gz := gzip.NewWriter(tmpFile)
+	tw := tar.NewWriter(gz)
+
+	writeFile := func(name string, content []byte) error {
+		cleanName := filepath.ToSlash(filepath.Clean(name))
+		if strings.HasPrefix(cleanName, "../") || cleanName == ".." || cleanName == "." {
+			return fmt.Errorf("invalid bundle path: %s", name)
+		}
+		header := &tar.Header{
+			Name:    cleanName,
+			Mode:    0644,
+			Size:    int64(len(content)),
+			ModTime: time.Now(),
+		}
+		if err := tw.WriteHeader(header); err != nil {
+			return err
+		}
+		if _, err := tw.Write(content); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	manifestYAML, err := yaml.Marshal(manifest)
+	if err != nil {
+		tw.Close()
+		gz.Close()
+		os.Remove(tmpFile.Name())
+		return "", fmt.Errorf("marshal manifest yaml: %w", err)
+	}
+	if err := writeFile("manifest.yaml", manifestYAML); err != nil {
+		tw.Close()
+		gz.Close()
+		os.Remove(tmpFile.Name())
+		return "", fmt.Errorf("write manifest.yaml: %w", err)
+	}
+
+	filePaths := make([]string, 0, len(files))
+	for path := range files {
+		filePaths = append(filePaths, path)
+	}
+	sort.Strings(filePaths)
+
+	for _, path := range filePaths {
+		if err := writeFile(path, []byte(files[path])); err != nil {
+			tw.Close()
+			gz.Close()
+			os.Remove(tmpFile.Name())
+			return "", fmt.Errorf("write bundle file %s: %w", path, err)
+		}
+	}
+
+	if err := tw.Close(); err != nil {
+		gz.Close()
+		os.Remove(tmpFile.Name())
+		return "", fmt.Errorf("finalize tar writer: %w", err)
+	}
+	if err := gz.Close(); err != nil {
+		os.Remove(tmpFile.Name())
+		return "", fmt.Errorf("finalize gzip writer: %w", err)
+	}
+
+	return tmpFile.Name(), nil
+}
+
 // PlanInstallation performs a dry-run to check for conflicts and quota
 func (m *MarketplaceService) PlanInstallation(ctx context.Context, req *domain.InstallRequest) (*domain.InstallPlan, error) {
 	plan := &domain.InstallPlan{
@@ -211,7 +548,7 @@ func (m *MarketplaceService) PlanInstallation(ctx context.Context, req *domain.I
 		if fnSpec.Name != "" {
 			funcName = fnSpec.Name
 		}
-		
+
 		// Check if function exists
 		existing, _ := m.store.GetFunctionByName(ctx, funcName)
 		if existing != nil {
@@ -353,6 +690,8 @@ func (m *MarketplaceService) Install(ctx context.Context, req *domain.InstallReq
 
 // executeInstallation performs the actual installation in the background
 func (m *MarketplaceService) executeInstallation(ctx context.Context, installation *domain.Installation, release *domain.AppRelease, req *domain.InstallRequest) {
+	ctx = store.WithTenantScope(ctx, installation.TenantID, installation.Namespace)
+
 	// Get the job
 	jobs, _ := m.store.ListInstallJobs(ctx, installation.ID, 1, 0)
 	if len(jobs) == 0 {
@@ -408,13 +747,13 @@ func (m *MarketplaceService) executeInstallation(ctx context.Context, installati
 
 		// Create function
 		createReq := CreateFunctionRequest{
-			Name:        funcName,
-			Runtime:     string(fnSpec.Runtime),
-			Handler:     fnSpec.Handler,
-			Code:        code,
-			MemoryMB:    fnSpec.MemoryMB,
-			TimeoutS:    fnSpec.TimeoutS,
-			EnvVars:     fnSpec.EnvVars,
+			Name:     funcName,
+			Runtime:  string(fnSpec.Runtime),
+			Handler:  fnSpec.Handler,
+			Code:     code,
+			MemoryMB: fnSpec.MemoryMB,
+			TimeoutS: fnSpec.TimeoutS,
+			EnvVars:  fnSpec.EnvVars,
 		}
 
 		// Set tenant/namespace on function
@@ -449,6 +788,11 @@ func (m *MarketplaceService) executeInstallation(ctx context.Context, installati
 	if manifest.Workflow != nil {
 		job.Step = "Installing workflow"
 		m.store.UpdateInstallJob(ctx, job)
+		if m.workflowSvc == nil {
+			m.failJob(ctx, job, "install workflow", fmt.Errorf("workflow service is not initialized"))
+			m.store.UpdateInstallationStatus(ctx, installation.ID, domain.InstallStatusFailed)
+			return
+		}
 
 		workflowName := req.InstallName
 		if manifest.Workflow.Name != "" {
@@ -463,19 +807,39 @@ func (m *MarketplaceService) executeInstallation(ctx context.Context, installati
 			return
 		}
 
-		// Create workflow
-		workflow := &domain.Workflow{
-			ID:             uuid.New().String(),
-			Name:           workflowName,
-			Description:    manifest.Workflow.Description,
-			Status:         domain.WorkflowStatusActive,
-			CurrentVersion: 1,
+		// Create workflow metadata and publish DAG version.
+		if _, err := m.workflowSvc.CreateWorkflow(ctx, workflowName, manifest.Workflow.Description); err != nil {
+			m.failJob(ctx, job, fmt.Sprintf("create workflow %s", workflowName), err)
+			m.store.UpdateInstallationStatus(ctx, installation.ID, domain.InstallStatusFailed)
+			return
+		}
+		if _, err := m.workflowSvc.PublishVersion(ctx, workflowName, resolvedDef); err != nil {
+			m.failJob(ctx, job, fmt.Sprintf("publish workflow %s", workflowName), err)
+			m.store.UpdateInstallationStatus(ctx, installation.ID, domain.InstallStatusFailed)
+			return
 		}
 
-		// TODO: Create workflow via workflow service
-		// For now, we'll skip this as it requires more integration
-		_ = workflow
-		_ = resolvedDef
+		wf, err := m.workflowSvc.GetWorkflow(ctx, workflowName)
+		if err != nil {
+			m.failJob(ctx, job, fmt.Sprintf("fetch workflow %s", workflowName), err)
+			m.store.UpdateInstallationStatus(ctx, installation.ID, domain.InstallStatusFailed)
+			return
+		}
+
+		defJSON, _ := json.Marshal(resolvedDef)
+		resource := &domain.InstallationResource{
+			InstallationID: installation.ID,
+			ResourceType:   "workflow",
+			ResourceName:   workflowName,
+			ResourceID:     wf.ID,
+			ContentDigest:  crypto.HashString(string(defJSON)),
+			ManagedMode:    domain.ManagedModeExclusive,
+		}
+		if err := m.store.CreateInstallationResource(ctx, resource); err != nil {
+			m.failJob(ctx, job, fmt.Sprintf("track workflow resource %s", workflowName), err)
+			m.store.UpdateInstallationStatus(ctx, installation.ID, domain.InstallStatusFailed)
+			return
+		}
 	}
 
 	// Mark as succeeded
@@ -744,7 +1108,7 @@ func (m *MarketplaceService) downloadBundle(ctx context.Context, artifactURI str
 		}
 
 		target := filepath.Join(tmpDir, filepath.Clean(header.Name))
-		
+
 		// Ensure target is within tmpDir
 		if !strings.HasPrefix(target, filepath.Clean(tmpDir)+string(os.PathSeparator)) {
 			os.RemoveAll(tmpDir)

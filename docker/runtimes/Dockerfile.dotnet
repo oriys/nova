@@ -1,5 +1,5 @@
-# .NET runtime image
-FROM mcr.microsoft.com/dotnet/runtime:8.0
+# .NET runtime image (Alpine/musl so linux-musl-* self-contained binaries run in both Docker and MicroVM flows)
+FROM mcr.microsoft.com/dotnet/runtime-deps:8.0-alpine
 
 # Install nova-agent
 COPY bin/nova-agent /usr/local/bin/nova-agent

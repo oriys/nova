@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 
@@ -474,6 +475,7 @@ rustflags = ["-C", "target-feature=+crt-static"]
 			return err
 		}
 	case domain.RuntimeDotnet:
+		rid := dotnetRuntimeIdentifier()
 		// Save user code as Handler.cs
 		if err := os.WriteFile(filepath.Join(workDir, "Handler.cs"), []byte(sourceCode), 0644); err != nil {
 			return err
@@ -486,7 +488,7 @@ rustflags = ["-C", "target-feature=+crt-static"]
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
-    <RuntimeIdentifier>linux-musl-x64</RuntimeIdentifier>
+    <RuntimeIdentifier>` + rid + `</RuntimeIdentifier>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
   </PropertyGroup>
@@ -525,7 +527,8 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 	case domain.RuntimeZig:
 		return "euantorano/zig:0.13.0", "cd /work && zig build-exe main.zig -name handler -target x86_64-linux-musl"
 	case domain.RuntimeDotnet:
-		return "mcr.microsoft.com/dotnet/sdk:8.0", "cd /work && dotnet publish -c Release -r linux-musl-x64 -o out && cp out/handler /work/handler"
+		rid := dotnetRuntimeIdentifier()
+		return "mcr.microsoft.com/dotnet/sdk:8.0", fmt.Sprintf("cd /work && dotnet publish -c Release -r %s -o out && cp out/handler /work/handler", rid)
 	case domain.RuntimeScala:
 		return "sbtscala/scala-sbt:eclipse-temurin-21.0.2_13_1.10.1_3.5.1",
 			`cd /work && scalac Main.scala Handler.scala && ` +
@@ -573,6 +576,15 @@ func hashBytes(data []byte) string {
 	h := sha256.New()
 	h.Write(data)
 	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+func dotnetRuntimeIdentifier() string {
+	switch goruntime.GOARCH {
+	case "arm64":
+		return "linux-musl-arm64"
+	default:
+		return "linux-musl-x64"
+	}
 }
 
 // ─── Wrapper templates for compiled runtimes ────────────────────────
@@ -778,7 +790,10 @@ pub fn main() !void {
 `
 
 // .NET: user writes public static class Handler { public static object Handle(string event, Dictionary<string, object> context) }
-const dotnetWrapperMain = `using System.Text.Json;
+const dotnetWrapperMain = `using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text.Json;
 
 var input = File.ReadAllText(args[0]);
 var context = new Dictionary<string, object>

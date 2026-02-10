@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -44,30 +45,28 @@ type CreateFunctionRequest struct {
 }
 
 func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunctionRequest) (*domain.Function, string, error) {
-	rt := domain.Runtime(req.Runtime)
-	if rt == "" {
-		return nil, "", fmt.Errorf("runtime is required")
+	if err := validateCreateFunctionRequest(&req); err != nil {
+		return nil, "", err
 	}
+
+	rt := domain.Runtime(req.Runtime)
 	if !rt.IsValid() {
 		// Not a built-in runtime, check if it exists in DB
 		if _, err := s.store.GetRuntime(ctx, string(rt)); err != nil {
-			return nil, "", fmt.Errorf("invalid runtime: %s", req.Runtime)
+			return nil, "", validationErrorf("invalid runtime: %s", req.Runtime)
 		}
 	}
 
-	if req.Code == "" {
-		return nil, "", fmt.Errorf("code is required")
+	if strings.TrimSpace(req.Code) == "" {
+		return nil, "", validationErrorf("code is required")
 	}
 
 	// Check if function name already exists
 	if existing, _ := s.store.GetFunctionByName(ctx, req.Name); existing != nil {
-		return nil, "", fmt.Errorf("function '%s' already exists", req.Name)
+		return nil, "", conflictErrorf("function '%s' already exists", req.Name)
 	}
 
 	// Set defaults
-	if req.Handler == "" {
-		req.Handler = "main.handler"
-	}
 	if req.MemoryMB == 0 {
 		req.MemoryMB = 128
 	}

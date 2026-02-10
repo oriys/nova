@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/store"
@@ -112,6 +113,9 @@ func (h *Handler) ListApps(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if apps == nil {
+		apps = []*domain.App{}
+	}
 
 	response := map[string]interface{}{
 		"apps":  apps,
@@ -152,21 +156,67 @@ func (h *Handler) PublishRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse multipart form
+	// Get owner from context
+	// TODO: Extract from auth context when authentication is integrated
+	owner := "system"
+
+	if h.MarketplaceService == nil {
+		http.Error(w, "marketplace service not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
+	if strings.HasPrefix(contentType, "application/json") {
+		var req struct {
+			Version       string   `json:"version"`
+			Changelog     string   `json:"changelog"`
+			FunctionNames []string `json:"function_names"`
+			WorkflowNames []string `json:"workflow_names"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(req.Version) == "" {
+			http.Error(w, "version is required", http.StatusBadRequest)
+			return
+		}
+
+		release, err := h.MarketplaceService.PublishFromResources(
+			r.Context(),
+			slug,
+			req.Version,
+			owner,
+			req.FunctionNames,
+			req.WorkflowNames,
+		)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Changelog != "" {
+			release.Changelog = req.Changelog
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(release)
+		return
+	}
+
+	// Multipart mode: upload pre-built bundle.
 	if err := r.ParseMultipartForm(100 << 20); err != nil { // 100 MB max
 		http.Error(w, "failed to parse form", http.StatusBadRequest)
 		return
 	}
 
-	version := r.FormValue("version")
+	version := strings.TrimSpace(r.FormValue("version"))
 	changelog := r.FormValue("changelog")
-
 	if version == "" {
 		http.Error(w, "version is required", http.StatusBadRequest)
 		return
 	}
 
-	// Get bundle file
 	file, _, err := r.FormFile("bundle")
 	if err != nil {
 		http.Error(w, "bundle file is required", http.StatusBadRequest)
@@ -174,7 +224,6 @@ func (h *Handler) PublishRelease(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Save to temp file
 	tmpFile, err := os.CreateTemp("", "bundle-*.tar.gz")
 	if err != nil {
 		http.Error(w, "failed to create temp file", http.StatusInternalServerError)
@@ -188,26 +237,13 @@ func (h *Handler) PublishRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get owner from context
-	// TODO: Extract from auth context when authentication is integrated
-	owner := "system"
-
-	// Publish via service
-	if h.MarketplaceService == nil {
-		http.Error(w, "marketplace service not initialized", http.StatusInternalServerError)
-		return
-	}
-
 	release, err := h.MarketplaceService.PublishBundle(r.Context(), slug, version, tmpFile.Name(), owner)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	// Add changelog
 	if changelog != "" {
 		release.Changelog = changelog
-		// Update release in DB (simplified, should use proper update method)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -273,6 +309,9 @@ func (h *Handler) ListReleases(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if releases == nil {
+		releases = []*domain.AppRelease{}
 	}
 
 	response := map[string]interface{}{
@@ -422,6 +461,9 @@ func (h *Handler) ListInstallations(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if installations == nil {
+		installations = []*domain.Installation{}
 	}
 
 	response := map[string]interface{}{

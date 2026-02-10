@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useEffect, useRef, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { Bell, Search, User, BookOpenText, ChevronDown, Server } from "lucide-react"
+import { Bell, Search, User, BookOpenText, Server } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -278,14 +278,14 @@ export function Header({ title, description }: HeaderProps) {
         <div ref={healthContainerRef} className="relative">
           <Button
             variant="outline"
-            size="sm"
-            className="hidden lg:inline-flex"
+            size="icon-sm"
+            className="relative hidden lg:inline-flex"
             onClick={() => setHealthOpen((prev) => !prev)}
+            aria-label="System health"
+            title="System health"
           >
-            <span className={cn("mr-2 h-2 w-2 rounded-full", healthClassName[health.status])} />
-            <Server className="mr-1 h-4 w-4" />
-            System
-            <ChevronDown className="ml-1 h-4 w-4" />
+            <Server className="h-4 w-4" />
+            <span className={cn("absolute right-1.5 top-1.5 h-2 w-2 rounded-full", healthClassName[health.status])} />
           </Button>
 
           {healthOpen && (

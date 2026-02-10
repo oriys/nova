@@ -17,6 +17,9 @@ func (s *PostgresStore) CreateApp(ctx context.Context, app *domain.App) error {
 	if app.ID == "" {
 		app.ID = uuid.New().String()
 	}
+	if app.Tags == nil {
+		app.Tags = []string{}
+	}
 	now := time.Now()
 	app.CreatedAt = now
 	app.UpdatedAt = now

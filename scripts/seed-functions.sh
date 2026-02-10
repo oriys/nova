@@ -46,13 +46,31 @@ create_function() {
     local code="$3"
     local memory="${4:-128}"
     local timeout="${5:-30}"
+    local handler="${6:-}"
+
+    if [[ -z "${handler}" ]]; then
+        case "${runtime}" in
+            java*|kotlin*|scala*)
+                handler="Handler::handler"
+                ;;
+            dotnet*)
+                handler="handler::Handler::Handle"
+                ;;
+            go*|rust*|swift*|zig*|wasm*|provided*|custom*)
+                handler="handler"
+                ;;
+            *)
+                handler="main.handler"
+                ;;
+        esac
+    fi
 
     curl -sf -X POST "${API_URL}/functions" \
         -H "Content-Type: application/json" \
         -d "{
             \"name\": \"${name}\",
             \"runtime\": \"${runtime}\",
-            \"handler\": \"handler\",
+            \"handler\": \"${handler}\",
             \"memory_mb\": ${memory},
             \"timeout_s\": ${timeout},
             \"code\": ${code}
@@ -148,7 +166,7 @@ main() {
 
         info "Creating Java functions (will be compiled)..."
 
-        create_function "hello-java" "java" '"import java.util.*;\nimport java.util.regex.*;\n\npublic class Handler {\n    public static Object handler(String event, Map<String, Object> context) {\n        Pattern p = Pattern.compile(\"\\\\\"name\\\\\"\\\\s*:\\\\s*\\\\\"([^\\\\\"]+)\\\\\"\");\n        Matcher m = p.matcher(event);\n        String name = m.find() ? m.group(1) : \"World\";\n        return \"{\\\\\"message\\\\\": \\\\\"Hello, \" + name + \"!\\\\\", \\\\\"runtime\\\\\": \\\\\"java\\\\\"}\";\n    }\n}"' 256
+        create_function "hello-java" "java" '"import java.util.*;\n\npublic class Handler {\n    public static Object handler(String event, Map<String, Object> context) {\n        return \"{\\\"message\\\":\\\"Hello, World!\\\",\\\"runtime\\\":\\\"java\\\"}\";\n    }\n}"' 256
 
         info "Creating .NET functions (will be compiled)..."
 

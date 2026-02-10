@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-def handler(event):
+def handler(event, context):
     """Simple hello world handler"""
     greeting = os.getenv('GREETING', 'Hello')
     name = event.get('name', 'World')
@@ -20,5 +20,5 @@ if __name__ == '__main__':
     with open(sys.argv[1], 'r') as f:
         event = json.load(f)
     
-    result = handler(event)
+    result = handler(event, None)
     print(json.dumps(result))

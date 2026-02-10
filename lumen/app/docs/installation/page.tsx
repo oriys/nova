@@ -237,7 +237,7 @@ curl -I http://127.0.0.1:3000
 # Optional API smoke test
 curl -s -X POST http://127.0.0.1:9000/functions \
   -H "Content-Type: application/json" \
-  -d '{"name":"install-check","runtime":"python","handler":"handler","code":"def handler(event, context):\\n    return {\\"ok\\": True}"}' | jq`}
+  -d '{"name":"install-check","runtime":"python","handler":"main.handler","code":"def handler(event, context):\\n    return {\\"ok\\": True}"}' | jq`}
         />
       </section>
 

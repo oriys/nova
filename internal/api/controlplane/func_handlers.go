@@ -55,6 +55,14 @@ func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 
 	fn, compileStatus, err := h.FunctionService.CreateFunction(r.Context(), req)
 	if err != nil {
+		if service.IsValidationError(err) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if service.IsConflictError(err) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

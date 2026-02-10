@@ -268,7 +268,7 @@ orbit config set namespace default
 orbit functions create \
   --name hello-docs \
   --runtime python \
-  --handler handler \
+  --handler main.handler \
   --code 'def handler(event, context):\n    return {"ok": True, "echo": event}'
 
 orbit functions invoke hello-docs --payload '{"source":"docs"}'`}

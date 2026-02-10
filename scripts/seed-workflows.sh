@@ -47,13 +47,31 @@ create_function() {
     local code="$3"
     local memory="${4:-128}"
     local timeout="${5:-30}"
+    local handler="${6:-}"
+
+    if [ -z "${handler}" ]; then
+        case "${runtime}" in
+            java*|kotlin*|scala*)
+                handler="Handler::handler"
+                ;;
+            dotnet*)
+                handler="handler::Handler::Handle"
+                ;;
+            go*|rust*|swift*|zig*|wasm*|provided*|custom*)
+                handler="handler"
+                ;;
+            *)
+                handler="main.handler"
+                ;;
+        esac
+    fi
 
     curl -sf -X POST "${API_URL}/functions" \
         -H "Content-Type: application/json" \
         -d "{
             \"name\": \"${name}\",
             \"runtime\": \"${runtime}\",
-            \"handler\": \"handler\",
+            \"handler\": \"${handler}\",
             \"memory_mb\": ${memory},
             \"timeout_s\": ${timeout},
             \"code\": ${code}

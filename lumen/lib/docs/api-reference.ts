@@ -58,7 +58,7 @@ const functionEndpoints: ApiEndpointDoc[] = [
       requestExample: `{
   "name": "hello-python",
   "runtime": "python",
-  "handler": "handler",
+  "handler": "main.handler",
   "code": "def handler(event, context):\\n    return {'ok': True, 'echo': event}",
   "memory_mb": 256,
   "timeout_s": 30,
@@ -80,7 +80,7 @@ const functionEndpoints: ApiEndpointDoc[] = [
   "id": "fn_01",
   "name": "hello-python",
   "runtime": "python",
-  "handler": "handler",
+  "handler": "main.handler",
   "compile_status": "not_required",
   "created_at": "2026-02-08T12:00:00Z",
   "updated_at": "2026-02-08T12:00:00Z"
@@ -88,7 +88,7 @@ const functionEndpoints: ApiEndpointDoc[] = [
       orbitExample: `orbit functions create \\
   --name hello-python \\
   --runtime python \\
-  --handler handler \\
+  --handler main.handler \\
   --code 'def handler(event, context):\\n    return {"ok": True}' \\
   --memory 256 \\
   --timeout 30`,

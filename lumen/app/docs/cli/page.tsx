@@ -102,7 +102,7 @@ Operations
 orbit functions create \
   --name echo \
   --runtime python \
-  --handler handler \
+  --handler main.handler \
   --code 'def handler(event, context):\n    return event' \
   --memory 256 \
   --timeout 30 \

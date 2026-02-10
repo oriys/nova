@@ -117,6 +117,12 @@ module.exports = { handler };
 // Runtimes that require compilation
 const COMPILED_RUNTIMES = ['go', 'rust', 'java', 'kotlin', 'swift', 'zig', 'dotnet', 'scala']
 
+const AWS_FUNCTION_NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
+const AWS_MODULE_HANDLER_PATTERN = /^[A-Za-z0-9_./-]+\.[A-Za-z0-9_$][A-Za-z0-9_$.]*$/
+const AWS_JAVA_HANDLER_PATTERN = /^[A-Za-z0-9_$.]+::[A-Za-z0-9_$]+$/
+const AWS_DOTNET_HANDLER_PATTERN = /^[A-Za-z0-9_.-]+::[A-Za-z0-9_.$+]+::[A-Za-z0-9_$]+$/
+const AWS_EXECUTABLE_HANDLER_PATTERN = /^[A-Za-z0-9_/-]{1,128}$/
+
 // Get base runtime from versioned ID (e.g., "python3.11" -> "python")
 function getBaseRuntime(runtimeId: string): string {
   const prefixes = ['python', 'node', 'go', 'rust', 'java', 'ruby', 'php', 'dotnet', 'deno', 'bun']
@@ -129,6 +135,64 @@ function getBaseRuntime(runtimeId: string): string {
 function needsCompilation(runtimeId: string): boolean {
   const base = getBaseRuntime(runtimeId)
   return COMPILED_RUNTIMES.includes(base)
+}
+
+function getDefaultHandler(runtimeId: string): string {
+  const base = getBaseRuntime(runtimeId)
+  if (base === "java" || base === "kotlin" || base === "scala") {
+    return "example.Handler::handleRequest"
+  }
+  if (base === "dotnet") {
+    return "Assembly::Namespace.Function::FunctionHandler"
+  }
+  if (base === "go" || base === "rust" || base === "swift" || base === "zig" || base === "wasm") {
+    return "handler"
+  }
+  return "main.handler"
+}
+
+function validateAwsCreateInput(params: {
+  name: string
+  runtime: string
+  handler: string
+  memory: number
+  timeout: number
+}): string | null {
+  const { name, runtime, handler, memory, timeout } = params
+
+  if (!AWS_FUNCTION_NAME_PATTERN.test(name)) {
+    return "Function name must match AWS format: 1-64 chars, letters/numbers/underscore/hyphen only."
+  }
+  if (!Number.isFinite(memory) || memory < 128 || memory > 10240) {
+    return "Memory must be between 128 and 10240 MB (AWS Lambda range)."
+  }
+  if (!Number.isFinite(timeout) || timeout < 1 || timeout > 900) {
+    return "Timeout must be between 1 and 900 seconds (AWS Lambda range)."
+  }
+
+  const base = getBaseRuntime(runtime)
+  if (base === "java" || base === "kotlin" || base === "scala") {
+    if (!AWS_JAVA_HANDLER_PATTERN.test(handler)) {
+      return "Handler format for Java/Kotlin/Scala must be '<package>.<Class>::<method>'."
+    }
+    return null
+  }
+  if (base === "dotnet") {
+    if (!AWS_DOTNET_HANDLER_PATTERN.test(handler)) {
+      return "Handler format for .NET must be '<Assembly>::<Namespace.Class>::<Method>'."
+    }
+    return null
+  }
+  if (base === "go" || base === "rust" || base === "swift" || base === "zig" || base === "wasm") {
+    if (!AWS_EXECUTABLE_HANDLER_PATTERN.test(handler)) {
+      return "Handler format for compiled runtimes must be an executable entry name (letters/numbers/_-/)."
+    }
+    return null
+  }
+  if (!AWS_MODULE_HANDLER_PATTERN.test(handler)) {
+    return "Handler format must be AWS style '<module>.<function>' (example: 'main.handler')."
+  }
+  return null
 }
 
 interface CreateFunctionDialogProps {
@@ -169,7 +233,7 @@ export function CreateFunctionDialog({
   const [runtime, setRuntime] = useState("python")
   const [memory, setMemory] = useState("128")
   const [timeout, setTimeout] = useState("30")
-  const [handler, setHandler] = useState("main.handler")
+  const [handler, setHandler] = useState(getDefaultHandler("python"))
   const [code, setCode] = useState(CODE_TEMPLATES.python)
   const [vcpus, setVcpus] = useState("1")
   const [diskIops, setDiskIops] = useState("0")
@@ -192,6 +256,7 @@ export function CreateFunctionDialog({
   useEffect(() => {
     const baseRuntime = getBaseRuntime(runtime)
     setCode(CODE_TEMPLATES[baseRuntime] || CODE_TEMPLATES.python)
+    setHandler(getDefaultHandler(runtime))
   }, [runtime])
 
   // Poll for compile status after creation
@@ -221,6 +286,22 @@ export function CreateFunctionDialog({
     const codeValue = code
     if (!codeValue.trim()) {
       setError("Code is required")
+      return
+    }
+
+    const trimmedName = name.trim()
+    const resolvedHandler = handler.trim() || getDefaultHandler(runtime)
+    const parsedMemory = Number.parseInt(memory, 10)
+    const parsedTimeout = Number.parseInt(timeout, 10)
+    const validationError = validateAwsCreateInput({
+      name: trimmedName,
+      runtime,
+      handler: resolvedHandler,
+      memory: parsedMemory,
+      timeout: parsedTimeout,
+    })
+    if (validationError) {
+      setError(validationError)
       return
     }
 
@@ -267,11 +348,11 @@ export function CreateFunctionDialog({
         ingress_rules: parsedIngressRules,
         egress_rules: parsedEgressRules,
       }
-      await onCreate(name, runtime, handler, parseInt(memory), parseInt(timeout), codeValue, limits, networkPolicy)
+      await onCreate(trimmedName, runtime, resolvedHandler, parsedMemory, parsedTimeout, codeValue, limits, networkPolicy)
 
       // If it's a compiled language, track compile status
       if (needsCompilation(runtime)) {
-        setCreatedFunctionName(name)
+        setCreatedFunctionName(trimmedName)
         setCompileStatus('compiling')
       } else {
         // Reset form and close dialog for interpreted languages
@@ -290,7 +371,7 @@ export function CreateFunctionDialog({
     setRuntime("python")
     setMemory("128")
     setTimeout("30")
-    setHandler("main.handler")
+    setHandler(getDefaultHandler("python"))
     setCode(CODE_TEMPLATES.python)
     setVcpus("1")
     setDiskIops("0")
@@ -433,8 +514,12 @@ export function CreateFunctionDialog({
                 placeholder="my-function"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                maxLength={64}
                 required
               />
+              <p className="text-xs text-muted-foreground">
+                AWS format: 1-64 chars, letters/numbers/underscore/hyphen.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -504,10 +589,13 @@ export function CreateFunctionDialog({
               <Label htmlFor="handler">Handler</Label>
               <Input
                 id="handler"
-                placeholder="main.handler"
+                placeholder={getDefaultHandler(runtime)}
                 value={handler}
                 onChange={(e) => setHandler(e.target.value)}
               />
+              <p className="text-xs text-muted-foreground">
+                Use AWS handler style for current runtime.
+              </p>
             </div>
           </div>
 

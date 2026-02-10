@@ -16,6 +16,8 @@ import {
   RadioTower,
   Building2,
   Clock3,
+  Package,
+  Store as StoreIcon,
 } from "lucide-react"
 
 // Fixed order by expected usage frequency.
@@ -24,6 +26,8 @@ const navigation = [
   { name: "Functions", href: "/functions", icon: Code2 },
   { name: "Events", href: "/events", icon: RadioTower },
   { name: "Workflows", href: "/workflows", icon: GitBranch },
+  { name: "App Store", href: "/store", icon: StoreIcon },
+  { name: "My Apps", href: "/my-apps", icon: Package },
   { name: "Tenancy", href: "/tenancy", icon: Building2 },
   { name: "Async Jobs", href: "/async-invocations", icon: Clock3 },
   { name: "History", href: "/history", icon: History },
