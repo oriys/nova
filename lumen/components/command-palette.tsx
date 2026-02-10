@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
 import { functionsApi, type NovaFunction } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -17,6 +18,7 @@ type CommandItem = {
 export function CommandPalette() {
   const router = useRouter()
   const [open, setOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const [query, setQuery] = useState("")
   const [functions, setFunctions] = useState<NovaFunction[]>([])
   const [activeIndex, setActiveIndex] = useState(0)
@@ -89,6 +91,11 @@ export function CommandPalette() {
     ],
     [router]
   )
+
+  useEffect(() => {
+    setMounted(true)
+    return () => setMounted(false)
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -182,51 +189,57 @@ export function CommandPalette() {
         <span>K</span>
       </button>
 
-      {open && (
-        <div className="fixed inset-0 z-[100] bg-black/40 p-4" onClick={() => setOpen(false)}>
-          <div
-            className="mx-auto mt-20 w-full max-w-2xl rounded-xl border border-border bg-card shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <input
-                autoFocus
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Type a command or function name..."
-                className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-              />
-            </div>
-
-            <div className="max-h-[420px] overflow-y-auto p-2">
-              {items.length === 0 ? (
-                <div className="rounded-md px-3 py-6 text-center text-sm text-muted-foreground">
-                  No matching commands
+      {mounted && open
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[120] bg-black/35 p-4 backdrop-blur-[1px]"
+              onClick={() => setOpen(false)}
+            >
+              <div
+                className="mx-auto mt-20 w-full max-w-2xl rounded-xl border border-border bg-card shadow-2xl"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+                  <Search className="h-4 w-4 text-muted-foreground" />
+                  <input
+                    autoFocus
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Type a command or function name..."
+                    className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  />
                 </div>
-              ) : (
-                items.map((item, index) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onMouseEnter={() => setActiveIndex(index)}
-                    onClick={() => execute(index)}
-                    className={cn(
-                      "w-full rounded-md px-3 py-2 text-left transition-colors",
-                      index === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/60"
-                    )}
-                  >
-                    <p className="text-sm font-medium">{item.title}</p>
-                    {item.subtitle && (
-                      <p className="mt-0.5 text-xs text-muted-foreground">{item.subtitle}</p>
-                    )}
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+
+                <div className="max-h-[420px] overflow-y-auto p-2">
+                  {items.length === 0 ? (
+                    <div className="rounded-md px-3 py-6 text-center text-sm text-muted-foreground">
+                      No matching commands
+                    </div>
+                  ) : (
+                    items.map((item, index) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onMouseEnter={() => setActiveIndex(index)}
+                        onClick={() => execute(index)}
+                        className={cn(
+                          "w-full rounded-md px-3 py-2 text-left transition-colors",
+                          index === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/60"
+                        )}
+                      >
+                        <p className="text-sm font-medium">{item.title}</p>
+                        {item.subtitle && (
+                          <p className="mt-0.5 text-xs text-muted-foreground">{item.subtitle}</p>
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </>
   )
 }
