@@ -290,6 +290,205 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	}, nil
 }
 
+// InvokeStream executes a function in streaming mode, calling the callback for each chunk
+func (e *Executor) InvokeStream(ctx context.Context, funcName string, payload json.RawMessage, callback func(chunk []byte, isLast bool, err error) error) error {
+	// Check if executor is shutting down
+	if e.closing.Load() {
+		return fmt.Errorf("executor is shutting down")
+	}
+
+	e.inflight.Add(1)
+	defer e.inflight.Done()
+
+	// Resolve function and code (same as regular Invoke)
+	fn, err := e.store.GetFunctionByName(ctx, funcName)
+	if err != nil {
+		return fmt.Errorf("get function: %w", err)
+	}
+
+	rtCfg, err := e.store.GetRuntime(ctx, string(fn.Runtime))
+	if err != nil {
+		if fn.Runtime != domain.RuntimeCustom && fn.Runtime != domain.RuntimeProvided {
+			return fmt.Errorf("get runtime config: %w", err)
+		}
+	} else {
+		fn.RuntimeCommand = append([]string(nil), rtCfg.Entrypoint...)
+		fn.RuntimeExtension = rtCfg.FileExtension
+		fn.RuntimeImageName = rtCfg.ImageName
+		if fn.EnvVars == nil {
+			fn.EnvVars = map[string]string{}
+		}
+		for k, v := range rtCfg.EnvVars {
+			if _, ok := fn.EnvVars[k]; !ok {
+				fn.EnvVars[k] = v
+			}
+		}
+	}
+
+	// Resolve $SECRET: references in env vars
+	if e.secretsResolver != nil && len(fn.EnvVars) > 0 {
+		resolved, err := e.secretsResolver.ResolveEnvVars(ctx, fn.EnvVars)
+		if err != nil {
+			return fmt.Errorf("resolve secrets: %w", err)
+		}
+		fn.EnvVars = resolved
+	}
+
+	// Resolve layer paths
+	if len(fn.Layers) > 0 {
+		layers, err := e.store.GetFunctionLayers(ctx, fn.ID)
+		if err != nil {
+			logging.Op().Warn("failed to resolve layers", "function", fn.Name, "error", err)
+		} else {
+			for _, l := range layers {
+				fn.LayerPaths = append(fn.LayerPaths, l.ImagePath)
+			}
+		}
+	}
+
+	// Fetch code content from store
+	codeRecord, err := e.store.GetFunctionCode(ctx, fn.ID)
+	if err != nil {
+		return fmt.Errorf("get function code: %w", err)
+	}
+	if codeRecord == nil {
+		return fmt.Errorf("function code not found: %s", fn.Name)
+	}
+
+	// Check for multi-file function
+	hasMultiFiles, err := e.store.HasFunctionFiles(ctx, fn.ID)
+	if err != nil {
+		return fmt.Errorf("check function files: %w", err)
+	}
+
+	// For compiled languages, check compilation status
+	if domain.NeedsCompilation(fn.Runtime) {
+		switch codeRecord.CompileStatus {
+		case domain.CompileStatusCompiling:
+			return fmt.Errorf("function '%s' is still compiling", fn.Name)
+		case domain.CompileStatusFailed:
+			return fmt.Errorf("function '%s' compilation failed: %s", fn.Name, codeRecord.CompileError)
+		case domain.CompileStatusPending:
+			return fmt.Errorf("function '%s' compilation is pending", fn.Name)
+		}
+		if len(codeRecord.CompiledBinary) == 0 {
+			return fmt.Errorf("function '%s' has no compiled binary", fn.Name)
+		}
+	}
+
+	// Determine code content
+	var codeContent []byte
+	var files map[string][]byte
+
+	if hasMultiFiles {
+		files, err = e.store.GetFunctionFiles(ctx, fn.ID)
+		if err != nil {
+			return fmt.Errorf("get function files: %w", err)
+		}
+
+		if len(codeRecord.CompiledBinary) > 0 {
+			files[fn.Handler] = codeRecord.CompiledBinary
+		}
+
+		if _, ok := files["handler"]; !ok {
+			if entry, ok := files[fn.Handler]; ok {
+				files["handler"] = entry
+			}
+		}
+	} else {
+		if len(codeRecord.CompiledBinary) > 0 {
+			codeContent = codeRecord.CompiledBinary
+		} else {
+			codeContent = []byte(codeRecord.SourceCode)
+		}
+	}
+
+	reqID := uuid.New().String()[:8]
+
+	// Start tracing span
+	ctx, span := observability.StartSpan(ctx, "nova.invoke.stream",
+		observability.AttrFunctionName.String(fn.Name),
+		observability.AttrFunctionID.String(fn.ID),
+		observability.AttrRuntime.String(string(fn.Runtime)),
+		observability.AttrRequestID.String(reqID),
+	)
+	defer span.End()
+
+	metrics.IncActiveRequests()
+	defer metrics.DecActiveRequests()
+
+	traceID := observability.GetTraceID(ctx)
+	spanID := observability.GetSpanID(ctx)
+
+	start := time.Now()
+
+	// Acquire VM
+	var pvm *pool.PooledVM
+	if files != nil && len(files) > 0 {
+		pvm, err = e.pool.AcquireWithFiles(ctx, fn, files)
+	} else {
+		pvm, err = e.pool.Acquire(ctx, fn, codeContent)
+	}
+	if err != nil {
+		observability.SetSpanError(span, err)
+		return fmt.Errorf("acquire VM: %w", err)
+	}
+	defer e.pool.Release(pvm)
+
+	span.SetAttributes(
+		observability.AttrColdStart.Bool(pvm.ColdStart),
+		observability.AttrVMID.String(pvm.VM.ID),
+	)
+
+	// Execute in streaming mode
+	tc := observability.ExtractTraceContext(ctx)
+	var execErr error
+	err = pvm.Client.ExecuteStream(reqID, payload, fn.TimeoutS, tc.TraceParent, tc.TraceState, callback)
+	durationMs := time.Since(start).Milliseconds()
+
+	span.SetAttributes(observability.AttrDurationMs.Int64(durationMs))
+
+	// Log the request
+	logEntry := &logging.RequestLog{
+		RequestID:  reqID,
+		TraceID:    traceID,
+		SpanID:     spanID,
+		Function:   fn.Name,
+		FunctionID: fn.ID,
+		Runtime:    string(fn.Runtime),
+		DurationMs: durationMs,
+		ColdStart:  pvm.ColdStart,
+		InputSize:  len(payload),
+	}
+
+	if err != nil {
+		e.pool.EvictVM(fn.ID, pvm)
+		execErr = err
+		metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, false)
+		logEntry.Success = false
+		logEntry.Error = err.Error()
+		e.logger.Log(logEntry)
+		observability.SetSpanError(span, err)
+
+		// Async persist invocation log
+		e.persistInvocationLog(reqID, fn, durationMs, pvm.ColdStart, false, err.Error(), len(payload), 0, payload, nil, "", "")
+
+		return fmt.Errorf("execute stream: %w", err)
+	}
+
+	// Record successful streaming invocation
+	metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, true)
+
+	logEntry.Success = true
+	e.logger.Log(logEntry)
+
+	// Async persist invocation log (output is streamed, so we don't have it)
+	e.persistInvocationLog(reqID, fn, durationMs, pvm.ColdStart, true, "", len(payload), 0, payload, nil, "", "")
+
+	observability.SetSpanOK(span)
+	return execErr
+}
+
 // persistInvocationLog asynchronously saves an invocation log to Postgres
 func (e *Executor) persistInvocationLog(reqID string, fn *domain.Function, durationMs int64, coldStart, success bool, errMsg string, inputSize, outputSize int, input, output json.RawMessage, stdout, stderr string) {
 	e.logBatcher.Enqueue(&store.InvocationLog{

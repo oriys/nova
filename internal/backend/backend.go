@@ -44,6 +44,9 @@ type Client interface {
 	// ExecuteWithTrace runs a function invocation with W3C trace context.
 	ExecuteWithTrace(reqID string, input json.RawMessage, timeoutS int, traceParent, traceState string) (*RespPayload, error)
 
+	// ExecuteStream runs a function invocation in streaming mode, calling callback for each chunk.
+	ExecuteStream(reqID string, input json.RawMessage, timeoutS int, traceParent, traceState string, callback func(chunk []byte, isLast bool, err error) error) error
+
 	// Reload sends new code files to the agent for hot reload.
 	Reload(files map[string][]byte) error
 

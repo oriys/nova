@@ -155,6 +155,11 @@ func (c *VsockClientAdapter) ExecuteWithTrace(reqID string, input json.RawMessag
 	}, nil
 }
 
+// ExecuteStream runs a function in streaming mode, calling callback for each chunk.
+func (c *VsockClientAdapter) ExecuteStream(reqID string, input json.RawMessage, timeoutS int, traceParent, traceState string, callback func(chunk []byte, isLast bool, err error) error) error {
+	return c.client.ExecuteStream(reqID, input, timeoutS, traceParent, traceState, callback)
+}
+
 // Ping checks if the agent is responsive.
 func (c *VsockClientAdapter) Ping() error {
 	return c.client.Ping()
