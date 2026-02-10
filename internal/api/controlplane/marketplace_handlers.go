@@ -2,15 +2,12 @@ package controlplane
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 
 	"github.com/oriys/nova/internal/domain"
-	"github.com/oriys/nova/internal/service"
 	"github.com/oriys/nova/internal/store"
 )
 
@@ -169,7 +166,7 @@ func (h *Handler) PublishRelease(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get bundle file
-	file, header, err := r.FormFile("bundle")
+	file, _, err := r.FormFile("bundle")
 	if err != nil {
 		http.Error(w, "bundle file is required", http.StatusBadRequest)
 		return
