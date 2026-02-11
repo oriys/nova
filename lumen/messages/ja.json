@@ -97,7 +97,13 @@
     "notifications": "通知",
     "markAllRead": "すべて既読にする",
     "loadingNotifications": "通知を読み込み中…",
-    "noNotifications": "通知はありません"
+    "noNotifications": "通知はありません",
+    "notificationUnreadCount": "未読",
+    "refreshNotifications": "通知を更新",
+    "notificationFilterAll": "すべて",
+    "notificationFilterUnread": "未読",
+    "notificationMarkRead": "既読にする",
+    "notificationOpenFunction": "関数を開く"
   },
   "scopeSwitcher": {
     "failedToLoad": "テナントオプションの読み込みに失敗しました。",

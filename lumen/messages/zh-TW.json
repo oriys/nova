@@ -97,7 +97,13 @@
     "notifications": "通知",
     "markAllRead": "全部標示已讀",
     "loadingNotifications": "載入通知中…",
-    "noNotifications": "暫無通知"
+    "noNotifications": "暫無通知",
+    "notificationUnreadCount": "未讀",
+    "refreshNotifications": "重新整理通知",
+    "notificationFilterAll": "全部",
+    "notificationFilterUnread": "未讀",
+    "notificationMarkRead": "標示已讀",
+    "notificationOpenFunction": "開啟函數"
   },
   "scopeSwitcher": {
     "failedToLoad": "載入租戶選項失敗。",

@@ -1,10 +1,23 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
-import { Bell, Search, User, BookOpenText, Server } from "lucide-react"
+import {
+  AlertTriangle,
+  Bell,
+  BookOpenText,
+  CheckCircle2,
+  ExternalLink,
+  Info,
+  Loader2,
+  RefreshCw,
+  Search,
+  Server,
+  User,
+} from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -27,6 +40,7 @@ interface HeaderProps {
 }
 
 const GLOBAL_SEARCH_LIMIT = 10
+type NotificationFilter = "all" | "unread"
 
 export function Header({ title, description }: HeaderProps) {
   const pathname = usePathname()
@@ -42,8 +56,10 @@ export function Header({ title, description }: HeaderProps) {
   const [healthOpen, setHealthOpen] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [notifications, setNotifications] = useState<NotificationEntry[]>([])
+  const [notificationFilter, setNotificationFilter] = useState<NotificationFilter>("all")
   const [unreadCount, setUnreadCount] = useState(0)
   const [notificationLoading, setNotificationLoading] = useState(false)
+  const [notificationRefreshing, setNotificationRefreshing] = useState(false)
   const searchContainerRef = useRef<HTMLDivElement | null>(null)
   const healthContainerRef = useRef<HTMLDivElement | null>(null)
   const notificationContainerRef = useRef<HTMLDivElement | null>(null)
@@ -147,90 +163,156 @@ export function Header({ title, description }: HeaderProps) {
     return () => clearTimeout(timer)
   }, [query])
 
-  useEffect(() => {
-    let active = true
-
-    const loadUnreadCount = async () => {
-      try {
-        const res = await notificationsApi.unreadCount()
-        if (!active) {
-          return
-        }
-        setUnreadCount(Math.max(0, Number(res.unread) || 0))
-      } catch {
-        if (!active) {
-          return
-        }
-        setUnreadCount(0)
-      }
-    }
-
-    loadUnreadCount()
-    const timer = window.setInterval(loadUnreadCount, 15000)
-
-    return () => {
-      active = false
-      window.clearInterval(timer)
+  const loadUnreadCount = useCallback(async () => {
+    try {
+      const res = await notificationsApi.unreadCount()
+      setUnreadCount(Math.max(0, Number(res.unread) || 0))
+    } catch {
+      setUnreadCount(0)
     }
   }, [])
+
+  const loadNotifications = useCallback(
+    async (refreshing = false) => {
+      if (refreshing) {
+        setNotificationRefreshing(true)
+      } else {
+        setNotificationLoading(true)
+      }
+      try {
+        const [items] = await Promise.all([
+          notificationsApi.list(notificationFilter, 20),
+          loadUnreadCount(),
+        ])
+        setNotifications(items)
+      } catch {
+        setNotifications([])
+      } finally {
+        if (refreshing) {
+          setNotificationRefreshing(false)
+        } else {
+          setNotificationLoading(false)
+        }
+      }
+    },
+    [loadUnreadCount, notificationFilter]
+  )
+
+  useEffect(() => {
+    loadUnreadCount()
+    const timer = window.setInterval(loadUnreadCount, 15000)
+    return () => window.clearInterval(timer)
+  }, [loadUnreadCount])
 
   useEffect(() => {
     if (!notificationOpen) {
       return
     }
+    loadNotifications(false)
+    const timer = window.setInterval(() => {
+      loadNotifications(true)
+    }, 10000)
+    return () => window.clearInterval(timer)
+  }, [loadNotifications, notificationOpen, notificationFilter])
 
-    let cancelled = false
-    const loadNotifications = async () => {
-      setNotificationLoading(true)
-      try {
-        const items = await notificationsApi.list("all", 20)
-        if (cancelled) {
-          return
-        }
-        setNotifications(items)
-      } catch {
-        if (cancelled) {
-          return
-        }
-        setNotifications([])
-      } finally {
-        if (!cancelled) {
-          setNotificationLoading(false)
-        }
+  useEffect(() => {
+    if (!notificationOpen) {
+      return
+    }
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setNotificationOpen(false)
       }
     }
-
-    loadNotifications()
-    return () => {
-      cancelled = true
-    }
+    document.addEventListener("keydown", handleEsc)
+    return () => document.removeEventListener("keydown", handleEsc)
   }, [notificationOpen])
 
-  const handleNotificationClick = async (item: NotificationEntry) => {
-    if (item.status === "unread") {
+  const markNotificationRead = useCallback(
+    async (item: NotificationEntry) => {
+      if (item.status !== "unread") {
+        return
+      }
       try {
         await notificationsApi.markRead(item.id)
       } catch {
-        // Keep optimistic UI fallback below.
+        // Keep optimistic state updates even if network errors.
       }
-      setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, status: "read", read_at: new Date().toISOString() } : n)))
+      setNotifications((prev) => {
+        if (notificationFilter === "unread") {
+          return prev.filter((n) => n.id !== item.id)
+        }
+        return prev.map((n) =>
+          n.id === item.id ? { ...n, status: "read", read_at: new Date().toISOString() } : n
+        )
+      })
       setUnreadCount((prev) => Math.max(0, prev - 1))
-    }
+    },
+    [notificationFilter]
+  )
 
-    if (item.function_name) {
+  const openFunctionFromNotification = useCallback(
+    async (item: NotificationEntry) => {
+      await markNotificationRead(item)
+      if (!item.function_name) {
+        return
+      }
       setNotificationOpen(false)
       router.push(`/functions/${encodeURIComponent(item.function_name)}`)
+    },
+    [markNotificationRead, router]
+  )
+
+  const handleNotificationClick = async (item: NotificationEntry) => {
+    if (item.function_name) {
+      await openFunctionFromNotification(item)
+      return
     }
+    await markNotificationRead(item)
   }
 
   const handleMarkAllRead = async () => {
+    if (unreadCount === 0) {
+      return
+    }
     try {
       await notificationsApi.markAllRead()
     } catch {
       // Keep UI update best-effort.
     }
-    setNotifications((prev) => prev.map((n) => (n.status === "unread" ? { ...n, status: "read", read_at: new Date().toISOString() } : n)))
+    if (notificationFilter === "unread") {
+      setNotifications([])
+    } else {
+      setNotifications((prev) =>
+        prev.map((n) =>
+          n.status === "unread" ? { ...n, status: "read", read_at: new Date().toISOString() } : n
+        )
+      )
+    }
     setUnreadCount(0)
+  }
+
+  const severityBadgeClass = (severity: string) => {
+    switch (severity) {
+    case "error":
+      return "bg-destructive/10 text-destructive border-0"
+    case "warning":
+      return "bg-warning/10 text-warning border-0"
+    default:
+      return "bg-muted text-muted-foreground border-0"
+    }
+  }
+
+  const severityIcon = (severity: string) => {
+    switch (severity) {
+    case "error":
+    case "warning":
+      return AlertTriangle
+    case "success":
+      return CheckCircle2
+    default:
+      return Info
+    }
   }
 
   const openFunctionDetail = (name: string) => {
@@ -456,11 +538,62 @@ export function Header({ title, description }: HeaderProps) {
 
           {notificationOpen && (
             <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-96 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
-              <div className="flex items-center justify-between border-b border-border px-3 py-2">
-                <p className="text-sm font-medium text-popover-foreground">{t("notifications")}</p>
-                <Button variant="ghost" size="sm" onClick={handleMarkAllRead}>
-                  {t("markAllRead")}
-                </Button>
+              <div className="border-b border-border px-3 py-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-popover-foreground">{t("notifications")}</p>
+                    {unreadCount > 0 && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        {unreadCount} {t("notificationUnreadCount")}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => loadNotifications(true)}
+                      disabled={notificationLoading || notificationRefreshing}
+                      aria-label={t("refreshNotifications")}
+                      title={t("refreshNotifications")}
+                    >
+                      {notificationRefreshing ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={handleMarkAllRead} disabled={unreadCount === 0}>
+                      {t("markAllRead")}
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-2 inline-flex rounded-md border border-border p-0.5">
+                  <button
+                    type="button"
+                    className={cn(
+                      "rounded px-2 py-1 text-xs transition-colors",
+                      notificationFilter === "all"
+                        ? "bg-accent text-accent-foreground"
+                        : "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
+                    )}
+                    onClick={() => setNotificationFilter("all")}
+                  >
+                    {t("notificationFilterAll")}
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(
+                      "rounded px-2 py-1 text-xs transition-colors",
+                      notificationFilter === "unread"
+                        ? "bg-accent text-accent-foreground"
+                        : "text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground"
+                    )}
+                    onClick={() => setNotificationFilter("unread")}
+                  >
+                    {t("notificationFilterUnread")}
+                  </button>
+                </div>
               </div>
 
               <div className="max-h-80 overflow-y-auto">
@@ -471,28 +604,60 @@ export function Header({ title, description }: HeaderProps) {
                 ) : (
                   <ul className="divide-y divide-border">
                     {notifications.map((item) => (
-                      <li key={item.id}>
-                        <button
-                          type="button"
-                          className={cn(
-                            "w-full px-3 py-2 text-left transition-colors hover:bg-accent/60",
-                            item.status === "unread" ? "bg-accent/20" : ""
-                          )}
-                          onClick={() => handleNotificationClick(item)}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
+                      <li
+                        key={item.id}
+                        className={cn(
+                          "px-3 py-2 transition-colors",
+                          item.status === "unread" ? "bg-accent/15" : "hover:bg-accent/40"
+                        )}
+                      >
+                        <div className="flex items-start gap-2">
+                          <button
+                            type="button"
+                            className="min-w-0 flex-1 text-left"
+                            onClick={() => handleNotificationClick(item)}
+                          >
+                            <div className="flex items-center gap-2">
+                              {(() => {
+                                const Icon = severityIcon(item.severity)
+                                return <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                              })()}
                               <p className="truncate text-sm font-medium text-popover-foreground">{item.title}</p>
-                              <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{item.message}</p>
-                              <p className="mt-1 text-[11px] text-muted-foreground">
-                                {new Date(item.created_at).toLocaleString()}
-                              </p>
+                              <Badge variant="secondary" className={cn("text-[10px]", severityBadgeClass(item.severity))}>
+                                {item.severity}
+                              </Badge>
+                              {item.status === "unread" && <span className="h-2 w-2 rounded-full bg-primary" />}
                             </div>
+                            <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.message}</p>
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              {new Date(item.created_at).toLocaleString()}
+                              {item.function_name ? ` · ${item.function_name}` : ""}
+                            </p>
+                          </button>
+                          <div className="flex shrink-0 items-center gap-1">
                             {item.status === "unread" && (
-                              <span className="mt-1 h-2.5 w-2.5 rounded-full bg-primary" />
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-[11px]"
+                                onClick={() => markNotificationRead(item)}
+                              >
+                                {t("notificationMarkRead")}
+                              </Button>
+                            )}
+                            {item.function_name && (
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => openFunctionFromNotification(item)}
+                                aria-label={t("notificationOpenFunction")}
+                                title={t("notificationOpenFunction")}
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </Button>
                             )}
                           </div>
-                        </button>
+                        </div>
                       </li>
                     ))}
                   </ul>

@@ -97,7 +97,13 @@
     "notifications": "Notifications",
     "markAllRead": "Tout marquer comme lu",
     "loadingNotifications": "Chargement des notifications…",
-    "noNotifications": "Aucune notification"
+    "noNotifications": "Aucune notification",
+    "notificationUnreadCount": "non lues",
+    "refreshNotifications": "Actualiser les notifications",
+    "notificationFilterAll": "Toutes",
+    "notificationFilterUnread": "Non lues",
+    "notificationMarkRead": "Marquer comme lue",
+    "notificationOpenFunction": "Ouvrir la fonction"
   },
   "scopeSwitcher": {
     "failedToLoad": "Échec du chargement des options de locataire.",

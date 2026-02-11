@@ -13,6 +13,7 @@ import { FunctionCode } from "@/components/function-code"
 import { FunctionLogs } from "@/components/function-logs"
 import { FunctionConfig } from "@/components/function-config"
 import { FunctionDiagnosticsPanel } from "@/components/function-diagnostics"
+import { FunctionSLOPanel } from "@/components/function-slo-panel"
 import { InvocationHeatmap } from "@/components/invocation-heatmap"
 import {
   Dialog,
@@ -393,7 +394,8 @@ export default function FunctionDetailPage({
             <FunctionLogs logs={logs} onRefresh={fetchData} highlightedRequestId={requestedLogID || undefined} />
           </TabsContent>
 
-          <TabsContent value="diagnostics" className="mt-0">
+          <TabsContent value="diagnostics" className="mt-0 space-y-4">
+            <FunctionSLOPanel functionName={func.name} />
             <FunctionDiagnosticsPanel functionName={func.name} />
           </TabsContent>
 

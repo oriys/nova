@@ -97,7 +97,13 @@
     "notifications": "Notifications",
     "markAllRead": "Mark all read",
     "loadingNotifications": "Loading notifications...",
-    "noNotifications": "No notifications yet"
+    "noNotifications": "No notifications yet",
+    "notificationUnreadCount": "unread",
+    "refreshNotifications": "Refresh notifications",
+    "notificationFilterAll": "All",
+    "notificationFilterUnread": "Unread",
+    "notificationMarkRead": "Mark read",
+    "notificationOpenFunction": "Open function"
   },
   "scopeSwitcher": {
     "failedToLoad": "Failed to load tenant options.",

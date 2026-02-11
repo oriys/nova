@@ -97,7 +97,13 @@
     "notifications": "通知",
     "markAllRead": "全部已读",
     "loadingNotifications": "加载通知中…",
-    "noNotifications": "暂无通知"
+    "noNotifications": "暂无通知",
+    "notificationUnreadCount": "未读",
+    "refreshNotifications": "刷新通知",
+    "notificationFilterAll": "全部",
+    "notificationFilterUnread": "未读",
+    "notificationMarkRead": "标记已读",
+    "notificationOpenFunction": "打开函数"
   },
   "scopeSwitcher": {
     "failedToLoad": "加载租户选项失败。",

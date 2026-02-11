@@ -443,6 +443,9 @@ func isCometOnlyHTTPPath(path string) bool {
 	if strings.HasPrefix(path, "/metrics") {
 		return true
 	}
+	if strings.HasPrefix(path, "/functions/") && strings.HasSuffix(path, "/slo/status") {
+		return true
+	}
 	switch path {
 	case "/stats", "/invocations":
 		return true
