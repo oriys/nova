@@ -230,9 +230,14 @@ func daemonCmd() *cobra.Command {
 			outboxRelay.Start()
 
 			// Create AI service (always created so config endpoints work)
-			aiService := ai.NewService(cfg.AI)
+			// Merge file/env config with any persisted DB config (from web UI)
+			aiCfg := cfg.AI
+			if all, err := s.GetConfig(context.Background()); err == nil {
+				aiCfg = ai.ConfigFromStoreMap(aiCfg, all)
+			}
+			aiService := ai.NewService(aiCfg)
 			if aiService.Enabled() {
-				logging.Op().Info("AI service enabled", "model", cfg.AI.Model)
+				logging.Op().Info("AI service enabled", "model", aiCfg.Model, "base_url", aiCfg.BaseURL)
 			}
 
 			var httpServer *http.Server

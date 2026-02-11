@@ -27,6 +27,24 @@ func DefaultConfig() Config {
 	}
 }
 
+// ConfigFromStoreMap merges stored key-value pairs into a base Config.
+// Keys: ai_enabled, ai_api_key, ai_model, ai_base_url.
+func ConfigFromStoreMap(base Config, all map[string]string) Config {
+	if v, ok := all["ai_enabled"]; ok {
+		base.Enabled = v == "true" || v == "1"
+	}
+	if v, ok := all["ai_api_key"]; ok && v != "" {
+		base.APIKey = v
+	}
+	if v, ok := all["ai_model"]; ok && v != "" {
+		base.Model = v
+	}
+	if v, ok := all["ai_base_url"]; ok && v != "" {
+		base.BaseURL = v
+	}
+	return base
+}
+
 // GenerateRequest is the request payload for code generation.
 type GenerateRequest struct {
 	Description string `json:"description"`

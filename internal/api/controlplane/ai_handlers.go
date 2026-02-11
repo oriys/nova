@@ -109,19 +109,7 @@ func (h *AIHandler) loadAIConfigFromStore(r *http.Request) ai.Config {
 	if err != nil {
 		return cfg
 	}
-	if v, ok := all["ai_enabled"]; ok {
-		cfg.Enabled = v == "true" || v == "1"
-	}
-	if v, ok := all["ai_api_key"]; ok && v != "" {
-		cfg.APIKey = v
-	}
-	if v, ok := all["ai_model"]; ok && v != "" {
-		cfg.Model = v
-	}
-	if v, ok := all["ai_base_url"]; ok && v != "" {
-		cfg.BaseURL = v
-	}
-	return cfg
+	return ai.ConfigFromStoreMap(cfg, all)
 }
 
 // Generate creates function code from a natural language description.
