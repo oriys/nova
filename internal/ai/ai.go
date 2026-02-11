@@ -127,6 +127,8 @@ Nova is a serverless function platform. Functions run inside isolated Firecracke
 | Deno      | deno     | export function handler(event, context) -> object              | No       |
 | Bun       | bun      | function handler(event, context) -> object; module.exports     | No       |
 
+Note: Go requires an exported Handler (capitalized) function. .NET uses Handle as the entry method name. All other runtimes use lowercase handler.
+
 ### Function Constraints
 - Function name: 1-64 chars, [A-Za-z0-9_-]
 - Memory: 128–10240 MB (default 128)
