@@ -889,6 +889,7 @@ func appendDependencyEnv(env []string, runtime string) []string {
 		}
 	case "deno":
 		env = append(env, "DENO_DIR=/code/.deno")
+		env = append(env, "LD_PRELOAD=/lib/libresolv_stub.so")
 	case "bun":
 		paths := []string{"/code/node_modules"}
 		for _, lp := range layerPaths {
