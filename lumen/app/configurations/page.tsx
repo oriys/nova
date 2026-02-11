@@ -16,8 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { healthApi, snapshotsApi, configApi, aiApi, type HealthStatus } from "@/lib/api"
-import { RefreshCw, Server, Database, HardDrive, Trash2, Save, CheckCircle, Sparkles, Eye, EyeOff } from "lucide-react"
+import { healthApi, snapshotsApi, configApi, aiApi, type HealthStatus, type AIModelEntry } from "@/lib/api"
+import { RefreshCw, Server, Database, HardDrive, Trash2, Save, CheckCircle, Sparkles, Eye, EyeOff, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAutoRefresh } from "@/lib/use-auto-refresh"
 
@@ -75,6 +75,20 @@ export default function ConfigurationsPage() {
   const [aiSaving, setAiSaving] = useState(false)
   const [aiSaved, setAiSaved] = useState(false)
   const [showApiKey, setShowApiKey] = useState(false)
+  const [aiModels, setAiModels] = useState<AIModelEntry[]>([])
+  const [aiModelsLoading, setAiModelsLoading] = useState(false)
+
+  const fetchModels = useCallback(async () => {
+    try {
+      setAiModelsLoading(true)
+      const resp = await aiApi.listModels()
+      setAiModels(resp.data || [])
+    } catch {
+      setAiModels([])
+    } finally {
+      setAiModelsLoading(false)
+    }
+  }, [])
 
   const fetchData = useCallback(async () => {
     try {
@@ -112,7 +126,8 @@ export default function ConfigurationsPage() {
 
   useEffect(() => {
     fetchData()
-  }, [fetchData])
+    fetchModels()
+  }, [fetchData, fetchModels])
 
   const { enabled: autoRefresh, toggle: toggleAutoRefresh } = useAutoRefresh("configurations", fetchData, 30000)
 
@@ -453,20 +468,40 @@ export default function ConfigurationsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="aiModel">Model</Label>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="aiModel">Model</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={fetchModels}
+                  disabled={aiModelsLoading}
+                  aria-label="Refresh models"
+                >
+                  {aiModelsLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3 w-3" />
+                  )}
+                </Button>
+              </div>
               <Select value={aiModel} onValueChange={(v) => { setAiModel(v); setAiDirty(true); }}>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder={aiModelsLoading ? "Loading models..." : "Select a model"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="gpt-4o-mini">gpt-4o-mini</SelectItem>
-                  <SelectItem value="gpt-4o">gpt-4o</SelectItem>
-                  <SelectItem value="gpt-4-turbo">gpt-4-turbo</SelectItem>
-                  <SelectItem value="gpt-3.5-turbo">gpt-3.5-turbo</SelectItem>
+                  {aiModels.length > 0 ? (
+                    aiModels.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>{m.id}</SelectItem>
+                    ))
+                  ) : aiModel ? (
+                    <SelectItem value={aiModel}>{aiModel}</SelectItem>
+                  ) : null}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                AI model for code generation
+                AI model for code generation. Click refresh to load available models from the API.
               </p>
             </div>
 
