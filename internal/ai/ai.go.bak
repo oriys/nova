@@ -569,36 +569,6 @@ func (s *Service) Review(ctx context.Context, req ReviewRequest) (*ReviewRespons
 ## Your Task
 Review the given function code for the Nova serverless platform.
 Evaluate: correctness, error handling, security, performance, and adherence to Nova handler conventions.
-`
-
-	if req.IncludeSecurity {
-		systemPrompt += `
-### Security Analysis
-Perform comprehensive security vulnerability scanning:
-- SQL injection, command injection, code injection
-- Cross-site scripting (XSS), CSRF vulnerabilities
-- Insecure cryptographic implementations
-- Hardcoded secrets, API keys, passwords
-- Unsafe deserialization
-- Path traversal vulnerabilities
-- Authentication/authorization bypass
-- Denial of service vectors
-`
-	}
-
-	if req.IncludeCompliance {
-		systemPrompt += `
-### Compliance Checking
-Check for compliance with common standards:
-- GDPR: Personal data handling, consent, data retention
-- PCI-DSS: Credit card data security
-- HIPAA: Protected health information (PHI) handling
-- SOC2: Security controls and logging
-- OWASP Top 10: Common web vulnerabilities
-`
-	}
-
-	systemPrompt += `
 Always call the review_function_code function with your result.`
 
 	userPrompt := fmt.Sprintf("Review this **%s** function for the Nova platform:\n\n```\n%s\n```", req.Runtime, req.Code)

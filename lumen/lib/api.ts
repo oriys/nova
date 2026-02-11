@@ -1936,12 +1936,31 @@ export interface AIGenerateResponse {
 export interface AIReviewRequest {
   code: string;
   runtime: string;
+  include_security?: boolean;
+  include_compliance?: boolean;
+}
+
+export interface SecurityIssue {
+  severity: string;
+  type: string;
+  description: string;
+  line_number?: number;
+  remediation: string;
+}
+
+export interface ComplianceIssue {
+  standard: string;
+  violation: string;
+  description: string;
+  severity: string;
 }
 
 export interface AIReviewResponse {
   feedback: string;
   suggestions?: string[];
   score?: number;
+  security_issues?: SecurityIssue[];
+  compliance_issues?: ComplianceIssue[];
 }
 
 export interface AIRewriteRequest {
