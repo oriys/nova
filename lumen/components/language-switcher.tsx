@@ -9,7 +9,7 @@ import {
   locales,
   localeNames,
   type Locale,
-} from "@/i18n/request"
+} from "@/i18n/config"
 
 export function LanguageSwitcher() {
   const t = useTranslations("common")
