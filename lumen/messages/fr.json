@@ -8,8 +8,6 @@
     "functions": "Fonctions",
     "events": "Événements",
     "workflows": "Workflows",
-    "appStore": "App Store",
-    "myApps": "Mes applications",
     "tenancy": "Locataires",
     "asyncJobs": "Tâches async",
     "history": "Historique",
@@ -34,14 +32,6 @@
     "workflows": {
       "title": "Workflows",
       "description": "Orchestration de workflows DAG"
-    },
-    "appStore": {
-      "title": "App Store",
-      "description": "Parcourir et installer des packs de fonctions/workflows"
-    },
-    "myApps": {
-      "title": "Mes applications",
-      "description": "Gérer les applications que vous publiez sur l'App Store"
     },
     "tenancy": {
       "title": "Locataires",

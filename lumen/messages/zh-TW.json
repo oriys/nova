@@ -8,8 +8,6 @@
     "functions": "函數",
     "events": "事件",
     "workflows": "工作流程",
-    "appStore": "應用商店",
-    "myApps": "我的應用",
     "tenancy": "租戶",
     "asyncJobs": "非同步任務",
     "history": "歷史記錄",
@@ -34,14 +32,6 @@
     "workflows": {
       "title": "工作流程",
       "description": "DAG 工作流程編排"
-    },
-    "appStore": {
-      "title": "應用商店",
-      "description": "瀏覽和安裝函數/工作流程套件"
-    },
-    "myApps": {
-      "title": "我的應用",
-      "description": "管理您發佈到應用商店的應用"
     },
     "tenancy": {
       "title": "租戶",

@@ -8,8 +8,6 @@
     "functions": "関数",
     "events": "イベント",
     "workflows": "ワークフロー",
-    "appStore": "アプリストア",
-    "myApps": "マイアプリ",
     "tenancy": "テナント",
     "asyncJobs": "非同期ジョブ",
     "history": "履歴",
@@ -34,14 +32,6 @@
     "workflows": {
       "title": "ワークフロー",
       "description": "DAG ワークフローオーケストレーション"
-    },
-    "appStore": {
-      "title": "アプリストア",
-      "description": "関数/ワークフローバンドルの閲覧とインストール"
-    },
-    "myApps": {
-      "title": "マイアプリ",
-      "description": "アプリストアに公開したアプリの管理"
     },
     "tenancy": {
       "title": "テナント",

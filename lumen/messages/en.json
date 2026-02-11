@@ -8,8 +8,6 @@
     "functions": "Functions",
     "events": "Events",
     "workflows": "Workflows",
-    "appStore": "App Store",
-    "myApps": "My Apps",
     "tenancy": "Tenancy",
     "asyncJobs": "Async Jobs",
     "history": "History",
@@ -34,14 +32,6 @@
     "workflows": {
       "title": "Workflows",
       "description": "DAG workflow orchestration"
-    },
-    "appStore": {
-      "title": "App Store",
-      "description": "Browse and install function/workflow bundles"
-    },
-    "myApps": {
-      "title": "My Apps",
-      "description": "Manage apps you publish to the App Store"
     },
     "tenancy": {
       "title": "Tenancy",

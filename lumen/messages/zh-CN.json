@@ -8,8 +8,6 @@
     "functions": "函数",
     "events": "事件",
     "workflows": "工作流",
-    "appStore": "应用商店",
-    "myApps": "我的应用",
     "tenancy": "租户",
     "asyncJobs": "异步任务",
     "history": "历史记录",
@@ -34,14 +32,6 @@
     "workflows": {
       "title": "工作流",
       "description": "DAG 工作流编排"
-    },
-    "appStore": {
-      "title": "应用商店",
-      "description": "浏览和安装函数/工作流套件"
-    },
-    "myApps": {
-      "title": "我的应用",
-      "description": "管理您发布到应用商店的应用"
     },
     "tenancy": {
       "title": "租户",

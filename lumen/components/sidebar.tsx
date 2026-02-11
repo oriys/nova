@@ -17,19 +17,15 @@ import {
   RadioTower,
   Building2,
   Clock3,
-  Package,
-  Store as StoreIcon,
 } from "lucide-react"
 
-type NavKey = "dashboard" | "functions" | "events" | "workflows" | "appStore" | "myApps" | "tenancy" | "asyncJobs" | "history" | "runtimes" | "configurations" | "secrets" | "apiKeys"
+type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "asyncJobs" | "history" | "runtimes" | "configurations" | "secrets" | "apiKeys"
 
 const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] = [
   { key: "dashboard", href: "/dashboard", icon: LayoutDashboard },
   { key: "functions", href: "/functions", icon: Code2 },
   { key: "events", href: "/events", icon: RadioTower },
   { key: "workflows", href: "/workflows", icon: GitBranch },
-  { key: "appStore", href: "/store", icon: StoreIcon },
-  { key: "myApps", href: "/my-apps", icon: Package },
   { key: "tenancy", href: "/tenancy", icon: Building2 },
   { key: "asyncJobs", href: "/async-invocations", icon: Clock3 },
   { key: "history", href: "/history", icon: History },
