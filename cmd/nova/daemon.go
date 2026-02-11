@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/oriys/nova/internal/ai"
 	"github.com/oriys/nova/internal/api"
 	"github.com/oriys/nova/internal/asyncqueue"
 	"github.com/oriys/nova/internal/auth"
@@ -228,6 +229,13 @@ func daemonCmd() *cobra.Command {
 			outboxRelay := eventbus.NewOutboxRelay(s, eventbus.OutboxRelayConfig{})
 			outboxRelay.Start()
 
+			// Create AI service if configured
+			var aiService *ai.Service
+			if cfg.AI.Enabled || cfg.AI.APIKey != "" {
+				aiService = ai.NewService(cfg.AI)
+				logging.Op().Info("AI service enabled", "model", cfg.AI.Model)
+			}
+
 			var httpServer *http.Server
 			if cfg.Daemon.HTTPAddr != "" {
 				httpServer = api.StartHTTPServer(cfg.Daemon.HTTPAddr, api.ServerConfig{
@@ -245,6 +253,7 @@ func daemonCmd() *cobra.Command {
 					Scheduler:       sched,
 					RootfsDir:       cfg.Firecracker.RootfsDir,
 					LayerManager:    layerManager,
+					AIService:       aiService,
 					PlaneMode:       api.PlaneModeControlPlane,
 				})
 				logging.Op().Info("HTTP API started", "addr", cfg.Daemon.HTTPAddr)
