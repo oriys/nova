@@ -87,6 +87,22 @@ func (s *Service) Enabled() bool {
 	return s.cfg.Enabled && s.cfg.APIKey != ""
 }
 
+// GetConfig returns the current AI configuration (with API key masked).
+func (s *Service) GetConfig() Config {
+	c := s.cfg
+	if len(c.APIKey) > 8 {
+		c.APIKey = c.APIKey[:4] + "****" + c.APIKey[len(c.APIKey)-4:]
+	} else if c.APIKey != "" {
+		c.APIKey = "****"
+	}
+	return c
+}
+
+// UpdateConfig applies new configuration to the service.
+func (s *Service) UpdateConfig(cfg Config) {
+	s.cfg = cfg
+}
+
 // defaultTemperature is set low for deterministic, consistent code generation.
 const defaultTemperature = 0.3
 

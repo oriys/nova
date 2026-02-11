@@ -1936,9 +1936,31 @@ export interface AIStatusResponse {
   enabled: boolean;
 }
 
+export interface AIConfigResponse {
+  enabled: boolean;
+  api_key: string;
+  model: string;
+  base_url: string;
+}
+
+export interface AIConfigUpdateRequest {
+  enabled?: boolean;
+  api_key?: string;
+  model?: string;
+  base_url?: string;
+}
+
 // AI API
 export const aiApi = {
   status: () => request<AIStatusResponse>("/ai/status"),
+
+  getConfig: () => request<AIConfigResponse>("/ai/config"),
+
+  updateConfig: (data: AIConfigUpdateRequest) =>
+    request<AIConfigResponse>("/ai/config", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
 
   generate: (data: AIGenerateRequest) =>
     request<AIGenerateResponse>("/ai/generate", {

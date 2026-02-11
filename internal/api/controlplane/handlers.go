@@ -168,7 +168,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// AI-powered code operations
 	if h.AIService != nil {
-		aiHandler := &AIHandler{Service: h.AIService}
+		aiHandler := &AIHandler{Service: h.AIService, Store: h.Store}
 		aiHandler.RegisterRoutes(mux)
 	}
 }

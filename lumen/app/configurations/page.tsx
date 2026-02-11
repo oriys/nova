@@ -16,8 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { healthApi, snapshotsApi, configApi, type HealthStatus } from "@/lib/api"
-import { RefreshCw, Server, Database, HardDrive, Trash2, Save, CheckCircle } from "lucide-react"
+import { healthApi, snapshotsApi, configApi, aiApi, type HealthStatus } from "@/lib/api"
+import { RefreshCw, Server, Database, HardDrive, Trash2, Save, CheckCircle, Sparkles, Eye, EyeOff } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAutoRefresh } from "@/lib/use-auto-refresh"
 
@@ -66,14 +66,25 @@ export default function ConfigurationsPage() {
   const [logLevel, setLogLevel] = useState("info")
   const [dirty, setDirty] = useState(false)
 
+  // AI Settings
+  const [aiEnabled, setAiEnabled] = useState(false)
+  const [aiBaseUrl, setAiBaseUrl] = useState("https://api.openai.com/v1")
+  const [aiApiKey, setAiApiKey] = useState("")
+  const [aiModel, setAiModel] = useState("gpt-4o-mini")
+  const [aiDirty, setAiDirty] = useState(false)
+  const [aiSaving, setAiSaving] = useState(false)
+  const [aiSaved, setAiSaved] = useState(false)
+  const [showApiKey, setShowApiKey] = useState(false)
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
-      const [healthData, snapshotsData, configData] = await Promise.all([
+      const [healthData, snapshotsData, configData, aiConfigData] = await Promise.all([
         healthApi.check(),
         snapshotsApi.list().catch(() => []),
         configApi.get().catch(() => ({} as Record<string, string>)),
+        aiApi.getConfig().catch(() => null),
       ])
       setHealth(healthData)
       setSnapshots(snapshotsData)
@@ -82,6 +93,15 @@ export default function ConfigurationsPage() {
       if (configData["pool_ttl"]) setPoolTTL(configData["pool_ttl"])
       if (configData["log_level"]) setLogLevel(configData["log_level"])
       setDirty(false)
+
+      // Apply AI config
+      if (aiConfigData) {
+        setAiEnabled(aiConfigData.enabled)
+        setAiBaseUrl(aiConfigData.base_url || "https://api.openai.com/v1")
+        setAiApiKey(aiConfigData.api_key || "")
+        setAiModel(aiConfigData.model || "gpt-4o-mini")
+        setAiDirty(false)
+      }
     } catch (err) {
       console.error("Failed to fetch config data:", err)
       setError(err instanceof Error ? err.message : "Failed to load configuration")
@@ -122,6 +142,32 @@ export default function ConfigurationsPage() {
       setError(err instanceof Error ? err.message : "Failed to save configuration")
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleAiSave = async () => {
+    try {
+      setAiSaving(true)
+      setAiSaved(false)
+      const updated = await aiApi.updateConfig({
+        enabled: aiEnabled,
+        base_url: aiBaseUrl,
+        api_key: aiApiKey,
+        model: aiModel,
+      })
+      setAiEnabled(updated.enabled)
+      setAiBaseUrl(updated.base_url || "https://api.openai.com/v1")
+      setAiApiKey(updated.api_key || "")
+      setAiModel(updated.model || "gpt-4o-mini")
+      setAiDirty(false)
+      setAiSaved(true)
+      setShowApiKey(false)
+      setTimeout(() => setAiSaved(false), 3000)
+    } catch (err) {
+      console.error("Failed to save AI config:", err)
+      setError(err instanceof Error ? err.message : "Failed to save AI configuration")
+    } finally {
+      setAiSaving(false)
     }
   }
 
@@ -335,6 +381,137 @@ export default function ConfigurationsPage() {
               )}
             </Button>
             {saved && (
+              <span className="flex items-center gap-1 text-sm text-success">
+                <CheckCircle className="h-4 w-4" />
+                Saved
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* AI Settings */}
+        <div className="rounded-xl border border-border bg-card p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles className="h-5 w-5 text-purple-500" />
+            <h3 className="text-lg font-semibold text-card-foreground">
+              AI Settings
+            </h3>
+            <Badge
+              variant="secondary"
+              className={cn(
+                aiEnabled
+                  ? "bg-success/10 text-success border-0"
+                  : "bg-muted text-muted-foreground border-0"
+              )}
+            >
+              {aiEnabled ? "Enabled" : "Disabled"}
+            </Badge>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            Configure the OpenAI-compatible API for AI-powered code generation, review, and rewriting.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2 max-w-2xl">
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="aiBaseUrl">API Base URL</Label>
+              <Input
+                id="aiBaseUrl"
+                type="url"
+                value={aiBaseUrl}
+                onChange={(e) => { setAiBaseUrl(e.target.value); setAiDirty(true); }}
+                placeholder="https://api.openai.com/v1"
+              />
+              <p className="text-xs text-muted-foreground">
+                OpenAI API endpoint. Change this to use a compatible provider (e.g., Azure OpenAI, local LLM).
+              </p>
+            </div>
+
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="aiApiKey">API Key</Label>
+              <div className="relative">
+                <Input
+                  id="aiApiKey"
+                  type={showApiKey ? "text" : "password"}
+                  value={aiApiKey}
+                  onChange={(e) => { setAiApiKey(e.target.value); setAiDirty(true); }}
+                  placeholder="sk-..."
+                  className="pr-10"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  aria-label={showApiKey ? "Hide API key" : "Show API key"}
+                >
+                  {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Your OpenAI API key. The key is stored encrypted and shown masked after saving.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="aiModel">Model</Label>
+              <Select value={aiModel} onValueChange={(v) => { setAiModel(v); setAiDirty(true); }}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="gpt-4o-mini">gpt-4o-mini</SelectItem>
+                  <SelectItem value="gpt-4o">gpt-4o</SelectItem>
+                  <SelectItem value="gpt-4-turbo">gpt-4-turbo</SelectItem>
+                  <SelectItem value="gpt-3.5-turbo">gpt-3.5-turbo</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                AI model for code generation
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Enable AI Features</Label>
+              <div className="flex items-center gap-3 pt-1">
+                <Button
+                  variant={aiEnabled ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => { setAiEnabled(true); setAiDirty(true); }}
+                >
+                  Enabled
+                </Button>
+                <Button
+                  variant={!aiEnabled ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => { setAiEnabled(false); setAiDirty(true); }}
+                >
+                  Disabled
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Toggle AI-powered features (generate, review, rewrite)
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 flex items-center gap-3">
+            <Button
+              variant="outline"
+              onClick={handleAiSave}
+              disabled={aiSaving || !aiDirty}
+            >
+              {aiSaving ? (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Save AI Settings
+                </>
+              )}
+            </Button>
+            {aiSaved && (
               <span className="flex items-center gap-1 text-sm text-success">
                 <CheckCircle className="h-4 w-4" />
                 Saved

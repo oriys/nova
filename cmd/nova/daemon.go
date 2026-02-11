@@ -229,10 +229,9 @@ func daemonCmd() *cobra.Command {
 			outboxRelay := eventbus.NewOutboxRelay(s, eventbus.OutboxRelayConfig{})
 			outboxRelay.Start()
 
-			// Create AI service if configured
-			var aiService *ai.Service
-			if cfg.AI.Enabled || cfg.AI.APIKey != "" {
-				aiService = ai.NewService(cfg.AI)
+			// Create AI service (always created so config endpoints work)
+			aiService := ai.NewService(cfg.AI)
+			if aiService.Enabled() {
 				logging.Op().Info("AI service enabled", "model", cfg.AI.Model)
 			}
 
