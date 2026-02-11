@@ -483,6 +483,24 @@ export interface FunctionDiagnostics {
   slow_invocations: FunctionDiagnosticsSlowInvocation[];
 }
 
+// Performance Recommendations types
+export interface PerformanceRecommendation {
+  category: string;
+  priority: string;
+  current_value: any;
+  recommended_value: any;
+  reasoning: string;
+  expected_impact: string;
+  metrics?: Record<string, string>;
+}
+
+export interface PerformanceRecommendationResponse {
+  recommendations: PerformanceRecommendation[];
+  confidence: number;
+  estimated_savings?: string;
+  analysis_summary: string;
+}
+
 export interface GlobalMetrics {
   uptime_seconds: number;
   invocations: {
@@ -794,6 +812,11 @@ export const functionsApi = {
 
   heatmap: (name: string, weeks: number = 52) =>
     request<HeatmapPoint[]>(`/functions/${encodeURIComponent(name)}/heatmap?weeks=${weeks}`),
+
+  recommendations: (name: string, days: number = 7) =>
+    request<PerformanceRecommendationResponse>(
+      `/functions/${encodeURIComponent(name)}/recommendations?days=${Math.max(1, Math.floor(days))}`
+    ),
 
   getScalingPolicy: (name: string) =>
     request<AutoScalePolicy>(`/functions/${encodeURIComponent(name)}/scaling`),
@@ -1913,12 +1936,31 @@ export interface AIGenerateResponse {
 export interface AIReviewRequest {
   code: string;
   runtime: string;
+  include_security?: boolean;
+  include_compliance?: boolean;
+}
+
+export interface SecurityIssue {
+  severity: string;
+  type: string;
+  description: string;
+  line_number?: number;
+  remediation: string;
+}
+
+export interface ComplianceIssue {
+  standard: string;
+  violation: string;
+  description: string;
+  severity: string;
 }
 
 export interface AIReviewResponse {
   feedback: string;
   suggestions?: string[];
   score?: number;
+  security_issues?: SecurityIssue[];
+  compliance_issues?: ComplianceIssue[];
 }
 
 export interface AIRewriteRequest {
@@ -1962,6 +2004,41 @@ export interface AIModelsResponse {
   data: AIModelEntry[];
 }
 
+// Diagnostics Analysis types
+export interface DiagnosticsErrorSample {
+  timestamp: string;
+  error_message: string;
+  duration_ms: number;
+  cold_start: boolean;
+}
+
+export interface DiagnosticsSlowSample {
+  timestamp: string;
+  duration_ms: number;
+  cold_start: boolean;
+}
+
+export interface DiagnosticsRecommendation {
+  category: string;
+  priority: string;
+  action: string;
+  expected_impact: string;
+}
+
+export interface DiagnosticsAnomaly {
+  type: string;
+  severity: string;
+  description: string;
+}
+
+export interface DiagnosticsAnalysisResponse {
+  summary: string;
+  root_causes: string[];
+  recommendations: DiagnosticsRecommendation[];
+  anomalies: DiagnosticsAnomaly[];
+  performance_score: number;
+}
+
 // AI API
 export const aiApi = {
   status: () => request<AIStatusResponse>("/ai/status"),
@@ -1993,4 +2070,12 @@ export const aiApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  analyzeDiagnostics: (functionName: string, params?: { window?: string }) =>
+    request<DiagnosticsAnalysisResponse>(
+      `/functions/${functionName}/diagnostics/analyze${params?.window ? `?window=${params.window}` : ""}`,
+      {
+        method: "POST",
+      }
+    ),
 };

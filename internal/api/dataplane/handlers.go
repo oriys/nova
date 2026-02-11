@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/oriys/nova/internal/advisor"
+	"github.com/oriys/nova/internal/ai"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/metrics"
@@ -141,9 +143,11 @@ type functionDiagnosticsResponse struct {
 
 // Handler handles data plane HTTP requests (invocations and observability).
 type Handler struct {
-	Store *store.Store
-	Exec  *executor.Executor
-	Pool  *pool.Pool
+	Store     *store.Store
+	Exec      *executor.Executor
+	Pool      *pool.Pool
+	AIService *ai.Service // Optional: for AI-powered diagnostics analysis
+	Advisor   interface{} // Optional: for performance recommendations (type advisor.PerformanceAdvisor)
 }
 
 type enqueueAsyncInvokeRequest struct {
@@ -206,6 +210,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /functions/{name}/logs", h.Logs)
 	mux.HandleFunc("GET /functions/{name}/metrics", h.FunctionMetrics)
 	mux.HandleFunc("GET /functions/{name}/diagnostics", h.FunctionDiagnostics)
+	mux.HandleFunc("POST /functions/{name}/diagnostics/analyze", h.AnalyzeFunctionDiagnostics)
+	mux.HandleFunc("GET /functions/{name}/recommendations", h.GetPerformanceRecommendations)
 	mux.HandleFunc("GET /functions/{name}/heatmap", h.FunctionHeatmap)
 	mux.HandleFunc("GET /metrics/heatmap", h.GlobalHeatmap)
 }
@@ -996,6 +1002,132 @@ func (h *Handler) FunctionDiagnostics(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
+// AnalyzeFunctionDiagnostics handles POST /functions/{name}/diagnostics/analyze
+func (h *Handler) AnalyzeFunctionDiagnostics(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+
+	// Check if AI service is available
+	if h.AIService == nil || !h.AIService.Enabled() {
+		http.Error(w, "AI service is not enabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	windowSeconds := parseWindowParam(r.URL.Query().Get("window"), defaultDiagnosticsWindowSeconds)
+	sampleSize := parseLimitQuery(r.URL.Query().Get("sample"), defaultDiagnosticsSampleSize, maxDiagnosticsSampleSize)
+	cutoff := time.Now().Add(-time.Duration(windowSeconds) * time.Second)
+
+	entries, err := h.Store.ListInvocationLogs(r.Context(), fn.ID, sampleSize, 0)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	filtered := make([]*store.InvocationLog, 0, len(entries))
+	for _, entry := range entries {
+		if entry.CreatedAt.Before(cutoff) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+
+	if len(filtered) == 0 {
+		http.Error(w, "no invocation data available for analysis", http.StatusBadRequest)
+		return
+	}
+
+	// Calculate metrics
+	durations := make([]int64, 0, len(filtered))
+	var totalDuration int64
+	var maxDuration int64
+	errorCount := 0
+	coldStartCount := 0
+	errorSamples := []ai.DiagnosticsErrorSample{}
+	slowSamples := []ai.DiagnosticsSlowSample{}
+
+	for _, entry := range filtered {
+		duration := entry.DurationMs
+		if duration < 0 {
+			duration = 0
+		}
+		durations = append(durations, duration)
+		totalDuration += duration
+		if duration > maxDuration {
+			maxDuration = duration
+		}
+		if !entry.Success {
+			errorCount++
+			if len(errorSamples) < 10 && entry.ErrorMessage != "" {
+				errorSamples = append(errorSamples, ai.DiagnosticsErrorSample{
+					Timestamp:    entry.CreatedAt.Format(time.RFC3339),
+					ErrorMessage: entry.ErrorMessage,
+					DurationMs:   entry.DurationMs,
+					ColdStart:    entry.ColdStart,
+				})
+			}
+		}
+		if entry.ColdStart {
+			coldStartCount++
+		}
+	}
+	sort.Slice(durations, func(i, j int) bool { return durations[i] < durations[j] })
+
+	p50 := percentile(durations, 0.50)
+	p95 := percentile(durations, 0.95)
+	p99 := percentile(durations, 0.99)
+	slowThreshold := int64(math.Max(float64(p95)*1.5, 500))
+
+	// Collect slow samples
+	slowCount := 0
+	for _, entry := range filtered {
+		if entry.DurationMs >= slowThreshold {
+			slowCount++
+			if len(slowSamples) < 10 {
+				slowSamples = append(slowSamples, ai.DiagnosticsSlowSample{
+					Timestamp:  entry.CreatedAt.Format(time.RFC3339),
+					DurationMs: entry.DurationMs,
+					ColdStart:  entry.ColdStart,
+				})
+			}
+		}
+	}
+
+	total := float64(len(filtered))
+
+	// Prepare AI analysis request
+	analysisReq := ai.DiagnosticsAnalysisRequest{
+		FunctionName:     fn.Name,
+		TotalInvocations: len(filtered),
+		AvgDurationMs:    float64(totalDuration) / total,
+		P50DurationMs:    p50,
+		P95DurationMs:    p95,
+		P99DurationMs:    p99,
+		MaxDurationMs:    maxDuration,
+		ErrorRatePct:     float64(errorCount) * 100 / total,
+		ColdStartRatePct: float64(coldStartCount) * 100 / total,
+		SlowCount:        slowCount,
+		ErrorSamples:     errorSamples,
+		SlowSamples:      slowSamples,
+		MemoryMB:         fn.MemoryMB,
+		TimeoutS:         fn.TimeoutS,
+	}
+
+	// Call AI service for analysis
+	analysis, err := h.AIService.AnalyzeDiagnostics(r.Context(), analysisReq)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(analysis)
+}
+
 // FunctionHeatmap handles GET /functions/{name}/heatmap?weeks=52
 func (h *Handler) FunctionHeatmap(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
@@ -1049,4 +1181,60 @@ func (h *Handler) GlobalTimeSeries(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(timeSeries)
+}
+
+// GetPerformanceRecommendations handles GET /functions/{name}/recommendations
+func (h *Handler) GetPerformanceRecommendations(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// Parse lookback days parameter
+	lookbackDays := 7
+	if days := r.URL.Query().Get("days"); days != "" {
+		if d, err := strconv.Atoi(days); err == nil && d > 0 && d <= 90 {
+			lookbackDays = d
+		}
+	}
+
+	// Create advisor if needed
+	if h.Advisor == nil {
+		adv := &advisor.PerformanceAdvisor{
+			Store:     h.Store,
+			AIService: h.AIService,
+		}
+		h.Advisor = adv
+	}
+
+	// Type assert to get the advisor
+	adv, ok := h.Advisor.(*advisor.PerformanceAdvisor)
+	if !ok {
+		http.Error(w, "performance advisor not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Prepare request
+	req := advisor.RecommendationRequest{
+		FunctionID:      fn.ID,
+		FunctionName:    fn.Name,
+		CurrentMemoryMB: fn.MemoryMB,
+		CurrentTimeoutS: fn.TimeoutS,
+		MinReplicas:     fn.MinReplicas,
+		MaxReplicas:     fn.MaxReplicas,
+		LookbackDays:    lookbackDays,
+	}
+
+	// Get recommendations
+	resp, err := adv.AnalyzePerformance(r.Context(), req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
