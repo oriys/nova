@@ -2,6 +2,7 @@
 
 import React from "react"
 import { useState, useEffect } from "react"
+import { useTranslations } from "next-intl"
 import {
   Dialog,
   DialogContent,
@@ -151,46 +152,55 @@ function getDefaultHandler(runtimeId: string): string {
   return "main.handler"
 }
 
+type ValidationKey =
+  | "validationNameFormat"
+  | "validationMemoryRange"
+  | "validationTimeoutRange"
+  | "validationJavaHandler"
+  | "validationDotnetHandler"
+  | "validationCompiledHandler"
+  | "validationDefaultHandler"
+
 function validateAwsCreateInput(params: {
   name: string
   runtime: string
   handler: string
   memory: number
   timeout: number
-}): string | null {
+}): ValidationKey | null {
   const { name, runtime, handler, memory, timeout } = params
 
   if (!AWS_FUNCTION_NAME_PATTERN.test(name)) {
-    return "Function name must match AWS format: 1-64 chars, letters/numbers/underscore/hyphen only."
+    return "validationNameFormat"
   }
   if (!Number.isFinite(memory) || memory < 128 || memory > 10240) {
-    return "Memory must be between 128 and 10240 MB (AWS Lambda range)."
+    return "validationMemoryRange"
   }
   if (!Number.isFinite(timeout) || timeout < 1 || timeout > 900) {
-    return "Timeout must be between 1 and 900 seconds (AWS Lambda range)."
+    return "validationTimeoutRange"
   }
 
   const base = getBaseRuntime(runtime)
   if (base === "java" || base === "kotlin" || base === "scala") {
     if (!AWS_JAVA_HANDLER_PATTERN.test(handler)) {
-      return "Handler format for Java/Kotlin/Scala must be '<package>.<Class>::<method>'."
+      return "validationJavaHandler"
     }
     return null
   }
   if (base === "dotnet") {
     if (!AWS_DOTNET_HANDLER_PATTERN.test(handler)) {
-      return "Handler format for .NET must be '<Assembly>::<Namespace.Class>::<Method>'."
+      return "validationDotnetHandler"
     }
     return null
   }
   if (base === "go" || base === "rust" || base === "swift" || base === "zig" || base === "wasm") {
     if (!AWS_EXECUTABLE_HANDLER_PATTERN.test(handler)) {
-      return "Handler format for compiled runtimes must be an executable entry name (letters/numbers/_-/)."
+      return "validationCompiledHandler"
     }
     return null
   }
   if (!AWS_MODULE_HANDLER_PATTERN.test(handler)) {
-    return "Handler format must be AWS style '<module>.<function>' (example: 'main.handler')."
+    return "validationDefaultHandler"
   }
   return null
 }
@@ -229,6 +239,8 @@ export function CreateFunctionDialog({
   onCreate,
   runtimes = [],
 }: CreateFunctionDialogProps) {
+  const t = useTranslations("createFunction")
+  const tc = useTranslations("common")
   const [name, setName] = useState("")
   const [runtime, setRuntime] = useState("python")
   const [memory, setMemory] = useState("128")
@@ -285,7 +297,7 @@ export function CreateFunctionDialog({
 
     const codeValue = code
     if (!codeValue.trim()) {
-      setError("Code is required")
+      setError(t("codeRequired"))
       return
     }
 
@@ -301,7 +313,7 @@ export function CreateFunctionDialog({
       timeout: parsedTimeout,
     })
     if (validationError) {
-      setError(validationError)
+      setError(t(validationError))
       return
     }
 
@@ -360,7 +372,7 @@ export function CreateFunctionDialog({
         onOpenChange(false)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create function")
+      setError(err instanceof Error ? err.message : tc("error"))
     } finally {
       setSubmitting(false)
     }
@@ -436,7 +448,7 @@ export function CreateFunctionDialog({
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Function Created</DialogTitle>
+            <DialogTitle>{t("functionCreated")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
@@ -445,38 +457,38 @@ export function CreateFunctionDialog({
               {compileStatus === 'compiling' && (
                 <Badge variant="outline" className="text-yellow-600 border-yellow-600">
                   <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                  Compiling
+                  {t("compiling")}
                 </Badge>
               )}
               {compileStatus === 'success' && (
                 <Badge variant="outline" className="text-green-600 border-green-600">
                   <Check className="mr-1 h-3 w-3" />
-                  Compiled
+                  {t("compiledStatus")}
                 </Badge>
               )}
               {compileStatus === 'failed' && (
                 <Badge variant="destructive">
                   <AlertCircle className="mr-1 h-3 w-3" />
-                  Failed
+                  {t("failed")}
                 </Badge>
               )}
             </div>
 
             {compileStatus === 'compiling' && (
               <div className="text-sm text-muted-foreground">
-                Your function is being compiled. This may take a moment...
+                {t("compilingMessage")}
               </div>
             )}
 
             {compileStatus === 'success' && (
               <div className="rounded-md bg-green-50 dark:bg-green-950 p-3 text-sm text-green-700 dark:text-green-300">
-                Compilation successful! Your function is ready to use.
+                {t("compiledMessage")}
               </div>
             )}
 
             {compileStatus === 'failed' && compileError && (
               <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                <div className="font-medium mb-1">Compilation Failed</div>
+                <div className="font-medium mb-1">{t("compilationFailed")}</div>
                 <pre className="whitespace-pre-wrap text-xs font-mono">{compileError}</pre>
               </div>
             )}
@@ -484,7 +496,7 @@ export function CreateFunctionDialog({
 
           <DialogFooter>
             <Button onClick={handleClose}>
-              {compileStatus === 'compiling' ? 'Close (Compiling in Background)' : 'Done'}
+              {compileStatus === 'compiling' ? t("closeCompiling") : t("done")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -496,7 +508,7 @@ export function CreateFunctionDialog({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create New Function</DialogTitle>
+          <DialogTitle>{t("title")}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -508,22 +520,22 @@ export function CreateFunctionDialog({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Function Name</Label>
+              <Label htmlFor="name">{t("functionName")}</Label>
               <Input
                 id="name"
-                placeholder="my-function"
+                placeholder={t("functionNamePlaceholder")}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 maxLength={64}
                 required
               />
               <p className="text-xs text-muted-foreground">
-                AWS format: 1-64 chars, letters/numbers/underscore/hyphen.
+                {t("functionNameHelp")}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="runtime">Runtime</Label>
+              <Label htmlFor="runtime">{t("runtime")}</Label>
               <Select value={runtime} onValueChange={setRuntime}>
                 <SelectTrigger>
                   <SelectValue />
@@ -533,7 +545,7 @@ export function CreateFunctionDialog({
                     <SelectItem key={rt.id} value={rt.id}>
                       {rt.name} {rt.version}
                       {needsCompilation(rt.id) && (
-                        <span className="ml-2 text-xs text-muted-foreground">(compiled)</span>
+                        <span className="ml-2 text-xs text-muted-foreground">{t("compiled")}</span>
                       )}
                     </SelectItem>
                   ))}
@@ -543,7 +555,7 @@ export function CreateFunctionDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Code</Label>
+            <Label>{t("code")}</Label>
             <CodeEditor
               code={code}
               onChange={setCode}
@@ -551,14 +563,14 @@ export function CreateFunctionDialog({
               minHeight="256px"
             />
             <p className="text-xs text-muted-foreground">
-              Template loaded for {getBaseRuntime(runtime)}.
-              {needsCompilation(runtime) && " This runtime requires compilation."}
+              {t("templateLoaded", { runtime: getBaseRuntime(runtime) })}
+              {needsCompilation(runtime) && t("requiresCompilation")}
             </p>
           </div>
 
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="memory">Memory (MB)</Label>
+              <Label htmlFor="memory">{t("memoryMb")}</Label>
               <Select value={memory} onValueChange={setMemory}>
                 <SelectTrigger>
                   <SelectValue />
@@ -574,7 +586,7 @@ export function CreateFunctionDialog({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="timeout">Timeout (s)</Label>
+              <Label htmlFor="timeout">{t("timeoutS")}</Label>
               <Input
                 id="timeout"
                 type="number"
@@ -586,7 +598,7 @@ export function CreateFunctionDialog({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="handler">Handler</Label>
+              <Label htmlFor="handler">{t("handler")}</Label>
               <Input
                 id="handler"
                 placeholder={getDefaultHandler(runtime)}
@@ -594,33 +606,33 @@ export function CreateFunctionDialog({
                 onChange={(e) => setHandler(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Use AWS handler style for current runtime.
+                {t("handlerHelp")}
               </p>
             </div>
           </div>
 
           {/* Resource Limits */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium">Resource Limits</Label>
+            <Label className="text-sm font-medium">{t("resourceLimits")}</Label>
             <p className="text-xs text-muted-foreground mb-2">
-              Configure CPU, disk I/O, and network bandwidth. Set to 0 for unlimited.
+              {t("resourceLimitsHelp")}
             </p>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               <div className="space-y-1">
-                <Label htmlFor="vcpus" className="text-xs text-muted-foreground">vCPUs</Label>
+                <Label htmlFor="vcpus" className="text-xs text-muted-foreground">{t("vcpus")}</Label>
                 <Select value={vcpus} onValueChange={setVcpus}>
                   <SelectTrigger className="h-9">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {[1, 2, 4, 8, 16, 32].map((v) => (
-                      <SelectItem key={v} value={v.toString()}>{v} vCPU{v > 1 ? "s" : ""}</SelectItem>
+                      <SelectItem key={v} value={v.toString()}>{v} {t("vcpu")}{v > 1 ? "s" : ""}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label htmlFor="diskIops" className="text-xs text-muted-foreground">Disk IOPS</Label>
+                <Label htmlFor="diskIops" className="text-xs text-muted-foreground">{t("diskIops")}</Label>
                 <Input
                   id="diskIops"
                   type="number"
@@ -632,7 +644,7 @@ export function CreateFunctionDialog({
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="diskBw" className="text-xs text-muted-foreground">Disk BW (B/s)</Label>
+                <Label htmlFor="diskBw" className="text-xs text-muted-foreground">{t("diskBw")}</Label>
                 <Input
                   id="diskBw"
                   type="number"
@@ -644,7 +656,7 @@ export function CreateFunctionDialog({
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="netRx" className="text-xs text-muted-foreground">Net RX (B/s)</Label>
+                <Label htmlFor="netRx" className="text-xs text-muted-foreground">{t("netRx")}</Label>
                 <Input
                   id="netRx"
                   type="number"
@@ -656,7 +668,7 @@ export function CreateFunctionDialog({
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="netTx" className="text-xs text-muted-foreground">Net TX (B/s)</Label>
+                <Label htmlFor="netTx" className="text-xs text-muted-foreground">{t("netTx")}</Label>
                 <Input
                   id="netTx"
                   type="number"
@@ -672,13 +684,13 @@ export function CreateFunctionDialog({
 
           {/* Network Policy */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium">Network Policy</Label>
+            <Label className="text-sm font-medium">{t("networkPolicy")}</Label>
             <p className="text-xs text-muted-foreground mb-2">
-              Configure ingress/egress policy at creation time.
+              {t("networkPolicyHelp")}
             </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Isolation Mode</Label>
+                <Label className="text-xs text-muted-foreground">{t("isolationMode")}</Label>
                 <Select value={isolationMode} onValueChange={setIsolationMode}>
                   <SelectTrigger className="h-9">
                     <SelectValue />
@@ -691,7 +703,7 @@ export function CreateFunctionDialog({
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Deny External Access</Label>
+                <Label className="text-xs text-muted-foreground">{t("denyExternalAccess")}</Label>
                 <Select value={denyExternalAccess} onValueChange={setDenyExternalAccess}>
                   <SelectTrigger className="h-9">
                     <SelectValue />
@@ -706,13 +718,13 @@ export function CreateFunctionDialog({
 
             <div className="pt-2 space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs text-muted-foreground">Ingress Rules</Label>
+                <Label className="text-xs text-muted-foreground">{t("ingressRules")}</Label>
                 <Button type="button" variant="outline" size="sm" onClick={addIngressRule}>
-                  Add Rule
+                  {t("addRule")}
                 </Button>
               </div>
               {ingressRules.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No ingress rules configured.</p>
+                <p className="text-xs text-muted-foreground">{t("noIngressRules")}</p>
               ) : (
                 ingressRules.map((rule, index) => (
                   <div key={`create-ingress-${index}`} className="grid grid-cols-[1fr_100px_110px_auto] gap-2 items-end">
@@ -750,13 +762,13 @@ export function CreateFunctionDialog({
 
             <div className="pt-2 space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs text-muted-foreground">Egress Rules</Label>
+                <Label className="text-xs text-muted-foreground">{t("egressRules")}</Label>
                 <Button type="button" variant="outline" size="sm" onClick={addEgressRule}>
-                  Add Rule
+                  {t("addRule")}
                 </Button>
               </div>
               {egressRules.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No egress rules configured.</p>
+                <p className="text-xs text-muted-foreground">{t("noEgressRules")}</p>
               ) : (
                 egressRules.map((rule, index) => (
                   <div key={`create-egress-${index}`} className="grid grid-cols-[1fr_100px_110px_auto] gap-2 items-end">
@@ -795,14 +807,14 @@ export function CreateFunctionDialog({
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={handleClose}>
-              Cancel
+              {tc("cancel")}
             </Button>
             <Button
               type="submit"
               disabled={!name.trim() || !code.trim() || submitting}
             >
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create Function
+              {tc("create")}
             </Button>
           </DialogFooter>
         </form>
