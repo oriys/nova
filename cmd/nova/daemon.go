@@ -30,6 +30,7 @@ import (
 	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/service"
 	"github.com/oriys/nova/internal/store"
+	"github.com/oriys/nova/internal/wasm"
 	"github.com/oriys/nova/internal/workflow"
 	"github.com/spf13/cobra"
 )
@@ -118,6 +119,13 @@ func daemonCmd() *cobra.Command {
 					return err
 				}
 				be = dockerMgr
+			case "wasm":
+				logging.Op().Info("using WASM backend")
+				wasmMgr, err := wasm.NewManager(&cfg.Wasm)
+				if err != nil {
+					return err
+				}
+				be = wasmMgr
 			default:
 				logging.Op().Info("using Firecracker backend")
 				adapter, err := firecracker.NewAdapter(&cfg.Firecracker)
