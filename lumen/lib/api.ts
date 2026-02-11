@@ -483,6 +483,24 @@ export interface FunctionDiagnostics {
   slow_invocations: FunctionDiagnosticsSlowInvocation[];
 }
 
+// Performance Recommendations types
+export interface PerformanceRecommendation {
+  category: string;
+  priority: string;
+  current_value: any;
+  recommended_value: any;
+  reasoning: string;
+  expected_impact: string;
+  metrics?: Record<string, string>;
+}
+
+export interface PerformanceRecommendationResponse {
+  recommendations: PerformanceRecommendation[];
+  confidence: number;
+  estimated_savings?: string;
+  analysis_summary: string;
+}
+
 export interface GlobalMetrics {
   uptime_seconds: number;
   invocations: {
@@ -794,6 +812,11 @@ export const functionsApi = {
 
   heatmap: (name: string, weeks: number = 52) =>
     request<HeatmapPoint[]>(`/functions/${encodeURIComponent(name)}/heatmap?weeks=${weeks}`),
+
+  recommendations: (name: string, days: number = 7) =>
+    request<PerformanceRecommendationResponse>(
+      `/functions/${encodeURIComponent(name)}/recommendations?days=${Math.max(1, Math.floor(days))}`
+    ),
 
   getScalingPolicy: (name: string) =>
     request<AutoScalePolicy>(`/functions/${encodeURIComponent(name)}/scaling`),

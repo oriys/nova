@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/oriys/nova/internal/advisor"
 	"github.com/oriys/nova/internal/ai"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
@@ -146,6 +147,7 @@ type Handler struct {
 	Exec      *executor.Executor
 	Pool      *pool.Pool
 	AIService *ai.Service // Optional: for AI-powered diagnostics analysis
+	Advisor   interface{} // Optional: for performance recommendations (type advisor.PerformanceAdvisor)
 }
 
 type enqueueAsyncInvokeRequest struct {
@@ -209,6 +211,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /functions/{name}/metrics", h.FunctionMetrics)
 	mux.HandleFunc("GET /functions/{name}/diagnostics", h.FunctionDiagnostics)
 	mux.HandleFunc("POST /functions/{name}/diagnostics/analyze", h.AnalyzeFunctionDiagnostics)
+	mux.HandleFunc("GET /functions/{name}/recommendations", h.GetPerformanceRecommendations)
 	mux.HandleFunc("GET /functions/{name}/heatmap", h.FunctionHeatmap)
 	mux.HandleFunc("GET /metrics/heatmap", h.GlobalHeatmap)
 }
@@ -1178,4 +1181,60 @@ func (h *Handler) GlobalTimeSeries(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(timeSeries)
+}
+
+// GetPerformanceRecommendations handles GET /functions/{name}/recommendations
+func (h *Handler) GetPerformanceRecommendations(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// Parse lookback days parameter
+	lookbackDays := 7
+	if days := r.URL.Query().Get("days"); days != "" {
+		if d, err := strconv.Atoi(days); err == nil && d > 0 && d <= 90 {
+			lookbackDays = d
+		}
+	}
+
+	// Create advisor if needed
+	if h.Advisor == nil {
+		adv := &advisor.PerformanceAdvisor{
+			Store:     h.Store,
+			AIService: h.AIService,
+		}
+		h.Advisor = adv
+	}
+
+	// Type assert to get the advisor
+	adv, ok := h.Advisor.(*advisor.PerformanceAdvisor)
+	if !ok {
+		http.Error(w, "performance advisor not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Prepare request
+	req := advisor.RecommendationRequest{
+		FunctionID:      fn.ID,
+		FunctionName:    fn.Name,
+		CurrentMemoryMB: fn.MemoryMB,
+		CurrentTimeoutS: fn.TimeoutS,
+		MinReplicas:     fn.MinReplicas,
+		MaxReplicas:     fn.MaxReplicas,
+		LookbackDays:    lookbackDays,
+	}
+
+	// Get recommendations
+	resp, err := adv.AnalyzePerformance(r.Context(), req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
