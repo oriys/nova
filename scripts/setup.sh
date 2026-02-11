@@ -49,6 +49,92 @@ warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 err()  { echo -e "${RED}[!]${NC} $1" >&2; exit 1; }
 info() { echo -e "${BLUE}[*]${NC} $1"; }
 
+hash_stdin() {
+    if command -v sha256sum &>/dev/null; then
+        sha256sum | awk '{print $1}'
+    elif command -v shasum &>/dev/null; then
+        shasum -a 256 | awk '{print $1}'
+    else
+        err "Neither sha256sum nor shasum found"
+    fi
+}
+
+hash_file() {
+    local file="$1"
+    [[ -f "${file}" ]] || return 1
+
+    if command -v sha256sum &>/dev/null; then
+        sha256sum "${file}" | awk '{print $1}'
+    elif command -v shasum &>/dev/null; then
+        shasum -a 256 "${file}" | awk '{print $1}'
+    else
+        err "Neither sha256sum nor shasum found"
+    fi
+}
+
+hash_string() {
+    local text="$1"
+    printf '%s' "${text}" | hash_stdin
+}
+
+hash_directory() {
+    local dir="$1"
+    [[ -d "${dir}" ]] || return 1
+
+    (
+        cd "${dir}" || exit 1
+        local files
+        files="$(find . -type f | LC_ALL=C sort)"
+        if [[ -z "${files}" ]]; then
+            printf '__empty__'
+            exit 0
+        fi
+
+        local file sum
+        while IFS= read -r file; do
+            [[ -n "${file}" ]] || continue
+            sum="$(hash_file "${file}")" || exit 1
+            printf '%s  %s\n' "${sum}" "${file}"
+        done <<< "${files}"
+    ) | hash_stdin
+}
+
+install_file_if_changed() {
+    local source="$1"
+    local target="$2"
+    local label="$3"
+    local source_hash target_hash
+
+    source_hash="$(hash_file "${source}")" || err "Missing source file for ${label}: ${source}"
+    if [[ -f "${target}" ]]; then
+        target_hash="$(hash_file "${target}" 2>/dev/null || true)"
+    else
+        target_hash=""
+    fi
+
+    if [[ -n "${target_hash}" && "${source_hash}" == "${target_hash}" ]]; then
+        info "  [skip] ${label} unchanged"
+        return 0
+    fi
+
+    install -m 0755 "${source}" "${target}"
+    info "  [update] ${label}"
+}
+
+read_manifest() {
+    local manifest_file="$1"
+    [[ -f "${manifest_file}" ]] || return 1
+
+    cat "${manifest_file}" 2>/dev/null || return 1
+}
+
+write_manifest() {
+    local manifest_file="$1"
+    local value="$2"
+    mkdir -p "$(dirname "${manifest_file}")"
+    printf '%s\n' "${value}" > "${manifest_file}"
+}
+
 # Run independent functions concurrently and fail fast on first error.
 run_parallel_functions() {
     local -a pids=()
@@ -224,6 +310,11 @@ cleanup_existing_binaries() {
 }
 
 cleanup_deploy_build_binaries() {
+    if [[ "${NOVA_CLEAN_DEPLOY_BINARIES:-0}" != "1" ]]; then
+        info "Skipping deployment build binary cleanup (set NOVA_CLEAN_DEPLOY_BINARIES=1 to enable)"
+        return 0
+    fi
+
     local deploy_bin="${DEPLOY_DIR}/bin"
     local install_bin="${INSTALL_DIR}/bin"
 
@@ -282,20 +373,11 @@ stop_existing_services() {
 }
 
 reset_installation_state() {
-    log "Resetting installation state (fresh deployment)..."
+    log "Preparing installation state..."
 
     stop_existing_services
 
-    # Remove all runtime artifacts under /opt/nova so every run starts clean.
-    rm -rf \
-        "${INSTALL_DIR}/kernel" \
-        "${INSTALL_DIR}/rootfs" \
-        "${INSTALL_DIR}/bin" \
-        "${INSTALL_DIR}/snapshots" \
-        "${INSTALL_DIR}/configs" \
-        "${INSTALL_DIR}/lumen"
-
-    # Remove transient runtime state.
+    # Keep deployed artifacts for incremental runs; only clear transient runtime state.
     rm -rf /tmp/nova
 }
 
@@ -767,12 +849,66 @@ build_bun_rootfs() {
     log "bun.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
+rootfs_manifest_path() {
+    echo "${INSTALL_DIR}/rootfs/.build-manifest"
+}
+
+rootfs_build_fingerprint() {
+    local agent_hash script_hash
+    agent_hash="$(hash_file "${AGENT_BIN}" 2>/dev/null || echo "missing-agent")"
+    script_hash="$(hash_file "${SCRIPT_DIR}/setup.sh" 2>/dev/null || echo "missing-script")"
+
+    hash_string "agent=${agent_hash};alpine=${ALPINE_URL};wasmtime=${WASMTIME_VERSION};deno=${DENO_VERSION};bun=${BUN_VERSION};dotnet=${DOTNET_VERSION};rootfs=${ROOTFS_SIZE_MB};rootfs_java=${ROOTFS_SIZE_JAVA_MB};script=${script_hash}"
+}
+
+rootfs_images_exist() {
+    local -a images=(
+        "base.ext4"
+        "python.ext4"
+        "wasm.ext4"
+        "node.ext4"
+        "ruby.ext4"
+        "java.ext4"
+        "php.ext4"
+        "dotnet.ext4"
+        "deno.ext4"
+        "bun.ext4"
+    )
+
+    local image
+    for image in "${images[@]}"; do
+        [[ -f "${INSTALL_DIR}/rootfs/${image}" ]] || return 1
+    done
+    return 0
+}
+
+rootfs_is_up_to_date() {
+    local manifest_file expected current
+    manifest_file="$(rootfs_manifest_path)"
+    rootfs_images_exist || return 1
+
+    expected="$(read_manifest "${manifest_file}" || true)"
+    [[ -n "${expected}" ]] || return 1
+    current="$(rootfs_build_fingerprint)"
+
+    [[ "${expected}" == "${current}" ]]
+}
+
+write_rootfs_manifest() {
+    write_manifest "$(rootfs_manifest_path)" "$(rootfs_build_fingerprint)"
+}
+
 # Build all rootfs images in controlled parallel batches.
 # Dependency order is preserved at stage level (this runs only after binaries are deployed).
 build_rootfs_images() {
     local max_jobs="${NOVA_ROOTFS_JOBS:-$(default_parallel_jobs)}"
     if ! [[ "${max_jobs}" =~ ^[0-9]+$ ]] || [[ "${max_jobs}" -lt 1 ]]; then
         max_jobs="$(default_parallel_jobs)"
+    fi
+
+    if rootfs_is_up_to_date; then
+        log "Rootfs artifacts unchanged, skipping rebuild"
+        return 0
     fi
 
     local builders=(
@@ -794,59 +930,61 @@ build_rootfs_images() {
         for fn in "${builders[@]}"; do
             "${fn}"
         done
-        return
-    fi
+    else
+        log "Building rootfs images with concurrency=${max_jobs}..."
+        local total=${#builders[@]}
+        local i=0
 
-    log "Building rootfs images with concurrency=${max_jobs}..."
-    local total=${#builders[@]}
-    local i=0
+        while [[ ${i} -lt ${total} ]]; do
+            local -a pids=()
+            local -a names=()
+            local launched=0
 
-    while [[ ${i} -lt ${total} ]]; do
-        local -a pids=()
-        local -a names=()
-        local launched=0
+            while [[ ${launched} -lt ${max_jobs} && ${i} -lt ${total} ]]; do
+                local fn="${builders[$i]}"
+                info "  [start] ${fn}"
+                "${fn}" &
+                pids+=("$!")
+                names+=("${fn}")
+                i=$((i + 1))
+                launched=$((launched + 1))
+            done
 
-        while [[ ${launched} -lt ${max_jobs} && ${i} -lt ${total} ]]; do
-            local fn="${builders[$i]}"
-            info "  [start] ${fn}"
-            "${fn}" &
-            pids+=("$!")
-            names+=("${fn}")
-            i=$((i + 1))
-            launched=$((launched + 1))
-        done
-
-        local idx
-        local batch_failed=0
-        local batch_failed_names=""
-        for idx in "${!pids[@]}"; do
-            if wait "${pids[$idx]}"; then
-                log "  [done] ${names[$idx]}"
-            else
-                batch_failed=$((batch_failed + 1))
-                if [[ -z "${batch_failed_names}" ]]; then
-                    batch_failed_names="${names[$idx]}"
+            local idx
+            local batch_failed=0
+            local batch_failed_names=""
+            for idx in "${!pids[@]}"; do
+                if wait "${pids[$idx]}"; then
+                    log "  [done] ${names[$idx]}"
                 else
-                    batch_failed_names="${batch_failed_names}, ${names[$idx]}"
+                    batch_failed=$((batch_failed + 1))
+                    if [[ -z "${batch_failed_names}" ]]; then
+                        batch_failed_names="${names[$idx]}"
+                    else
+                        batch_failed_names="${batch_failed_names}, ${names[$idx]}"
+                    fi
                 fi
+            done
+            if [[ "${batch_failed}" -gt 0 ]]; then
+                err "Rootfs build failed (${batch_failed} task(s)): ${batch_failed_names}"
             fi
         done
-        if [[ "${batch_failed}" -gt 0 ]]; then
-            err "Rootfs build failed (${batch_failed} task(s)): ${batch_failed_names}"
-        fi
-    done
+    fi
+
+    write_rootfs_manifest
+    log "Updated rootfs build manifest"
 }
 
 # ─── Backend Services ────────────────────────────────────
 deploy_backend_services() {
     log "Deploying backend services..."
 
-    # Copy binaries
-    install -m 0755 "${NOVA_BIN}" "${INSTALL_DIR}/bin/nova"
-    install -m 0755 "${COMET_BIN}" "${INSTALL_DIR}/bin/comet"
-    install -m 0755 "${ZENITH_BIN}" "${INSTALL_DIR}/bin/zenith"
-    install -m 0755 "${AGENT_BIN}" "${INSTALL_DIR}/bin/nova-agent"
-    log "Installed backend binaries to ${INSTALL_DIR}/bin/"
+    # Copy binaries only when content changed.
+    install_file_if_changed "${NOVA_BIN}" "${INSTALL_DIR}/bin/nova" "nova binary"
+    install_file_if_changed "${COMET_BIN}" "${INSTALL_DIR}/bin/comet" "comet binary"
+    install_file_if_changed "${ZENITH_BIN}" "${INSTALL_DIR}/bin/zenith" "zenith binary"
+    install_file_if_changed "${AGENT_BIN}" "${INSTALL_DIR}/bin/nova-agent" "nova-agent binary"
+    log "Backend binary deployment check complete"
 
     # Generate config
     mkdir -p "${INSTALL_DIR}/configs"
@@ -929,39 +1067,93 @@ EOF
 }
 
 # ─── Lumen Frontend ──────────────────────────────────────
+lumen_manifest_path() {
+    echo "${INSTALL_DIR}/lumen/.build-manifest"
+}
+
+lumen_source_fingerprint() {
+    local lumen_src="$1"
+    [[ -d "${lumen_src}" ]] || return 1
+
+    (
+        cd "${lumen_src}" || exit 1
+        local files
+        files="$(find . \
+            -path './node_modules' -prune -o \
+            -path './.next' -prune -o \
+            -type f -print | LC_ALL=C sort)"
+
+        if [[ -z "${files}" ]]; then
+            printf '__empty__'
+            exit 0
+        fi
+
+        local file sum
+        while IFS= read -r file; do
+            [[ -n "${file}" ]] || continue
+            sum="$(hash_file "${file}")" || exit 1
+            printf '%s  %s\n' "${sum}" "${file}"
+        done <<< "${files}"
+    ) | hash_stdin
+}
+
+lumen_is_up_to_date() {
+    local lumen_src="$1"
+    local manifest_file expected current
+
+    manifest_file="$(lumen_manifest_path)"
+    [[ -f "${INSTALL_DIR}/lumen/server.js" ]] || return 1
+    expected="$(read_manifest "${manifest_file}" || true)"
+    [[ -n "${expected}" ]] || return 1
+
+    current="$(lumen_source_fingerprint "${lumen_src}")" || return 1
+    [[ "${expected}" == "${current}" ]]
+}
+
 deploy_lumen_frontend() {
     log "Deploying Lumen frontend..."
 
     local lumen_src="${DEPLOY_DIR}/lumen"
+    local source_fingerprint
 
     if [[ ! -d "${lumen_src}" ]]; then
         err "Lumen source directory not found at ${lumen_src}"
     fi
 
-    # Build Lumen
-    log "Building Lumen (this may take a while)..."
-    cd "${lumen_src}"
-    npm install --silent 2>/dev/null
-    npm run build 2>/dev/null
-
-    # Deploy standalone build
-    mkdir -p "${INSTALL_DIR}/lumen"
-
-    # Copy standalone output
-    if [[ -d "${lumen_src}/.next/standalone" ]]; then
-        cp -r "${lumen_src}/.next/standalone/." "${INSTALL_DIR}/lumen/"
-        # Copy static files
-        if [[ -d "${lumen_src}/.next/static" ]]; then
-            mkdir -p "${INSTALL_DIR}/lumen/.next/static"
-            cp -r "${lumen_src}/.next/static/." "${INSTALL_DIR}/lumen/.next/static/"
-        fi
-        # Copy public files if they exist
-        if [[ -d "${lumen_src}/public" ]]; then
-            cp -r "${lumen_src}/public" "${INSTALL_DIR}/lumen/"
-        fi
-        log "Deployed Lumen standalone build to ${INSTALL_DIR}/lumen/"
+    if lumen_is_up_to_date "${lumen_src}"; then
+        log "Lumen source unchanged, skipping npm build and deploy"
     else
-        err "Next.js standalone build not found. Make sure next.config.ts has output: 'standalone'"
+        source_fingerprint="$(lumen_source_fingerprint "${lumen_src}")" || err "Failed to compute Lumen source fingerprint"
+
+        # Build Lumen
+        log "Building Lumen (this may take a while)..."
+        (
+            cd "${lumen_src}" || exit 1
+            npm install --silent 2>/dev/null
+            npm run build 2>/dev/null
+        )
+
+        # Deploy standalone build
+        rm -rf "${INSTALL_DIR}/lumen"
+        mkdir -p "${INSTALL_DIR}/lumen"
+
+        # Copy standalone output
+        if [[ -d "${lumen_src}/.next/standalone" ]]; then
+            cp -r "${lumen_src}/.next/standalone/." "${INSTALL_DIR}/lumen/"
+            # Copy static files
+            if [[ -d "${lumen_src}/.next/static" ]]; then
+                mkdir -p "${INSTALL_DIR}/lumen/.next/static"
+                cp -r "${lumen_src}/.next/static/." "${INSTALL_DIR}/lumen/.next/static/"
+            fi
+            # Copy public files if they exist
+            if [[ -d "${lumen_src}/public" ]]; then
+                cp -r "${lumen_src}/public" "${INSTALL_DIR}/lumen/"
+            fi
+            write_manifest "$(lumen_manifest_path)" "${source_fingerprint}"
+            log "Deployed Lumen standalone build to ${INSTALL_DIR}/lumen/"
+        else
+            err "Next.js standalone build not found. Make sure next.config.ts has output: 'standalone'"
+        fi
     fi
 
     # Create systemd service
