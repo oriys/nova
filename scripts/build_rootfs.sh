@@ -327,6 +327,14 @@ build_deno_rootfs() {
   # deno release is glibc-linked; add compatibility layer.
   apk_add "${tmp}" gcompat libstdc++
 
+  # gcompat does not provide __res_init (glibc resolver symbol);
+  # build a minimal stub so the dynamic linker can resolve it.
+  apk_add "${tmp}" build-base
+  printf 'int __res_init(void){return 0;}\n' > "${tmp}/tmp/res_stub.c"
+  chroot "${tmp}" /bin/sh -c "gcc -shared -o /lib/libresolv_stub.so /tmp/res_stub.c"
+  rm -f "${tmp}/tmp/res_stub.c"
+  chroot "${tmp}" /bin/sh -c "apk del --no-cache build-base" >/dev/null 2>&1
+
   local deno_tmp
   deno_tmp="$(mktemp -d)"
   
