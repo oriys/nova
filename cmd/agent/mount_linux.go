@@ -42,6 +42,14 @@ func mountCodeDrive() {
 		os.Exit(1)
 	}
 
+	// Mount procfs at /proc. Some runtimes (e.g. Deno) call readlink("/proc/self/exe")
+	// at startup to resolve their binary path, and will fail without it.
+	_ = os.MkdirAll("/proc", 0755)
+	if err := unix.Mount("proc", "/proc", "proc", 0, ""); err != nil && !errors.Is(err, unix.EBUSY) {
+		fmt.Fprintf(os.Stderr, "[agent] Mount procfs: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Rootfs is mounted read-only for sharing; provide a writable tmpfs at /tmp.
 	// This is needed because the agent writes request payloads to /tmp/input.json.
 	if err := unix.Mount("tmpfs", "/tmp", "tmpfs", 0, "mode=1777,size=64m"); err != nil && !errors.Is(err, unix.EBUSY) {
