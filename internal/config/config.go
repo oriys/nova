@@ -9,6 +9,7 @@ import (
 
 	"github.com/oriys/nova/internal/docker"
 	"github.com/oriys/nova/internal/firecracker"
+	"github.com/oriys/nova/internal/wasm"
 )
 
 // PostgresConfig holds Postgres connection settings
@@ -170,6 +171,7 @@ type AutoScaleConfig struct {
 type Config struct {
 	Firecracker   firecracker.Config    `json:"firecracker"`
 	Docker        docker.Config         `json:"docker"`
+	Wasm          wasm.Config           `json:"wasm"`
 	Postgres      PostgresConfig        `json:"postgres"`
 	Pool          PoolConfig            `json:"pool"`
 	Executor      ExecutorConfig        `json:"executor"`
@@ -189,9 +191,11 @@ type Config struct {
 func DefaultConfig() *Config {
 	fcCfg := firecracker.DefaultConfig()
 	dockerCfg := docker.DefaultConfig()
+	wasmCfg := wasm.DefaultConfig()
 	return &Config{
 		Firecracker: *fcCfg,
 		Docker:      *dockerCfg,
+		Wasm:        *wasmCfg,
 		Postgres: PostgresConfig{
 			DSN: "postgres://nova:nova@localhost:5432/nova?sslmode=disable",
 		},
@@ -569,6 +573,34 @@ func LoadFromEnv(cfg *Config) {
 	if v := os.Getenv("NOVA_EXECUTOR_LOG_TIMEOUT"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			cfg.Executor.LogTimeout = d
+		}
+	}
+
+	// WASM backend overrides
+	if v := os.Getenv("NOVA_WASM_CODE_DIR"); v != "" {
+		cfg.Wasm.CodeDir = v
+	}
+	if v := os.Getenv("NOVA_WASM_AGENT_PATH"); v != "" {
+		cfg.Wasm.AgentPath = v
+	}
+	if v := os.Getenv("NOVA_WASM_PORT_RANGE_MIN"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Wasm.PortRangeMin = n
+		}
+	}
+	if v := os.Getenv("NOVA_WASM_PORT_RANGE_MAX"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Wasm.PortRangeMax = n
+		}
+	}
+	if v := os.Getenv("NOVA_WASM_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Wasm.DefaultTimeout = d
+		}
+	}
+	if v := os.Getenv("NOVA_WASM_AGENT_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Wasm.AgentTimeout = d
 		}
 	}
 }

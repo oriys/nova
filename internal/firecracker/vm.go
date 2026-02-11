@@ -55,7 +55,7 @@ const (
 )
 
 type Config struct {
-	Backend             string // "firecracker" or "docker"
+	Backend             string // "firecracker", "docker", or "wasm"
 	FirecrackerBin      string
 	KernelPath          string
 	RootfsDir           string
