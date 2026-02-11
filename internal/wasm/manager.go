@@ -27,7 +27,6 @@ import (
 )
 
 const (
-	agentPort      = 9999
 	defaultTimeout = 30 * time.Second
 )
 
@@ -170,8 +169,8 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 func (m *Manager) startAgent(ctx context.Context, vmID string, fn *domain.Function, port int, codeDir string) (*backend.VM, error) {
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 
-	// Start nova-agent as a host process
-	cmd := exec.CommandContext(ctx, m.config.AgentPath)
+	// Use a background context for the agent process so it outlives the caller's request context.
+	cmd := exec.Command(m.config.AgentPath)
 	cmd.Env = append(os.Environ(),
 		"NOVA_AGENT_MODE=tcp",
 		fmt.Sprintf("NOVA_AGENT_PORT=%d", port),
@@ -207,7 +206,9 @@ func (m *Manager) startAgent(ctx context.Context, vmID string, fn *domain.Functi
 		agentTimeout = 10 * time.Second
 	}
 	if err := waitForAgent(addr, agentTimeout); err != nil {
-		cmd.Process.Kill()
+		if killErr := cmd.Process.Kill(); killErr != nil {
+			logging.Op().Debug("agent kill error during cleanup", "error", killErr)
+		}
 		cmd.Wait()
 		return nil, fmt.Errorf("agent not ready: %w", err)
 	}
@@ -255,8 +256,12 @@ func (m *Manager) StopVM(vmID string) error {
 
 func (m *Manager) stopAgent(ap *agentProcess) error {
 	if ap.cmd != nil && ap.cmd.Process != nil {
-		ap.cmd.Process.Kill()
-		ap.cmd.Wait()
+		if err := ap.cmd.Process.Kill(); err != nil {
+			logging.Op().Debug("agent kill error (may have already exited)", "error", err)
+		}
+		if err := ap.cmd.Wait(); err != nil {
+			logging.Op().Debug("agent wait error", "error", err)
+		}
 	}
 
 	// Clean up code directory
