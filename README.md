@@ -103,6 +103,11 @@ Nova 是一个极简的 Serverless 平台，基于 [Firecracker](https://github.
 ### 调度
 - Cron 式定时调用（`@every`、`@hourly`、`@daily`）
 
+### 前端（Lumen Dashboard）
+- 基于 Next.js 16 + React 19 的 Web 管理控制台
+- 国际化（i18n）支持：English、简体中文、繁體中文、日本語、Français
+- 通过浏览器语言偏好自动检测，或通过头部工具栏切换语言
+
 ### 资源限制
 
 | 限制类型 | CLI 参数 | 默认值 | 说明 |
