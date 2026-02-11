@@ -35,6 +35,8 @@ type VM struct {
 	DockerContainerID string    // Docker container ID
 	AssignedPort      int       // Docker: host port mapped to agent
 	CodeDir           string    // Docker: mounted code directory
+	KubePod           string    // Kubernetes: pod name
+	KubeNS            string    // Kubernetes: namespace
 	CreatedAt         time.Time
 	LastUsed          time.Time
 	mu                sync.RWMutex
