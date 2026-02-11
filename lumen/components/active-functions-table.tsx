@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { FunctionData } from "@/lib/types"
@@ -12,16 +13,18 @@ interface ActiveFunctionsTableProps {
 }
 
 export function ActiveFunctionsTable({ functions, loading }: ActiveFunctionsTableProps) {
+  const t = useTranslations("activeFunctionsTable")
+
   if (loading) {
     return (
       <div className="rounded-xl border border-border bg-card">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div>
             <h3 className="text-sm font-semibold text-card-foreground">
-              Active Functions
+              {t("title")}
             </h3>
             <p className="text-xs text-muted-foreground">
-              Top functions by invocations
+              {t("description")}
             </p>
           </div>
         </div>
@@ -37,23 +40,23 @@ export function ActiveFunctionsTable({ functions, loading }: ActiveFunctionsTabl
       <div className="flex items-center justify-between border-b border-border px-6 py-4">
         <div>
           <h3 className="text-sm font-semibold text-card-foreground">
-            Active Functions
+            {t("title")}
           </h3>
           <p className="text-xs text-muted-foreground">
-            Top functions by invocations
+            {t("description")}
           </p>
         </div>
         <Link
           href="/functions"
           className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
         >
-          View all
+          {t("viewAll")}
           <ArrowRight className="h-3 w-3" />
         </Link>
       </div>
       {functions.length === 0 ? (
         <div className="py-8 text-center">
-          <p className="text-sm text-muted-foreground">No functions found</p>
+          <p className="text-sm text-muted-foreground">{t("noFunctions")}</p>
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -61,16 +64,16 @@ export function ActiveFunctionsTable({ functions, loading }: ActiveFunctionsTabl
             <thead>
               <tr className="border-b border-border bg-muted/30">
                 <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground">
-                  Name
+                  {t("name")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground">
-                  Runtime
+                  {t("runtime")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground">
-                  Status
+                  {t("status")}
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground">
-                  Invocations
+                  {t("invocations")}
                 </th>
               </tr>
             </thead>

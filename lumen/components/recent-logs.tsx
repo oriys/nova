@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { LogEntry } from "@/lib/types"
 import { ArrowRight, Info, AlertTriangle, XCircle, Bug, Loader2 } from "lucide-react"
@@ -18,16 +19,18 @@ const levelConfig = {
 }
 
 export function RecentLogs({ logs, loading }: RecentLogsProps) {
+  const t = useTranslations("recentLogs")
+
   if (loading) {
     return (
       <div className="rounded-xl border border-border bg-card">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div>
             <h3 className="text-sm font-semibold text-card-foreground">
-              Recent Logs
+              {t("title")}
             </h3>
             <p className="text-xs text-muted-foreground">
-              Latest function executions
+              {t("description")}
             </p>
           </div>
         </div>
@@ -43,23 +46,23 @@ export function RecentLogs({ logs, loading }: RecentLogsProps) {
       <div className="flex items-center justify-between border-b border-border px-6 py-4">
         <div>
           <h3 className="text-sm font-semibold text-card-foreground">
-            Recent Logs
+            {t("title")}
           </h3>
           <p className="text-xs text-muted-foreground">
-            Latest function executions
+            {t("description")}
           </p>
         </div>
         <Link
           href="/functions"
           className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
         >
-          View all
+          {t("viewAll")}
           <ArrowRight className="h-3 w-3" />
         </Link>
       </div>
       {logs.length === 0 ? (
         <div className="py-8 text-center">
-          <p className="text-sm text-muted-foreground">No logs available</p>
+          <p className="text-sm text-muted-foreground">{t("noLogs")}</p>
         </div>
       ) : (
         <div className="divide-y divide-border">

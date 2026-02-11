@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useEffect, useRef, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
+import { useTranslations } from "next-intl"
 import { Bell, Search, User, BookOpenText, Server } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -31,6 +32,8 @@ export function Header({ title, description }: HeaderProps) {
   const pathname = usePathname()
   const router = useRouter()
   const health = useHealth(15000)
+  const t = useTranslations("header")
+  const tc = useTranslations("common")
   const [query, setQuery] = useState("")
   const [searchResults, setSearchResults] = useState<NovaFunction[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
@@ -199,7 +202,7 @@ export function Header({ title, description }: HeaderProps) {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="search"
-            placeholder="Search functions..."
+            placeholder={t("searchPlaceholder")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => setSearchFocused(true)}
@@ -242,9 +245,9 @@ export function Header({ title, description }: HeaderProps) {
           {showSearchDropdown && (
             <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-50 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
               {searchLoading ? (
-                <div className="px-3 py-2 text-sm text-muted-foreground">Searching...</div>
+                <div className="px-3 py-2 text-sm text-muted-foreground">{t("searching")}</div>
               ) : searchResults.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-muted-foreground">No matching functions</div>
+                <div className="px-3 py-2 text-sm text-muted-foreground">{t("noMatchingFunctions")}</div>
               ) : (
                 <ul className="max-h-80 overflow-y-auto py-1">
                   {searchResults.map((fn, index) => (
@@ -282,8 +285,8 @@ export function Header({ title, description }: HeaderProps) {
             size="icon-sm"
             className="relative hidden lg:inline-flex"
             onClick={() => setHealthOpen((prev) => !prev)}
-            aria-label="System health"
-            title="System health"
+            aria-label={t("systemHealth")}
+            title={t("systemHealth")}
           >
             <Server className="h-4 w-4" />
             <span className={cn("absolute right-1.5 top-1.5 h-2 w-2 rounded-full", healthClassName[health.status])} />
@@ -292,15 +295,15 @@ export function Header({ title, description }: HeaderProps) {
           {healthOpen && (
             <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-72 rounded-lg border border-border bg-popover p-3 shadow-lg">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-popover-foreground">System Health</p>
+                <p className="text-sm font-medium text-popover-foreground">{t("systemHealth")}</p>
                 <Button variant="ghost" size="sm" onClick={() => health.refresh()}>
-                  Refresh
+                  {tc("refresh")}
                 </Button>
               </div>
 
               <div className="mt-2 rounded-md border border-border bg-muted/20 p-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">Overall</span>
+                  <span className="text-xs text-muted-foreground">{t("overall")}</span>
                   <span className="flex items-center gap-2 text-xs capitalize text-popover-foreground">
                     <span className={cn("h-2 w-2 rounded-full", healthClassName[health.status])} />
                     {health.status}
@@ -310,7 +313,7 @@ export function Header({ title, description }: HeaderProps) {
 
               <div className="mt-2 space-y-1">
                 {Object.entries(health.components).length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No component details yet.</p>
+                  <p className="text-xs text-muted-foreground">{t("noComponentDetails")}</p>
                 ) : (
                   Object.entries(health.components).map(([name, level]) => (
                     <div key={name} className="flex items-center justify-between rounded border border-border px-2 py-1">
@@ -329,7 +332,7 @@ export function Header({ title, description }: HeaderProps) {
               )}
               {health.updatedAt && (
                 <p className="mt-2 text-[11px] text-muted-foreground">
-                  Updated {health.updatedAt.toLocaleTimeString()}
+                  {t("updated")} {health.updatedAt.toLocaleTimeString()}
                 </p>
               )}
             </div>
@@ -344,7 +347,7 @@ export function Header({ title, description }: HeaderProps) {
         </Button>
 
         <Button asChild variant={isDocsPage ? "secondary" : "ghost"} size="icon">
-          <Link href="/docs" aria-label="Open docs" title="Open docs">
+          <Link href="/docs" aria-label={t("openDocs")} title={t("openDocs")}>
             <BookOpenText className="h-5 w-5 text-muted-foreground" />
           </Link>
         </Button>

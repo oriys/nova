@@ -1,5 +1,6 @@
 "use client"
 
+import { useTranslations } from "next-intl"
 import {
   AreaChart,
   Area,
@@ -59,6 +60,7 @@ function formatTime(iso: string, range: TimeRange): string {
 }
 
 export function DashboardCharts({ data, range, onRangeChange, loading }: DashboardChartsProps) {
+  const t = useTranslations("charts")
   const formattedData = data.map((d) => ({
     ...d,
     time: formatTime(d.time, range),
@@ -113,7 +115,7 @@ export function DashboardCharts({ data, range, onRangeChange, loading }: Dashboa
         <div className="rounded-xl border border-border bg-card p-6">
           <div className="mb-4">
             <h3 className="text-sm font-semibold text-card-foreground">
-              Function Invocations
+              {t("functionInvocations")}
             </h3>
           </div>
           <div className="h-64">
@@ -157,7 +159,7 @@ export function DashboardCharts({ data, range, onRangeChange, loading }: Dashboa
                   stroke="var(--foreground)"
                   strokeWidth={2}
                   fill="url(#invocationsGradient)"
-                  name="Invocations"
+                  name={t("invocations")}
                 />
                 <Area
                   type="monotone"
@@ -165,7 +167,7 @@ export function DashboardCharts({ data, range, onRangeChange, loading }: Dashboa
                   stroke="var(--destructive)"
                   strokeWidth={2}
                   fill="url(#errorsGradient)"
-                  name="Errors"
+                  name={t("errorsLabel")}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -176,7 +178,7 @@ export function DashboardCharts({ data, range, onRangeChange, loading }: Dashboa
         <div className="rounded-xl border border-border bg-card p-6">
           <div className="mb-4">
             <h3 className="text-sm font-semibold text-card-foreground">
-              Avg Execution Time (ms)
+              {t("avgExecutionTime")}
             </h3>
           </div>
           <div className="h-64">
@@ -203,14 +205,14 @@ export function DashboardCharts({ data, range, onRangeChange, loading }: Dashboa
                     fontSize: "12px",
                     color: "var(--popover-foreground)",
                   }}
-                  formatter={(value: number) => [`${Math.round(value)}ms`, "Avg Duration"]}
+                  formatter={(value: number) => [`${Math.round(value)}ms`, t("avgDuration")]}
                 />
                 <Bar
                   dataKey="avgDuration"
                   fill="var(--foreground)"
                   fillOpacity={0.8}
                   radius={[4, 4, 0, 0]}
-                  name="Avg Duration"
+                  name={t("avgDuration")}
                 />
               </BarChart>
             </ResponsiveContainer>

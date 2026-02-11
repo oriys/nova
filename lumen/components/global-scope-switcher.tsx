@@ -2,7 +2,8 @@
 
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Globe2, RefreshCw, Settings2 } from "lucide-react"
+import { useTranslations } from "next-intl"
+import { Building2, RefreshCw, Settings2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -10,14 +11,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { NamespaceEntry, TenantEntry, tenantsApi } from "@/lib/api"
 import { DEFAULT_NAMESPACE, DEFAULT_TENANT_ID, getTenantScope, normalizeTenantScope, setTenantScope } from "@/lib/tenant-scope"
 
-function toErrorMessage(error: unknown): string {
+function toErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim()) {
     return error.message.trim()
   }
-  return "Failed to load tenant options."
+  return fallback
 }
 
 export function GlobalScopeSwitcher() {
+  const t = useTranslations("scopeSwitcher")
+  const tc = useTranslations("common")
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [applying, setApplying] = useState(false)
@@ -69,11 +72,11 @@ export function GlobalScopeSwitcher() {
 
       await loadNamespaces(nextTenant, scope.namespace)
     } catch (err) {
-      setError(toErrorMessage(err))
+      setError(toErrorMessage(err, t("failedToLoad")))
     } finally {
       setLoading(false)
     }
-  }, [loadNamespaces])
+  }, [loadNamespaces, t])
 
   useEffect(() => {
     syncScope()
@@ -98,7 +101,7 @@ export function GlobalScopeSwitcher() {
     try {
       await loadNamespaces(tenantID)
     } catch (err) {
-      setError(toErrorMessage(err))
+      setError(toErrorMessage(err, t("failedToLoad")))
     } finally {
       setLoading(false)
     }
@@ -131,10 +134,10 @@ export function GlobalScopeSwitcher() {
           variant="outline"
           size="icon"
           onClick={() => setOpen(true)}
-          title={`Current scope: ${scopeText}`}
-          aria-label="Switch tenant scope"
+          title={t("currentScope", { scope: scopeText })}
+          aria-label={t("switchScope")}
         >
-          <Globe2 className="h-4 w-4" />
+          <Building2 className="h-4 w-4" />
         </Button>
         <div className="pointer-events-none absolute right-0 top-[calc(100%+0.5rem)] z-50 hidden rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-sm group-hover:block">
           {scopeText}
@@ -143,20 +146,20 @@ export function GlobalScopeSwitcher() {
 
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Global Tenant Scope</DialogTitle>
+          <DialogTitle>{t("title")}</DialogTitle>
           <DialogDescription>
-            Quick switch tenant and namespace for all pages.
+            {t("description")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">Tenant</label>
+              <label className="text-sm font-medium">{t("tenant")}</label>
               <Button
                 variant="ghost"
                 size="icon-xs"
-                title="Refresh tenant list"
+                title={t("refreshTenantList")}
                 onClick={() => void loadOptions()}
                 disabled={loading}
               >
@@ -169,7 +172,7 @@ export function GlobalScopeSwitcher() {
               disabled={loading || tenants.length === 0}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select tenant" />
+                <SelectValue placeholder={t("selectTenant")} />
               </SelectTrigger>
               <SelectContent align="start">
                 {tenants.map((tenant) => (
@@ -182,14 +185,14 @@ export function GlobalScopeSwitcher() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Namespace</label>
+            <label className="text-sm font-medium">{t("namespace")}</label>
             <Select
               value={namespaceDraft}
               onValueChange={setNamespaceDraft}
               disabled={loading || namespaces.length === 0}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select namespace" />
+                <SelectValue placeholder={t("selectNamespace")} />
               </SelectTrigger>
               <SelectContent align="start">
                 {namespaces.map((namespace) => (
@@ -212,15 +215,15 @@ export function GlobalScopeSwitcher() {
           <Button type="button" variant="outline" asChild>
             <Link href="/tenancy" onClick={() => setOpen(false)}>
               <Settings2 className="h-4 w-4 mr-1.5" />
-              Manage
+              {t("manage")}
             </Link>
           </Button>
           <div className="flex items-center gap-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              Cancel
+              {tc("cancel")}
             </Button>
             <Button type="button" onClick={applyScope} disabled={loading || applying}>
-              Apply
+              {t("apply")}
             </Button>
           </div>
         </DialogFooter>
