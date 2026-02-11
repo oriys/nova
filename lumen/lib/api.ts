@@ -1983,6 +1983,7 @@ export interface AIConfigResponse {
   api_key: string;
   model: string;
   base_url: string;
+  prompt_dir?: string;
 }
 
 export interface AIConfigUpdateRequest {
@@ -1990,6 +1991,7 @@ export interface AIConfigUpdateRequest {
   api_key?: string;
   model?: string;
   base_url?: string;
+  prompt_dir?: string;
 }
 
 export interface AIModelEntry {
@@ -2002,6 +2004,25 @@ export interface AIModelEntry {
 export interface AIModelsResponse {
   object: string;
   data: AIModelEntry[];
+}
+
+export interface AIPromptTemplateMeta {
+  name: string;
+  file: string;
+  description: string;
+  customized: boolean;
+}
+
+export interface AIPromptTemplateListResponse {
+  items: AIPromptTemplateMeta[];
+}
+
+export interface AIPromptTemplate extends AIPromptTemplateMeta {
+  content: string;
+}
+
+export interface AIPromptTemplateUpdateRequest {
+  content: string;
 }
 
 // Diagnostics Analysis types
@@ -2052,6 +2073,17 @@ export const aiApi = {
     }),
 
   listModels: () => request<AIModelsResponse>("/ai/models"),
+
+  listPromptTemplates: () => request<AIPromptTemplateListResponse>("/ai/prompts"),
+
+  getPromptTemplate: (name: string) =>
+    request<AIPromptTemplate>(`/ai/prompts/${encodeURIComponent(name)}`),
+
+  updatePromptTemplate: (name: string, data: AIPromptTemplateUpdateRequest) =>
+    request<AIPromptTemplate>(`/ai/prompts/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
 
   generate: (data: AIGenerateRequest) =>
     request<AIGenerateResponse>("/ai/generate", {

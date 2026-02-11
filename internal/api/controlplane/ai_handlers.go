@@ -2,6 +2,7 @@ package controlplane
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/oriys/nova/internal/ai"
@@ -20,6 +21,9 @@ func (h *AIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ai/review", h.Review)
 	mux.HandleFunc("POST /ai/rewrite", h.Rewrite)
 	mux.HandleFunc("POST /ai/analyze-diagnostics", h.AnalyzeDiagnostics)
+	mux.HandleFunc("GET /ai/prompts", h.ListPrompts)
+	mux.HandleFunc("GET /ai/prompts/{name}", h.GetPrompt)
+	mux.HandleFunc("PUT /ai/prompts/{name}", h.UpdatePrompt)
 	mux.HandleFunc("GET /ai/status", h.Status)
 	mux.HandleFunc("GET /ai/config", h.GetConfig)
 	mux.HandleFunc("PUT /ai/config", h.UpdateConfig)
@@ -44,10 +48,11 @@ func (h *AIHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 // UpdateConfig updates the AI configuration and persists it to the store.
 func (h *AIHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Enabled *bool   `json:"enabled,omitempty"`
-		APIKey  *string `json:"api_key,omitempty"`
-		Model   *string `json:"model,omitempty"`
-		BaseURL *string `json:"base_url,omitempty"`
+		Enabled   *bool   `json:"enabled,omitempty"`
+		APIKey    *string `json:"api_key,omitempty"`
+		Model     *string `json:"model,omitempty"`
+		BaseURL   *string `json:"base_url,omitempty"`
+		PromptDir *string `json:"prompt_dir,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -70,6 +75,9 @@ func (h *AIHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	if req.BaseURL != nil && *req.BaseURL != "" {
 		cfg.BaseURL = *req.BaseURL
 	}
+	if req.PromptDir != nil {
+		cfg.PromptDir = *req.PromptDir
+	}
 
 	// Persist to store
 	if h.Store != nil {
@@ -89,6 +97,9 @@ func (h *AIHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.BaseURL != nil {
 			_ = h.Store.SetConfig(ctx, "ai_base_url", cfg.BaseURL)
+		}
+		if req.PromptDir != nil {
+			_ = h.Store.SetConfig(ctx, "ai_prompt_dir", cfg.PromptDir)
 		}
 	}
 
@@ -122,6 +133,9 @@ func (h *AIHandler) loadAIConfigFromStore(r *http.Request) ai.Config {
 	}
 	if v, ok := all["ai_base_url"]; ok && v != "" {
 		cfg.BaseURL = v
+	}
+	if v, ok := all["ai_prompt_dir"]; ok {
+		cfg.PromptDir = v
 	}
 	return cfg
 }
@@ -235,4 +249,59 @@ func (h *AIHandler) AnalyzeDiagnostics(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// ListPrompts returns supported AI prompt templates.
+func (h *AIHandler) ListPrompts(w http.ResponseWriter, r *http.Request) {
+	items, err := h.Service.ListPromptTemplates()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"items": items,
+	})
+}
+
+// GetPrompt returns one AI prompt template by name.
+func (h *AIHandler) GetPrompt(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	item, err := h.Service.GetPromptTemplate(name)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, ai.ErrPromptTemplateNotFound) {
+			status = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(item)
+}
+
+// UpdatePrompt updates a prompt template override and reloads active prompts.
+func (h *AIHandler) UpdatePrompt(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	var req struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	item, err := h.Service.UpdatePromptTemplate(name, req.Content)
+	if err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, ai.ErrPromptTemplateNotFound):
+			status = http.StatusNotFound
+		case errors.Is(err, ai.ErrInvalidPromptTemplate):
+			status = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(item)
 }

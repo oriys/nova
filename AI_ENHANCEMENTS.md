@@ -237,6 +237,9 @@ NOVA_AI_MODEL=gpt-4o-mini
 
 # Base URL (for custom deployments)
 NOVA_AI_BASE_URL=https://api.openai.com/v1
+
+# Prompt templates directory (optional, default: configs/prompts/ai)
+NOVA_AI_PROMPT_DIR=configs/prompts/ai
 ```
 
 ### API Configuration
@@ -251,7 +254,8 @@ curl -X PUT http://localhost:9000/ai/config \
   -d '{
     "enabled": true,
     "api_key": "sk-...",
-    "model": "gpt-4o-mini"
+    "model": "gpt-4o-mini",
+    "prompt_dir": "configs/prompts/ai"
   }'
 ```
 
@@ -346,9 +350,14 @@ GET  /ai/config
 PUT  /ai/config
 GET  /ai/status
 GET  /ai/models
+GET  /ai/prompts
+GET  /ai/prompts/{name}
+PUT  /ai/prompts/{name}
 POST /ai/generate
 POST /ai/rewrite
 ```
+
+Prompt templates are centrally managed in `configs/prompts/ai/` and can be overridden by setting `prompt_dir` in AI config.
 
 ---
 

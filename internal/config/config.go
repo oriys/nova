@@ -159,7 +159,7 @@ type GatewayConfig struct {
 // LayerConfig holds shared dependency layer settings
 type LayerConfig struct {
 	Enabled    bool   `json:"enabled"`
-	StorageDir string `json:"storage_dir"` // default /opt/nova/layers
+	StorageDir string `json:"storage_dir"`  // default /opt/nova/layers
 	MaxPerFunc int    `json:"max_per_func"` // default 6
 }
 
@@ -171,24 +171,24 @@ type AutoScaleConfig struct {
 
 // Config is the central configuration struct embedding all component configs
 type Config struct {
-	Firecracker   firecracker.Config    `json:"firecracker"`
-	Docker        docker.Config         `json:"docker"`
-	Wasm          wasm.Config           `json:"wasm"`
-	Kubernetes    kubernetes.Config     `json:"kubernetes"`
-	Postgres      PostgresConfig        `json:"postgres"`
-	Pool          PoolConfig            `json:"pool"`
-	Executor      ExecutorConfig        `json:"executor"`
-	Daemon        DaemonConfig          `json:"daemon"`
-	Observability ObservabilityConfig   `json:"observability"`
-	GRPC          GRPCConfig            `json:"grpc"`
-	Auth          AuthConfig            `json:"auth"`
-	RateLimit     RateLimitConfig       `json:"rate_limit"`
-	Secrets       SecretsConfig         `json:"secrets"`
-	NetworkPolicy NetworkPolicyConfig   `json:"network_policy"`
-	Gateway       GatewayConfig         `json:"gateway"`
-	AutoScale     AutoScaleConfig       `json:"auto_scale"`
-	Layers        LayerConfig           `json:"layers"`
-	AI            ai.Config             `json:"ai"`
+	Firecracker   firecracker.Config  `json:"firecracker"`
+	Docker        docker.Config       `json:"docker"`
+	Wasm          wasm.Config         `json:"wasm"`
+	Kubernetes    kubernetes.Config   `json:"kubernetes"`
+	Postgres      PostgresConfig      `json:"postgres"`
+	Pool          PoolConfig          `json:"pool"`
+	Executor      ExecutorConfig      `json:"executor"`
+	Daemon        DaemonConfig        `json:"daemon"`
+	Observability ObservabilityConfig `json:"observability"`
+	GRPC          GRPCConfig          `json:"grpc"`
+	Auth          AuthConfig          `json:"auth"`
+	RateLimit     RateLimitConfig     `json:"rate_limit"`
+	Secrets       SecretsConfig       `json:"secrets"`
+	NetworkPolicy NetworkPolicyConfig `json:"network_policy"`
+	Gateway       GatewayConfig       `json:"gateway"`
+	AutoScale     AutoScaleConfig     `json:"auto_scale"`
+	Layers        LayerConfig         `json:"layers"`
+	AI            ai.Config           `json:"ai"`
 }
 
 // DefaultConfig returns a Config with sensible defaults
@@ -671,6 +671,9 @@ func LoadFromEnv(cfg *Config) {
 	}
 	if v := os.Getenv("NOVA_AI_BASE_URL"); v != "" {
 		cfg.AI.BaseURL = v
+	}
+	if v := os.Getenv("NOVA_AI_PROMPT_DIR"); v != "" {
+		cfg.AI.PromptDir = v
 	}
 }
 

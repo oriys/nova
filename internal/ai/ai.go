@@ -4,26 +4,32 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
 // Config holds AI service configuration.
 type Config struct {
-	Enabled bool   `json:"enabled"`
-	APIKey  string `json:"api_key"`
-	Model   string `json:"model"`
-	BaseURL string `json:"base_url"`
+	Enabled   bool   `json:"enabled"`
+	APIKey    string `json:"api_key"`
+	Model     string `json:"model"`
+	BaseURL   string `json:"base_url"`
+	PromptDir string `json:"prompt_dir"`
 }
 
 // DefaultConfig returns sensible defaults for the AI service.
 func DefaultConfig() Config {
 	return Config{
-		Enabled: false,
-		Model:   "gpt-4o-mini",
-		BaseURL: "https://api.openai.com/v1",
+		Enabled:   false,
+		Model:     "gpt-4o-mini",
+		BaseURL:   "https://api.openai.com/v1",
+		PromptDir: defaultPromptDir,
 	}
 }
 
@@ -42,25 +48,25 @@ type GenerateResponse struct {
 
 // ReviewRequest is the request payload for code review.
 type ReviewRequest struct {
-	Code             string `json:"code"`
-	Runtime          string `json:"runtime"`
-	IncludeSecurity  bool   `json:"include_security,omitempty"`  // Include security vulnerability scanning
+	Code              string `json:"code"`
+	Runtime           string `json:"runtime"`
+	IncludeSecurity   bool   `json:"include_security,omitempty"`   // Include security vulnerability scanning
 	IncludeCompliance bool   `json:"include_compliance,omitempty"` // Include compliance checks
 }
 
 // ReviewResponse is the response for code review.
 type ReviewResponse struct {
-	Feedback           string              `json:"feedback"`
-	Suggestions        []string            `json:"suggestions,omitempty"`
-	Score              int                 `json:"score,omitempty"`
-	SecurityIssues     []SecurityIssue     `json:"security_issues,omitempty"`
-	ComplianceIssues   []ComplianceIssue   `json:"compliance_issues,omitempty"`
+	Feedback         string            `json:"feedback"`
+	Suggestions      []string          `json:"suggestions,omitempty"`
+	Score            int               `json:"score,omitempty"`
+	SecurityIssues   []SecurityIssue   `json:"security_issues,omitempty"`
+	ComplianceIssues []ComplianceIssue `json:"compliance_issues,omitempty"`
 }
 
 // SecurityIssue represents a detected security vulnerability.
 type SecurityIssue struct {
-	Severity    string `json:"severity"`     // critical, high, medium, low
-	Type        string `json:"type"`         // e.g., sql_injection, command_injection, xss
+	Severity    string `json:"severity"` // critical, high, medium, low
+	Type        string `json:"type"`     // e.g., sql_injection, command_injection, xss
 	Description string `json:"description"`
 	LineNumber  int    `json:"line_number,omitempty"`
 	Remediation string `json:"remediation"`
@@ -68,7 +74,7 @@ type SecurityIssue struct {
 
 // ComplianceIssue represents a compliance violation.
 type ComplianceIssue struct {
-	Standard    string `json:"standard"`    // e.g., GDPR, PCI-DSS, HIPAA
+	Standard    string `json:"standard"` // e.g., GDPR, PCI-DSS, HIPAA
 	Violation   string `json:"violation"`
 	Description string `json:"description"`
 	Severity    string `json:"severity"`
@@ -89,20 +95,20 @@ type RewriteResponse struct {
 
 // DiagnosticsAnalysisRequest is the request payload for analyzing function diagnostics.
 type DiagnosticsAnalysisRequest struct {
-	FunctionName     string                  `json:"function_name"`
-	TotalInvocations int                     `json:"total_invocations"`
-	AvgDurationMs    float64                 `json:"avg_duration_ms"`
-	P50DurationMs    int64                   `json:"p50_duration_ms"`
-	P95DurationMs    int64                   `json:"p95_duration_ms"`
-	P99DurationMs    int64                   `json:"p99_duration_ms"`
-	MaxDurationMs    int64                   `json:"max_duration_ms"`
-	ErrorRatePct     float64                 `json:"error_rate_pct"`
-	ColdStartRatePct float64                 `json:"cold_start_rate_pct"`
-	SlowCount        int                     `json:"slow_count"`
+	FunctionName     string                   `json:"function_name"`
+	TotalInvocations int                      `json:"total_invocations"`
+	AvgDurationMs    float64                  `json:"avg_duration_ms"`
+	P50DurationMs    int64                    `json:"p50_duration_ms"`
+	P95DurationMs    int64                    `json:"p95_duration_ms"`
+	P99DurationMs    int64                    `json:"p99_duration_ms"`
+	MaxDurationMs    int64                    `json:"max_duration_ms"`
+	ErrorRatePct     float64                  `json:"error_rate_pct"`
+	ColdStartRatePct float64                  `json:"cold_start_rate_pct"`
+	SlowCount        int                      `json:"slow_count"`
 	ErrorSamples     []DiagnosticsErrorSample `json:"error_samples,omitempty"`
 	SlowSamples      []DiagnosticsSlowSample  `json:"slow_samples,omitempty"`
-	MemoryMB         int                     `json:"memory_mb,omitempty"`
-	TimeoutS         int                     `json:"timeout_s,omitempty"`
+	MemoryMB         int                      `json:"memory_mb,omitempty"`
+	TimeoutS         int                      `json:"timeout_s,omitempty"`
 }
 
 // DiagnosticsErrorSample represents a sample error for analysis.
@@ -122,18 +128,18 @@ type DiagnosticsSlowSample struct {
 
 // DiagnosticsAnalysisResponse is the response for diagnostics analysis.
 type DiagnosticsAnalysisResponse struct {
-	Summary          string                        `json:"summary"`
-	RootCauses       []string                      `json:"root_causes"`
-	Recommendations  []DiagnosticsRecommendation   `json:"recommendations"`
-	Anomalies        []DiagnosticsAnomaly          `json:"anomalies"`
-	PerformanceScore int                           `json:"performance_score"`
+	Summary          string                      `json:"summary"`
+	RootCauses       []string                    `json:"root_causes"`
+	Recommendations  []DiagnosticsRecommendation `json:"recommendations"`
+	Anomalies        []DiagnosticsAnomaly        `json:"anomalies"`
+	PerformanceScore int                         `json:"performance_score"`
 }
 
 // DiagnosticsRecommendation represents an actionable recommendation.
 type DiagnosticsRecommendation struct {
-	Category    string `json:"category"`
-	Priority    string `json:"priority"`
-	Action      string `json:"action"`
+	Category       string `json:"category"`
+	Priority       string `json:"priority"`
+	Action         string `json:"action"`
 	ExpectedImpact string `json:"expected_impact"`
 }
 
@@ -146,17 +152,27 @@ type DiagnosticsAnomaly struct {
 
 // Service provides AI-powered code operations.
 type Service struct {
-	cfg    Config
-	client *http.Client
+	cfg     Config
+	client  *http.Client
+	prompts *promptManager
 }
+
+var ErrPromptTemplateNotFound = errors.New("prompt template not found")
+var ErrInvalidPromptTemplate = errors.New("invalid prompt template")
 
 // NewService creates a new AI service.
 func NewService(cfg Config) *Service {
+	cfg.PromptDir = normalizePromptDir(cfg.PromptDir)
+	prompts, err := newPromptManager(cfg.PromptDir)
+	if err != nil {
+		prompts = mustNewEmbeddedPromptManager()
+	}
 	return &Service{
 		cfg: cfg,
 		client: &http.Client{
 			Timeout: 60 * time.Second,
 		},
+		prompts: prompts,
 	}
 }
 
@@ -178,7 +194,114 @@ func (s *Service) GetConfig() Config {
 
 // UpdateConfig applies new configuration to the service.
 func (s *Service) UpdateConfig(cfg Config) {
+	cfg.PromptDir = normalizePromptDir(cfg.PromptDir)
 	s.cfg = cfg
+	prompts, err := newPromptManager(cfg.PromptDir)
+	if err == nil {
+		s.prompts = prompts
+	}
+}
+
+// ListPromptTemplates returns all supported prompt templates and override status.
+func (s *Service) ListPromptTemplates() ([]PromptTemplateMeta, error) {
+	dir := s.cfg.PromptDir
+	items := make([]PromptTemplateMeta, 0, len(promptTemplateFiles))
+	for _, name := range listPromptTemplateNames() {
+		file, _ := promptTemplateFile(name)
+		_, statErr := os.Stat(filepath.Join(dir, file))
+		customized := statErr == nil
+		if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+			return nil, fmt.Errorf("stat prompt template %q: %w", name, statErr)
+		}
+		items = append(items, PromptTemplateMeta{
+			Name:        name,
+			File:        file,
+			Description: promptTemplateDescriptions[name],
+			Customized:  customized,
+		})
+	}
+	return items, nil
+}
+
+// GetPromptTemplate returns a single prompt template content.
+func (s *Service) GetPromptTemplate(name string) (*PromptTemplate, error) {
+	file, ok := promptTemplateFile(name)
+	if !ok {
+		return nil, ErrPromptTemplateNotFound
+	}
+	content, err := s.prompts.text(name)
+	if err != nil {
+		return nil, fmt.Errorf("read prompt template %q: %w", name, err)
+	}
+
+	_, statErr := os.Stat(filepath.Join(s.cfg.PromptDir, file))
+	customized := statErr == nil
+	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+		return nil, fmt.Errorf("stat prompt template %q: %w", name, statErr)
+	}
+
+	return &PromptTemplate{
+		Name:        name,
+		File:        file,
+		Description: promptTemplateDescriptions[name],
+		Customized:  customized,
+		Content:     content,
+	}, nil
+}
+
+// UpdatePromptTemplate persists a prompt template override and reloads templates in memory.
+func (s *Service) UpdatePromptTemplate(name, content string) (*PromptTemplate, error) {
+	file, ok := promptTemplateFile(name)
+	if !ok {
+		return nil, ErrPromptTemplateNotFound
+	}
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, fmt.Errorf("%w: prompt content cannot be empty", ErrInvalidPromptTemplate)
+	}
+	if _, err := templateFromString(name, content); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidPromptTemplate, err)
+	}
+
+	dir := s.cfg.PromptDir
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("create prompt dir %q: %w", dir, err)
+	}
+	target := filepath.Join(dir, file)
+	tmp, err := os.CreateTemp(dir, file+".*.tmp")
+	if err != nil {
+		return nil, fmt.Errorf("create temp prompt template: %w", err)
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.WriteString(content + "\n"); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return nil, fmt.Errorf("write temp prompt template: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return nil, fmt.Errorf("close temp prompt template: %w", err)
+	}
+	if err := os.Rename(tmpPath, target); err != nil {
+		_ = os.Remove(tmpPath)
+		return nil, fmt.Errorf("replace prompt template: %w", err)
+	}
+
+	prompts, err := newPromptManager(s.cfg.PromptDir)
+	if err != nil {
+		return nil, fmt.Errorf("reload prompt templates: %w", err)
+	}
+	s.prompts = prompts
+
+	return s.GetPromptTemplate(name)
+}
+
+func normalizePromptDir(dir string) string {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return defaultPromptDir
+	}
+	return dir
 }
 
 // defaultTemperature is set low for deterministic, consistent code generation.
@@ -192,107 +315,6 @@ const maxReviewTokens = 2048
 
 // maxRewriteTokens limits the response size for code rewriting.
 const maxRewriteTokens = 4096
-
-// --- Nova platform system prompt ---
-
-const novaPlatformContext = `You are an expert developer for the Nova serverless platform.
-
-## Nova Platform Specification
-
-Nova is a serverless function platform. Functions run inside isolated Firecracker microVMs.
-
-### Handler Convention
-- Functions receive a JSON event object and a context object
-- Functions return a JSON-serializable result
-- Under the hood, the Nova agent reads JSON from a file path (argv[1]) and captures JSON from stdout
-- Function authors write idiomatic handler functions — the platform wraps execution
-
-### Supported Runtimes
-| Runtime   | ID       | Handler Signature                                              | Compiled |
-|-----------|----------|----------------------------------------------------------------|----------|
-| Python    | python   | def handler(event, context) -> dict                            | No       |
-| Node.js   | node     | function handler(event, context) -> object; module.exports     | No       |
-| Go        | go       | func Handler(event json.RawMessage, ctx Context) (any, error)  | Yes      |
-| Rust      | rust     | pub fn handler(event: Value, ctx: Context) -> Result<Value>    | Yes      |
-| Java      | java     | public static Object handler(String event, Map context)        | Yes      |
-| Ruby      | ruby     | def handler(event, context) -> Hash                            | No       |
-| PHP       | php      | function handler($event, $context) -> array                    | No       |
-| .NET      | dotnet   | public static object Handle(string eventJson, Dict context)    | Yes      |
-| Deno      | deno     | export function handler(event, context) -> object              | No       |
-| Bun       | bun      | function handler(event, context) -> object; module.exports     | No       |
-
-Note: Go requires an exported Handler (capitalized) function. .NET uses Handle as the entry method name. All other runtimes use lowercase handler.
-
-### Function Constraints
-- Function name: 1-64 chars, [A-Za-z0-9_-]
-- Memory: 128–10240 MB (default 128)
-- Timeout: 1–900 seconds (default 30)
-- Handler format: runtime-specific (e.g., "main.handler" for Python/Node, "handler" for Go/Rust)
-- Code must be self-contained in a single file (dependencies via layers)
-
-### Code Examples
-
-**Python:**
-` + "```python" + `
-def handler(event, context):
-    name = event.get("name", "World")
-    return {"message": f"Hello, {name}!"}
-` + "```" + `
-
-**Node.js:**
-` + "```javascript" + `
-function handler(event, context) {
-  const name = event.name || 'World';
-  return { message: ` + "`Hello, ${name}!`" + ` };
-}
-module.exports = { handler };
-` + "```" + `
-
-**Go:**
-` + "```go" + `
-package main
-
-import "encoding/json"
-
-type Event struct {
-    Name string ` + "`" + `json:"name"` + "`" + `
-}
-
-func Handler(event json.RawMessage, ctx Context) (interface{}, error) {
-    var e Event
-    json.Unmarshal(event, &e)
-    if e.Name == "" { e.Name = "World" }
-    return map[string]string{"message": "Hello, " + e.Name + "!"}, nil
-}
-` + "```" + `
-
-**Rust:**
-` + "```rust" + `
-use serde_json::Value;
-
-pub fn handler(event: Value, ctx: crate::context::Context) -> Result<Value, String> {
-    let name = event.get("name").and_then(|v| v.as_str()).unwrap_or("World");
-    Ok(serde_json::json!({ "message": format!("Hello, {}!", name) }))
-}
-` + "```" + `
-
-**Ruby:**
-` + "```ruby" + `
-def handler(event, context)
-  name = event['name'] || 'World'
-  { message: "Hello, #{name}!" }
-end
-` + "```" + `
-
-**PHP:**
-` + "```php" + `
-<?php
-function handler($event, $context) {
-    $name = $event['name'] ?? 'World';
-    return ['message' => "Hello, $name!"];
-}
-` + "```" + `
-`
 
 // --- OpenAI function tool definitions ---
 
@@ -535,14 +557,10 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) (*GenerateR
 		return nil, fmt.Errorf("AI service is not enabled")
 	}
 
-	systemPrompt := novaPlatformContext + `
-
-## Your Task
-Generate a complete, production-ready function for the Nova platform.
-The code MUST follow the handler convention for the specified runtime.
-Always call the generate_function_code function with your result.`
-
-	userPrompt := fmt.Sprintf("Generate a **%s** function that: %s", req.Runtime, req.Description)
+	systemPrompt, userPrompt, err := s.prompts.composeGeneratePrompts(req)
+	if err != nil {
+		return nil, fmt.Errorf("build prompts: %w", err)
+	}
 
 	resp, err := s.chatCompletionWithTools(ctx, systemPrompt, userPrompt, []interface{}{generateFunctionTool}, "generate_function_code", maxGenerateTokens)
 	if err != nil {
@@ -564,44 +582,10 @@ func (s *Service) Review(ctx context.Context, req ReviewRequest) (*ReviewRespons
 		return nil, fmt.Errorf("AI service is not enabled")
 	}
 
-	systemPrompt := novaPlatformContext + `
-
-## Your Task
-Review the given function code for the Nova serverless platform.
-Evaluate: correctness, error handling, security, performance, and adherence to Nova handler conventions.
-`
-
-	if req.IncludeSecurity {
-		systemPrompt += `
-### Security Analysis
-Perform comprehensive security vulnerability scanning:
-- SQL injection, command injection, code injection
-- Cross-site scripting (XSS), CSRF vulnerabilities
-- Insecure cryptographic implementations
-- Hardcoded secrets, API keys, passwords
-- Unsafe deserialization
-- Path traversal vulnerabilities
-- Authentication/authorization bypass
-- Denial of service vectors
-`
+	systemPrompt, userPrompt, err := s.prompts.composeReviewPrompts(req)
+	if err != nil {
+		return nil, fmt.Errorf("build prompts: %w", err)
 	}
-
-	if req.IncludeCompliance {
-		systemPrompt += `
-### Compliance Checking
-Check for compliance with common standards:
-- GDPR: Personal data handling, consent, data retention
-- PCI-DSS: Credit card data security
-- HIPAA: Protected health information (PHI) handling
-- SOC2: Security controls and logging
-- OWASP Top 10: Common web vulnerabilities
-`
-	}
-
-	systemPrompt += `
-Always call the review_function_code function with your result.`
-
-	userPrompt := fmt.Sprintf("Review this **%s** function for the Nova platform:\n\n```\n%s\n```", req.Runtime, req.Code)
 
 	resp, err := s.chatCompletionWithTools(ctx, systemPrompt, userPrompt, []interface{}{reviewFunctionTool}, "review_function_code", maxReviewTokens)
 	if err != nil {
@@ -621,17 +605,10 @@ func (s *Service) Rewrite(ctx context.Context, req RewriteRequest) (*RewriteResp
 		return nil, fmt.Errorf("AI service is not enabled")
 	}
 
-	systemPrompt := novaPlatformContext + `
-
-## Your Task
-Rewrite the given function code to improve it. The result MUST follow Nova handler conventions for the specified runtime.
-Always call the rewrite_function_code function with your result.`
-
-	instructions := req.Instructions
-	if instructions == "" {
-		instructions = "Improve code quality, error handling, and performance while following Nova platform conventions"
+	systemPrompt, userPrompt, err := s.prompts.composeRewritePrompts(req)
+	if err != nil {
+		return nil, fmt.Errorf("build prompts: %w", err)
 	}
-	userPrompt := fmt.Sprintf("Rewrite this **%s** function for the Nova platform.\n\nInstructions: %s\n\n```\n%s\n```", req.Runtime, instructions, req.Code)
 
 	resp, err := s.chatCompletionWithTools(ctx, systemPrompt, userPrompt, []interface{}{rewriteFunctionTool}, "rewrite_function_code", maxRewriteTokens)
 	if err != nil {
@@ -652,77 +629,10 @@ func (s *Service) AnalyzeDiagnostics(ctx context.Context, req DiagnosticsAnalysi
 		return nil, fmt.Errorf("AI service is not enabled")
 	}
 
-	systemPrompt := `You are an expert performance analyst for the Nova serverless platform.
-
-## Your Task
-Analyze function performance diagnostics and provide actionable insights.
-
-Focus on:
-1. **Performance patterns**: Identify bottlenecks from latency percentiles (P50, P95, P99)
-2. **Error analysis**: Find root causes from error messages and patterns
-3. **Resource optimization**: Recommend memory, timeout, or scaling adjustments
-4. **Cold start impact**: Assess if cold starts are affecting performance
-5. **Anomaly detection**: Flag unusual patterns (e.g., latency spikes, error clusters)
-
-Provide practical recommendations with measurable expected impact.`
-
-	// Build user prompt with diagnostic data
-	userPrompt := fmt.Sprintf(`Analyze diagnostics for function "%s":
-
-**Performance Metrics:**
-- Total invocations: %d
-- Avg latency: %.1fms
-- P50 latency: %dms
-- P95 latency: %dms
-- P99 latency: %dms
-- Max latency: %dms
-- Error rate: %.2f%%
-- Cold start rate: %.2f%%
-- Slow invocations: %d
-
-**Configuration:**
-- Memory: %dMB
-- Timeout: %ds
-`,
-		req.FunctionName,
-		req.TotalInvocations,
-		req.AvgDurationMs,
-		req.P50DurationMs,
-		req.P95DurationMs,
-		req.P99DurationMs,
-		req.MaxDurationMs,
-		req.ErrorRatePct,
-		req.ColdStartRatePct,
-		req.SlowCount,
-		req.MemoryMB,
-		req.TimeoutS,
-	)
-
-	// Add error samples if available
-	if len(req.ErrorSamples) > 0 {
-		userPrompt += "\n**Recent Errors:**\n"
-		for i, sample := range req.ErrorSamples {
-			if i >= 5 {
-				break // Limit to 5 samples
-			}
-			userPrompt += fmt.Sprintf("- [%s] %s (duration: %dms, cold_start: %v)\n",
-				sample.Timestamp, sample.ErrorMessage, sample.DurationMs, sample.ColdStart)
-		}
+	systemPrompt, userPrompt, err := s.prompts.composeDiagnosticsPrompts(req)
+	if err != nil {
+		return nil, fmt.Errorf("build prompts: %w", err)
 	}
-
-	// Add slow invocation samples if available
-	if len(req.SlowSamples) > 0 {
-		userPrompt += "\n**Slow Invocations:**\n"
-		for i, sample := range req.SlowSamples {
-			if i >= 5 {
-				break
-			}
-			userPrompt += fmt.Sprintf("- [%s] %dms (cold_start: %v)\n",
-				sample.Timestamp, sample.DurationMs, sample.ColdStart)
-		}
-	}
-
-	userPrompt += "\nProvide comprehensive analysis with actionable recommendations."
 
 	resp, err := s.chatCompletionWithTools(ctx, systemPrompt, userPrompt, []interface{}{analyzeDiagnosticsTool}, "analyze_function_diagnostics", maxReviewTokens)
 	if err != nil {
@@ -793,12 +703,12 @@ func (s *Service) ListModels(ctx context.Context) (*ListModelsResponse, error) {
 // chatCompletionRequest matches the OpenAI Chat Completions API request format.
 // Reference: https://platform.openai.com/docs/api-reference/chat/create
 type chatCompletionRequest struct {
-	Model       string               `json:"model"`
-	Messages    []chatMessage        `json:"messages"`
-	Tools       []interface{}        `json:"tools,omitempty"`
-	ToolChoice  interface{}          `json:"tool_choice,omitempty"`
-	Temperature float64              `json:"temperature"`
-	MaxTokens   int                  `json:"max_tokens,omitempty"`
+	Model       string        `json:"model"`
+	Messages    []chatMessage `json:"messages"`
+	Tools       []interface{} `json:"tools,omitempty"`
+	ToolChoice  interface{}   `json:"tool_choice,omitempty"`
+	Temperature float64       `json:"temperature"`
+	MaxTokens   int           `json:"max_tokens,omitempty"`
 }
 
 // chatMessage represents a message in the OpenAI chat format.
@@ -809,26 +719,26 @@ type chatMessage struct {
 
 // chatCompletionResponse matches the OpenAI Chat Completions API response format.
 type chatCompletionResponse struct {
-	ID      string             `json:"id"`
-	Object  string             `json:"object"`
-	Created int64              `json:"created"`
-	Model   string             `json:"model"`
-	Choices []chatChoice       `json:"choices"`
+	ID      string               `json:"id"`
+	Object  string               `json:"object"`
+	Created int64                `json:"created"`
+	Model   string               `json:"model"`
+	Choices []chatChoice         `json:"choices"`
 	Usage   *chatCompletionUsage `json:"usage,omitempty"`
 }
 
 // chatChoice represents a single choice in the API response.
 type chatChoice struct {
-	Index        int                `json:"index"`
-	Message      chatChoiceMessage  `json:"message"`
-	FinishReason string             `json:"finish_reason"`
+	Index        int               `json:"index"`
+	Message      chatChoiceMessage `json:"message"`
+	FinishReason string            `json:"finish_reason"`
 }
 
 // chatChoiceMessage represents the message content in a choice.
 type chatChoiceMessage struct {
-	Role      string          `json:"role"`
-	Content   *string         `json:"content"`
-	ToolCalls []toolCall      `json:"tool_calls,omitempty"`
+	Role      string     `json:"role"`
+	Content   *string    `json:"content"`
+	ToolCalls []toolCall `json:"tool_calls,omitempty"`
 }
 
 // toolCall represents a function call requested by the model.

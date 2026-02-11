@@ -1,0 +1,27 @@
+Analyze diagnostics for function "{{.FunctionName}}":
+
+**Performance Metrics:**
+- Total invocations: {{.TotalInvocations}}
+- Avg latency: {{.AvgDurationMs}}ms
+- P50 latency: {{.P50DurationMs}}ms
+- P95 latency: {{.P95DurationMs}}ms
+- P99 latency: {{.P99DurationMs}}ms
+- Max latency: {{.MaxDurationMs}}ms
+- Error rate: {{.ErrorRatePct}}%
+- Cold start rate: {{.ColdStartRatePct}}%
+- Slow invocations: {{.SlowCount}}
+
+**Configuration:**
+- Memory: {{.MemoryMB}}MB
+- Timeout: {{.TimeoutS}}s
+{{if .ErrorSamples}}
+
+**Recent Errors:**
+{{range .ErrorSamples}}- [{{.Timestamp}}] {{.ErrorMessage}} (duration: {{.DurationMs}}ms, cold_start: {{.ColdStart}})
+{{end}}{{end}}{{if .SlowSamples}}
+
+**Slow Invocations:**
+{{range .SlowSamples}}- [{{.Timestamp}}] {{.DurationMs}}ms (cold_start: {{.ColdStart}})
+{{end}}{{end}}
+
+Provide comprehensive analysis with actionable recommendations.

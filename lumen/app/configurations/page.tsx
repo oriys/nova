@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
   SelectContent,
@@ -16,8 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { healthApi, snapshotsApi, configApi, aiApi, type HealthStatus, type AIModelEntry } from "@/lib/api"
-import { RefreshCw, Server, Database, HardDrive, Trash2, Save, CheckCircle, Sparkles, Eye, EyeOff, Loader2 } from "lucide-react"
+import { healthApi, snapshotsApi, configApi, aiApi, type HealthStatus, type AIModelEntry, type AIPromptTemplateMeta } from "@/lib/api"
+import { RefreshCw, Server, Database, HardDrive, Trash2, Save, CheckCircle, Sparkles, Eye, EyeOff, Loader2, FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAutoRefresh } from "@/lib/use-auto-refresh"
 
@@ -71,12 +72,20 @@ export default function ConfigurationsPage() {
   const [aiBaseUrl, setAiBaseUrl] = useState("https://api.openai.com/v1")
   const [aiApiKey, setAiApiKey] = useState("")
   const [aiModel, setAiModel] = useState("gpt-4o-mini")
+  const [aiPromptDir, setAiPromptDir] = useState("configs/prompts/ai")
   const [aiDirty, setAiDirty] = useState(false)
   const [aiSaving, setAiSaving] = useState(false)
   const [aiSaved, setAiSaved] = useState(false)
   const [showApiKey, setShowApiKey] = useState(false)
   const [aiModels, setAiModels] = useState<AIModelEntry[]>([])
   const [aiModelsLoading, setAiModelsLoading] = useState(false)
+  const [promptTemplates, setPromptTemplates] = useState<AIPromptTemplateMeta[]>([])
+  const [selectedPrompt, setSelectedPrompt] = useState("")
+  const [promptContent, setPromptContent] = useState("")
+  const [promptLoading, setPromptLoading] = useState(false)
+  const [promptSaving, setPromptSaving] = useState(false)
+  const [promptDirty, setPromptDirty] = useState(false)
+  const [promptSaved, setPromptSaved] = useState(false)
 
   const fetchModels = useCallback(async () => {
     try {
@@ -87,6 +96,40 @@ export default function ConfigurationsPage() {
       setAiModels([])
     } finally {
       setAiModelsLoading(false)
+    }
+  }, [])
+
+  const fetchPromptTemplates = useCallback(async () => {
+    try {
+      const resp = await aiApi.listPromptTemplates()
+      const items = resp.items || []
+      setPromptTemplates(items)
+      setSelectedPrompt((prev) => (
+        prev && items.some((item) => item.name === prev) ? prev : (items[0]?.name || "")
+      ))
+    } catch {
+      setPromptTemplates([])
+      setSelectedPrompt("")
+    }
+  }, [])
+
+  const loadPromptTemplate = useCallback(async (name: string) => {
+    if (!name) {
+      setPromptContent("")
+      setPromptDirty(false)
+      return
+    }
+    try {
+      setPromptLoading(true)
+      const tpl = await aiApi.getPromptTemplate(name)
+      setPromptContent(tpl.content || "")
+      setPromptDirty(false)
+      setPromptSaved(false)
+    } catch (err) {
+      console.error("Failed to load prompt template:", err)
+      setError(err instanceof Error ? err.message : "Failed to load prompt template")
+    } finally {
+      setPromptLoading(false)
     }
   }, [])
 
@@ -114,6 +157,7 @@ export default function ConfigurationsPage() {
         setAiBaseUrl(aiConfigData.base_url || "https://api.openai.com/v1")
         setAiApiKey(aiConfigData.api_key || "")
         setAiModel(aiConfigData.model || "gpt-4o-mini")
+        setAiPromptDir(aiConfigData.prompt_dir || "configs/prompts/ai")
         setAiDirty(false)
       }
     } catch (err) {
@@ -127,7 +171,12 @@ export default function ConfigurationsPage() {
   useEffect(() => {
     fetchData()
     fetchModels()
-  }, [fetchData, fetchModels])
+    fetchPromptTemplates()
+  }, [fetchData, fetchModels, fetchPromptTemplates])
+
+  useEffect(() => {
+    loadPromptTemplate(selectedPrompt)
+  }, [selectedPrompt, loadPromptTemplate])
 
   const { enabled: autoRefresh, toggle: toggleAutoRefresh } = useAutoRefresh("configurations", fetchData, 30000)
 
@@ -140,6 +189,7 @@ export default function ConfigurationsPage() {
     (snapshotsPage - 1) * snapshotsPageSize,
     snapshotsPage * snapshotsPageSize
   )
+  const selectedPromptMeta = promptTemplates.find((item) => item.name === selectedPrompt)
 
   const handleSave = async () => {
     try {
@@ -169,11 +219,14 @@ export default function ConfigurationsPage() {
         base_url: aiBaseUrl,
         api_key: aiApiKey,
         model: aiModel,
+        prompt_dir: aiPromptDir,
       })
       setAiEnabled(updated.enabled)
       setAiBaseUrl(updated.base_url || "https://api.openai.com/v1")
       setAiApiKey(updated.api_key || "")
       setAiModel(updated.model || "gpt-4o-mini")
+      setAiPromptDir(updated.prompt_dir || "configs/prompts/ai")
+      await fetchPromptTemplates()
       setAiDirty(false)
       setAiSaved(true)
       setShowApiKey(false)
@@ -192,6 +245,25 @@ export default function ConfigurationsPage() {
       fetchData()
     } catch (err) {
       console.error("Failed to delete snapshot:", err)
+    }
+  }
+
+  const handlePromptSave = async () => {
+    if (!selectedPrompt) return
+    try {
+      setPromptSaving(true)
+      setPromptSaved(false)
+      const updated = await aiApi.updatePromptTemplate(selectedPrompt, { content: promptContent })
+      setPromptContent(updated.content || "")
+      setPromptDirty(false)
+      setPromptSaved(true)
+      await fetchPromptTemplates()
+      setTimeout(() => setPromptSaved(false), 3000)
+    } catch (err) {
+      console.error("Failed to save prompt template:", err)
+      setError(err instanceof Error ? err.message : "Failed to save prompt template")
+    } finally {
+      setPromptSaving(false)
     }
   }
 
@@ -441,6 +513,19 @@ export default function ConfigurationsPage() {
             </div>
 
             <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="aiPromptDir">Prompt Directory</Label>
+              <Input
+                id="aiPromptDir"
+                value={aiPromptDir}
+                onChange={(e) => { setAiPromptDir(e.target.value); setAiDirty(true); }}
+                placeholder="configs/prompts/ai"
+              />
+              <p className="text-xs text-muted-foreground">
+                Directory used for editable AI prompt templates.
+              </p>
+            </div>
+
+            <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="aiApiKey">API Key</Label>
               <div className="relative">
                 <Input
@@ -547,6 +632,112 @@ export default function ConfigurationsPage() {
               )}
             </Button>
             {aiSaved && (
+              <span className="flex items-center gap-1 text-sm text-success">
+                <CheckCircle className="h-4 w-4" />
+                Saved
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* AI Prompt Templates */}
+        <div className="rounded-xl border border-border bg-card p-6">
+          <div className="flex items-center justify-between gap-2 mb-4">
+            <div className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              <h3 className="text-lg font-semibold text-card-foreground">
+                Prompt Templates
+              </h3>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={fetchPromptTemplates}
+              disabled={promptLoading}
+            >
+              <RefreshCw className={cn("mr-2 h-4 w-4", promptLoading && "animate-spin")} />
+              Refresh Templates
+            </Button>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            Manage centralized AI prompts. Changes apply to subsequent AI requests immediately.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="promptTemplate">Template</Label>
+              <Select value={selectedPrompt} onValueChange={(value) => { setSelectedPrompt(value); setPromptSaved(false); }}>
+                <SelectTrigger id="promptTemplate">
+                  <SelectValue placeholder="Select a prompt template" />
+                </SelectTrigger>
+                <SelectContent>
+                  {promptTemplates.map((tpl) => (
+                    <SelectItem key={tpl.name} value={tpl.name}>
+                      {tpl.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedPromptMeta && (
+                <p className="text-xs text-muted-foreground">
+                  {selectedPromptMeta.description}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Template Status</Label>
+              <div className="flex items-center gap-2 pt-2">
+                <Badge
+                  variant="secondary"
+                  className={cn(
+                    selectedPromptMeta?.customized
+                      ? "bg-success/10 text-success border-0"
+                      : "bg-muted text-muted-foreground border-0"
+                  )}
+                >
+                  {selectedPromptMeta?.customized ? "Customized" : "Default"}
+                </Badge>
+                {selectedPromptMeta?.file && (
+                  <Badge variant="outline" className="font-mono">
+                    {selectedPromptMeta.file}
+                  </Badge>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="promptContent">Template Content</Label>
+              <Textarea
+                id="promptContent"
+                rows={20}
+                value={promptContent}
+                onChange={(e) => { setPromptContent(e.target.value); setPromptDirty(true); }}
+                disabled={promptLoading || !selectedPrompt}
+                className="font-mono text-xs"
+                placeholder={selectedPrompt ? "Prompt template content..." : "Select a template first"}
+              />
+            </div>
+          </div>
+          <div className="mt-4 flex items-center gap-3">
+            <Button
+              variant="outline"
+              onClick={handlePromptSave}
+              disabled={promptSaving || promptLoading || !promptDirty || !selectedPrompt}
+            >
+              {promptSaving ? (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Save Prompt Template
+                </>
+              )}
+            </Button>
+            {promptSaved && (
               <span className="flex items-center gap-1 text-sm text-success">
                 <CheckCircle className="h-4 w-4" />
                 Saved
