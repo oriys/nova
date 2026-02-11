@@ -354,7 +354,7 @@ export function FunctionCode({
                   Score: {aiReviewScore}/10
                 </Badge>
               )}
-              <Button variant="ghost" size="sm" onClick={() => setAiReview(null)} className="h-6 w-6 p-0 text-muted-foreground">
+              <Button variant="ghost" size="sm" onClick={() => setAiReview(null)} className="h-6 w-6 p-0 text-muted-foreground" aria-label="Dismiss AI review">
                 ×
               </Button>
             </div>

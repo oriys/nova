@@ -181,6 +181,9 @@ Respond ONLY with a JSON object containing these fields:
 	return &result, nil
 }
 
+// defaultTemperature is set low for deterministic, consistent code generation.
+const defaultTemperature = 0.3
+
 // chatCompletion sends a request to the OpenAI-compatible chat API.
 func (s *Service) chatCompletion(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
 	reqBody := map[string]interface{}{
@@ -189,7 +192,7 @@ func (s *Service) chatCompletion(ctx context.Context, systemPrompt, userPrompt s
 			{"role": "system", "content": systemPrompt},
 			{"role": "user", "content": userPrompt},
 		},
-		"temperature": 0.3,
+		"temperature": defaultTemperature,
 	}
 
 	body, err := json.Marshal(reqBody)

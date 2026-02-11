@@ -665,7 +665,6 @@ func LoadFromEnv(cfg *Config) {
 	}
 	if v := os.Getenv("NOVA_AI_API_KEY"); v != "" {
 		cfg.AI.APIKey = v
-		cfg.AI.Enabled = true
 	}
 	if v := os.Getenv("NOVA_AI_MODEL"); v != "" {
 		cfg.AI.Model = v

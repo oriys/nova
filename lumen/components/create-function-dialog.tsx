@@ -588,7 +588,7 @@ export function CreateFunctionDialog({
               <div className="flex items-center gap-2 mb-2">
                 <div className="relative flex-1">
                   <Input
-                    placeholder="Describe your function... (e.g., 'Calculate fibonacci numbers')"
+                    placeholder="Describe your function... (e.g., 'Calculate Fibonacci numbers')"
                     value={aiDescription}
                     onChange={(e) => setAiDescription(e.target.value)}
                     onKeyDown={(e) => {
