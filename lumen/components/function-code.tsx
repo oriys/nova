@@ -5,9 +5,9 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { CodeEditor } from "@/components/code-editor"
 import { FunctionData } from "@/lib/types"
-import { functionsApi, CompileStatus, AsyncInvocationJob, AsyncInvocationStatus } from "@/lib/api"
+import { functionsApi, aiApi, CompileStatus, AsyncInvocationJob, AsyncInvocationStatus } from "@/lib/api"
 import { Textarea } from "@/components/ui/textarea"
-import { Copy, Check, Download, Save, Loader2, AlertCircle, Play, RefreshCw, RotateCcw } from "lucide-react"
+import { Copy, Check, Download, Save, Loader2, AlertCircle, Play, RefreshCw, RotateCcw, Sparkles, MessageSquare, Wand2 } from "lucide-react"
 
 interface FunctionCodeProps {
   func: FunctionData
@@ -111,9 +111,20 @@ export function FunctionCode({
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [aiEnabled, setAiEnabled] = useState(false)
+  const [aiReviewing, setAiReviewing] = useState(false)
+  const [aiRewriting, setAiRewriting] = useState(false)
+  const [aiReview, setAiReview] = useState<string | null>(null)
+  const [aiReviewScore, setAiReviewScore] = useState<number | undefined>()
+  const [aiReviewSuggestions, setAiReviewSuggestions] = useState<string[]>([])
 
   const runtimeId = func.runtimeId || getRuntimeId(func.runtime)
   const hasChanges = code !== originalCode
+
+  // Check AI status on mount
+  useEffect(() => {
+    aiApi.status().then((res) => setAiEnabled(res.enabled)).catch(() => {})
+  }, [])
 
   // Load code from backend
   const loadCode = useCallback(async () => {
@@ -209,6 +220,39 @@ export function FunctionCode({
     setCode(originalCode)
   }
 
+  const handleAiReview = async () => {
+    if (!code.trim()) return
+    try {
+      setAiReviewing(true)
+      setError(null)
+      setAiReview(null)
+      setAiReviewSuggestions([])
+      setAiReviewScore(undefined)
+      const response = await aiApi.review({ code, runtime: runtimeId })
+      setAiReview(response.feedback)
+      setAiReviewSuggestions(response.suggestions || [])
+      setAiReviewScore(response.score)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "AI review failed")
+    } finally {
+      setAiReviewing(false)
+    }
+  }
+
+  const handleAiRewrite = async () => {
+    if (!code.trim()) return
+    try {
+      setAiRewriting(true)
+      setError(null)
+      const response = await aiApi.rewrite({ code, runtime: runtimeId })
+      setCode(response.code)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "AI rewrite failed")
+    } finally {
+      setAiRewriting(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -258,6 +302,26 @@ export function FunctionCode({
             <Download className="mr-2 h-4 w-4" />
             Download
           </Button>
+          {aiEnabled && (
+            <>
+              <Button variant="outline" size="sm" onClick={handleAiReview} disabled={aiReviewing || !code.trim()}>
+                {aiReviewing ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <MessageSquare className="mr-2 h-4 w-4" />
+                )}
+                AI Review
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleAiRewrite} disabled={aiRewriting || !code.trim()}>
+                {aiRewriting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Wand2 className="mr-2 h-4 w-4" />
+                )}
+                AI Rewrite
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -273,6 +337,39 @@ export function FunctionCode({
         <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           <div className="font-medium mb-1">Compilation Failed</div>
           <pre className="whitespace-pre-wrap text-xs font-mono">{compileError}</pre>
+        </div>
+      )}
+
+      {/* AI Review display */}
+      {aiReview && (
+        <div className="rounded-md border border-purple-200 bg-purple-50 dark:border-purple-800 dark:bg-purple-950/30 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+              <span className="text-sm font-medium text-purple-900 dark:text-purple-200">AI Review</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {aiReviewScore !== undefined && (
+                <Badge variant="outline" className="text-purple-700 border-purple-300 dark:text-purple-300 dark:border-purple-700">
+                  Score: {aiReviewScore}/10
+                </Badge>
+              )}
+              <Button variant="ghost" size="sm" onClick={() => setAiReview(null)} className="h-6 w-6 p-0 text-muted-foreground">
+                ×
+              </Button>
+            </div>
+          </div>
+          <div className="text-sm text-purple-800 dark:text-purple-200 whitespace-pre-wrap">{aiReview}</div>
+          {aiReviewSuggestions.length > 0 && (
+            <div className="mt-3 space-y-1">
+              <div className="text-xs font-medium text-purple-700 dark:text-purple-300">Suggestions:</div>
+              <ul className="list-disc list-inside space-y-1">
+                {aiReviewSuggestions.map((s, i) => (
+                  <li key={i} className="text-xs text-purple-700 dark:text-purple-300">{s}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 

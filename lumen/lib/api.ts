@@ -1897,3 +1897,64 @@ export const schedulesApi = {
       body: JSON.stringify({ cron_expression: cronExpression }),
     }),
 };
+
+// AI types
+export interface AIGenerateRequest {
+  description: string;
+  runtime: string;
+}
+
+export interface AIGenerateResponse {
+  code: string;
+  explanation?: string;
+  function_name?: string;
+}
+
+export interface AIReviewRequest {
+  code: string;
+  runtime: string;
+}
+
+export interface AIReviewResponse {
+  feedback: string;
+  suggestions?: string[];
+  score?: number;
+}
+
+export interface AIRewriteRequest {
+  code: string;
+  runtime: string;
+  instructions?: string;
+}
+
+export interface AIRewriteResponse {
+  code: string;
+  explanation?: string;
+}
+
+export interface AIStatusResponse {
+  enabled: boolean;
+}
+
+// AI API
+export const aiApi = {
+  status: () => request<AIStatusResponse>("/ai/status"),
+
+  generate: (data: AIGenerateRequest) =>
+    request<AIGenerateResponse>("/ai/generate", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  review: (data: AIReviewRequest) =>
+    request<AIReviewResponse>("/ai/review", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  rewrite: (data: AIRewriteRequest) =>
+    request<AIRewriteResponse>("/ai/rewrite", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+};

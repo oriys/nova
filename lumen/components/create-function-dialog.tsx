@@ -23,8 +23,8 @@ import {
 } from "@/components/ui/select"
 import { CodeEditor } from "@/components/code-editor"
 import { RuntimeInfo } from "@/lib/types"
-import { functionsApi, CompileStatus, type NetworkPolicy, type ResourceLimits } from "@/lib/api"
-import { Loader2, Check, AlertCircle, Trash2 } from "lucide-react"
+import { functionsApi, aiApi, CompileStatus, type NetworkPolicy, type ResourceLimits } from "@/lib/api"
+import { Loader2, Check, AlertCircle, Trash2, Sparkles } from "lucide-react"
 
 // Code templates for each runtime (handler-only style)
 const CODE_TEMPLATES: Record<string, string> = {
@@ -264,6 +264,11 @@ export function CreateFunctionDialog({
   const [compileStatus, setCompileStatus] = useState<CompileStatus | undefined>()
   const [compileError, setCompileError] = useState<string | undefined>()
 
+  // AI generation state
+  const [aiEnabled, setAiEnabled] = useState(false)
+  const [aiDescription, setAiDescription] = useState("")
+  const [aiGenerating, setAiGenerating] = useState(false)
+
   // Update code template when runtime changes
   useEffect(() => {
     const baseRuntime = getBaseRuntime(runtime)
@@ -287,6 +292,29 @@ export function CreateFunctionDialog({
 
     return () => clearInterval(interval)
   }, [createdFunctionName, compileStatus])
+
+  // Check AI status on mount
+  useEffect(() => {
+    aiApi.status().then((res) => setAiEnabled(res.enabled)).catch(() => {})
+  }, [])
+
+  const handleAiGenerate = async () => {
+    if (!aiDescription.trim()) return
+    try {
+      setAiGenerating(true)
+      setError(null)
+      const baseRuntime = getBaseRuntime(runtime)
+      const response = await aiApi.generate({ description: aiDescription, runtime: baseRuntime })
+      setCode(response.code)
+      if (response.function_name && !name.trim()) {
+        setName(response.function_name)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "AI generation failed")
+    } finally {
+      setAiGenerating(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -556,6 +584,37 @@ export function CreateFunctionDialog({
 
           <div className="space-y-2">
             <Label>{t("code")}</Label>
+            {aiEnabled && (
+              <div className="flex items-center gap-2 mb-2">
+                <div className="relative flex-1">
+                  <Input
+                    placeholder="Describe your function... (e.g., 'Calculate fibonacci numbers')"
+                    value={aiDescription}
+                    onChange={(e) => setAiDescription(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && aiDescription.trim()) {
+                        e.preventDefault()
+                        handleAiGenerate()
+                      }
+                    }}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAiGenerate}
+                  disabled={aiGenerating || !aiDescription.trim()}
+                >
+                  {aiGenerating ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-2 h-4 w-4" />
+                  )}
+                  Generate with AI
+                </Button>
+              </div>
+            )}
             <CodeEditor
               code={code}
               onChange={setCode}
