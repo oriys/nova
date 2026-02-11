@@ -215,6 +215,7 @@ func (s *Service) ListPromptTemplates() ([]PromptTemplateMeta, error) {
 		}
 		items = append(items, PromptTemplateMeta{
 			Name:        name,
+			Label:       promptTemplateLabel(name),
 			File:        file,
 			Description: promptTemplateDescriptions[name],
 			Customized:  customized,
@@ -242,6 +243,7 @@ func (s *Service) GetPromptTemplate(name string) (*PromptTemplate, error) {
 
 	return &PromptTemplate{
 		Name:        name,
+		Label:       promptTemplateLabel(name),
 		File:        file,
 		Description: promptTemplateDescriptions[name],
 		Customized:  customized,

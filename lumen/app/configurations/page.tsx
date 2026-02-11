@@ -673,7 +673,7 @@ export default function ConfigurationsPage() {
                 <SelectContent>
                   {promptTemplates.map((tpl) => (
                     <SelectItem key={tpl.name} value={tpl.name}>
-                      {tpl.name}
+                      {tpl.label || tpl.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -700,7 +700,7 @@ export default function ConfigurationsPage() {
                 </Badge>
                 {selectedPromptMeta?.file && (
                   <Badge variant="outline" className="font-mono">
-                    {selectedPromptMeta.file}
+                    {selectedPromptMeta.file} ({selectedPromptMeta.name})
                   </Badge>
                 )}
               </div>

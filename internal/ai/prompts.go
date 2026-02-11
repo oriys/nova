@@ -59,8 +59,24 @@ var promptTemplateDescriptions = map[string]string{
 	promptDiagnosticsUser:   "User prompt template for diagnostics analysis requests.",
 }
 
+var promptTemplateLabels = map[string]string{
+	promptPlatformContext:   "Platform Context",
+	promptGenerateSystem:    "Generate System Prompt",
+	promptGenerateUser:      "Generate User Prompt",
+	promptReviewSystemBase:  "Review Base Prompt",
+	promptReviewSecurity:    "Review Security Section",
+	promptReviewCompliance:  "Review Compliance Section",
+	promptReviewSystemTail:  "Review Tool-call Suffix",
+	promptReviewUser:        "Review User Prompt",
+	promptRewriteSystem:     "Rewrite System Prompt",
+	promptRewriteUser:       "Rewrite User Prompt",
+	promptDiagnosticsSystem: "Diagnostics System Prompt",
+	promptDiagnosticsUser:   "Diagnostics User Prompt",
+}
+
 type PromptTemplateMeta struct {
 	Name        string `json:"name"`
+	Label       string `json:"label"`
 	File        string `json:"file"`
 	Description string `json:"description"`
 	Customized  bool   `json:"customized"`
@@ -68,6 +84,7 @@ type PromptTemplateMeta struct {
 
 type PromptTemplate struct {
 	Name        string `json:"name"`
+	Label       string `json:"label"`
 	File        string `json:"file"`
 	Description string `json:"description"`
 	Customized  bool   `json:"customized"`
@@ -149,6 +166,13 @@ func listPromptTemplateNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func promptTemplateLabel(name string) string {
+	if label, ok := promptTemplateLabels[name]; ok {
+		return label
+	}
+	return name
 }
 
 func templateFromString(name, content string) (*template.Template, error) {

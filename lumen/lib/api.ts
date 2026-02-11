@@ -2008,6 +2008,7 @@ export interface AIModelsResponse {
 
 export interface AIPromptTemplateMeta {
   name: string;
+  label: string;
   file: string;
   description: string;
   customized: boolean;
