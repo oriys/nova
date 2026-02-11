@@ -66,6 +66,63 @@ type RewriteResponse struct {
 	Explanation string `json:"explanation,omitempty"`
 }
 
+// DiagnosticsAnalysisRequest is the request payload for analyzing function diagnostics.
+type DiagnosticsAnalysisRequest struct {
+	FunctionName     string                  `json:"function_name"`
+	TotalInvocations int                     `json:"total_invocations"`
+	AvgDurationMs    float64                 `json:"avg_duration_ms"`
+	P50DurationMs    int64                   `json:"p50_duration_ms"`
+	P95DurationMs    int64                   `json:"p95_duration_ms"`
+	P99DurationMs    int64                   `json:"p99_duration_ms"`
+	MaxDurationMs    int64                   `json:"max_duration_ms"`
+	ErrorRatePct     float64                 `json:"error_rate_pct"`
+	ColdStartRatePct float64                 `json:"cold_start_rate_pct"`
+	SlowCount        int                     `json:"slow_count"`
+	ErrorSamples     []DiagnosticsErrorSample `json:"error_samples,omitempty"`
+	SlowSamples      []DiagnosticsSlowSample  `json:"slow_samples,omitempty"`
+	MemoryMB         int                     `json:"memory_mb,omitempty"`
+	TimeoutS         int                     `json:"timeout_s,omitempty"`
+}
+
+// DiagnosticsErrorSample represents a sample error for analysis.
+type DiagnosticsErrorSample struct {
+	Timestamp    string `json:"timestamp"`
+	ErrorMessage string `json:"error_message"`
+	DurationMs   int64  `json:"duration_ms"`
+	ColdStart    bool   `json:"cold_start"`
+}
+
+// DiagnosticsSlowSample represents a slow invocation sample.
+type DiagnosticsSlowSample struct {
+	Timestamp  string `json:"timestamp"`
+	DurationMs int64  `json:"duration_ms"`
+	ColdStart  bool   `json:"cold_start"`
+}
+
+// DiagnosticsAnalysisResponse is the response for diagnostics analysis.
+type DiagnosticsAnalysisResponse struct {
+	Summary          string                        `json:"summary"`
+	RootCauses       []string                      `json:"root_causes"`
+	Recommendations  []DiagnosticsRecommendation   `json:"recommendations"`
+	Anomalies        []DiagnosticsAnomaly          `json:"anomalies"`
+	PerformanceScore int                           `json:"performance_score"`
+}
+
+// DiagnosticsRecommendation represents an actionable recommendation.
+type DiagnosticsRecommendation struct {
+	Category    string `json:"category"`
+	Priority    string `json:"priority"`
+	Action      string `json:"action"`
+	ExpectedImpact string `json:"expected_impact"`
+}
+
+// DiagnosticsAnomaly represents a detected anomaly.
+type DiagnosticsAnomaly struct {
+	Type        string `json:"type"`
+	Severity    string `json:"severity"`
+	Description string `json:"description"`
+}
+
 // Service provides AI-powered code operations.
 type Service struct {
 	cfg    Config
@@ -307,6 +364,90 @@ var rewriteFunctionTool = map[string]interface{}{
 	},
 }
 
+// analyzeDiagnosticsTool is the OpenAI function tool schema for diagnostics analysis.
+var analyzeDiagnosticsTool = map[string]interface{}{
+	"type": "function",
+	"function": map[string]interface{}{
+		"name":        "analyze_function_diagnostics",
+		"description": "Analyze serverless function performance diagnostics and provide insights, root cause analysis, and recommendations.",
+		"parameters": map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"summary": map[string]interface{}{
+					"type":        "string",
+					"description": "A concise natural language summary of the function's overall health and performance.",
+				},
+				"root_causes": map[string]interface{}{
+					"type":        "array",
+					"description": "List of identified root causes for performance issues or errors.",
+					"items": map[string]interface{}{
+						"type": "string",
+					},
+				},
+				"recommendations": map[string]interface{}{
+					"type":        "array",
+					"description": "List of actionable recommendations to improve function performance.",
+					"items": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"category": map[string]interface{}{
+								"type":        "string",
+								"description": "Category of recommendation (e.g., 'resource', 'architecture', 'configuration')",
+							},
+							"priority": map[string]interface{}{
+								"type":        "string",
+								"description": "Priority level: 'critical', 'high', 'medium', or 'low'",
+								"enum":        []string{"critical", "high", "medium", "low"},
+							},
+							"action": map[string]interface{}{
+								"type":        "string",
+								"description": "Specific action to take (e.g., 'Increase memory from 128MB to 512MB')",
+							},
+							"expected_impact": map[string]interface{}{
+								"type":        "string",
+								"description": "Expected improvement (e.g., 'Reduce P95 latency by 40%')",
+							},
+						},
+						"required": []string{"category", "priority", "action", "expected_impact"},
+					},
+				},
+				"anomalies": map[string]interface{}{
+					"type":        "array",
+					"description": "List of detected anomalies or unusual patterns.",
+					"items": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"type": map[string]interface{}{
+								"type":        "string",
+								"description": "Anomaly type (e.g., 'latency_spike', 'error_pattern', 'cold_start_excess')",
+							},
+							"severity": map[string]interface{}{
+								"type":        "string",
+								"description": "Severity: 'critical', 'high', 'medium', or 'low'",
+								"enum":        []string{"critical", "high", "medium", "low"},
+							},
+							"description": map[string]interface{}{
+								"type":        "string",
+								"description": "Description of the anomaly",
+							},
+						},
+						"required": []string{"type", "severity", "description"},
+					},
+				},
+				"performance_score": map[string]interface{}{
+					"type":        "integer",
+					"description": "Overall performance score from 1 (poor) to 10 (excellent)",
+					"minimum":     1,
+					"maximum":     10,
+				},
+			},
+			"required":             []string{"summary", "root_causes", "recommendations", "anomalies", "performance_score"},
+			"additionalProperties": false,
+		},
+		"strict": true,
+	},
+}
+
 // --- Service methods ---
 
 // Generate creates function code from a natural language description.
@@ -392,6 +533,101 @@ Always call the rewrite_function_code function with your result.`
 	if err := json.Unmarshal([]byte(resp), &result); err != nil {
 		result.Code = resp
 		result.Explanation = "Rewritten code"
+	}
+	return &result, nil
+}
+
+// AnalyzeDiagnostics analyzes function performance diagnostics and provides insights.
+func (s *Service) AnalyzeDiagnostics(ctx context.Context, req DiagnosticsAnalysisRequest) (*DiagnosticsAnalysisResponse, error) {
+	if !s.Enabled() {
+		return nil, fmt.Errorf("AI service is not enabled")
+	}
+
+	systemPrompt := `You are an expert performance analyst for the Nova serverless platform.
+
+## Your Task
+Analyze function performance diagnostics and provide actionable insights.
+
+Focus on:
+1. **Performance patterns**: Identify bottlenecks from latency percentiles (P50, P95, P99)
+2. **Error analysis**: Find root causes from error messages and patterns
+3. **Resource optimization**: Recommend memory, timeout, or scaling adjustments
+4. **Cold start impact**: Assess if cold starts are affecting performance
+5. **Anomaly detection**: Flag unusual patterns (e.g., latency spikes, error clusters)
+
+Provide practical recommendations with measurable expected impact.`
+
+	// Build user prompt with diagnostic data
+	userPrompt := fmt.Sprintf(`Analyze diagnostics for function "%s":
+
+**Performance Metrics:**
+- Total invocations: %d
+- Avg latency: %.1fms
+- P50 latency: %dms
+- P95 latency: %dms
+- P99 latency: %dms
+- Max latency: %dms
+- Error rate: %.2f%%
+- Cold start rate: %.2f%%
+- Slow invocations: %d
+
+**Configuration:**
+- Memory: %dMB
+- Timeout: %ds
+`,
+		req.FunctionName,
+		req.TotalInvocations,
+		req.AvgDurationMs,
+		req.P50DurationMs,
+		req.P95DurationMs,
+		req.P99DurationMs,
+		req.MaxDurationMs,
+		req.ErrorRatePct,
+		req.ColdStartRatePct,
+		req.SlowCount,
+		req.MemoryMB,
+		req.TimeoutS,
+	)
+
+	// Add error samples if available
+	if len(req.ErrorSamples) > 0 {
+		userPrompt += "\n**Recent Errors:**\n"
+		for i, sample := range req.ErrorSamples {
+			if i >= 5 {
+				break // Limit to 5 samples
+			}
+			userPrompt += fmt.Sprintf("- [%s] %s (duration: %dms, cold_start: %v)\n",
+				sample.Timestamp, sample.ErrorMessage, sample.DurationMs, sample.ColdStart)
+		}
+	}
+
+	// Add slow invocation samples if available
+	if len(req.SlowSamples) > 0 {
+		userPrompt += "\n**Slow Invocations:**\n"
+		for i, sample := range req.SlowSamples {
+			if i >= 5 {
+				break
+			}
+			userPrompt += fmt.Sprintf("- [%s] %dms (cold_start: %v)\n",
+				sample.Timestamp, sample.DurationMs, sample.ColdStart)
+		}
+	}
+
+	userPrompt += "\nProvide comprehensive analysis with actionable recommendations."
+
+	resp, err := s.chatCompletionWithTools(ctx, systemPrompt, userPrompt, []interface{}{analyzeDiagnosticsTool}, "analyze_function_diagnostics", maxReviewTokens)
+	if err != nil {
+		return nil, fmt.Errorf("analyze diagnostics: %w", err)
+	}
+
+	var result DiagnosticsAnalysisResponse
+	if err := json.Unmarshal([]byte(resp), &result); err != nil {
+		// Fallback: treat response as summary
+		result.Summary = resp
+		result.RootCauses = []string{}
+		result.Recommendations = []DiagnosticsRecommendation{}
+		result.Anomalies = []DiagnosticsAnomaly{}
+		result.PerformanceScore = 5
 	}
 	return &result, nil
 }

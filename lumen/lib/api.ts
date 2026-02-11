@@ -1962,6 +1962,41 @@ export interface AIModelsResponse {
   data: AIModelEntry[];
 }
 
+// Diagnostics Analysis types
+export interface DiagnosticsErrorSample {
+  timestamp: string;
+  error_message: string;
+  duration_ms: number;
+  cold_start: boolean;
+}
+
+export interface DiagnosticsSlowSample {
+  timestamp: string;
+  duration_ms: number;
+  cold_start: boolean;
+}
+
+export interface DiagnosticsRecommendation {
+  category: string;
+  priority: string;
+  action: string;
+  expected_impact: string;
+}
+
+export interface DiagnosticsAnomaly {
+  type: string;
+  severity: string;
+  description: string;
+}
+
+export interface DiagnosticsAnalysisResponse {
+  summary: string;
+  root_causes: string[];
+  recommendations: DiagnosticsRecommendation[];
+  anomalies: DiagnosticsAnomaly[];
+  performance_score: number;
+}
+
 // AI API
 export const aiApi = {
   status: () => request<AIStatusResponse>("/ai/status"),
@@ -1993,4 +2028,12 @@ export const aiApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  analyzeDiagnostics: (functionName: string, params?: { window?: string }) =>
+    request<DiagnosticsAnalysisResponse>(
+      `/functions/${functionName}/diagnostics/analyze${params?.window ? `?window=${params.window}` : ""}`,
+      {
+        method: "POST",
+      }
+    ),
 };

@@ -103,9 +103,10 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 
 	if dataPlaneEnabled {
 		dpHandler := &dataplane.Handler{
-			Store: cfg.Store,
-			Exec:  cfg.Exec,
-			Pool:  cfg.Pool,
+			Store:     cfg.Store,
+			Exec:      cfg.Exec,
+			Pool:      cfg.Pool,
+			AIService: cfg.AIService,
 		}
 		dpHandler.RegisterRoutes(mux)
 	} else {

@@ -19,6 +19,7 @@ func (h *AIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ai/generate", h.Generate)
 	mux.HandleFunc("POST /ai/review", h.Review)
 	mux.HandleFunc("POST /ai/rewrite", h.Rewrite)
+	mux.HandleFunc("POST /ai/analyze-diagnostics", h.AnalyzeDiagnostics)
 	mux.HandleFunc("GET /ai/status", h.Status)
 	mux.HandleFunc("GET /ai/config", h.GetConfig)
 	mux.HandleFunc("PUT /ai/config", h.UpdateConfig)
@@ -212,4 +213,26 @@ func (h *AIHandler) ListModels(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(models)
+}
+
+// AnalyzeDiagnostics analyzes function performance diagnostics.
+func (h *AIHandler) AnalyzeDiagnostics(w http.ResponseWriter, r *http.Request) {
+	var req ai.DiagnosticsAnalysisRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.FunctionName == "" {
+		http.Error(w, "function_name is required", http.StatusBadRequest)
+		return
+	}
+
+	resp, err := h.Service.AnalyzeDiagnostics(r.Context(), req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
