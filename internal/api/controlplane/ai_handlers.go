@@ -22,6 +22,7 @@ func (h *AIHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /ai/status", h.Status)
 	mux.HandleFunc("GET /ai/config", h.GetConfig)
 	mux.HandleFunc("PUT /ai/config", h.UpdateConfig)
+	mux.HandleFunc("GET /ai/models", h.ListModels)
 }
 
 // Status returns the AI service status.
@@ -200,4 +201,15 @@ func (h *AIHandler) Rewrite(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// ListModels fetches available models from the configured AI provider.
+func (h *AIHandler) ListModels(w http.ResponseWriter, r *http.Request) {
+	models, err := h.Service.ListModels(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(models)
 }

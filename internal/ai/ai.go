@@ -396,6 +396,53 @@ Always call the rewrite_function_code function with your result.`
 	return &result, nil
 }
 
+// ModelEntry represents a single model from the OpenAI-compatible /models endpoint.
+type ModelEntry struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	OwnedBy string `json:"owned_by"`
+}
+
+// ListModelsResponse is the response from the OpenAI-compatible /models endpoint.
+type ListModelsResponse struct {
+	Object string       `json:"object"`
+	Data   []ModelEntry `json:"data"`
+}
+
+// ListModels fetches available models from the configured base URL.
+func (s *Service) ListModels(ctx context.Context) (*ListModelsResponse, error) {
+	url := s.cfg.BaseURL + "/models"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	if s.cfg.APIKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+s.cfg.APIKey)
+	}
+
+	resp, err := s.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result ListModelsResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	return &result, nil
+}
+
 // --- OpenAI API types (following the official specification) ---
 
 // chatCompletionRequest matches the OpenAI Chat Completions API request format.

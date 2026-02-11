@@ -1950,6 +1950,18 @@ export interface AIConfigUpdateRequest {
   base_url?: string;
 }
 
+export interface AIModelEntry {
+  id: string;
+  object: string;
+  created: number;
+  owned_by: string;
+}
+
+export interface AIModelsResponse {
+  object: string;
+  data: AIModelEntry[];
+}
+
 // AI API
 export const aiApi = {
   status: () => request<AIStatusResponse>("/ai/status"),
@@ -1961,6 +1973,8 @@ export const aiApi = {
       method: "PUT",
       body: JSON.stringify(data),
     }),
+
+  listModels: () => request<AIModelsResponse>("/ai/models"),
 
   generate: (data: AIGenerateRequest) =>
     request<AIGenerateResponse>("/ai/generate", {
