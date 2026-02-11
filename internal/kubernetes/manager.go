@@ -21,10 +21,6 @@ import (
 	"github.com/oriys/nova/internal/metrics"
 )
 
-const (
-	agentPort = 9999
-)
-
 // Manager manages Kubernetes pods for function execution.
 // It implements the backend.Backend interface and supports scale-to-zero
 // by tracking pod idle time and deleting pods that exceed the grace period.
@@ -286,10 +282,12 @@ func (m *Manager) copyCodeToPod(ctx context.Context, podName string, files map[s
 		}
 		os.Remove(tmpFile.Name())
 
-		// Make the file executable
+		// Make the file executable (best-effort: some runtimes like Python don't need it)
 		chmodCmd := exec.CommandContext(ctx, "kubectl", "exec", "-n", m.config.Namespace, podName, "-c", "agent", "--",
 			"chmod", "+x", "/code/"+path)
-		chmodCmd.Run() // best-effort
+		if chmodOut, chmodErr := chmodCmd.CombinedOutput(); chmodErr != nil {
+			logging.Op().Debug("chmod failed (non-fatal)", "path", path, "error", chmodErr, "output", string(chmodOut))
+		}
 	}
 	return nil
 }

@@ -16,7 +16,7 @@ type Config struct {
 	AgentImage       string        `json:"agent_image"`       // Nova agent sidecar image
 	ServiceAccount   string        `json:"service_account"`   // ServiceAccount for function pods
 	NodeSelector     string        `json:"node_selector"`     // Node selector label (e.g., "nova.dev/role=function")
-	RuntimeClassName string        `json:"runtime_class_name"` // RuntimeClass for pod sandboxing (e.g., "kata" for kata-containers)
+	RuntimeClassName string        `json:"runtime_class_name"` // RuntimeClass for pod sandboxing (e.g., "kata" for Kata Containers)
 	AgentPort        int           `json:"agent_port"`        // Agent port inside the pod (default: 9999)
 	DefaultTimeout   time.Duration `json:"default_timeout"`   // Default operation timeout (default: 30s)
 	AgentTimeout     time.Duration `json:"agent_timeout"`     // Agent startup timeout (default: 30s)
