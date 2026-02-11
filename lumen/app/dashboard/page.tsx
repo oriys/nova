@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
@@ -20,6 +21,7 @@ import { cn } from "@/lib/utils"
 import { GlobalHeatmap } from "@/components/global-heatmap"
 
 export default function DashboardPage() {
+  const t = useTranslations("pages")
   const router = useRouter()
   const [functions, setFunctions] = useState<FunctionData[]>([])
   const [logs, setLogs] = useState<LogEntry[]>([])
@@ -132,7 +134,7 @@ export default function DashboardPage() {
   if (error) {
     return (
       <DashboardLayout>
-        <Header title="Dashboard" description="Overview of your serverless functions" />
+        <Header title={t("dashboard.title")} description={t("dashboard.description")} />
         <div className="p-6">
           <ErrorBanner error={error} title="Failed to Load Dashboard" onRetry={() => fetchData(false)} />
         </div>
@@ -142,7 +144,7 @@ export default function DashboardPage() {
 
   return (
     <DashboardLayout>
-      <Header title="Dashboard" description="Overview of your serverless functions" />
+      <Header title={t("dashboard.title")} description={t("dashboard.description")} />
 
       <div className="p-6 space-y-6">
         {/* Controls */}

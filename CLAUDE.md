@@ -57,7 +57,7 @@ There are no tests or linting configured in this project.
 
 2. **`cmd/agent/main.go`** - Guest agent that runs as PID 1 inside Firecracker VMs. Listens on vsock port 9999, receives Init/Exec/Ping/Stop messages, executes user code.
 
-3. **`lumen/`** - Next.js 15 web dashboard. Pages: Dashboard, Functions, Runtimes, Configurations, Logs, History. Uses shadcn/ui components and Recharts.
+3. **`lumen/`** - Next.js 16 web dashboard with i18n support (en, zh-CN, zh-TW, ja, fr). Pages: Dashboard, Functions, Workflows, Events, Runtimes, Configurations, History, Secrets, API Keys, Gateway, App Store, Tenancy. Uses shadcn/ui components, Recharts, Monaco Editor, and next-intl.
 
 ### Backend Internal Packages
 
@@ -75,8 +75,10 @@ There are no tests or linting configured in this project.
 ### Frontend Structure (lumen/)
 
 - **`app/`** - Next.js App Router pages
-- **`components/`** - React components (sidebar, header, dialogs, tables, charts)
+- **`components/`** - React components (sidebar, header, dialogs, tables, charts, language-switcher)
 - **`components/ui/`** - shadcn/ui base components
+- **`i18n/`** - Internationalization config (`config.ts` for shared constants, `request.ts` for server-side locale resolution)
+- **`messages/`** - Translation JSON files (`en.json`, `zh-CN.json`, `zh-TW.json`, `ja.json`, `fr.json`)
 - **`lib/api.ts`** - Backend API client with typed request/response
 - **`lib/types.ts`** - TypeScript interfaces for domain models
 

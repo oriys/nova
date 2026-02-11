@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import { useTranslations } from "next-intl"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
@@ -51,6 +52,7 @@ interface InvocationRecord {
 }
 
 export default function HistoryPage() {
+  const t = useTranslations("pages")
   const [invocations, setInvocations] = useState<InvocationRecord[]>([])
   const [functions, setFunctions] = useState<FunctionData[]>([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -195,7 +197,7 @@ export default function HistoryPage() {
   if (error) {
     return (
       <DashboardLayout>
-        <Header title="History" description="Invocation history and trends" />
+        <Header title={t("history.title")} description={t("history.description")} />
         <div className="p-6">
           <ErrorBanner error={error} title="Failed to Load Invocation History" onRetry={fetchData} />
         </div>
@@ -205,7 +207,7 @@ export default function HistoryPage() {
 
   return (
     <DashboardLayout>
-      <Header title="History" description="Invocation history and trends" />
+      <Header title={t("history.title")} description={t("history.description")} />
 
       <div className="p-6 space-y-6">
         {/* Filters */}

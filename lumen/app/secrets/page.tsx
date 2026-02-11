@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { Button } from "@/components/ui/button"
@@ -19,6 +20,7 @@ import { Plus, Trash2, RefreshCw, Lock } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export default function SecretsPage() {
+  const t = useTranslations("pages")
   const [secrets, setSecrets] = useState<SecretEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -71,7 +73,7 @@ export default function SecretsPage() {
 
   return (
     <DashboardLayout>
-      <Header title="Secrets" description="Manage encrypted secrets for functions" />
+      <Header title={t("secrets.title")} description={t("secrets.description")} />
 
       <div className="p-6 space-y-6">
         {error && (

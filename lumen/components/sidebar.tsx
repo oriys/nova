@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { useSidebar } from "./sidebar-context"
 import {
@@ -20,21 +21,22 @@ import {
   Store as StoreIcon,
 } from "lucide-react"
 
-// Fixed order by expected usage frequency.
-const navigation = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Functions", href: "/functions", icon: Code2 },
-  { name: "Events", href: "/events", icon: RadioTower },
-  { name: "Workflows", href: "/workflows", icon: GitBranch },
-  { name: "App Store", href: "/store", icon: StoreIcon },
-  { name: "My Apps", href: "/my-apps", icon: Package },
-  { name: "Tenancy", href: "/tenancy", icon: Building2 },
-  { name: "Async Jobs", href: "/async-invocations", icon: Clock3 },
-  { name: "History", href: "/history", icon: History },
-  { name: "Runtimes", href: "/runtimes", icon: Play },
-  { name: "Configurations", href: "/configurations", icon: Settings },
-  { name: "Secrets", href: "/secrets", icon: Lock },
-  { name: "API Keys", href: "/api-keys", icon: KeyRound },
+type NavKey = "dashboard" | "functions" | "events" | "workflows" | "appStore" | "myApps" | "tenancy" | "asyncJobs" | "history" | "runtimes" | "configurations" | "secrets" | "apiKeys"
+
+const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] = [
+  { key: "dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { key: "functions", href: "/functions", icon: Code2 },
+  { key: "events", href: "/events", icon: RadioTower },
+  { key: "workflows", href: "/workflows", icon: GitBranch },
+  { key: "appStore", href: "/store", icon: StoreIcon },
+  { key: "myApps", href: "/my-apps", icon: Package },
+  { key: "tenancy", href: "/tenancy", icon: Building2 },
+  { key: "asyncJobs", href: "/async-invocations", icon: Clock3 },
+  { key: "history", href: "/history", icon: History },
+  { key: "runtimes", href: "/runtimes", icon: Play },
+  { key: "configurations", href: "/configurations", icon: Settings },
+  { key: "secrets", href: "/secrets", icon: Lock },
+  { key: "apiKeys", href: "/api-keys", icon: KeyRound },
 ]
 
 function LumenLogo({ className }: { className?: string }) {
@@ -60,6 +62,7 @@ function LumenLogo({ className }: { className?: string }) {
 export function Sidebar() {
   const pathname = usePathname()
   const { collapsed, toggle } = useSidebar()
+  const t = useTranslations("nav")
 
   return (
     <aside
@@ -87,15 +90,16 @@ export function Sidebar() {
 
       <nav className={cn("flex-1 space-y-1", collapsed ? "px-2 py-4" : "px-3 py-4")}>
         {navigation.map((item) => {
+          const label = t(item.key)
           const isActive =
             pathname === item.href ||
             (item.href !== "/dashboard" && pathname.startsWith(item.href))
 
           return (
             <Link
-              key={item.name}
+              key={item.key}
               href={item.href}
-              title={collapsed ? item.name : undefined}
+              title={collapsed ? label : undefined}
               className={cn(
                 "flex items-center rounded-lg text-sm font-medium transition-colors",
                 collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2.5",
@@ -107,7 +111,7 @@ export function Sidebar() {
               <item.icon
                 className={cn("h-5 w-5 flex-shrink-0", isActive && "text-primary")}
               />
-              {!collapsed && item.name}
+              {!collapsed && label}
             </Link>
           )
         })}

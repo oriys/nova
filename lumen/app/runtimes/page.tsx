@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback, useRef } from "react"
+import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { Pagination } from "@/components/pagination"
@@ -22,6 +23,7 @@ function formatFileSize(bytes: number): string {
 }
 
 export default function RuntimesPage() {
+  const t = useTranslations("pages")
   const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -179,7 +181,7 @@ export default function RuntimesPage() {
   if (error && !showCreateDialog) {
     return (
       <DashboardLayout>
-        <Header title="Runtimes" description="Available execution environments" />
+        <Header title={t("runtimes.title")} description={t("runtimes.description")} />
         <div className="p-6">
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
             <p className="font-medium">Failed to load runtimes</p>
@@ -195,7 +197,7 @@ export default function RuntimesPage() {
 
   return (
     <DashboardLayout>
-      <Header title="Runtimes" description="Available execution environments" />
+      <Header title={t("runtimes.title")} description={t("runtimes.description")} />
 
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">

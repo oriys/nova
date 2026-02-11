@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react"
+import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
@@ -175,6 +176,7 @@ function downloadJSON(filename: string, payload: unknown) {
 }
 
 export default function FunctionsPage() {
+  const t = useTranslations("pages")
   const router = useRouter()
   const createOpenedByQueryRef = useRef(false)
   const importInputRef = useRef<HTMLInputElement | null>(null)
@@ -596,8 +598,8 @@ export default function FunctionsPage() {
   return (
     <DashboardLayout>
       <Header
-        title="Functions"
-        description="Manage and monitor your serverless functions"
+        title={t("functions.title")}
+        description={t("functions.description")}
       />
 
       <div className="p-6 space-y-6">
