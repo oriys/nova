@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo } from "react"
+import { useTranslations } from "next-intl"
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -74,6 +75,7 @@ export function Pagination({
   pageSizeOptions = [10, 20, 50, 100],
   itemLabel = "items",
 }: PaginationProps) {
+  const t = useTranslations("pagination")
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
   const safePage = clamp(page, 1, totalPages)
 
@@ -85,19 +87,19 @@ export function Pagination({
   return (
     <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between", className)}>
       <div className="text-sm text-muted-foreground">
-        {totalItems === 0 ? "0 results" : `Showing ${start}–${end} of ${totalItems} ${itemLabel}`}
+        {totalItems === 0 ? t("zeroResults") : t("showing", { start, end, total: totalItems, label: itemLabel })}
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         {onPageSizeChange && (
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground whitespace-nowrap">Rows</span>
+            <span className="text-sm text-muted-foreground whitespace-nowrap">{t("rows")}</span>
             <Select
               value={String(pageSize)}
               onValueChange={(v) => onPageSizeChange(Number(v))}
             >
               <SelectTrigger className="h-8 w-[92px]">
-                <SelectValue placeholder="Size" />
+                <SelectValue placeholder={t("size")} />
               </SelectTrigger>
               <SelectContent>
                 {pageSizeOptions.map((opt) => (
@@ -118,7 +120,7 @@ export function Pagination({
               size="icon-sm"
               onClick={() => onPageChange(1)}
               disabled={safePage <= 1}
-              aria-label="First page"
+              aria-label={t("firstPage")}
             >
               <ChevronsLeft className="h-4 w-4" />
             </Button>
@@ -128,7 +130,7 @@ export function Pagination({
               size="icon-sm"
               onClick={() => onPageChange(safePage - 1)}
               disabled={safePage <= 1}
-              aria-label="Previous page"
+              aria-label={t("previousPage")}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -147,7 +149,7 @@ export function Pagination({
                     size="sm"
                     className="h-8 min-w-8 px-2"
                     onClick={() => onPageChange(clamp(it, 1, totalPages))}
-                    aria-label={`Page ${it}`}
+                    aria-label={t("page", { number: it })}
                   >
                     {it}
                   </Button>
@@ -161,7 +163,7 @@ export function Pagination({
               size="icon-sm"
               onClick={() => onPageChange(safePage + 1)}
               disabled={safePage >= totalPages}
-              aria-label="Next page"
+              aria-label={t("nextPage")}
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
@@ -171,7 +173,7 @@ export function Pagination({
               size="icon-sm"
               onClick={() => onPageChange(totalPages)}
               disabled={safePage >= totalPages}
-              aria-label="Last page"
+              aria-label={t("lastPage")}
             >
               <ChevronsRight className="h-4 w-4" />
             </Button>

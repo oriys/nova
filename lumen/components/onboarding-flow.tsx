@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
+import { useTranslations } from "next-intl"
 import { CheckCircle2, Circle, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -26,6 +27,8 @@ export function OnboardingFlow({
   onCreateFunction,
   onCreateGatewayRoute,
 }: OnboardingFlowProps) {
+  const t = useTranslations("onboarding")
+  const tc = useTranslations("common")
   const [state, setState] = useState(getOnboardingState())
 
   useEffect(() => {
@@ -62,20 +65,20 @@ export function OnboardingFlow({
     {
       key: "function_created",
       done: merged.function_created,
-      title: "Create your first function",
-      description: "Add your business logic as a function.",
+      title: t("createFirstFunction"),
+      description: t("createFirstFunctionDesc"),
     },
     {
       key: "function_invoked",
       done: merged.function_invoked,
-      title: "Run a function once",
-      description: "Verify it executes and produces an invocation record.",
+      title: t("runFunctionOnce"),
+      description: t("runFunctionOnceDesc"),
     },
     {
       key: "gateway_route_created",
       done: merged.gateway_route_created,
-      title: "Create a gateway route",
-      description: "Bind an HTTP route to your function.",
+      title: t("createGatewayRoute"),
+      description: t("createGatewayRouteDesc"),
     },
   ]
 
@@ -85,16 +88,16 @@ export function OnboardingFlow({
         <div>
           <p className="flex items-center gap-2 text-sm font-medium text-foreground">
             <Sparkles className="h-4 w-4 text-primary" />
-            Getting Started
+            {t("gettingStarted")}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">Completed {completedCount}/3</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("completedCount", { count: completedCount })}</p>
         </div>
         <Button
           variant="ghost"
           size="sm"
           onClick={() => dismissOnboarding(true)}
         >
-          Dismiss
+          {t("dismiss")}
         </Button>
       </div>
 
@@ -117,22 +120,22 @@ export function OnboardingFlow({
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {!merged.function_created && onCreateFunction && (
           <Button size="sm" onClick={onCreateFunction}>
-            Create Function
+            {tc("create")}
           </Button>
         )}
         {!merged.function_invoked && (
           <Button asChild variant="outline" size="sm">
-            <Link href="/functions">Invoke Function</Link>
+            <Link href="/functions">{t("invokeFunction")}</Link>
           </Button>
         )}
         {!merged.gateway_route_created && onCreateGatewayRoute && (
           <Button variant="outline" size="sm" onClick={onCreateGatewayRoute}>
-            Create Route
+            {t("createRoute")}
           </Button>
         )}
         {!merged.gateway_route_created && !onCreateGatewayRoute && (
           <Button asChild variant="outline" size="sm">
-            <Link href="/gateway">Open Gateway</Link>
+            <Link href="/gateway">{t("openGateway")}</Link>
           </Button>
         )}
       </div>

@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -29,6 +30,8 @@ export function FunctionsTable({
   onToggleSelect,
   onToggleSelectAll,
 }: FunctionsTableProps) {
+  const t = useTranslations("functionsTable")
+  const tc = useTranslations("common")
   const allSelected = functions.length > 0 && functions.every((fn) => selectedNames?.has(fn.name))
 
   const formatDate = (dateString: string) => {
@@ -42,7 +45,7 @@ export function FunctionsTable({
 
   const formatBandwidth = (bytesPerSecond?: number) => {
     if (!bytesPerSecond || bytesPerSecond <= 0) {
-      return "Unlimited"
+      return t("unlimited")
     }
     const mbps = bytesPerSecond / (1024 * 1024)
     return `${mbps >= 100 ? mbps.toFixed(0) : mbps.toFixed(1)} MB/s`
@@ -52,10 +55,10 @@ export function FunctionsTable({
     const iops = fn.limits?.disk_iops ?? 0
     const bandwidth = fn.limits?.disk_bandwidth ?? 0
     if (iops <= 0 && bandwidth <= 0) {
-      return { primary: "Unlimited", secondary: "" }
+      return { primary: t("unlimited"), secondary: "" }
     }
     return {
-      primary: iops > 0 ? `${iops.toLocaleString()} IOPS` : "Unlimited IOPS",
+      primary: iops > 0 ? `${iops.toLocaleString()} IOPS` : `${t("unlimited")} IOPS`,
       secondary: `BW ${formatBandwidth(bandwidth)}`,
     }
   }
@@ -64,7 +67,7 @@ export function FunctionsTable({
     return (
       <div className="rounded-xl border border-border bg-card p-12 text-center">
         <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
-        <p className="text-sm text-muted-foreground mt-2">Loading functions...</p>
+        <p className="text-sm text-muted-foreground mt-2">{t("loadingFunctions")}</p>
       </div>
     )
   }
@@ -73,7 +76,7 @@ export function FunctionsTable({
     return (
       <div className="rounded-xl border border-border bg-card p-12 text-center">
         <p className="text-sm text-muted-foreground">
-          No functions found. Create your first function to get started.
+          {t("noFunctions")}
         </p>
       </div>
     )
@@ -94,34 +97,34 @@ export function FunctionsTable({
                 />
               </th>
               <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Function
+                {t("function")}
               </th>
               <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Runtime
+                {t("runtime")}
               </th>
               <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Status
+                {t("status")}
               </th>
               <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                vCPU
+                {t("vcpu")}
               </th>
               <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Memory
+                {t("memory")}
               </th>
               <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                IO
+                {t("io")}
               </th>
               <th className="px-6 py-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Invocations
+                {t("invocations")}
               </th>
               <th className="px-6 py-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Errors
+                {t("errors")}
               </th>
               <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Last Modified
+                {t("lastModified")}
               </th>
               <th className="px-6 py-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Actions
+                {t("actions")}
               </th>
             </tr>
           </thead>
@@ -211,13 +214,13 @@ export function FunctionsTable({
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className="flex items-center justify-end gap-1">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" asChild title="View">
-                      <Link href={`/functions/${fn.name}`} aria-label={`View ${fn.name}`}>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" asChild title={t("view")}>
+                      <Link href={`/functions/${fn.name}`} aria-label={`${t("view")} ${fn.name}`}>
                         <Eye className="h-4 w-4" />
                       </Link>
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" asChild title="Edit">
-                      <Link href={`/functions/${fn.name}?tab=config`} aria-label={`Edit ${fn.name}`}>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" asChild title={t("edit")}>
+                      <Link href={`/functions/${fn.name}?tab=config`} aria-label={`${t("edit")} ${fn.name}`}>
                         <Edit className="h-4 w-4" />
                       </Link>
                     </Button>
@@ -226,8 +229,8 @@ export function FunctionsTable({
                       size="icon"
                       className="h-8 w-8 text-destructive hover:text-destructive"
                       onClick={() => onDelete(fn.name)}
-                      title="Delete"
-                      aria-label={`Delete ${fn.name}`}
+                      title={tc("delete")}
+                      aria-label={`${tc("delete")} ${fn.name}`}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
