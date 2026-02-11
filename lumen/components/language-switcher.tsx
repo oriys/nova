@@ -3,7 +3,7 @@
 import { useLocale, useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
 import { useTransition } from "react"
-import { Globe } from "lucide-react"
+import { Languages } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   locales,
@@ -33,7 +33,7 @@ export function LanguageSwitcher() {
         disabled={isPending}
         aria-label={t("language")}
       >
-        <Globe className="h-4 w-4" />
+        <Languages className="h-4 w-4" />
       </Button>
       <div className="absolute right-0 top-full z-50 mt-1 hidden min-w-[140px] rounded-md border border-border bg-popover p-1 shadow-md group-hover:block">
         {locales.map((l) => (

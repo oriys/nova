@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
+import { useTranslations } from "next-intl"
 import { functionsApi, type NovaFunction } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { Command, Search } from "lucide-react"
@@ -17,6 +18,7 @@ type CommandItem = {
 
 export function CommandPalette() {
   const router = useRouter()
+  const t = useTranslations("commandPalette")
   const [open, setOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [query, setQuery] = useState("")
@@ -27,69 +29,69 @@ export function CommandPalette() {
     () => [
       {
         id: "goto-dashboard",
-        title: "Open Dashboard",
-        subtitle: "View global metrics",
+        title: t("openDashboard"),
+        subtitle: t("viewGlobalMetrics"),
         keywords: ["dashboard", "home", "overview"],
         run: () => router.push("/dashboard"),
       },
       {
         id: "goto-functions",
-        title: "Open Functions",
-        subtitle: "Manage functions",
+        title: t("openFunctions"),
+        subtitle: t("manageFunctions"),
         keywords: ["functions", "lambda", "func"],
         run: () => router.push("/functions"),
       },
       {
         id: "create-function",
-        title: "Create Function",
-        subtitle: "Open the functions page and create dialog",
+        title: t("createFunction"),
+        subtitle: t("openCreateDialog"),
         keywords: ["create", "new", "function"],
         run: () => router.push("/functions?create=1"),
       },
       {
         id: "goto-gateway",
-        title: "Open Gateway",
-        subtitle: "Manage routes",
+        title: t("openGateway"),
+        subtitle: t("manageRoutes"),
         keywords: ["gateway", "route", "http"],
         run: () => router.push("/gateway"),
       },
       {
         id: "create-route",
-        title: "Create Gateway Route",
-        subtitle: "Open the gateway page and create dialog",
+        title: t("createGatewayRoute"),
+        subtitle: t("openGatewayCreateDialog"),
         keywords: ["create", "route", "gateway"],
         run: () => router.push("/gateway?create=1"),
       },
       {
         id: "goto-events",
-        title: "Open Events",
-        subtitle: "Event bus",
+        title: t("openEvents"),
+        subtitle: t("eventBus"),
         keywords: ["events", "topic", "subscription"],
         run: () => router.push("/events"),
       },
       {
         id: "goto-history",
-        title: "Open History",
-        subtitle: "Invocation history",
+        title: t("openHistory"),
+        subtitle: t("invocationHistory"),
         keywords: ["history", "invocation", "logs"],
         run: () => router.push("/history"),
       },
       {
         id: "goto-tenancy",
-        title: "Open Tenancy",
-        subtitle: "Tenants and namespaces",
+        title: t("openTenancy"),
+        subtitle: t("tenantsAndNamespaces"),
         keywords: ["tenant", "namespace", "scope"],
         run: () => router.push("/tenancy"),
       },
       {
         id: "goto-docs",
-        title: "Open Docs",
-        subtitle: "View installation and API docs",
+        title: t("openDocs"),
+        subtitle: t("viewDocs"),
         keywords: ["docs", "guide", "help"],
         run: () => router.push("/docs"),
       },
     ],
-    [router]
+    [router, t]
   )
 
   useEffect(() => {
@@ -125,7 +127,7 @@ export function CommandPalette() {
   const items = useMemo(() => {
     const functionItems: CommandItem[] = functions.map((fn) => ({
       id: `fn-${fn.id}`,
-      title: `Open Function: ${fn.name}`,
+      title: `${t("openFunction", { name: fn.name })}`,
       subtitle: `${fn.runtime} · ${fn.memory_mb}MB`,
       keywords: [fn.name, fn.runtime, "function", "open", "invoke"],
       run: () => router.push(`/functions/${encodeURIComponent(fn.name)}`),
@@ -205,7 +207,7 @@ export function CommandPalette() {
                     autoFocus
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Type a command or function name..."
+                    placeholder={t("placeholder")}
                     className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                   />
                 </div>
@@ -213,7 +215,7 @@ export function CommandPalette() {
                 <div className="max-h-[420px] overflow-y-auto p-2">
                   {items.length === 0 ? (
                     <div className="rounded-md px-3 py-6 text-center text-sm text-muted-foreground">
-                      No matching commands
+                      {t("noResults")}
                     </div>
                   ) : (
                     items.map((item, index) => (
