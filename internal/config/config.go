@@ -9,6 +9,7 @@ import (
 
 	"github.com/oriys/nova/internal/docker"
 	"github.com/oriys/nova/internal/firecracker"
+	"github.com/oriys/nova/internal/kubernetes"
 	"github.com/oriys/nova/internal/wasm"
 )
 
@@ -172,6 +173,7 @@ type Config struct {
 	Firecracker   firecracker.Config    `json:"firecracker"`
 	Docker        docker.Config         `json:"docker"`
 	Wasm          wasm.Config           `json:"wasm"`
+	Kubernetes    kubernetes.Config     `json:"kubernetes"`
 	Postgres      PostgresConfig        `json:"postgres"`
 	Pool          PoolConfig            `json:"pool"`
 	Executor      ExecutorConfig        `json:"executor"`
@@ -192,10 +194,12 @@ func DefaultConfig() *Config {
 	fcCfg := firecracker.DefaultConfig()
 	dockerCfg := docker.DefaultConfig()
 	wasmCfg := wasm.DefaultConfig()
+	k8sCfg := kubernetes.DefaultConfig()
 	return &Config{
 		Firecracker: *fcCfg,
 		Docker:      *dockerCfg,
 		Wasm:        *wasmCfg,
+		Kubernetes:  *k8sCfg,
 		Postgres: PostgresConfig{
 			DSN: "postgres://nova:nova@localhost:5432/nova?sslmode=disable",
 		},
@@ -601,6 +605,54 @@ func LoadFromEnv(cfg *Config) {
 	if v := os.Getenv("NOVA_WASM_AGENT_TIMEOUT"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			cfg.Wasm.AgentTimeout = d
+		}
+	}
+
+	// Kubernetes backend overrides
+	if v := os.Getenv("NOVA_K8S_KUBECONFIG"); v != "" {
+		cfg.Kubernetes.Kubeconfig = v
+	}
+	if v := os.Getenv("NOVA_K8S_NAMESPACE"); v != "" {
+		cfg.Kubernetes.Namespace = v
+	}
+	if v := os.Getenv("NOVA_K8S_IMAGE_PREFIX"); v != "" {
+		cfg.Kubernetes.ImagePrefix = v
+	}
+	if v := os.Getenv("NOVA_K8S_AGENT_IMAGE"); v != "" {
+		cfg.Kubernetes.AgentImage = v
+	}
+	if v := os.Getenv("NOVA_K8S_SERVICE_ACCOUNT"); v != "" {
+		cfg.Kubernetes.ServiceAccount = v
+	}
+	if v := os.Getenv("NOVA_K8S_NODE_SELECTOR"); v != "" {
+		cfg.Kubernetes.NodeSelector = v
+	}
+	if v := os.Getenv("NOVA_K8S_RUNTIME_CLASS"); v != "" {
+		cfg.Kubernetes.RuntimeClassName = v
+	}
+	if v := os.Getenv("NOVA_K8S_AGENT_PORT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Kubernetes.AgentPort = n
+		}
+	}
+	if v := os.Getenv("NOVA_K8S_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Kubernetes.DefaultTimeout = d
+		}
+	}
+	if v := os.Getenv("NOVA_K8S_AGENT_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Kubernetes.AgentTimeout = d
+		}
+	}
+	if v := os.Getenv("NOVA_K8S_SCALE_TO_ZERO_GRACE"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Kubernetes.ScaleToZeroGracePeriod = d
+		}
+	}
+	if v := os.Getenv("NOVA_K8S_STABLE_WINDOW"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Kubernetes.StableWindow = d
 		}
 	}
 }

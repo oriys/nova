@@ -21,6 +21,7 @@ import (
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/firecracker"
 	novagrpc "github.com/oriys/nova/internal/grpc"
+	"github.com/oriys/nova/internal/kubernetes"
 	"github.com/oriys/nova/internal/layer"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
@@ -126,6 +127,17 @@ func daemonCmd() *cobra.Command {
 					return err
 				}
 				be = wasmMgr
+			case "kubernetes", "k8s":
+				logging.Op().Info("using Kubernetes backend",
+					"namespace", cfg.Kubernetes.Namespace,
+					"runtime_class", cfg.Kubernetes.RuntimeClassName,
+					"scale_to_zero_grace", cfg.Kubernetes.ScaleToZeroGracePeriod,
+				)
+				k8sMgr, err := kubernetes.NewManager(&cfg.Kubernetes)
+				if err != nil {
+					return err
+				}
+				be = k8sMgr
 			default:
 				logging.Op().Info("using Firecracker backend")
 				adapter, err := firecracker.NewAdapter(&cfg.Firecracker)
