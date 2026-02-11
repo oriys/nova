@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react"
+import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { EmptyState } from "@/components/empty-state"
@@ -63,6 +64,7 @@ function releaseStatusBadgeVariant(
 }
 
 export default function MyAppsPage() {
+  const t = useTranslations("pages")
   const [apps, setApps] = useState<AppStoreApp[]>([])
   const [releasesBySlug, setReleasesBySlug] = useState<Record<string, AppStoreRelease[]>>({})
   const [loading, setLoading] = useState(true)
@@ -312,7 +314,7 @@ export default function MyAppsPage() {
 
   return (
     <DashboardLayout>
-      <Header title="My Apps" description="Manage apps you publish to the App Store" />
+      <Header title={t("myApps.title")} description={t("myApps.description")} />
 
       <div className="space-y-6 p-6">
         {error ? <ErrorBanner error={error} title="Failed to Load My Apps" onRetry={fetchData} /> : null}

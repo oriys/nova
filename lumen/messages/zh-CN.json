@@ -1,0 +1,98 @@
+{
+  "metadata": {
+    "title": "Lumen 控制台",
+    "description": "轻松管理您的无服务器函数"
+  },
+  "nav": {
+    "dashboard": "仪表盘",
+    "functions": "函数",
+    "events": "事件",
+    "workflows": "工作流",
+    "appStore": "应用商店",
+    "myApps": "我的应用",
+    "tenancy": "租户",
+    "asyncJobs": "异步任务",
+    "history": "历史记录",
+    "runtimes": "运行时",
+    "configurations": "配置",
+    "secrets": "密钥",
+    "apiKeys": "API 密钥"
+  },
+  "pages": {
+    "dashboard": {
+      "title": "仪表盘",
+      "description": "无服务器函数概览"
+    },
+    "functions": {
+      "title": "函数",
+      "description": "管理和监控您的无服务器函数"
+    },
+    "events": {
+      "title": "事件",
+      "description": "主题 / 订阅 / 消费者组事件总线"
+    },
+    "workflows": {
+      "title": "工作流",
+      "description": "DAG 工作流编排"
+    },
+    "appStore": {
+      "title": "应用商店",
+      "description": "浏览和安装函数/工作流套件"
+    },
+    "myApps": {
+      "title": "我的应用",
+      "description": "管理您发布到应用商店的应用"
+    },
+    "tenancy": {
+      "title": "租户",
+      "description": "切换和管理租户与命名空间"
+    },
+    "asyncInvocations": {
+      "title": "异步调用",
+      "description": "按任务 ID 查找异步任务并检查队列执行状态"
+    },
+    "history": {
+      "title": "历史记录",
+      "description": "调用历史和趋势"
+    },
+    "runtimes": {
+      "title": "运行时",
+      "description": "可用的执行环境"
+    },
+    "configurations": {
+      "title": "配置",
+      "description": "系统设置和健康状态"
+    },
+    "secrets": {
+      "title": "密钥",
+      "description": "管理函数的加密密钥"
+    },
+    "apiKeys": {
+      "title": "API 密钥",
+      "description": "管理用于身份验证的 API 密钥"
+    },
+    "gateway": {
+      "title": "网关",
+      "description": "管理映射到 Nova 函数的 HTTP 路由"
+    }
+  },
+  "common": {
+    "search": "搜索函数…",
+    "loading": "加载中…",
+    "error": "错误",
+    "noResults": "未找到结果",
+    "create": "创建",
+    "delete": "删除",
+    "save": "保存",
+    "cancel": "取消",
+    "confirm": "确认",
+    "back": "返回",
+    "next": "下一步",
+    "retry": "重试",
+    "refresh": "刷新",
+    "close": "关闭",
+    "language": "语言",
+    "docs": "文档",
+    "health": "健康状态"
+  }
+}

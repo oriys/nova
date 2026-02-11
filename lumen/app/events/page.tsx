@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { EmptyState } from "@/components/empty-state"
@@ -57,6 +58,7 @@ type Notice = {
 }
 
 export default function EventsPage() {
+  const t = useTranslations("pages")
   const [topics, setTopics] = useState<EventTopic[]>([])
   const [functions, setFunctions] = useState<NovaFunction[]>([])
   const [workflows, setWorkflows] = useState<Workflow[]>([])
@@ -560,7 +562,7 @@ export default function EventsPage() {
 
   return (
     <DashboardLayout>
-      <Header title="Events" description="Topic / Subscription / Consumer Group event bus" />
+      <Header title={t("events.title")} description={t("events.description")} />
 
       <div className="p-6 space-y-6">
         {error && (

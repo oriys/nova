@@ -1,0 +1,98 @@
+{
+  "metadata": {
+    "title": "Console Lumen",
+    "description": "Gérez vos fonctions serverless en toute simplicité"
+  },
+  "nav": {
+    "dashboard": "Tableau de bord",
+    "functions": "Fonctions",
+    "events": "Événements",
+    "workflows": "Workflows",
+    "appStore": "App Store",
+    "myApps": "Mes applications",
+    "tenancy": "Locataires",
+    "asyncJobs": "Tâches async",
+    "history": "Historique",
+    "runtimes": "Environnements",
+    "configurations": "Configurations",
+    "secrets": "Secrets",
+    "apiKeys": "Clés API"
+  },
+  "pages": {
+    "dashboard": {
+      "title": "Tableau de bord",
+      "description": "Aperçu de vos fonctions serverless"
+    },
+    "functions": {
+      "title": "Fonctions",
+      "description": "Gérer et surveiller vos fonctions serverless"
+    },
+    "events": {
+      "title": "Événements",
+      "description": "Bus d'événements : topics / abonnements / groupes de consommateurs"
+    },
+    "workflows": {
+      "title": "Workflows",
+      "description": "Orchestration de workflows DAG"
+    },
+    "appStore": {
+      "title": "App Store",
+      "description": "Parcourir et installer des packs de fonctions/workflows"
+    },
+    "myApps": {
+      "title": "Mes applications",
+      "description": "Gérer les applications que vous publiez sur l'App Store"
+    },
+    "tenancy": {
+      "title": "Locataires",
+      "description": "Basculer et gérer les locataires et espaces de noms"
+    },
+    "asyncInvocations": {
+      "title": "Invocations asynchrones",
+      "description": "Rechercher des tâches async par ID et inspecter l'état d'exécution"
+    },
+    "history": {
+      "title": "Historique",
+      "description": "Historique et tendances des invocations"
+    },
+    "runtimes": {
+      "title": "Environnements",
+      "description": "Environnements d'exécution disponibles"
+    },
+    "configurations": {
+      "title": "Configurations",
+      "description": "Paramètres système et état de santé"
+    },
+    "secrets": {
+      "title": "Secrets",
+      "description": "Gérer les secrets chiffrés pour les fonctions"
+    },
+    "apiKeys": {
+      "title": "Clés API",
+      "description": "Gérer les clés API pour l'authentification"
+    },
+    "gateway": {
+      "title": "Passerelle",
+      "description": "Gérer les routes HTTP mappées aux fonctions Nova"
+    }
+  },
+  "common": {
+    "search": "Rechercher des fonctions…",
+    "loading": "Chargement…",
+    "error": "Erreur",
+    "noResults": "Aucun résultat trouvé",
+    "create": "Créer",
+    "delete": "Supprimer",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "confirm": "Confirmer",
+    "back": "Retour",
+    "next": "Suivant",
+    "retry": "Réessayer",
+    "refresh": "Actualiser",
+    "close": "Fermer",
+    "language": "Langue",
+    "docs": "Documentation",
+    "health": "Santé"
+  }
+}

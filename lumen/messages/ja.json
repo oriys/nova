@@ -1,0 +1,98 @@
+{
+  "metadata": {
+    "title": "Lumen コンソール",
+    "description": "サーバーレス関数を簡単に管理"
+  },
+  "nav": {
+    "dashboard": "ダッシュボード",
+    "functions": "関数",
+    "events": "イベント",
+    "workflows": "ワークフロー",
+    "appStore": "アプリストア",
+    "myApps": "マイアプリ",
+    "tenancy": "テナント",
+    "asyncJobs": "非同期ジョブ",
+    "history": "履歴",
+    "runtimes": "ランタイム",
+    "configurations": "設定",
+    "secrets": "シークレット",
+    "apiKeys": "APIキー"
+  },
+  "pages": {
+    "dashboard": {
+      "title": "ダッシュボード",
+      "description": "サーバーレス関数の概要"
+    },
+    "functions": {
+      "title": "関数",
+      "description": "サーバーレス関数の管理と監視"
+    },
+    "events": {
+      "title": "イベント",
+      "description": "トピック / サブスクリプション / コンシューマーグループ イベントバス"
+    },
+    "workflows": {
+      "title": "ワークフロー",
+      "description": "DAG ワークフローオーケストレーション"
+    },
+    "appStore": {
+      "title": "アプリストア",
+      "description": "関数/ワークフローバンドルの閲覧とインストール"
+    },
+    "myApps": {
+      "title": "マイアプリ",
+      "description": "アプリストアに公開したアプリの管理"
+    },
+    "tenancy": {
+      "title": "テナント",
+      "description": "テナントと名前空間の切り替えと管理"
+    },
+    "asyncInvocations": {
+      "title": "非同期呼び出し",
+      "description": "ジョブIDで非同期ジョブを検索し、キュー実行状態を確認"
+    },
+    "history": {
+      "title": "履歴",
+      "description": "呼び出し履歴とトレンド"
+    },
+    "runtimes": {
+      "title": "ランタイム",
+      "description": "利用可能な実行環境"
+    },
+    "configurations": {
+      "title": "設定",
+      "description": "システム設定とヘルス"
+    },
+    "secrets": {
+      "title": "シークレット",
+      "description": "関数の暗号化シークレットの管理"
+    },
+    "apiKeys": {
+      "title": "APIキー",
+      "description": "認証用APIキーの管理"
+    },
+    "gateway": {
+      "title": "ゲートウェイ",
+      "description": "Nova関数にマッピングされたHTTPルートの管理"
+    }
+  },
+  "common": {
+    "search": "関数を検索…",
+    "loading": "読み込み中…",
+    "error": "エラー",
+    "noResults": "結果が見つかりません",
+    "create": "作成",
+    "delete": "削除",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "confirm": "確認",
+    "back": "戻る",
+    "next": "次へ",
+    "retry": "再試行",
+    "refresh": "更新",
+    "close": "閉じる",
+    "language": "言語",
+    "docs": "ドキュメント",
+    "health": "ヘルス"
+  }
+}

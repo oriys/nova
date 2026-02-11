@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { Button } from "@/components/ui/button"
@@ -35,6 +36,7 @@ import {
 import { cn } from "@/lib/utils"
 
 export default function APIKeysPage() {
+  const t = useTranslations("pages")
   const [keys, setKeys] = useState<APIKeyEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -104,7 +106,7 @@ export default function APIKeysPage() {
 
   return (
     <DashboardLayout>
-      <Header title="API Keys" description="Manage API keys for authentication" />
+      <Header title={t("apiKeys.title")} description={t("apiKeys.description")} />
 
       <div className="p-6 space-y-6">
         {error && (

@@ -1,0 +1,98 @@
+{
+  "metadata": {
+    "title": "Lumen 控制台",
+    "description": "輕鬆管理您的無伺服器函數"
+  },
+  "nav": {
+    "dashboard": "儀表板",
+    "functions": "函數",
+    "events": "事件",
+    "workflows": "工作流程",
+    "appStore": "應用商店",
+    "myApps": "我的應用",
+    "tenancy": "租戶",
+    "asyncJobs": "非同步任務",
+    "history": "歷史記錄",
+    "runtimes": "執行環境",
+    "configurations": "設定",
+    "secrets": "密鑰",
+    "apiKeys": "API 密鑰"
+  },
+  "pages": {
+    "dashboard": {
+      "title": "儀表板",
+      "description": "無伺服器函數概覽"
+    },
+    "functions": {
+      "title": "函數",
+      "description": "管理和監控您的無伺服器函數"
+    },
+    "events": {
+      "title": "事件",
+      "description": "主題 / 訂閱 / 消費者群組事件匯流排"
+    },
+    "workflows": {
+      "title": "工作流程",
+      "description": "DAG 工作流程編排"
+    },
+    "appStore": {
+      "title": "應用商店",
+      "description": "瀏覽和安裝函數/工作流程套件"
+    },
+    "myApps": {
+      "title": "我的應用",
+      "description": "管理您發佈到應用商店的應用"
+    },
+    "tenancy": {
+      "title": "租戶",
+      "description": "切換和管理租戶與命名空間"
+    },
+    "asyncInvocations": {
+      "title": "非同步呼叫",
+      "description": "按任務 ID 查詢非同步任務並檢查佇列執行狀態"
+    },
+    "history": {
+      "title": "歷史記錄",
+      "description": "呼叫歷史和趨勢"
+    },
+    "runtimes": {
+      "title": "執行環境",
+      "description": "可用的執行環境"
+    },
+    "configurations": {
+      "title": "設定",
+      "description": "系統設定和健康狀態"
+    },
+    "secrets": {
+      "title": "密鑰",
+      "description": "管理函數的加密密鑰"
+    },
+    "apiKeys": {
+      "title": "API 密鑰",
+      "description": "管理用於身份驗證的 API 密鑰"
+    },
+    "gateway": {
+      "title": "閘道",
+      "description": "管理映射到 Nova 函數的 HTTP 路由"
+    }
+  },
+  "common": {
+    "search": "搜尋函數…",
+    "loading": "載入中…",
+    "error": "錯誤",
+    "noResults": "未找到結果",
+    "create": "建立",
+    "delete": "刪除",
+    "save": "儲存",
+    "cancel": "取消",
+    "confirm": "確認",
+    "back": "返回",
+    "next": "下一步",
+    "retry": "重試",
+    "refresh": "重新整理",
+    "close": "關閉",
+    "language": "語言",
+    "docs": "文件",
+    "health": "健康狀態"
+  }
+}

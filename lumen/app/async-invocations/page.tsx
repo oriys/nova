@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { Button } from "@/components/ui/button"
@@ -49,6 +50,7 @@ function getStatusBadge(status: AsyncInvocationStatus) {
 }
 
 export default function AsyncInvocationsPage() {
+  const t = useTranslations("pages")
   const [jobID, setJobID] = useState("")
   const [statusFilter, setStatusFilter] = useState<"all" | AsyncInvocationStatus>("all")
   const [jobs, setJobs] = useState<AsyncInvocationJob[]>([])
@@ -114,7 +116,7 @@ export default function AsyncInvocationsPage() {
 
   return (
     <DashboardLayout>
-      <Header title="Async Invocations" description="Lookup async jobs by job ID and inspect queue execution state" />
+      <Header title={t("asyncInvocations.title")} description={t("asyncInvocations.description")} />
 
       <div className="space-y-6 p-6">
         {error && (

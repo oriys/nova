@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { Pagination } from "@/components/pagination"
@@ -50,6 +51,7 @@ function componentStatusText(value: unknown): string {
 }
 
 export default function ConfigurationsPage() {
+  const t = useTranslations("pages")
   const [health, setHealth] = useState<HealthStatus | null>(null)
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [loading, setLoading] = useState(true)
@@ -135,7 +137,7 @@ export default function ConfigurationsPage() {
   if (error) {
     return (
       <DashboardLayout>
-        <Header title="Configurations" description="System settings and health" />
+        <Header title={t("configurations.title")} description={t("configurations.description")} />
         <div className="p-6">
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
             <p className="font-medium">Failed to load configuration</p>
@@ -151,7 +153,7 @@ export default function ConfigurationsPage() {
 
   return (
     <DashboardLayout>
-      <Header title="Configurations" description="System settings and health" />
+      <Header title={t("configurations.title")} description={t("configurations.description")} />
 
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-end gap-2">

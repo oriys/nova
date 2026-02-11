@@ -18,6 +18,7 @@ import {
 import { ThemeToggle } from "./theme-toggle"
 import { GlobalScopeSwitcher } from "./global-scope-switcher"
 import { CommandPalette } from "./command-palette"
+import { LanguageSwitcher } from "./language-switcher"
 
 interface HeaderProps {
   title: string
@@ -349,6 +350,8 @@ export function Header({ title, description }: HeaderProps) {
         </Button>
 
         <GlobalScopeSwitcher />
+
+        <LanguageSwitcher />
 
         <ThemeToggle />
 

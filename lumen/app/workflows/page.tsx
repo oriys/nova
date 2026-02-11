@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import { useTranslations } from "next-intl"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
@@ -28,6 +29,7 @@ type Notice = {
 }
 
 export default function WorkflowsPage() {
+  const t = useTranslations("pages")
   const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -95,7 +97,7 @@ export default function WorkflowsPage() {
   if (error) {
     return (
       <DashboardLayout>
-        <Header title="Workflows" description="DAG workflow orchestration" />
+        <Header title={t("workflows.title")} description={t("workflows.description")} />
         <div className="p-6">
           <ErrorBanner error={error} title="Failed to Load Workflows" onRetry={fetchData} />
         </div>
@@ -105,7 +107,7 @@ export default function WorkflowsPage() {
 
   return (
     <DashboardLayout>
-      <Header title="Workflows" description="DAG workflow orchestration" />
+      <Header title={t("workflows.title")} description={t("workflows.description")} />
 
       <div className="p-6 space-y-6">
         {notice && (

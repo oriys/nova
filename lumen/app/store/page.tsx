@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { EmptyState } from "@/components/empty-state"
@@ -29,6 +30,7 @@ function statusBadgeVariant(
 }
 
 export default function StorePage() {
+  const t = useTranslations("pages")
   const [apps, setApps] = useState<AppStoreApp[]>([])
   const [installations, setInstallations] = useState<AppStoreInstallation[]>([])
   const [loading, setLoading] = useState(true)
@@ -106,7 +108,7 @@ export default function StorePage() {
 
   return (
     <DashboardLayout>
-      <Header title="App Store" description="Browse and install function/workflow bundles" />
+      <Header title={t("appStore.title")} description={t("appStore.description")} />
 
       <div className="p-6 space-y-6">
         {error ? <ErrorBanner error={error} title="Failed to Load App Store" onRetry={fetchData} /> : null}

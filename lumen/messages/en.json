@@ -1,0 +1,98 @@
+{
+  "metadata": {
+    "title": "Lumen Console",
+    "description": "Manage your serverless functions with ease"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "functions": "Functions",
+    "events": "Events",
+    "workflows": "Workflows",
+    "appStore": "App Store",
+    "myApps": "My Apps",
+    "tenancy": "Tenancy",
+    "asyncJobs": "Async Jobs",
+    "history": "History",
+    "runtimes": "Runtimes",
+    "configurations": "Configurations",
+    "secrets": "Secrets",
+    "apiKeys": "API Keys"
+  },
+  "pages": {
+    "dashboard": {
+      "title": "Dashboard",
+      "description": "Overview of your serverless functions"
+    },
+    "functions": {
+      "title": "Functions",
+      "description": "Manage and monitor your serverless functions"
+    },
+    "events": {
+      "title": "Events",
+      "description": "Topic / Subscription / Consumer Group event bus"
+    },
+    "workflows": {
+      "title": "Workflows",
+      "description": "DAG workflow orchestration"
+    },
+    "appStore": {
+      "title": "App Store",
+      "description": "Browse and install function/workflow bundles"
+    },
+    "myApps": {
+      "title": "My Apps",
+      "description": "Manage apps you publish to the App Store"
+    },
+    "tenancy": {
+      "title": "Tenancy",
+      "description": "Switch and manage tenants and namespaces"
+    },
+    "asyncInvocations": {
+      "title": "Async Invocations",
+      "description": "Lookup async jobs by job ID and inspect queue execution state"
+    },
+    "history": {
+      "title": "History",
+      "description": "Invocation history and trends"
+    },
+    "runtimes": {
+      "title": "Runtimes",
+      "description": "Available execution environments"
+    },
+    "configurations": {
+      "title": "Configurations",
+      "description": "System settings and health"
+    },
+    "secrets": {
+      "title": "Secrets",
+      "description": "Manage encrypted secrets for functions"
+    },
+    "apiKeys": {
+      "title": "API Keys",
+      "description": "Manage API keys for authentication"
+    },
+    "gateway": {
+      "title": "Gateway",
+      "description": "Manage HTTP routes mapped to Nova functions"
+    }
+  },
+  "common": {
+    "search": "Search functions…",
+    "loading": "Loading…",
+    "error": "Error",
+    "noResults": "No results found",
+    "create": "Create",
+    "delete": "Delete",
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "back": "Back",
+    "next": "Next",
+    "retry": "Retry",
+    "refresh": "Refresh",
+    "close": "Close",
+    "language": "Language",
+    "docs": "Documentation",
+    "health": "Health"
+  }
+}

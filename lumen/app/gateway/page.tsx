@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
@@ -189,6 +190,7 @@ function downloadJSON(filename: string, payload: unknown) {
 }
 
 export default function GatewayPage() {
+  const t = useTranslations("pages")
   const router = useRouter()
   const createOpenedByQueryRef = useRef(false)
   const importInputRef = useRef<HTMLInputElement | null>(null)
@@ -657,7 +659,7 @@ export default function GatewayPage() {
 
   return (
     <DashboardLayout>
-      <Header title="Gateway" description="Manage HTTP routes mapped to Nova functions" />
+      <Header title={t("gateway.title")} description={t("gateway.description")} />
 
       <div className="space-y-6 p-6">
         <OnboardingFlow

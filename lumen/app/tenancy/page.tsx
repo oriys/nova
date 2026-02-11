@@ -1,16 +1,18 @@
 "use client"
 
+import { useTranslations } from "next-intl"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { TenantSwitcher } from "@/components/tenant-switcher"
 
 export default function TenancyPage() {
+  const t = useTranslations("pages")
   return (
     <DashboardLayout>
       <Header
-        title="Tenancy"
-        description="Switch and manage tenants and namespaces"
+        title={t("tenancy.title")}
+        description={t("tenancy.description")}
       />
 
       <div className="p-6 space-y-6">
