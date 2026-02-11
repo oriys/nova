@@ -22,6 +22,7 @@ export interface NovaFunction {
   rollout_policy?: RolloutPolicy;
   auto_scale_policy?: AutoScalePolicy;
   capacity_policy?: CapacityPolicy;
+  slo_policy?: SLOPolicy;
   created_at: string;
   updated_at: string;
   version?: number;
@@ -115,6 +116,26 @@ export interface CapacityPolicy {
   breaker_window_s?: number;
   breaker_open_s?: number;
   half_open_probes?: number;
+}
+
+export interface SLOObjectives {
+  success_rate_pct?: number;
+  p95_duration_ms?: number;
+  cold_start_rate_pct?: number;
+}
+
+export interface SLONotificationTarget {
+  type: string;
+  url: string;
+  headers?: Record<string, string>;
+}
+
+export interface SLOPolicy {
+  enabled: boolean;
+  window_s?: number;
+  min_samples?: number;
+  objectives?: SLOObjectives;
+  notifications?: SLONotificationTarget[];
 }
 
 export interface Runtime {
@@ -483,6 +504,24 @@ export interface FunctionDiagnostics {
   slow_invocations: FunctionDiagnosticsSlowInvocation[];
 }
 
+export interface FunctionSLOStatus {
+  function_id: string;
+  function_name: string;
+  enabled: boolean;
+  policy?: SLOPolicy;
+  snapshot?: {
+    window_seconds: number;
+    total_invocations: number;
+    successes: number;
+    failures: number;
+    cold_starts: number;
+    success_rate_pct: number;
+    cold_start_rate_pct: number;
+    p95_duration_ms: number;
+  };
+  breaches: string[];
+}
+
 // Performance Recommendations types
 export interface PerformanceRecommendation {
   category: string;
@@ -550,6 +589,25 @@ export interface HealthStatus {
   uptime_seconds?: number;
 }
 
+export type NotificationStatus = "unread" | "read" | "all";
+
+export interface NotificationEntry {
+  id: string;
+  tenant_id?: string;
+  namespace?: string;
+  type: string;
+  severity: string;
+  source?: string;
+  function_id?: string;
+  function_name?: string;
+  title: string;
+  message: string;
+  data?: unknown;
+  status: Exclude<NotificationStatus, "all">;
+  created_at: string;
+  read_at?: string;
+}
+
 export interface CreateFunctionRequest {
   name: string;
   runtime: string;
@@ -564,6 +622,7 @@ export interface CreateFunctionRequest {
   limits?: ResourceLimits;
   network_policy?: NetworkPolicy;
   rollout_policy?: RolloutPolicy;
+  slo_policy?: SLOPolicy;
 }
 
 export interface UpdateFunctionRequest {
@@ -578,6 +637,7 @@ export interface UpdateFunctionRequest {
   limits?: ResourceLimits;
   network_policy?: NetworkPolicy;
   rollout_policy?: RolloutPolicy;
+  slo_policy?: SLOPolicy;
 }
 
 export interface CreateRuntimeRequest {
@@ -845,6 +905,23 @@ export const functionsApi = {
     request<{ status: string; function: string }>(`/functions/${encodeURIComponent(name)}/capacity`, {
       method: "DELETE",
     }),
+
+  getSLOPolicy: (name: string) =>
+    request<SLOPolicy>(`/functions/${encodeURIComponent(name)}/slo`),
+
+  setSLOPolicy: (name: string, data: SLOPolicy) =>
+    request<SLOPolicy>(`/functions/${encodeURIComponent(name)}/slo`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteSLOPolicy: (name: string) =>
+    request<{ status: string; function: string }>(`/functions/${encodeURIComponent(name)}/slo`, {
+      method: "DELETE",
+    }),
+
+  sloStatus: (name: string) =>
+    request<FunctionSLOStatus>(`/functions/${encodeURIComponent(name)}/slo/status`),
 };
 
 // Tenant and namespace management API
@@ -1384,6 +1461,33 @@ export const healthApi = {
   check: () => request<HealthStatus>("/health"),
   ready: () => request<{ status: string }>("/health/ready"),
   live: () => request<{ status: string }>("/health/live"),
+};
+
+// Notifications API (for header bell menu)
+export const notificationsApi = {
+  list: (status: NotificationStatus = "all", limit: number = 20, offset?: number) => {
+    const params = new URLSearchParams();
+    params.set("status", status);
+    params.set("limit", String(limit));
+    if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    return request<NotificationEntry[]>(`/notifications?${params.toString()}`);
+  },
+
+  unreadCount: () => request<{ unread: number }>("/notifications/unread-count"),
+
+  markRead: (id: string) =>
+    request<NotificationEntry>(`/notifications/${encodeURIComponent(id)}/read`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
+  markAllRead: () =>
+    request<{ updated: number }>("/notifications/read-all", {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
 };
 
 // Config API

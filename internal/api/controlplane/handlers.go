@@ -67,6 +67,12 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /config", h.GetConfig)
 	mux.HandleFunc("PUT /config", h.UpdateConfig)
 
+	// UI notifications
+	mux.HandleFunc("GET /notifications", h.ListNotifications)
+	mux.HandleFunc("GET /notifications/unread-count", h.GetUnreadNotificationCount)
+	mux.HandleFunc("POST /notifications/{id}/read", h.MarkNotificationRead)
+	mux.HandleFunc("POST /notifications/read-all", h.MarkAllNotificationsRead)
+
 	// Tenant / namespace management
 	mux.HandleFunc("GET /tenants", h.ListTenants)
 	mux.HandleFunc("POST /tenants", h.CreateTenant)
@@ -95,6 +101,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /functions/{name}/capacity", h.SetCapacityPolicy)
 	mux.HandleFunc("GET /functions/{name}/capacity", h.GetCapacityPolicy)
 	mux.HandleFunc("DELETE /functions/{name}/capacity", h.DeleteCapacityPolicy)
+
+	// SLO policy
+	mux.HandleFunc("PUT /functions/{name}/slo", h.SetSLOPolicy)
+	mux.HandleFunc("GET /functions/{name}/slo", h.GetSLOPolicy)
+	mux.HandleFunc("DELETE /functions/{name}/slo", h.DeleteSLOPolicy)
 
 	// Event bus
 	mux.HandleFunc("POST /topics", h.CreateEventTopic)

@@ -31,6 +31,7 @@ import (
 	"github.com/oriys/nova/internal/scheduler"
 	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/service"
+	"github.com/oriys/nova/internal/slo"
 	"github.com/oriys/nova/internal/store"
 	"github.com/oriys/nova/internal/wasm"
 	"github.com/oriys/nova/internal/workflow"
@@ -109,6 +110,15 @@ func daemonCmd() *cobra.Command {
 			}
 			s := store.NewStore(pgStore)
 			defer s.Close()
+
+			sloService := slo.New(s, slo.Config{
+				Enabled:           cfg.SLO.Enabled,
+				Interval:          cfg.SLO.Interval,
+				DefaultWindowS:    cfg.SLO.DefaultWindowS,
+				DefaultMinSamples: cfg.SLO.DefaultMinSamples,
+			})
+			sloService.Start()
+			defer sloService.Stop()
 
 			var be backend.Backend
 			var fcAdapter *firecracker.Adapter

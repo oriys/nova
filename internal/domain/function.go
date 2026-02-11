@@ -145,6 +145,29 @@ type CapacityPolicy struct {
 	HalfOpenProbes  int     `json:"half_open_probes,omitempty"`  // Reserved for circuit breaker stage
 }
 
+// SLOObjectives defines per-function SLO thresholds.
+type SLOObjectives struct {
+	SuccessRatePct   float64 `json:"success_rate_pct,omitempty"`    // Minimum acceptable success rate
+	P95DurationMs    int64   `json:"p95_duration_ms,omitempty"`     // Maximum acceptable P95 latency
+	ColdStartRatePct float64 `json:"cold_start_rate_pct,omitempty"` // Maximum acceptable cold start rate
+}
+
+// SLONotificationTarget defines where SLO alerts are delivered.
+type SLONotificationTarget struct {
+	Type    string            `json:"type"` // webhook | slack
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+// SLOPolicy configures per-function SLI/SLO evaluation and alerting.
+type SLOPolicy struct {
+	Enabled       bool                    `json:"enabled"`
+	WindowS       int                     `json:"window_s,omitempty"`    // Evaluation window in seconds
+	MinSamples    int                     `json:"min_samples,omitempty"` // Minimum invocations required to evaluate
+	Objectives    SLOObjectives           `json:"objectives,omitempty"`
+	Notifications []SLONotificationTarget `json:"notifications,omitempty"`
+}
+
 // Layer represents a shared dependency layer that can be mounted as a read-only drive
 type Layer struct {
 	ID          string    `json:"id"`
@@ -199,6 +222,7 @@ type Function struct {
 	RolloutPolicy       *RolloutPolicy    `json:"rollout_policy,omitempty"`
 	AutoScalePolicy     *AutoScalePolicy  `json:"auto_scale_policy,omitempty"`
 	CapacityPolicy      *CapacityPolicy   `json:"capacity_policy,omitempty"`
+	SLOPolicy           *SLOPolicy        `json:"slo_policy,omitempty"`
 	Layers              []string          `json:"layers,omitempty"` // layer IDs (max 6)
 	LayerPaths          []string          `json:"-"`                // resolved at invocation time
 	Mounts              []VolumeMount     `json:"mounts,omitempty"` // persistent volume mounts

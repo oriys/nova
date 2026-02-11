@@ -373,6 +373,24 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_inbox_delivery ON event_inbox(delivery_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_inbox_status_updated ON event_inbox(status, updated_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS notifications (
+			id TEXT PRIMARY KEY,
+			tenant_id TEXT NOT NULL DEFAULT 'default',
+			namespace TEXT NOT NULL DEFAULT 'default',
+			type TEXT NOT NULL,
+			severity TEXT NOT NULL DEFAULT 'info',
+			source TEXT NOT NULL DEFAULT '',
+			function_id TEXT NOT NULL DEFAULT '',
+			function_name TEXT NOT NULL DEFAULT '',
+			title TEXT NOT NULL,
+			message TEXT NOT NULL,
+			data JSONB NOT NULL DEFAULT '{}'::jsonb,
+			status TEXT NOT NULL DEFAULT 'unread',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			read_at TIMESTAMPTZ
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_notifications_tenant_namespace_created ON notifications(tenant_id, namespace, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_notifications_tenant_namespace_status_created ON notifications(tenant_id, namespace, status, created_at DESC)`,
 
 		// Webhook subscription support
 		`ALTER TABLE event_subscriptions ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'function'`,

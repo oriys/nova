@@ -141,6 +141,15 @@ type functionDiagnosticsResponse struct {
 	SlowInvocations  []slowInvocationSummary `json:"slow_invocations"`
 }
 
+type functionSLOStatusResponse struct {
+	FunctionID   string                     `json:"function_id"`
+	FunctionName string                     `json:"function_name"`
+	Enabled      bool                       `json:"enabled"`
+	Policy       *domain.SLOPolicy          `json:"policy,omitempty"`
+	Snapshot     *store.FunctionSLOSnapshot `json:"snapshot,omitempty"`
+	Breaches     []string                   `json:"breaches"`
+}
+
 // Handler handles data plane HTTP requests (invocations and observability).
 type Handler struct {
 	Store     *store.Store
@@ -209,6 +218,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /invocations", h.ListAllInvocations)
 	mux.HandleFunc("GET /functions/{name}/logs", h.Logs)
 	mux.HandleFunc("GET /functions/{name}/metrics", h.FunctionMetrics)
+	mux.HandleFunc("GET /functions/{name}/slo/status", h.FunctionSLOStatus)
 	mux.HandleFunc("GET /functions/{name}/diagnostics", h.FunctionDiagnostics)
 	mux.HandleFunc("POST /functions/{name}/diagnostics/analyze", h.AnalyzeFunctionDiagnostics)
 	mux.HandleFunc("GET /functions/{name}/recommendations", h.GetPerformanceRecommendations)
@@ -874,6 +884,60 @@ func (h *Handler) FunctionMetrics(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+// FunctionSLOStatus handles GET /functions/{name}/slo/status
+func (h *Handler) FunctionSLOStatus(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	resp := functionSLOStatusResponse{
+		FunctionID:   fn.ID,
+		FunctionName: fn.Name,
+		Enabled:      fn.SLOPolicy != nil && fn.SLOPolicy.Enabled,
+		Breaches:     []string{},
+	}
+	if fn.SLOPolicy == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	policy := *fn.SLOPolicy
+	if policy.WindowS <= 0 {
+		policy.WindowS = 900
+	}
+	if policy.MinSamples <= 0 {
+		policy.MinSamples = 20
+	}
+	resp.Policy = &policy
+
+	snapshot, err := h.Store.GetFunctionSLOSnapshot(r.Context(), fn.ID, policy.WindowS)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	resp.Snapshot = snapshot
+
+	if snapshot.TotalInvocations >= int64(policy.MinSamples) {
+		if policy.Objectives.SuccessRatePct > 0 && snapshot.SuccessRatePct < policy.Objectives.SuccessRatePct {
+			resp.Breaches = append(resp.Breaches, "success_rate")
+		}
+		if policy.Objectives.P95DurationMs > 0 && snapshot.P95DurationMs > policy.Objectives.P95DurationMs {
+			resp.Breaches = append(resp.Breaches, "p95_latency")
+		}
+		if policy.Objectives.ColdStartRatePct > 0 && snapshot.ColdStartRatePct > policy.Objectives.ColdStartRatePct {
+			resp.Breaches = append(resp.Breaches, "cold_start_rate")
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 // FunctionDiagnostics handles GET /functions/{name}/diagnostics

@@ -38,6 +38,18 @@ type TimeSeriesBucket struct {
 	AvgDuration float64   `json:"avg_duration"`
 }
 
+// FunctionSLOSnapshot is the windowed SLI summary used by SLO evaluation.
+type FunctionSLOSnapshot struct {
+	WindowSeconds    int     `json:"window_seconds"`
+	TotalInvocations int64   `json:"total_invocations"`
+	Successes        int64   `json:"successes"`
+	Failures         int64   `json:"failures"`
+	ColdStarts       int64   `json:"cold_starts"`
+	SuccessRatePct   float64 `json:"success_rate_pct"`
+	ColdStartRatePct float64 `json:"cold_start_rate_pct"`
+	P95DurationMs    int64   `json:"p95_duration_ms"`
+}
+
 func (s *PostgresStore) SaveInvocationLog(ctx context.Context, log *InvocationLog) error {
 	if log.ID == "" {
 		return fmt.Errorf("invocation log id is required")
@@ -445,4 +457,46 @@ func (s *PostgresStore) GetGlobalTimeSeries(ctx context.Context, rangeSeconds, b
 		return nil, fmt.Errorf("get global time series rows: %w", err)
 	}
 	return buckets, nil
+}
+
+func (s *PostgresStore) GetFunctionSLOSnapshot(ctx context.Context, functionID string, windowSeconds int) (*FunctionSLOSnapshot, error) {
+	if windowSeconds <= 0 {
+		windowSeconds = 900
+	}
+
+	scope := tenantScopeFromContext(ctx)
+	snapshot := &FunctionSLOSnapshot{WindowSeconds: windowSeconds}
+
+	var p95 *float64
+	err := s.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*)::bigint AS total_invocations,
+			COUNT(*) FILTER (WHERE success)::bigint AS successes,
+			COUNT(*) FILTER (WHERE NOT success)::bigint AS failures,
+			COUNT(*) FILTER (WHERE cold_start)::bigint AS cold_starts,
+			percentile_disc(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95_duration_ms
+		FROM invocation_logs
+		WHERE tenant_id = $1
+		  AND namespace = $2
+		  AND function_id = $3
+		  AND created_at >= NOW() - make_interval(secs => $4::double precision)
+	`, scope.TenantID, scope.Namespace, functionID, windowSeconds).Scan(
+		&snapshot.TotalInvocations,
+		&snapshot.Successes,
+		&snapshot.Failures,
+		&snapshot.ColdStarts,
+		&p95,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get function slo snapshot: %w", err)
+	}
+
+	if p95 != nil {
+		snapshot.P95DurationMs = int64(*p95)
+	}
+	if snapshot.TotalInvocations > 0 {
+		snapshot.SuccessRatePct = float64(snapshot.Successes) * 100.0 / float64(snapshot.TotalInvocations)
+		snapshot.ColdStartRatePct = float64(snapshot.ColdStarts) * 100.0 / float64(snapshot.TotalInvocations)
+	}
+	return snapshot, nil
 }

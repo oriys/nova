@@ -8,7 +8,7 @@ import { Bell, Search, User, BookOpenText, Server } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-import { functionsApi, type NovaFunction } from "@/lib/api"
+import { functionsApi, notificationsApi, type NotificationEntry, type NovaFunction } from "@/lib/api"
 import { useHealth, type HealthLevel } from "@/lib/hooks/use-health"
 import {
   FUNCTION_SEARCH_EVENT,
@@ -40,8 +40,13 @@ export function Header({ title, description }: HeaderProps) {
   const [searchFocused, setSearchFocused] = useState(false)
   const [activeResultIndex, setActiveResultIndex] = useState(-1)
   const [healthOpen, setHealthOpen] = useState(false)
+  const [notificationOpen, setNotificationOpen] = useState(false)
+  const [notifications, setNotifications] = useState<NotificationEntry[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [notificationLoading, setNotificationLoading] = useState(false)
   const searchContainerRef = useRef<HTMLDivElement | null>(null)
   const healthContainerRef = useRef<HTMLDivElement | null>(null)
+  const notificationContainerRef = useRef<HTMLDivElement | null>(null)
   const searchRequestIDRef = useRef(0)
   const isFunctionsPage = pathname === "/functions"
   const isDocsPage = pathname.startsWith("/docs")
@@ -85,6 +90,11 @@ export function Header({ title, description }: HeaderProps) {
         return
       }
       setHealthOpen(false)
+
+      if (notificationContainerRef.current?.contains(target)) {
+        return
+      }
+      setNotificationOpen(false)
     }
 
     document.addEventListener("mousedown", handlePointerDown)
@@ -136,6 +146,92 @@ export function Header({ title, description }: HeaderProps) {
 
     return () => clearTimeout(timer)
   }, [query])
+
+  useEffect(() => {
+    let active = true
+
+    const loadUnreadCount = async () => {
+      try {
+        const res = await notificationsApi.unreadCount()
+        if (!active) {
+          return
+        }
+        setUnreadCount(Math.max(0, Number(res.unread) || 0))
+      } catch {
+        if (!active) {
+          return
+        }
+        setUnreadCount(0)
+      }
+    }
+
+    loadUnreadCount()
+    const timer = window.setInterval(loadUnreadCount, 15000)
+
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!notificationOpen) {
+      return
+    }
+
+    let cancelled = false
+    const loadNotifications = async () => {
+      setNotificationLoading(true)
+      try {
+        const items = await notificationsApi.list("all", 20)
+        if (cancelled) {
+          return
+        }
+        setNotifications(items)
+      } catch {
+        if (cancelled) {
+          return
+        }
+        setNotifications([])
+      } finally {
+        if (!cancelled) {
+          setNotificationLoading(false)
+        }
+      }
+    }
+
+    loadNotifications()
+    return () => {
+      cancelled = true
+    }
+  }, [notificationOpen])
+
+  const handleNotificationClick = async (item: NotificationEntry) => {
+    if (item.status === "unread") {
+      try {
+        await notificationsApi.markRead(item.id)
+      } catch {
+        // Keep optimistic UI fallback below.
+      }
+      setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, status: "read", read_at: new Date().toISOString() } : n)))
+      setUnreadCount((prev) => Math.max(0, prev - 1))
+    }
+
+    if (item.function_name) {
+      setNotificationOpen(false)
+      router.push(`/functions/${encodeURIComponent(item.function_name)}`)
+    }
+  }
+
+  const handleMarkAllRead = async () => {
+    try {
+      await notificationsApi.markAllRead()
+    } catch {
+      // Keep UI update best-effort.
+    }
+    setNotifications((prev) => prev.map((n) => (n.status === "unread" ? { ...n, status: "read", read_at: new Date().toISOString() } : n)))
+    setUnreadCount(0)
+  }
 
   const openFunctionDetail = (name: string) => {
     setSearchFocused(false)
@@ -341,10 +437,70 @@ export function Header({ title, description }: HeaderProps) {
 
         <CommandPalette />
 
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5 text-muted-foreground" />
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
-        </Button>
+        <div ref={notificationContainerRef} className="relative">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="relative"
+            aria-label={t("notifications")}
+            title={t("notifications")}
+            onClick={() => setNotificationOpen((prev) => !prev)}
+          >
+            <Bell className="h-5 w-5 text-muted-foreground" />
+            {unreadCount > 0 && (
+              <span className="absolute right-1 top-1 inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            )}
+          </Button>
+
+          {notificationOpen && (
+            <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-96 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+              <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                <p className="text-sm font-medium text-popover-foreground">{t("notifications")}</p>
+                <Button variant="ghost" size="sm" onClick={handleMarkAllRead}>
+                  {t("markAllRead")}
+                </Button>
+              </div>
+
+              <div className="max-h-80 overflow-y-auto">
+                {notificationLoading ? (
+                  <p className="px-3 py-3 text-sm text-muted-foreground">{t("loadingNotifications")}</p>
+                ) : notifications.length === 0 ? (
+                  <p className="px-3 py-3 text-sm text-muted-foreground">{t("noNotifications")}</p>
+                ) : (
+                  <ul className="divide-y divide-border">
+                    {notifications.map((item) => (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          className={cn(
+                            "w-full px-3 py-2 text-left transition-colors hover:bg-accent/60",
+                            item.status === "unread" ? "bg-accent/20" : ""
+                          )}
+                          onClick={() => handleNotificationClick(item)}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-popover-foreground">{item.title}</p>
+                              <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{item.message}</p>
+                              <p className="mt-1 text-[11px] text-muted-foreground">
+                                {new Date(item.created_at).toLocaleString()}
+                              </p>
+                            </div>
+                            {item.status === "unread" && (
+                              <span className="mt-1 h-2.5 w-2.5 rounded-full bg-primary" />
+                            )}
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
         <Button asChild variant={isDocsPage ? "secondary" : "ghost"} size="icon">
           <Link href="/docs" aria-label={t("openDocs")} title={t("openDocs")}>

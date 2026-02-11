@@ -93,7 +93,11 @@
     "overall": "总体",
     "noComponentDetails": "暂无组件详情。",
     "updated": "更新于",
-    "openDocs": "打开文档"
+    "openDocs": "打开文档",
+    "notifications": "通知",
+    "markAllRead": "全部已读",
+    "loadingNotifications": "加载通知中…",
+    "noNotifications": "暂无通知"
   },
   "scopeSwitcher": {
     "failedToLoad": "加载租户选项失败。",

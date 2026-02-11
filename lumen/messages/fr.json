@@ -93,7 +93,11 @@
     "overall": "Global",
     "noComponentDetails": "Aucun détail de composant pour le moment.",
     "updated": "Mis à jour",
-    "openDocs": "Ouvrir la documentation"
+    "openDocs": "Ouvrir la documentation",
+    "notifications": "Notifications",
+    "markAllRead": "Tout marquer comme lu",
+    "loadingNotifications": "Chargement des notifications…",
+    "noNotifications": "Aucune notification"
   },
   "scopeSwitcher": {
     "failedToLoad": "Échec du chargement des options de locataire.",

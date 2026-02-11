@@ -93,7 +93,11 @@
     "overall": "全体",
     "noComponentDetails": "コンポーネントの詳細はまだありません。",
     "updated": "更新",
-    "openDocs": "ドキュメントを開く"
+    "openDocs": "ドキュメントを開く",
+    "notifications": "通知",
+    "markAllRead": "すべて既読にする",
+    "loadingNotifications": "通知を読み込み中…",
+    "noNotifications": "通知はありません"
   },
   "scopeSwitcher": {
     "failedToLoad": "テナントオプションの読み込みに失敗しました。",

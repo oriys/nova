@@ -93,7 +93,11 @@
     "overall": "整體",
     "noComponentDetails": "暫無組件詳情。",
     "updated": "更新於",
-    "openDocs": "開啟文件"
+    "openDocs": "開啟文件",
+    "notifications": "通知",
+    "markAllRead": "全部標示已讀",
+    "loadingNotifications": "載入通知中…",
+    "noNotifications": "暫無通知"
   },
   "scopeSwitcher": {
     "failedToLoad": "載入租戶選項失敗。",

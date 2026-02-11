@@ -173,6 +173,8 @@ var routeTable = []routePermission{
 
 	// Logs & Metrics
 	{"GET", "/metrics", domain.PermMetricsRead},
+	{"GET", "/notifications", domain.PermMetricsRead},
+	{"POST", "/notifications", domain.PermMetricsRead},
 
 	// Tenants / Namespaces / Quotas
 	{"GET", "/tenants", domain.PermConfigRead},
@@ -201,6 +203,10 @@ func resolvePermission(method, path string) domain.Permission {
 	}
 	// Special case: metrics per function
 	if strings.Contains(path, "/metrics") {
+		return domain.PermMetricsRead
+	}
+	// Special case: UI notifications
+	if strings.Contains(path, "/notifications") {
 		return domain.PermMetricsRead
 	}
 

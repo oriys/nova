@@ -24,6 +24,7 @@ type FunctionUpdate struct {
 	RolloutPolicy       *domain.RolloutPolicy   `json:"rollout_policy,omitempty"`
 	AutoScalePolicy     *domain.AutoScalePolicy `json:"auto_scale_policy,omitempty"`
 	CapacityPolicy      *domain.CapacityPolicy  `json:"capacity_policy,omitempty"`
+	SLOPolicy           *domain.SLOPolicy       `json:"slo_policy,omitempty"`
 	EnvVars             map[string]string       `json:"env_vars,omitempty"`
 	MergeEnvVars        bool                    `json:"merge_env_vars,omitempty"`
 }
@@ -85,6 +86,7 @@ type MetadataStore interface {
 	GetGlobalTimeSeries(ctx context.Context, rangeSeconds, bucketSeconds int) ([]TimeSeriesBucket, error)
 	GetFunctionDailyHeatmap(ctx context.Context, functionID string, weeks int) ([]DailyCount, error)
 	GetGlobalDailyHeatmap(ctx context.Context, weeks int) ([]DailyCount, error)
+	GetFunctionSLOSnapshot(ctx context.Context, functionID string, windowSeconds int) (*FunctionSLOSnapshot, error)
 
 	// Async invocations (queue + retries + DLQ)
 	EnqueueAsyncInvocation(ctx context.Context, inv *AsyncInvocation) error
@@ -138,6 +140,13 @@ type MetadataStore interface {
 	PrepareEventInbox(ctx context.Context, subscriptionID, messageID, deliveryID string) (*EventInboxRecord, bool, error)
 	MarkEventInboxSucceeded(ctx context.Context, subscriptionID, messageID, deliveryID, requestID string, output json.RawMessage, durationMS int64, coldStart bool) error
 	MarkEventInboxFailed(ctx context.Context, subscriptionID, messageID, deliveryID, lastError string) error
+
+	// UI notifications
+	CreateNotification(ctx context.Context, n *NotificationRecord) error
+	ListNotifications(ctx context.Context, limit, offset int, status NotificationStatus) ([]*NotificationRecord, error)
+	GetUnreadNotificationCount(ctx context.Context) (int64, error)
+	MarkNotificationRead(ctx context.Context, id string) (*NotificationRecord, error)
+	MarkAllNotificationsRead(ctx context.Context) (int64, error)
 
 	// Runtimes
 	SaveRuntime(ctx context.Context, rt *RuntimeRecord) error

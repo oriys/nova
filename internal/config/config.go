@@ -169,6 +169,15 @@ type AutoScaleConfig struct {
 	Interval time.Duration `json:"interval"` // default 10s
 }
 
+// SLOConfig holds SLO evaluation and alerting settings.
+type SLOConfig struct {
+	Enabled             bool          `json:"enabled"`
+	Interval            time.Duration `json:"interval"`             // default 30s
+	NotificationTimeout time.Duration `json:"notification_timeout"` // default 10s
+	DefaultWindowS      int           `json:"default_window_s"`     // default 900
+	DefaultMinSamples   int           `json:"default_min_samples"`  // default 20
+}
+
 // Config is the central configuration struct embedding all component configs
 type Config struct {
 	Firecracker   firecracker.Config  `json:"firecracker"`
@@ -187,6 +196,7 @@ type Config struct {
 	NetworkPolicy NetworkPolicyConfig `json:"network_policy"`
 	Gateway       GatewayConfig       `json:"gateway"`
 	AutoScale     AutoScaleConfig     `json:"auto_scale"`
+	SLO           SLOConfig           `json:"slo"`
 	Layers        LayerConfig         `json:"layers"`
 	AI            ai.Config           `json:"ai"`
 }
@@ -288,6 +298,13 @@ func DefaultConfig() *Config {
 		AutoScale: AutoScaleConfig{
 			Enabled:  false,
 			Interval: 10 * time.Second,
+		},
+		SLO: SLOConfig{
+			Enabled:             true,
+			Interval:            30 * time.Second,
+			NotificationTimeout: 10 * time.Second,
+			DefaultWindowS:      900,
+			DefaultMinSamples:   20,
 		},
 		Layers: LayerConfig{
 			Enabled:    false,
@@ -474,6 +491,31 @@ func LoadFromEnv(cfg *Config) {
 	if v := os.Getenv("NOVA_AUTOSCALE_INTERVAL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			cfg.AutoScale.Interval = d
+		}
+	}
+
+	// SLO overrides
+	if v := os.Getenv("NOVA_SLO_ENABLED"); v != "" {
+		cfg.SLO.Enabled = parseBool(v)
+	}
+	if v := os.Getenv("NOVA_SLO_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.SLO.Interval = d
+		}
+	}
+	if v := os.Getenv("NOVA_SLO_NOTIFICATION_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.SLO.NotificationTimeout = d
+		}
+	}
+	if v := os.Getenv("NOVA_SLO_DEFAULT_WINDOW_S"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.SLO.DefaultWindowS = n
+		}
+	}
+	if v := os.Getenv("NOVA_SLO_DEFAULT_MIN_SAMPLES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.SLO.DefaultMinSamples = n
 		}
 	}
 

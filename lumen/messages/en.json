@@ -93,7 +93,11 @@
     "overall": "Overall",
     "noComponentDetails": "No component details yet.",
     "updated": "Updated",
-    "openDocs": "Open docs"
+    "openDocs": "Open docs",
+    "notifications": "Notifications",
+    "markAllRead": "Mark all read",
+    "loadingNotifications": "Loading notifications...",
+    "noNotifications": "No notifications yet"
   },
   "scopeSwitcher": {
     "failedToLoad": "Failed to load tenant options.",
