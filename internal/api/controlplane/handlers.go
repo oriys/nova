@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/oriys/nova/internal/ai"
 	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/backend"
 	"github.com/oriys/nova/internal/compiler"
@@ -36,6 +37,7 @@ type Handler struct {
 	GatewayEnabled     bool            // Whether gateway route management is enabled
 	LayerManager       *layer.Manager  // Optional: for shared dependency layers
 	VolumeManager      *volume.Manager // Optional: for persistent volume management
+	AIService          *ai.Service     // Optional: for AI-powered code operations
 }
 
 // RegisterRoutes registers all control plane routes on the given mux.
@@ -162,6 +164,12 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		mux.HandleFunc("GET /volumes", h.ListVolumes)
 		mux.HandleFunc("GET /volumes/{name}", h.GetVolume)
 		mux.HandleFunc("DELETE /volumes/{name}", h.DeleteVolume)
+	}
+
+	// AI-powered code operations
+	if h.AIService != nil {
+		aiHandler := &AIHandler{Service: h.AIService, Store: h.Store}
+		aiHandler.RegisterRoutes(mux)
 	}
 }
 

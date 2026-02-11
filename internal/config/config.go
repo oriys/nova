@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/oriys/nova/internal/ai"
 	"github.com/oriys/nova/internal/docker"
 	"github.com/oriys/nova/internal/firecracker"
 	"github.com/oriys/nova/internal/kubernetes"
@@ -187,6 +188,7 @@ type Config struct {
 	Gateway       GatewayConfig         `json:"gateway"`
 	AutoScale     AutoScaleConfig       `json:"auto_scale"`
 	Layers        LayerConfig           `json:"layers"`
+	AI            ai.Config             `json:"ai"`
 }
 
 // DefaultConfig returns a Config with sensible defaults
@@ -292,6 +294,7 @@ func DefaultConfig() *Config {
 			StorageDir: "/opt/nova/layers",
 			MaxPerFunc: 6,
 		},
+		AI: ai.DefaultConfig(),
 	}
 }
 
@@ -654,6 +657,20 @@ func LoadFromEnv(cfg *Config) {
 		if d, err := time.ParseDuration(v); err == nil {
 			cfg.Kubernetes.StableWindow = d
 		}
+	}
+
+	// AI overrides
+	if v := os.Getenv("NOVA_AI_ENABLED"); v != "" {
+		cfg.AI.Enabled = parseBool(v)
+	}
+	if v := os.Getenv("NOVA_AI_API_KEY"); v != "" {
+		cfg.AI.APIKey = v
+	}
+	if v := os.Getenv("NOVA_AI_MODEL"); v != "" {
+		cfg.AI.Model = v
+	}
+	if v := os.Getenv("NOVA_AI_BASE_URL"); v != "" {
+		cfg.AI.BaseURL = v
 	}
 }
 

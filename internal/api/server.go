@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/oriys/nova/internal/ai"
 	"github.com/oriys/nova/internal/api/controlplane"
 	"github.com/oriys/nova/internal/api/dataplane"
 	"github.com/oriys/nova/internal/auth"
@@ -55,6 +56,7 @@ type ServerConfig struct {
 	Scheduler       *scheduler.Scheduler
 	RootfsDir       string
 	LayerManager    *layer.Manager
+	AIService       *ai.Service
 	PlaneMode       PlaneMode
 }
 
@@ -94,6 +96,7 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 			RootfsDir:          cfg.RootfsDir,
 			GatewayEnabled:     gatewayRouteMgmtEnabled,
 			LayerManager:       cfg.LayerManager,
+			AIService:          cfg.AIService,
 		}
 		cpHandler.RegisterRoutes(mux)
 	}
