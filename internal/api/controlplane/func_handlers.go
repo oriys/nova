@@ -361,8 +361,9 @@ func (h *Handler) UpdateFunctionCode(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Handle JSON body (backward compatible)
 		var req struct {
-			Code       string `json:"code"`
-			EntryPoint string `json:"entry_point,omitempty"`
+			Code            string            `json:"code"`
+			EntryPoint      string            `json:"entry_point,omitempty"`
+			DependencyFiles map[string]string  `json:"dependency_files,omitempty"` // Optional: dependency files like go.mod, requirements.txt
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -376,6 +377,23 @@ func (h *Handler) UpdateFunctionCode(w http.ResponseWriter, r *http.Request) {
 
 		sourceCode = req.Code
 		entryPoint = req.EntryPoint
+
+		// If dependency files provided via JSON, build multi-file map
+		if len(req.DependencyFiles) > 0 {
+			files = make(map[string][]byte)
+			for name, content := range req.DependencyFiles {
+				files[name] = []byte(content)
+			}
+			// Add main code file
+			ep := entryPoint
+			if ep == "" {
+				ep = detectEntryPoint(files, fn.Runtime)
+				if ep == "" {
+					ep = "handler"
+				}
+			}
+			files[ep] = []byte(sourceCode)
+		}
 	}
 
 	// Handle multi-file case

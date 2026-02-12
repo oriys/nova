@@ -223,7 +223,11 @@
     "validationTimeoutRange": "Le délai d'expiration doit être compris entre 1 et 900 secondes (plage AWS Lambda).",
     "validationJavaHandler": "Le format du handler Java/Kotlin/Scala doit être '<package>.<Class>::<method>'.",
     "validationCompiledHandler": "Le format du handler pour les environnements compilés doit être un nom d'entrée exécutable (lettres/chiffres/_-/).",
-    "validationDefaultHandler": "Le format du handler doit être au style AWS '<module>.<function>' (exemple : 'main.handler')."
+    "validationDefaultHandler": "Le format du handler doit être au style AWS '<module>.<function>' (exemple : 'main.handler').",
+    "optional": "optionnel",
+    "addDeps": "Ajouter des dépendances",
+    "removeDeps": "Supprimer",
+    "depsHelp": "Ajoutez des dépendances externes via {file}. Elles seront installées lors du déploiement."
   },
   "functionsTable": {
     "unlimited": "Illimité",
