@@ -15,12 +15,14 @@
     "configurations": "配置",
     "secrets": "密钥",
     "apiKeys": "API 密钥",
-    "apiDocs": "API 文档"
+    "apiDocs": "API 文档",
+    "brandName": "Lumen"
   },
   "pages": {
     "dashboard": {
       "title": "仪表盘",
-      "description": "无服务器函数概览"
+      "description": "无服务器函数概览",
+      "refresh": "刷新"
     },
     "functions": {
       "title": "函数",
@@ -301,7 +303,8 @@
     "title": "最近日志",
     "description": "最新函数执行记录",
     "viewAll": "查看全部",
-    "noLogs": "暂无日志"
+    "noLogs": "暂无日志",
+    "durationMs": "{duration}毫秒"
   },
   "onboarding": {
     "gettingStarted": "开始使用",
@@ -401,7 +404,8 @@
     "warm": "热",
     "failedToLoad": "加载调用历史失败",
     "noInputCaptured": "未捕获输入",
-    "noOutputCaptured": "未捕获输出"
+    "noOutputCaptured": "未捕获输出",
+    "durationMs": "{duration}ms"
   },
   "configurations": {
     "failedToLoad": "加载配置失败",

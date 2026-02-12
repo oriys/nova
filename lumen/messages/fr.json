@@ -15,12 +15,14 @@
     "configurations": "Configurations",
     "secrets": "Secrets",
     "apiKeys": "Clés API",
-    "apiDocs": "Docs API"
+    "apiDocs": "Docs API",
+    "brandName": "Lumen"
   },
   "pages": {
     "dashboard": {
       "title": "Tableau de bord",
-      "description": "Aperçu de vos fonctions serverless"
+      "description": "Aperçu de vos fonctions serverless",
+      "refresh": "Actualiser"
     },
     "functions": {
       "title": "Fonctions",
@@ -301,7 +303,8 @@
     "title": "Journaux récents",
     "description": "Dernières exécutions de fonctions",
     "viewAll": "Voir tout",
-    "noLogs": "Aucun journal disponible"
+    "noLogs": "Aucun journal disponible",
+    "durationMs": "{duration}ms"
   },
   "onboarding": {
     "gettingStarted": "Pour commencer",
@@ -401,7 +404,8 @@
     "warm": "Chaud",
     "failedToLoad": "Échec du chargement de l'historique des invocations",
     "noInputCaptured": "Aucune entrée capturée",
-    "noOutputCaptured": "Aucune sortie capturée"
+    "noOutputCaptured": "Aucune sortie capturée",
+    "durationMs": "{duration}ms"
   },
   "configurations": {
     "failedToLoad": "Échec du chargement de la configuration",

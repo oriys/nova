@@ -15,12 +15,14 @@
     "configurations": "Configurations",
     "secrets": "Secrets",
     "apiKeys": "API Keys",
-    "apiDocs": "API Docs"
+    "apiDocs": "API Docs",
+    "brandName": "Lumen"
   },
   "pages": {
     "dashboard": {
       "title": "Dashboard",
-      "description": "Overview of your serverless functions"
+      "description": "Overview of your serverless functions",
+      "refresh": "Refresh"
     },
     "functions": {
       "title": "Functions",
@@ -301,7 +303,8 @@
     "title": "Recent Logs",
     "description": "Latest function executions",
     "viewAll": "View all",
-    "noLogs": "No logs available"
+    "noLogs": "No logs available",
+    "durationMs": "{duration}ms"
   },
   "onboarding": {
     "gettingStarted": "Getting Started",
@@ -401,7 +404,8 @@
     "warm": "Warm",
     "failedToLoad": "Failed to Load Invocation History",
     "noInputCaptured": "No input captured",
-    "noOutputCaptured": "No output captured"
+    "noOutputCaptured": "No output captured",
+    "durationMs": "{duration}ms"
   },
   "configurations": {
     "failedToLoad": "Failed to load configuration",
