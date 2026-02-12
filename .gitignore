@@ -27,6 +27,9 @@ Thumbs.db
 # Temporary
 /tmp/
 
+# Node
+node_modules/
+
 # Test results
 lumen/test-results/
 test-results/
