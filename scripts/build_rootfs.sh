@@ -333,7 +333,7 @@ build_deno_rootfs() {
   printf 'int __res_init(void){return 0;}\n' > "${tmp}/tmp/res_stub.c"
   chroot "${tmp}" /bin/sh -c "gcc -shared -o /lib/libresolv_stub.so /tmp/res_stub.c"
   rm -f "${tmp}/tmp/res_stub.c"
-  chroot "${tmp}" /bin/sh -c "apk del --no-cache build-base" >/dev/null 2>&1
+  chroot "${tmp}" /bin/sh -c "apk del build-base" >/dev/null 2>&1
 
   local deno_tmp
   deno_tmp="$(mktemp -d)"

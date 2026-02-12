@@ -704,12 +704,12 @@ build_deno_rootfs() {
     local mnt=$(mktemp -d)
 
     log "Building deno rootfs (Alpine + deno)..."
-    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
-    mkfs.ext4 -F -q "${output}"
-    mount -o loop "${output}" "${mnt}"
 
+    # Build in a temp directory instead of a mounted ext4 image.
+    # build-base (gcc) temporarily needs more space than the 256MB rootfs allows.
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
-    mkdir -p "${mnt}"/{code,tmp,usr/local/bin}
+    mkdir -p "${mnt}"/{dev,code,tmp,usr/local/bin}
+    mknod -m 666 "${mnt}/dev/null" c 1 3 2>/dev/null || true
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
     chroot "${mnt}" /bin/sh -c "apk add --no-cache libstdc++ gcompat" >/dev/null 2>&1
@@ -720,7 +720,7 @@ build_deno_rootfs() {
     printf 'int __res_init(void){return 0;}\n' > "${mnt}/tmp/res_stub.c"
     chroot "${mnt}" /bin/sh -c "gcc -shared -o /lib/libresolv_stub.so /tmp/res_stub.c"
     rm -f "${mnt}/tmp/res_stub.c"
-    chroot "${mnt}" /bin/sh -c "apk del --no-cache build-base" >/dev/null 2>&1
+    chroot "${mnt}" /bin/sh -c "apk del build-base" >/dev/null 2>&1
 
     local deno_zip
     deno_zip="$(mktemp /tmp/deno.XXXXXX.zip)"
@@ -736,7 +736,10 @@ build_deno_rootfs() {
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
         chmod +x "${mnt}/init"
 
-    umount "${mnt}" && rmdir "${mnt}"
+    # Create the ext4 image from the populated directory.
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
+    rm -rf "${mnt}"
     log "deno.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
