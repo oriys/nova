@@ -120,7 +120,7 @@ export function Sidebar() {
         </div>
         {!collapsed && (
           <span className="text-lg font-semibold tracking-tight text-foreground">
-            Lumen
+            {t("brandName")}
           </span>
         )}
       </button>

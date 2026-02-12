@@ -15,7 +15,8 @@
     "configurations": "Configurations",
     "secrets": "Secrets",
     "apiKeys": "API Keys",
-    "apiDocs": "API Docs"
+    "apiDocs": "API Docs",
+    "brandName": "Lumen"
   },
   "pages": {
     "dashboard": {
@@ -302,7 +303,8 @@
     "title": "Recent Logs",
     "description": "Latest function executions",
     "viewAll": "View all",
-    "noLogs": "No logs available"
+    "noLogs": "No logs available",
+    "durationMs": "{duration}ms"
   },
   "onboarding": {
     "gettingStarted": "Getting Started",

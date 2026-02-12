@@ -15,7 +15,8 @@
     "configurations": "設定",
     "secrets": "シークレット",
     "apiKeys": "APIキー",
-    "apiDocs": "APIドキュメント"
+    "apiDocs": "APIドキュメント",
+    "brandName": "Lumen"
   },
   "pages": {
     "dashboard": {
@@ -302,7 +303,8 @@
     "title": "最近のログ",
     "description": "最新の関数実行記録",
     "viewAll": "すべて表示",
-    "noLogs": "ログがありません"
+    "noLogs": "ログがありません",
+    "durationMs": "{duration}ミリ秒"
   },
   "onboarding": {
     "gettingStarted": "はじめに",

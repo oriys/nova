@@ -15,7 +15,8 @@
     "configurations": "設定",
     "secrets": "密鑰",
     "apiKeys": "API 密鑰",
-    "apiDocs": "API 文件"
+    "apiDocs": "API 文件",
+    "brandName": "Lumen"
   },
   "pages": {
     "dashboard": {
@@ -302,7 +303,8 @@
     "title": "最近日誌",
     "description": "最新函數執行記錄",
     "viewAll": "檢視全部",
-    "noLogs": "暫無日誌"
+    "noLogs": "暫無日誌",
+    "durationMs": "{duration}毫秒"
   },
   "onboarding": {
     "gettingStarted": "開始使用",

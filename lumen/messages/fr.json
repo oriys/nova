@@ -15,7 +15,8 @@
     "configurations": "Configurations",
     "secrets": "Secrets",
     "apiKeys": "Clés API",
-    "apiDocs": "Docs API"
+    "apiDocs": "Docs API",
+    "brandName": "Lumen"
   },
   "pages": {
     "dashboard": {
@@ -302,7 +303,8 @@
     "title": "Journaux récents",
     "description": "Dernières exécutions de fonctions",
     "viewAll": "Voir tout",
-    "noLogs": "Aucun journal disponible"
+    "noLogs": "Aucun journal disponible",
+    "durationMs": "{duration}ms"
   },
   "onboarding": {
     "gettingStarted": "Pour commencer",

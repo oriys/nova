@@ -15,7 +15,8 @@
     "configurations": "配置",
     "secrets": "密钥",
     "apiKeys": "API 密钥",
-    "apiDocs": "API 文档"
+    "apiDocs": "API 文档",
+    "brandName": "Lumen"
   },
   "pages": {
     "dashboard": {
@@ -302,7 +303,8 @@
     "title": "最近日志",
     "description": "最新函数执行记录",
     "viewAll": "查看全部",
-    "noLogs": "暂无日志"
+    "noLogs": "暂无日志",
+    "durationMs": "{duration}毫秒"
   },
   "onboarding": {
     "gettingStarted": "开始使用",

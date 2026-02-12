@@ -96,7 +96,7 @@ export function RecentLogs({ logs, loading }: RecentLogsProps) {
                 </div>
                 {log.duration && (
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
-                    {log.duration}ms
+                    {t("durationMs", { duration: log.duration })}
                   </span>
                 )}
               </div>
