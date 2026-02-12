@@ -40,7 +40,7 @@ type RoleAssignmentRecord struct {
 	PrincipalID   string              `json:"principal_id"`
 	RoleID        string              `json:"role_id"`
 	ScopeType     domain.ScopeType    `json:"scope_type"`
-	ScopeID       string              `json:"scope_id"` // e.g. tenant_id, "function:*", or a UUID
+	ScopeID       string              `json:"scope_id"`
 	CreatedBy     string              `json:"created_by"`
 	CreatedAt     time.Time           `json:"created_at"`
 }

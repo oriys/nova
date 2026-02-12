@@ -299,6 +299,10 @@ func (h *RBACHandler) ListRoleAssignments(w http.ResponseWriter, r *http.Request
 	principalID := r.URL.Query().Get("principal_id")
 
 	if principalType != "" && principalID != "" {
+		if !domain.ValidPrincipalType(domain.PrincipalType(principalType)) {
+			http.Error(w, "invalid principal_type: must be user, group, or service_account", http.StatusBadRequest)
+			return
+		}
 		assignments, err := h.Store.ListRoleAssignmentsByPrincipal(r.Context(), tenantID, domain.PrincipalType(principalType), principalID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
