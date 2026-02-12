@@ -87,7 +87,6 @@ INSERT INTO runtimes (id, name, version, status) VALUES
     ('java', 'Java', '21.0.10', 'available'),
     ('ruby', 'Ruby', '3.4.8', 'available'),
     ('php', 'PHP', '8.4.17', 'available'),
-    ('dotnet', '.NET', '8.0.23', 'available'),
     ('deno', 'Deno', '2.6.7', 'available'),
     ('bun', 'Bun', '1.3.8', 'available')
 ON CONFLICT (id) DO NOTHING;

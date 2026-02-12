@@ -53,9 +53,6 @@ create_function() {
             java*|kotlin*|scala*)
                 handler="Handler::handler"
                 ;;
-            dotnet*)
-                handler="handler::Handler::Handle"
-                ;;
             go*|rust*|swift*|zig*|wasm*|provided*|custom*)
                 handler="handler"
                 ;;
@@ -168,9 +165,6 @@ main() {
 
         create_function "hello-java" "java" '"import java.util.*;\n\npublic class Handler {\n    public static Object handler(String event, Map<String, Object> context) {\n        return \"{\\\"message\\\":\\\"Hello, World!\\\",\\\"runtime\\\":\\\"java\\\"}\";\n    }\n}"' 256
 
-        info "Creating .NET functions (will be compiled)..."
-
-        create_function "hello-dotnet" "dotnet" '"using System.Text.Json;\nusing System.Collections.Generic;\n\npublic static class Handler {\n    public static object Handle(string eventJson, Dictionary<string, object> context) {\n        var doc = JsonDocument.Parse(eventJson);\n        var name = doc.RootElement.TryGetProperty(\"name\", out var n) ? n.GetString() : \"World\";\n        return new { message = $\"Hello, {name}!\", runtime = \"dotnet\" };\n    }\n}"' 256
     fi
 
     echo ""
