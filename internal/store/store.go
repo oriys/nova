@@ -217,6 +217,30 @@ type MetadataStore interface {
 	UpdateVolume(ctx context.Context, id string, updates map[string]interface{}) error
 	DeleteVolume(ctx context.Context, id string) error
 	GetFunctionVolumes(ctx context.Context, functionID string) ([]*domain.Volume, error)
+
+	// RBAC: Roles
+	CreateRole(ctx context.Context, role *RoleRecord) (*RoleRecord, error)
+	GetRole(ctx context.Context, id string) (*RoleRecord, error)
+	ListRoles(ctx context.Context, tenantID string, limit, offset int) ([]*RoleRecord, error)
+	DeleteRole(ctx context.Context, id string) error
+
+	// RBAC: Permissions
+	CreatePermission(ctx context.Context, perm *PermissionRecord) (*PermissionRecord, error)
+	GetPermission(ctx context.Context, id string) (*PermissionRecord, error)
+	ListPermissions(ctx context.Context, limit, offset int) ([]*PermissionRecord, error)
+	DeletePermission(ctx context.Context, id string) error
+
+	// RBAC: Role ↔ Permission
+	AssignPermissionToRole(ctx context.Context, roleID, permissionID string) error
+	RevokePermissionFromRole(ctx context.Context, roleID, permissionID string) error
+	ListRolePermissions(ctx context.Context, roleID string) ([]*PermissionRecord, error)
+
+	// RBAC: Role Assignments (scoped)
+	CreateRoleAssignment(ctx context.Context, ra *RoleAssignmentRecord) (*RoleAssignmentRecord, error)
+	GetRoleAssignment(ctx context.Context, id string) (*RoleAssignmentRecord, error)
+	ListRoleAssignments(ctx context.Context, tenantID string, limit, offset int) ([]*RoleAssignmentRecord, error)
+	ListRoleAssignmentsByPrincipal(ctx context.Context, tenantID string, principalType domain.PrincipalType, principalID string) ([]*RoleAssignmentRecord, error)
+	DeleteRoleAssignment(ctx context.Context, id string) error
 }
 
 // Store wraps the MetadataStore, WorkflowStore, and ScheduleStore (Postgres) for all persistence.
