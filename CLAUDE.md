@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Nova is a minimal serverless platform that runs functions in isolated Firecracker microVMs. It supports 20+ language runtimes (Python, Go, Rust, Node.js, Ruby, Java, PHP, .NET, etc.). The host communicates with VMs over vsock using a length-prefixed JSON protocol. Lumen is the web dashboard for Nova.
+Nova is a minimal serverless platform that runs functions in isolated Firecracker microVMs. It supports 20+ language runtimes (Python, Go, Rust, Node.js, Ruby, Java, PHP, etc.). The host communicates with VMs over vsock using a length-prefixed JSON protocol. Lumen is the web dashboard for Nova.
 
 ## Build Commands
 
@@ -114,7 +114,6 @@ Functions read JSON from `argv[1]` file path, write JSON result to stdout, exit 
 | Ruby | `ruby.ext4` | `ruby /code/handler input.json` |
 | Java | `java.ext4` | `java -jar /code/handler input.json` |
 | PHP | `php.ext4` | `php /code/handler input.json` |
-| .NET | `dotnet.ext4` | `/code/handler input.json` |
 | Deno | `deno.ext4` | `deno run --allow-read /code/handler input.json` |
 | Bun | `bun.ext4` | `bun run /code/handler input.json` |
 | WASM | `wasm.ext4` | `wasmtime /code/handler -- input.json` |

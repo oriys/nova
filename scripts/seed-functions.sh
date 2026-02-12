@@ -146,7 +146,7 @@ main() {
     create_function "hash-generator" "bun" '"const crypto = require(\"crypto\");\n\nfunction handler(event, context) {\n  const data = event.data || \"hello\";\n  const algorithm = event.algorithm || \"sha256\";\n  const hash = crypto.createHash(algorithm).update(data).digest(\"hex\");\n  return { data, algorithm, hash };\n}\n\nmodule.exports = { handler };"'
 
     # ─────────────────────────────────────────────────────────
-    # Compiled Languages (Go, Rust, Java, .NET)
+    # Compiled Languages (Go, Rust, Java)
     # ─────────────────────────────────────────────────────────
     if [[ "${SKIP_COMPILED}" == "1" ]]; then
         warn "Skipping compiled languages (SKIP_COMPILED=1)"
