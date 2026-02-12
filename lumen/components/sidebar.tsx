@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { useSidebar } from "./sidebar-context"
+import { isDefaultTenant } from "@/lib/tenant-scope"
 import {
   LayoutDashboard,
   Code2,
@@ -21,16 +22,16 @@ import {
 
 type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "asyncJobs" | "history" | "runtimes" | "configurations" | "secrets" | "apiKeys"
 
-const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] = [
+const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard; defaultOnly?: boolean }[] = [
   { key: "dashboard", href: "/dashboard", icon: LayoutDashboard },
   { key: "functions", href: "/functions", icon: Code2 },
   { key: "events", href: "/events", icon: RadioTower },
   { key: "workflows", href: "/workflows", icon: GitBranch },
-  { key: "tenancy", href: "/tenancy", icon: Building2 },
+  { key: "tenancy", href: "/tenancy", icon: Building2, defaultOnly: true },
   { key: "asyncJobs", href: "/async-invocations", icon: Clock3 },
   { key: "history", href: "/history", icon: History },
   { key: "runtimes", href: "/runtimes", icon: Play },
-  { key: "configurations", href: "/configurations", icon: Settings },
+  { key: "configurations", href: "/configurations", icon: Settings, defaultOnly: true },
   { key: "secrets", href: "/secrets", icon: Lock },
   { key: "apiKeys", href: "/api-keys", icon: KeyRound },
 ]
@@ -59,6 +60,11 @@ export function Sidebar() {
   const pathname = usePathname()
   const { collapsed, toggle } = useSidebar()
   const t = useTranslations("nav")
+  const isDefault = isDefaultTenant()
+
+  const visibleNavigation = isDefault
+    ? navigation
+    : navigation.filter((item) => !item.defaultOnly)
 
   return (
     <aside
@@ -85,7 +91,7 @@ export function Sidebar() {
       </button>
 
       <nav className={cn("flex-1 space-y-1", collapsed ? "px-2 py-4" : "px-3 py-4")}>
-        {navigation.map((item) => {
+        {visibleNavigation.map((item) => {
           const label = t(item.key)
           const isActive =
             pathname === item.href ||

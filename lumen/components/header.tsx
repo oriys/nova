@@ -33,6 +33,7 @@ import { ThemeToggle } from "./theme-toggle"
 import { GlobalScopeSwitcher } from "./global-scope-switcher"
 import { CommandPalette } from "./command-palette"
 import { LanguageSwitcher } from "./language-switcher"
+import { isDefaultTenant } from "@/lib/tenant-scope"
 
 interface HeaderProps {
   title: string
@@ -673,7 +674,7 @@ export function Header({ title, description }: HeaderProps) {
           </Link>
         </Button>
 
-        <GlobalScopeSwitcher />
+        {isDefaultTenant() && <GlobalScopeSwitcher />}
 
         <LanguageSwitcher />
 

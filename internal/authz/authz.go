@@ -182,6 +182,11 @@ var routeTable = []routePermission{
 	{"PATCH", "/tenants/", domain.PermConfigWrite},
 	{"PUT", "/tenants/", domain.PermConfigWrite},
 	{"DELETE", "/tenants/", domain.PermConfigWrite},
+
+	// RBAC management
+	{"POST", "/rbac/", domain.PermRBACManage},
+	{"GET", "/rbac/", domain.PermRBACManage},
+	{"DELETE", "/rbac/", domain.PermRBACManage},
 }
 
 // resolvePermission determines the required permission for a request.

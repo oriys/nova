@@ -1975,3 +1975,139 @@ export const aiApi = {
       }
     ),
 };
+
+// ─── RBAC Types ─────────────────────────────────────────────────────────────
+
+export interface RBACRole {
+  id: string;
+  tenant_id: string;
+  name: string;
+  is_system: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RBACPermission {
+  id: string;
+  code: string;
+  resource_type: string;
+  action: string;
+  description: string;
+  created_at: string;
+}
+
+export interface RBACRoleAssignment {
+  id: string;
+  tenant_id: string;
+  principal_type: string;
+  principal_id: string;
+  role_id: string;
+  scope_type: string;
+  scope_id: string;
+  created_by: string;
+  created_at: string;
+}
+
+// ─── RBAC API ───────────────────────────────────────────────────────────────
+
+export const rbacApi = {
+  // Roles
+  listRoles: (params?: { tenant_id?: string; limit?: number; offset?: number }) =>
+    request<RBACRole[]>(
+      `/rbac/roles${params ? `?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])).toString()}` : ""}`
+    ),
+
+  getRole: (id: string) => request<RBACRole>(`/rbac/roles/${id}`),
+
+  createRole: (data: { id: string; tenant_id?: string; name: string; is_system?: boolean }) =>
+    request<RBACRole>("/rbac/roles", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deleteRole: (id: string) =>
+    request<{ status: string; id: string }>(`/rbac/roles/${id}`, {
+      method: "DELETE",
+    }),
+
+  // Permissions
+  listPermissions: (params?: { limit?: number; offset?: number }) =>
+    request<RBACPermission[]>(
+      `/rbac/permissions${params ? `?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])).toString()}` : ""}`
+    ),
+
+  getPermission: (id: string) => request<RBACPermission>(`/rbac/permissions/${id}`),
+
+  createPermission: (data: {
+    id: string;
+    code: string;
+    resource_type?: string;
+    action?: string;
+    description?: string;
+  }) =>
+    request<RBACPermission>("/rbac/permissions", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deletePermission: (id: string) =>
+    request<{ status: string; id: string }>(`/rbac/permissions/${id}`, {
+      method: "DELETE",
+    }),
+
+  // Role ↔ Permission mapping
+  listRolePermissions: (roleId: string) =>
+    request<RBACPermission[]>(`/rbac/roles/${roleId}/permissions`),
+
+  assignPermissionToRole: (roleId: string, permissionId: string) =>
+    request<{ status: string; role_id: string; permission_id: string }>(
+      `/rbac/roles/${roleId}/permissions`,
+      {
+        method: "POST",
+        body: JSON.stringify({ permission_id: permissionId }),
+      }
+    ),
+
+  revokePermissionFromRole: (roleId: string, permissionId: string) =>
+    request<{ status: string; role_id: string; permission_id: string }>(
+      `/rbac/roles/${roleId}/permissions/${permissionId}`,
+      {
+        method: "DELETE",
+      }
+    ),
+
+  // Role Assignments
+  listRoleAssignments: (params?: {
+    tenant_id?: string;
+    principal_type?: string;
+    principal_id?: string;
+    limit?: number;
+    offset?: number;
+  }) =>
+    request<RBACRoleAssignment[]>(
+      `/rbac/assignments${params ? `?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])).toString()}` : ""}`
+    ),
+
+  getRoleAssignment: (id: string) =>
+    request<RBACRoleAssignment>(`/rbac/assignments/${id}`),
+
+  createRoleAssignment: (data: {
+    id: string;
+    tenant_id?: string;
+    principal_type: string;
+    principal_id: string;
+    role_id: string;
+    scope_type: string;
+    scope_id?: string;
+    created_by?: string;
+  }) =>
+    request<RBACRoleAssignment>("/rbac/assignments", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deleteRoleAssignment: (id: string) =>
+    request<{ status: string; id: string }>(`/rbac/assignments/${id}`, {
+      method: "DELETE",
+    }),
+};

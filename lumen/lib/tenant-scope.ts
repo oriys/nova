@@ -62,3 +62,12 @@ export function getTenantScopeHeaders(): Record<string, string> {
     "X-Nova-Namespace": scope.namespace,
   };
 }
+
+/**
+ * Returns true when the currently selected tenant is the platform-level
+ * "default" tenant.  Only the default tenant may switch tenants and access
+ * platform administration menus (Tenancy, Configurations, etc.).
+ */
+export function isDefaultTenant(): boolean {
+  return getTenantScope().tenantId === DEFAULT_TENANT_ID;
+}

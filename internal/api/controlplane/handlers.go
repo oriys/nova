@@ -143,6 +143,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		secHandler.RegisterRoutes(mux)
 	}
 
+	// RBAC management
+	rbacHandler := &RBACHandler{Store: h.Store}
+	rbacHandler.RegisterRoutes(mux)
+
 	// Schedules
 	schedHandler := &ScheduleHandler{Store: h.Store, Scheduler: h.Scheduler}
 	schedHandler.RegisterRoutes(mux)

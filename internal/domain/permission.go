@@ -26,6 +26,7 @@ const (
 	PermAppRead         Permission = "app:read"
 	PermAppInstall      Permission = "app:install"
 	PermAppManage       Permission = "app:manage"
+	PermRBACManage      Permission = "rbac:manage"
 )
 
 // Role represents a named set of permissions
@@ -64,6 +65,7 @@ var RolePermissions = map[Role][]Permission{
 		PermWorkflowManage, PermScheduleManage, PermGatewayManage,
 		PermLogRead, PermMetricsRead,
 		PermAppPublish, PermAppRead, PermAppInstall, PermAppManage,
+		PermRBACManage,
 	},
 	RoleOperator: {
 		PermFunctionCreate, PermFunctionRead, PermFunctionUpdate, PermFunctionDelete, PermFunctionInvoke,
@@ -90,4 +92,42 @@ var RolePermissions = map[Role][]Permission{
 func ValidRole(r Role) bool {
 	_, ok := RolePermissions[r]
 	return ok
+}
+
+// ─── RBAC Scope & Principal Types ───────────────────────────────────────────
+
+// ScopeType defines the level at which a role assignment applies.
+type ScopeType string
+
+const (
+	ScopeTenant       ScopeType = "tenant"
+	ScopeResourceType ScopeType = "resource_type"
+	ScopeResource     ScopeType = "resource"
+)
+
+// ValidScopeType returns true if the scope type is known.
+func ValidScopeType(s ScopeType) bool {
+	switch s {
+	case ScopeTenant, ScopeResourceType, ScopeResource:
+		return true
+	}
+	return false
+}
+
+// PrincipalType identifies the kind of entity receiving a role assignment.
+type PrincipalType string
+
+const (
+	PrincipalUser           PrincipalType = "user"
+	PrincipalGroup          PrincipalType = "group"
+	PrincipalServiceAccount PrincipalType = "service_account"
+)
+
+// ValidPrincipalType returns true if the principal type is known.
+func ValidPrincipalType(p PrincipalType) bool {
+	switch p {
+	case PrincipalUser, PrincipalGroup, PrincipalServiceAccount:
+		return true
+	}
+	return false
 }

@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { NamespaceEntry, TenantEntry, tenantsApi } from "@/lib/api"
-import { DEFAULT_NAMESPACE, DEFAULT_TENANT_ID, getTenantScope, normalizeTenantScope, setTenantScope } from "@/lib/tenant-scope"
+import { DEFAULT_NAMESPACE, DEFAULT_TENANT_ID, getTenantScope, isDefaultTenant, normalizeTenantScope, setTenantScope } from "@/lib/tenant-scope"
 import { cn } from "@/lib/utils"
 
 const SCOPE_PART_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
@@ -30,6 +30,7 @@ export function TenantSwitcher() {
   const [loading, setLoading] = useState(true)
   const [mutating, setMutating] = useState(false)
   const [error, setError] = useState("")
+  const isDefault = isDefaultTenant()
 
   const [tenants, setTenants] = useState<TenantEntry[]>([])
   const [namespaces, setNamespaces] = useState<NamespaceEntry[]>([])
@@ -350,6 +351,7 @@ export function TenantSwitcher() {
             )}
           </div>
 
+          {isDefault && (
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <div className="inline-flex items-center gap-1 text-xs text-muted-foreground">
@@ -453,6 +455,7 @@ export function TenantSwitcher() {
               )}
             </div>
           </div>
+          )}
 
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
@@ -523,6 +526,8 @@ export function TenantSwitcher() {
         </div>
       </div>
 
+      {isDefault && (
+      <>
       <Dialog open={createTenantOpen} onOpenChange={setCreateTenantOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -613,6 +618,8 @@ export function TenantSwitcher() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </>
+      )}
 
       <Dialog open={createNamespaceOpen} onOpenChange={setCreateNamespaceOpen}>
         <DialogContent className="sm:max-w-md">

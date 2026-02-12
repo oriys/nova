@@ -686,6 +686,50 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		`DROP INDEX IF EXISTS idx_dag_workflows_tenant_namespace_name`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_dag_workflows_tenant_namespace_name_unique ON dag_workflows(tenant_id, namespace, name)`,
 
+		// RBAC: roles
+		`CREATE TABLE IF NOT EXISTS rbac_roles (
+			id TEXT PRIMARY KEY,
+			tenant_id TEXT NOT NULL DEFAULT 'default',
+			name TEXT NOT NULL,
+			is_system BOOLEAN NOT NULL DEFAULT FALSE,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE(tenant_id, name)
+		)`,
+
+		// RBAC: permissions
+		`CREATE TABLE IF NOT EXISTS rbac_permissions (
+			id TEXT PRIMARY KEY,
+			code TEXT NOT NULL UNIQUE,
+			resource_type TEXT NOT NULL DEFAULT '',
+			action TEXT NOT NULL DEFAULT '',
+			description TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+
+		// RBAC: role ↔ permission mapping
+		`CREATE TABLE IF NOT EXISTS rbac_role_permissions (
+			role_id TEXT NOT NULL REFERENCES rbac_roles(id) ON DELETE CASCADE,
+			permission_id TEXT NOT NULL REFERENCES rbac_permissions(id) ON DELETE CASCADE,
+			PRIMARY KEY (role_id, permission_id)
+		)`,
+
+		// RBAC: scoped role assignments
+		`CREATE TABLE IF NOT EXISTS rbac_role_assignments (
+			id TEXT PRIMARY KEY,
+			tenant_id TEXT NOT NULL DEFAULT 'default',
+			principal_type TEXT NOT NULL,
+			principal_id TEXT NOT NULL,
+			role_id TEXT NOT NULL REFERENCES rbac_roles(id) ON DELETE CASCADE,
+			scope_type TEXT NOT NULL,
+			scope_id TEXT NOT NULL DEFAULT '',
+			created_by TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_rbac_role_assignments_tenant ON rbac_role_assignments(tenant_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_rbac_role_assignments_principal ON rbac_role_assignments(tenant_id, principal_type, principal_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_rbac_role_assignments_role ON rbac_role_assignments(role_id)`,
+
 		// pg_trgm GIN index for ILIKE text search on function names
 		`CREATE EXTENSION IF NOT EXISTS pg_trgm`,
 		`CREATE INDEX IF NOT EXISTS idx_functions_name_trgm ON functions USING gin(name gin_trgm_ops)`,
