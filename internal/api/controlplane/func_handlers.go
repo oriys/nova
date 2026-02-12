@@ -461,7 +461,13 @@ func (h *Handler) UpdateFunctionCode(w http.ResponseWriter, r *http.Request) {
 
 	var compileStatus domain.CompileStatus
 	if h.Compiler != nil {
-		h.Compiler.CompileAsync(r.Context(), fn, sourceCode)
+		if files != nil && len(files) > 0 {
+			// Multi-file function: use CompileAsyncWithFiles to support user-provided
+			// dependency files (go.mod, Cargo.toml, package.json, requirements.txt, etc.)
+			h.Compiler.CompileAsyncWithFiles(r.Context(), fn, files)
+		} else {
+			h.Compiler.CompileAsync(r.Context(), fn, sourceCode)
+		}
 		if domain.NeedsCompilation(fn.Runtime) {
 			compileStatus = domain.CompileStatusCompiling
 		} else {
