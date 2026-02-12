@@ -9,6 +9,7 @@ use commands::{
     apikeys::ApiKeysCmd,
     async_invocations::GlobalAsyncCmd,
     config_cmd::ConfigCmd,
+    cost::CostCmd,
     events::{DeliveriesCmd, SubscriptionsCmd, TopicsCmd},
     functions::FunctionsCmd,
     gateway::GatewayCmd,
@@ -142,6 +143,11 @@ enum Commands {
         #[command(subcommand)]
         cmd: GlobalAsyncCmd,
     },
+    /// Cost intelligence
+    Cost {
+        #[command(subcommand)]
+        cmd: CostCmd,
+    },
     /// Show version
     Version,
 }
@@ -191,6 +197,7 @@ async fn main() {
         Commands::AsyncInvocations { cmd } => {
             commands::async_invocations::run_global(cmd, &nova, &output_format).await
         }
+        Commands::Cost { cmd } => commands::cost::run(cmd, &nova, &output_format).await,
         Commands::Version => {
             println!("orbit {}", env!("CARGO_PKG_VERSION"));
             Ok(())

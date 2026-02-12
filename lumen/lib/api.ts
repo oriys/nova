@@ -765,6 +765,28 @@ async function request<T>(
   }
 }
 
+// Cost Intelligence types
+export interface FunctionCostSummary {
+  function_id: string;
+  function_name: string;
+  total_cost: number;
+  invocations_cost: number;
+  compute_cost: number;
+  cold_start_cost: number;
+  invocations: number;
+  total_duration_ms: number;
+  cold_starts: number;
+  avg_cost: number;
+}
+
+export interface TenantCostSummary {
+  tenant_id: string;
+  total_cost: number;
+  functions: FunctionCostSummary[];
+  period_from: string;
+  period_to: string;
+}
+
 // Functions API
 export const functionsApi = {
   list: (search?: string, limit?: number, offset?: number) => {
@@ -2360,4 +2382,25 @@ export const workflowDocsApi = {
     request<{ status: string; workflow_name: string }>(`/workflows/${encodeURIComponent(workflowName)}/docs`, {
       method: "DELETE",
     }),
+};
+
+// Cost Intelligence API
+export const costApi = {
+  functionCost: (name: string, windowSeconds?: number) => {
+    const params = new URLSearchParams();
+    if (typeof windowSeconds === "number" && Number.isFinite(windowSeconds) && windowSeconds > 0) {
+      params.set("window", String(windowSeconds));
+    }
+    const qs = params.toString();
+    return request<FunctionCostSummary>(`/functions/${encodeURIComponent(name)}/cost${qs ? `?${qs}` : ""}`);
+  },
+
+  summary: (windowSeconds?: number) => {
+    const params = new URLSearchParams();
+    if (typeof windowSeconds === "number" && Number.isFinite(windowSeconds) && windowSeconds > 0) {
+      params.set("window", String(windowSeconds));
+    }
+    const qs = params.toString();
+    return request<TenantCostSummary>(`/cost/summary${qs ? `?${qs}` : ""}`);
+  },
 };

@@ -3,6 +3,7 @@ pub mod async_invocations;
 pub mod capacity;
 pub mod code;
 pub mod config_cmd;
+pub mod cost;
 pub mod events;
 pub mod functions;
 pub mod gateway;
