@@ -441,7 +441,7 @@ export default function ApiClientPage() {
 
   // Build final request body
   const resolvedBody = useMemo(() => {
-    if (method === "GET" || method === "HEAD") return undefined
+    if (method === "GET" || method === "HEAD" || method === "OPTIONS") return undefined
     if (bodyType === "none") return undefined
     if (bodyType === "json" || bodyType === "raw") return substituteEnvVars(bodyContent, envVars)
     if (bodyType === "form") {

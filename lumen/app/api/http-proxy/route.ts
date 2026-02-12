@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     const response = await fetch(url, {
       method: method || "GET",
       headers: fetchHeaders,
-      body: method !== "GET" && method !== "HEAD" ? reqBody : undefined,
+      body: method !== "GET" && method !== "HEAD" && method !== "OPTIONS" ? reqBody : undefined,
     });
 
     const elapsed = Date.now() - startTime;
