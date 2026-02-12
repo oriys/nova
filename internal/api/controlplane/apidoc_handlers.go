@@ -54,7 +54,9 @@ func (h *APIDocHandler) GenerateDocs(w http.ResponseWriter, r *http.Request) {
 
 func generateToken() string {
 	b := make([]byte, 24)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand: failed to read random bytes: " + err.Error())
+	}
 	return hex.EncodeToString(b)
 }
 
