@@ -105,7 +105,7 @@ export default function SharedDocPage() {
                     <tr key={i} className="border-b">
                       <td className="px-3 py-2 font-mono text-xs">{f.name}</td>
                       <td className="px-3 py-2"><Badge variant="outline" className="text-xs">{f.type}</Badge></td>
-                      <td className="px-3 py-2">{f.required ? <Badge className="text-xs">Required</Badge> : <span className="text-muted-foreground text-xs">Optional</span>}</td>
+                      <td className="px-3 py-2">{f.required ? <Badge variant="default" className="text-xs">Required</Badge> : <span className="text-muted-foreground text-xs">Optional</span>}</td>
                       <td className="px-3 py-2 text-xs text-muted-foreground">{f.default || "-"}</td>
                       <td className="px-3 py-2 text-muted-foreground">{f.description}</td>
                     </tr>
