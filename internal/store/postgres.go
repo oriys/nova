@@ -766,6 +766,14 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_api_doc_shares_token ON api_doc_shares(token)`,
 		`CREATE INDEX IF NOT EXISTS idx_api_doc_shares_tenant_namespace ON api_doc_shares(tenant_id, namespace, created_at DESC)`,
 
+		// Per-function persisted documentation
+		`CREATE TABLE IF NOT EXISTS function_docs (
+			function_name TEXT PRIMARY KEY,
+			doc_content JSONB NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+
 		// pg_trgm GIN index for ILIKE text search on function names
 		`CREATE EXTENSION IF NOT EXISTS pg_trgm`,
 		`CREATE INDEX IF NOT EXISTS idx_functions_name_trgm ON functions USING gin(name gin_trgm_ops)`,
@@ -854,5 +862,33 @@ func (s *PostgresStore) IncrementAPIDocShareAccess(ctx context.Context, token st
 	_, err := s.pool.Exec(ctx, `
 		UPDATE api_doc_shares SET access_count = access_count + 1, last_access_at = NOW()
 		WHERE token = $1`, token)
+	return err
+}
+
+// --- Function Docs ---
+
+func (s *PostgresStore) SaveFunctionDoc(ctx context.Context, doc *FunctionDoc) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO function_docs (function_name, doc_content, updated_at, created_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (function_name) DO UPDATE SET doc_content = $2, updated_at = $3`,
+		doc.FunctionName, doc.DocContent, doc.UpdatedAt, doc.CreatedAt)
+	return err
+}
+
+func (s *PostgresStore) GetFunctionDoc(ctx context.Context, functionName string) (*FunctionDoc, error) {
+	var doc FunctionDoc
+	err := s.pool.QueryRow(ctx, `
+		SELECT function_name, doc_content, updated_at, created_at
+		FROM function_docs WHERE function_name = $1`, functionName).Scan(
+		&doc.FunctionName, &doc.DocContent, &doc.UpdatedAt, &doc.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &doc, nil
+}
+
+func (s *PostgresStore) DeleteFunctionDoc(ctx context.Context, functionName string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM function_docs WHERE function_name = $1`, functionName)
 	return err
 }
