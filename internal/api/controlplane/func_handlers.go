@@ -564,7 +564,7 @@ func detectEntryPoint(files map[string][]byte, runtime domain.Runtime) string {
 	entryPoints := map[domain.Runtime][]string{
 		domain.RuntimePython: {"handler.py", "main.py", "app.py", "index.py"},
 		domain.RuntimeNode:   {"handler.js", "index.js", "main.js", "app.js"},
-		domain.RuntimeGo:     {"handler.go", "main.go"},
+		domain.RuntimeGo:     {"handler.go", "main.go", "handler"},
 		domain.RuntimeRust:   {"handler.rs", "main.rs", "src/handler.rs", "src/main.rs"},
 		domain.RuntimeRuby:   {"handler.rb", "main.rb", "app.rb"},
 		domain.RuntimeJava:   {"Handler.java", "Main.java", "handler.jar"},
