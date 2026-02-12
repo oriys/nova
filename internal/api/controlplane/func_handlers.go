@@ -545,7 +545,8 @@ func detectEntryPoint(files map[string][]byte, runtime domain.Runtime) string {
 		domain.RuntimeJava:   {"Handler.java", "Main.java", "handler.jar"},
 		domain.RuntimePHP:    {"handler.php", "index.php", "main.php"},
 		domain.RuntimeDeno:   {"handler.ts", "main.ts", "index.ts"},
-		domain.RuntimeBun:    {"handler.ts", "handler.js", "index.ts", "index.js"},
+		domain.RuntimeBun:     {"handler.ts", "handler.js", "index.ts", "index.js"},
+		domain.RuntimeLibkrun: {"handler", "main"},
 	}
 
 	// Check runtime-specific entry points

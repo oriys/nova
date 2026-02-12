@@ -61,7 +61,7 @@ export const RUNTIME_COLORS: Record<string, string> = {
 
 // Get base runtime from versioned ID (e.g., "python3.11" -> "python")
 function getBaseRuntime(runtimeId: string): string {
-  const prefixes = ['python', 'go', 'node', 'rust', 'ruby', 'java', 'php', 'dotnet', 'scala']
+  const prefixes = ['python', 'go', 'node', 'rust', 'ruby', 'java', 'php', 'dotnet', 'scala', 'libkrun']
   for (const prefix of prefixes) {
     if (runtimeId.startsWith(prefix)) return prefix
   }

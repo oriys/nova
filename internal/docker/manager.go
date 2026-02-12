@@ -457,6 +457,8 @@ func imageForRuntime(rt domain.Runtime, prefix string) string {
 		return prefix + "-bun"
 	case r == string(domain.RuntimeWasm) || strings.HasPrefix(r, "wasm"):
 		return prefix + "-wasm"
+	case r == string(domain.RuntimeLibkrun) || strings.HasPrefix(r, "libkrun"):
+		return prefix + "-libkrun"
 	default:
 		return prefix + "-base"
 	}

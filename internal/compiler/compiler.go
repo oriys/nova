@@ -564,7 +564,8 @@ func runtimeExtension(runtime domain.Runtime) string {
 		domain.RuntimePerl:   ".pl",
 		domain.RuntimeR:      ".R",
 		domain.RuntimeJulia:  ".jl",
-		domain.RuntimeScala:  ".scala",
+		domain.RuntimeScala:   ".scala",
+		domain.RuntimeLibkrun: "",
 	}
 	if ext, ok := exts[runtime]; ok {
 		return ext

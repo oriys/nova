@@ -126,7 +126,7 @@ const AWS_EXECUTABLE_HANDLER_PATTERN = /^[A-Za-z0-9_/-]{1,128}$/
 
 // Get base runtime from versioned ID (e.g., "python3.11" -> "python")
 function getBaseRuntime(runtimeId: string): string {
-  const prefixes = ['python', 'node', 'go', 'rust', 'java', 'ruby', 'php', 'dotnet', 'deno', 'bun']
+  const prefixes = ['python', 'node', 'go', 'rust', 'java', 'ruby', 'php', 'dotnet', 'deno', 'bun', 'libkrun']
   for (const prefix of prefixes) {
     if (runtimeId.startsWith(prefix)) return prefix
   }
@@ -146,7 +146,7 @@ function getDefaultHandler(runtimeId: string): string {
   if (base === "dotnet") {
     return "Assembly::Namespace.Function::FunctionHandler"
   }
-  if (base === "go" || base === "rust" || base === "swift" || base === "zig" || base === "wasm") {
+  if (base === "go" || base === "rust" || base === "swift" || base === "zig" || base === "wasm" || base === "libkrun") {
     return "handler"
   }
   return "main.handler"
