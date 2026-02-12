@@ -7,7 +7,27 @@ import { CodeEditor } from "@/components/code-editor"
 import { FunctionData } from "@/lib/types"
 import { functionsApi, aiApi, CompileStatus, AsyncInvocationJob, AsyncInvocationStatus } from "@/lib/api"
 import { Textarea } from "@/components/ui/textarea"
-import { Copy, Check, Download, Save, Loader2, AlertCircle, Play, RefreshCw, RotateCcw, Sparkles, MessageSquare, Wand2 } from "lucide-react"
+import { Copy, Check, Download, Save, Loader2, AlertCircle, Play, RefreshCw, RotateCcw, Sparkles, MessageSquare, Wand2, Package } from "lucide-react"
+import { Label } from "@/components/ui/label"
+
+// Returns the dependency file name for a runtime
+function getDepFileName(runtimeId: string): string {
+  const depFiles: Record<string, string> = {
+    go: "go.mod",
+    rust: "Cargo.toml",
+    node: "package.json",
+    python: "requirements.txt",
+    ruby: "Gemfile",
+    php: "composer.json",
+    bun: "package.json",
+    deno: "package.json",
+  }
+  return depFiles[runtimeId] || ""
+}
+
+function hasDepFileSupport(runtimeId: string): boolean {
+  return getDepFileName(runtimeId) !== ""
+}
 
 interface FunctionCodeProps {
   func: FunctionData
@@ -117,8 +137,13 @@ export function FunctionCode({
   const [aiReviewScore, setAiReviewScore] = useState<number | undefined>()
   const [aiReviewSuggestions, setAiReviewSuggestions] = useState<string[]>([])
 
+  // Dependency file state
+  const [depFileContent, setDepFileContent] = useState("")
+  const [originalDepFileContent, setOriginalDepFileContent] = useState("")
+  const [depFileEnabled, setDepFileEnabled] = useState(false)
+
   const runtimeId = func.runtimeId || getRuntimeId(func.runtime)
-  const hasChanges = code !== originalCode
+  const hasChanges = code !== originalCode || (depFileEnabled && depFileContent !== originalDepFileContent)
 
   // Check AI status on mount
   useEffect(() => {
@@ -202,7 +227,18 @@ export function FunctionCode({
     try {
       setSaving(true)
       setError(null)
-      const response = await functionsApi.updateCode(func.name, code)
+      let response
+      if (depFileEnabled && depFileContent.trim()) {
+        const depFileName = getDepFileName(runtimeId)
+        response = await functionsApi.updateCodeWithFiles(
+          func.name,
+          code,
+          { [depFileName]: depFileContent }
+        )
+        setOriginalDepFileContent(depFileContent)
+      } else {
+        response = await functionsApi.updateCode(func.name, code)
+      }
       setCompileStatus(response.compile_status)
       setCompileError(undefined)
       setOriginalCode(code)
@@ -216,6 +252,7 @@ export function FunctionCode({
 
   const handleDiscard = () => {
     setCode(originalCode)
+    setDepFileContent(originalDepFileContent)
   }
 
   const handleAiReview = async () => {
@@ -394,6 +431,40 @@ export function FunctionCode({
           minimap
         />
       </div>
+
+      {/* Dependency File */}
+      {hasDepFileSupport(runtimeId) && (
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Package className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-sm font-medium">{getDepFileName(runtimeId)}</Label>
+              <Badge variant="outline" className="text-xs">Dependencies</Badge>
+            </div>
+            <Button
+              type="button"
+              variant={depFileEnabled ? "secondary" : "outline"}
+              size="sm"
+              onClick={() => setDepFileEnabled(!depFileEnabled)}
+            >
+              {depFileEnabled ? "Hide" : "Add Dependencies"}
+            </Button>
+          </div>
+          {depFileEnabled && (
+            <>
+              <Textarea
+                value={depFileContent}
+                onChange={(e) => setDepFileContent(e.target.value)}
+                placeholder={`Enter your ${getDepFileName(runtimeId)} content here...`}
+                className="font-mono text-sm min-h-[150px]"
+              />
+              <p className="text-xs text-muted-foreground">
+                External dependencies defined in {getDepFileName(runtimeId)} will be installed during deployment.
+              </p>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Invoke */}
       <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
