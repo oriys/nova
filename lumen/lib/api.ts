@@ -2300,3 +2300,27 @@ export const apiDocsApi = {
   getSharedDoc: (token: string) =>
     request<APIDocShare>(`/api-docs/shared/${token}`),
 };
+
+// Per-function persisted documentation
+export interface FunctionDocRecord {
+  function_name: string;
+  doc_content: GenerateDocsResponse;
+  updated_at: string;
+  created_at: string;
+}
+
+export const functionDocsApi = {
+  get: (functionName: string) =>
+    request<FunctionDocRecord>(`/functions/${functionName}/docs`),
+
+  save: (functionName: string, docContent: GenerateDocsResponse) =>
+    request<FunctionDocRecord>(`/functions/${functionName}/docs`, {
+      method: "PUT",
+      body: JSON.stringify({ doc_content: docContent }),
+    }),
+
+  delete: (functionName: string) =>
+    request<{ status: string; function_name: string }>(`/functions/${functionName}/docs`, {
+      method: "DELETE",
+    }),
+};

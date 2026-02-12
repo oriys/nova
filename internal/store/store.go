@@ -260,6 +260,11 @@ type MetadataStore interface {
 	ListAPIDocShares(ctx context.Context, tenantID, namespace string, limit, offset int) ([]*APIDocShare, error)
 	DeleteAPIDocShare(ctx context.Context, id string) error
 	IncrementAPIDocShareAccess(ctx context.Context, token string) error
+
+	// Function Docs (per-function persisted documentation)
+	SaveFunctionDoc(ctx context.Context, doc *FunctionDoc) error
+	GetFunctionDoc(ctx context.Context, functionName string) (*FunctionDoc, error)
+	DeleteFunctionDoc(ctx context.Context, functionName string) error
 }
 
 // Store wraps the MetadataStore, WorkflowStore, and ScheduleStore (Postgres) for all persistence.
@@ -314,5 +319,13 @@ type APIDocShare struct {
 	ExpiresAt    *time.Time      `json:"expires_at,omitempty"`
 	AccessCount  int64           `json:"access_count"`
 	LastAccessAt *time.Time      `json:"last_access_at,omitempty"`
+	CreatedAt    time.Time       `json:"created_at"`
+}
+
+// FunctionDoc represents persisted API documentation for a function.
+type FunctionDoc struct {
+	FunctionName string          `json:"function_name"`
+	DocContent   json.RawMessage `json:"doc_content"`
+	UpdatedAt    time.Time       `json:"updated_at"`
 	CreatedAt    time.Time       `json:"created_at"`
 }

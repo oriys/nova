@@ -14,6 +14,7 @@ import { FunctionLogs } from "@/components/function-logs"
 import { FunctionConfig } from "@/components/function-config"
 import { FunctionDiagnosticsPanel } from "@/components/function-diagnostics"
 import { FunctionSLOPanel } from "@/components/function-slo-panel"
+import { FunctionDocs } from "@/components/function-docs"
 import { InvocationHeatmap } from "@/components/invocation-heatmap"
 import {
   Dialog,
@@ -65,6 +66,7 @@ export default function FunctionDetailPage({
       "config",
       "versions",
       "schedules",
+      "docs",
     ])
     if (validTabs.has(requestedTab)) {
       return requestedTab
@@ -357,6 +359,12 @@ export default function FunctionDetailPage({
               className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
             >
               Schedules
+            </TabsTrigger>
+            <TabsTrigger
+              value="docs"
+              className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
+            >
+              Docs
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -698,6 +706,10 @@ export default function FunctionDetailPage({
                 </tbody>
               </table>
             </div>
+          </TabsContent>
+
+          <TabsContent value="docs" className="mt-0">
+            <FunctionDocs func={func} />
           </TabsContent>
         </Tabs>
       </div>

@@ -25,6 +25,11 @@ func (h *APIDocHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api-docs/shares", h.ListShares)
 	mux.HandleFunc("DELETE /api-docs/shares/{id}", h.DeleteShare)
 	mux.HandleFunc("GET /api-docs/shared/{token}", h.GetSharedDoc)
+
+	// Per-function persisted docs
+	mux.HandleFunc("GET /functions/{name}/docs", h.GetFunctionDoc)
+	mux.HandleFunc("PUT /functions/{name}/docs", h.SaveFunctionDoc)
+	mux.HandleFunc("DELETE /functions/{name}/docs", h.DeleteFunctionDoc)
 }
 
 func (h *APIDocHandler) GenerateDocs(w http.ResponseWriter, r *http.Request) {
@@ -214,4 +219,83 @@ func (h *APIDocHandler) GetSharedDoc(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(share)
+}
+
+// --- Per-function persisted docs ---
+
+func (h *APIDocHandler) GetFunctionDoc(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	doc, err := h.Store.GetFunctionDoc(r.Context(), name)
+	if err != nil {
+		http.Error(w, "documentation not found for function: "+name, http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(doc)
+}
+
+func (h *APIDocHandler) SaveFunctionDoc(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		DocContent json.RawMessage `json:"doc_content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.DocContent == nil {
+		http.Error(w, "doc_content is required", http.StatusBadRequest)
+		return
+	}
+
+	now := time.Now()
+
+	// Try to get existing doc to preserve created_at
+	existing, _ := h.Store.GetFunctionDoc(r.Context(), name)
+	createdAt := now
+	if existing != nil {
+		createdAt = existing.CreatedAt
+	}
+
+	doc := &store.FunctionDoc{
+		FunctionName: name,
+		DocContent:   req.DocContent,
+		UpdatedAt:    now,
+		CreatedAt:    createdAt,
+	}
+
+	if err := h.Store.SaveFunctionDoc(r.Context(), doc); err != nil {
+		http.Error(w, "failed to save documentation", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(doc)
+}
+
+func (h *APIDocHandler) DeleteFunctionDoc(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Store.DeleteFunctionDoc(r.Context(), name); err != nil {
+		http.Error(w, "failed to delete documentation", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "function_name": name})
 }
