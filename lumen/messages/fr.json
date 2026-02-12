@@ -194,7 +194,6 @@
     "validationMemoryRange": "La mémoire doit être comprise entre 128 et 10240 Mo (plage AWS Lambda).",
     "validationTimeoutRange": "Le délai d'expiration doit être compris entre 1 et 900 secondes (plage AWS Lambda).",
     "validationJavaHandler": "Le format du handler Java/Kotlin/Scala doit être '<package>.<Class>::<method>'.",
-    "validationDotnetHandler": "Le format du handler .NET doit être '<Assembly>::<Namespace.Class>::<Method>'.",
     "validationCompiledHandler": "Le format du handler pour les environnements compilés doit être un nom d'entrée exécutable (lettres/chiffres/_-/).",
     "validationDefaultHandler": "Le format du handler doit être au style AWS '<module>.<function>' (exemple : 'main.handler')."
   },
