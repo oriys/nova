@@ -2214,6 +2214,13 @@ export interface GenerateDocsRequest {
   path?: string;
 }
 
+export interface GenerateWorkflowDocsRequest {
+  workflow_name: string;
+  description?: string;
+  nodes: string;
+  edges: string;
+}
+
 export interface GenerateDocsResponse {
   name: string;
   operation_id: string;
@@ -2284,6 +2291,12 @@ export const apiDocsApi = {
       body: JSON.stringify(data),
     }),
 
+  generateWorkflowDocs: (data: GenerateWorkflowDocsRequest) =>
+    request<GenerateDocsResponse>("/ai/generate-workflow-docs", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
   createShare: (data: CreateShareRequest) =>
     request<CreateShareResponse>("/api-docs/shares", {
       method: "POST",
@@ -2321,6 +2334,30 @@ export const functionDocsApi = {
 
   delete: (functionName: string) =>
     request<{ status: string; function_name: string }>(`/functions/${functionName}/docs`, {
+      method: "DELETE",
+    }),
+};
+
+// Per-workflow persisted documentation
+export interface WorkflowDocRecord {
+  workflow_name: string;
+  doc_content: GenerateDocsResponse;
+  updated_at: string;
+  created_at: string;
+}
+
+export const workflowDocsApi = {
+  get: (workflowName: string) =>
+    request<WorkflowDocRecord>(`/workflows/${encodeURIComponent(workflowName)}/docs`),
+
+  save: (workflowName: string, docContent: GenerateDocsResponse) =>
+    request<WorkflowDocRecord>(`/workflows/${encodeURIComponent(workflowName)}/docs`, {
+      method: "PUT",
+      body: JSON.stringify({ doc_content: docContent }),
+    }),
+
+  delete: (workflowName: string) =>
+    request<{ status: string; workflow_name: string }>(`/workflows/${encodeURIComponent(workflowName)}/docs`, {
       method: "DELETE",
     }),
 };

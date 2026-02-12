@@ -21,6 +21,7 @@ type APIDocHandler struct {
 // RegisterRoutes registers API documentation routes on the mux.
 func (h *APIDocHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ai/generate-docs", h.GenerateDocs)
+	mux.HandleFunc("POST /ai/generate-workflow-docs", h.GenerateWorkflowDocs)
 	mux.HandleFunc("POST /api-docs/shares", h.CreateShare)
 	mux.HandleFunc("GET /api-docs/shares", h.ListShares)
 	mux.HandleFunc("DELETE /api-docs/shares/{id}", h.DeleteShare)
@@ -30,6 +31,11 @@ func (h *APIDocHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /functions/{name}/docs", h.GetFunctionDoc)
 	mux.HandleFunc("PUT /functions/{name}/docs", h.SaveFunctionDoc)
 	mux.HandleFunc("DELETE /functions/{name}/docs", h.DeleteFunctionDoc)
+
+	// Per-workflow persisted docs
+	mux.HandleFunc("GET /workflows/{name}/docs", h.GetWorkflowDoc)
+	mux.HandleFunc("PUT /workflows/{name}/docs", h.SaveWorkflowDoc)
+	mux.HandleFunc("DELETE /workflows/{name}/docs", h.DeleteWorkflowDoc)
 }
 
 func (h *APIDocHandler) GenerateDocs(w http.ResponseWriter, r *http.Request) {
@@ -48,6 +54,31 @@ func (h *APIDocHandler) GenerateDocs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := h.AIService.GenerateDocs(r.Context(), req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (h *APIDocHandler) GenerateWorkflowDocs(w http.ResponseWriter, r *http.Request) {
+	var req ai.GenerateWorkflowDocsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.WorkflowName == "" {
+		http.Error(w, "workflow_name is required", http.StatusBadRequest)
+		return
+	}
+	if req.Nodes == "" {
+		http.Error(w, "nodes is required", http.StatusBadRequest)
+		return
+	}
+
+	resp, err := h.AIService.GenerateWorkflowDocs(r.Context(), req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -298,4 +329,83 @@ func (h *APIDocHandler) DeleteFunctionDoc(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "function_name": name})
+}
+
+// --- Per-workflow persisted docs ---
+
+func (h *APIDocHandler) GetWorkflowDoc(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	doc, err := h.Store.GetWorkflowDoc(r.Context(), name)
+	if err != nil {
+		http.Error(w, "documentation not found for workflow: "+name, http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(doc)
+}
+
+func (h *APIDocHandler) SaveWorkflowDoc(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		DocContent json.RawMessage `json:"doc_content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.DocContent == nil {
+		http.Error(w, "doc_content is required", http.StatusBadRequest)
+		return
+	}
+
+	now := time.Now()
+
+	// Try to get existing doc to preserve created_at
+	existing, _ := h.Store.GetWorkflowDoc(r.Context(), name)
+	createdAt := now
+	if existing != nil {
+		createdAt = existing.CreatedAt
+	}
+
+	doc := &store.WorkflowDoc{
+		WorkflowName: name,
+		DocContent:   req.DocContent,
+		UpdatedAt:    now,
+		CreatedAt:    createdAt,
+	}
+
+	if err := h.Store.SaveWorkflowDoc(r.Context(), doc); err != nil {
+		http.Error(w, "failed to save documentation", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(doc)
+}
+
+func (h *APIDocHandler) DeleteWorkflowDoc(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Store.DeleteWorkflowDoc(r.Context(), name); err != nil {
+		http.Error(w, "failed to delete documentation", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "workflow_name": name})
 }

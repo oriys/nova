@@ -160,6 +160,14 @@ type GenerateDocsRequest struct {
 	Path         string `json:"path,omitempty"`
 }
 
+// GenerateWorkflowDocsRequest is the request payload for workflow documentation generation.
+type GenerateWorkflowDocsRequest struct {
+	WorkflowName string `json:"workflow_name"`
+	Description  string `json:"description,omitempty"`
+	Nodes        string `json:"nodes"`
+	Edges        string `json:"edges"`
+}
+
 // GenerateDocsResponse is the structured API documentation.
 type GenerateDocsResponse struct {
 	// Meta
@@ -171,17 +179,17 @@ type GenerateDocsResponse struct {
 	Stability   string `json:"stability"`
 	Summary     string `json:"summary"`
 	// Request
-	Method      string          `json:"method"`
-	Path        string          `json:"path"`
-	ContentType string          `json:"content_type"`
-	Auth        string          `json:"auth"`
-	RequestFields  []DocField      `json:"request_fields"`
+	Method        string     `json:"method"`
+	Path          string     `json:"path"`
+	ContentType   string     `json:"content_type"`
+	Auth          string     `json:"auth"`
+	RequestFields []DocField `json:"request_fields"`
 	// Response
 	ResponseFields []DocField      `json:"response_fields"`
 	SuccessCodes   []DocStatusCode `json:"success_codes"`
 	ErrorCodes     []DocStatusCode `json:"error_codes"`
 	// Error Model
-	ErrorModel     DocErrorModel   `json:"error_model"`
+	ErrorModel DocErrorModel `json:"error_model"`
 	// Examples
 	CurlExample     string `json:"curl_example"`
 	RequestExample  string `json:"request_example"`
@@ -1008,6 +1016,33 @@ func (s *Service) GenerateDocs(ctx context.Context, req GenerateDocsRequest) (*G
 	var result GenerateDocsResponse
 	if err := json.Unmarshal([]byte(resp), &result); err != nil {
 		return nil, fmt.Errorf("decode docs response: %w", err)
+	}
+	return &result, nil
+}
+
+// GenerateWorkflowDocs generates comprehensive documentation for a workflow.
+func (s *Service) GenerateWorkflowDocs(ctx context.Context, req GenerateWorkflowDocsRequest) (*GenerateDocsResponse, error) {
+	if !s.Enabled() {
+		return nil, fmt.Errorf("AI service is not enabled")
+	}
+
+	systemPrompt := "You are an API documentation expert. Generate comprehensive workflow documentation following enterprise best practices. Include all sections: meta information, workflow overview, node/step definitions, data flow between steps, request/response definitions, field-level definitions with types and validation, error models, authentication, examples (curl, request, response, error), observability, and notes."
+
+	userPrompt := fmt.Sprintf("Generate complete API documentation for the following workflow:\n\nWorkflow: %s\nDescription: %s\nPath: %s\n\nNodes (steps):\n%s\n\nEdges (data flow):\n%s\n\nGenerate documentation covering: meta info, workflow overview, request fields for triggering the workflow with types/required/defaults/validation/examples, response fields, HTTP status codes, error model, authentication, rate limiting, curl example for triggering, request/response/error examples, observability support, and changelog.",
+		req.WorkflowName,
+		defaultStr(req.Description, "No description provided"),
+		"/workflows/"+req.WorkflowName+"/runs",
+		req.Nodes,
+		req.Edges)
+
+	resp, err := s.chatCompletionWithTools(ctx, systemPrompt, userPrompt, []interface{}{generateDocsTool}, "generate_api_docs", maxGenerateTokens)
+	if err != nil {
+		return nil, fmt.Errorf("generate workflow docs: %w", err)
+	}
+
+	var result GenerateDocsResponse
+	if err := json.Unmarshal([]byte(resp), &result); err != nil {
+		return nil, fmt.Errorf("decode workflow docs response: %w", err)
 	}
 	return &result, nil
 }

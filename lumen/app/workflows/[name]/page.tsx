@@ -31,6 +31,7 @@ import {
 import { DagViewer } from "@/components/workflow/dag-viewer"
 import { DagEditor } from "@/components/workflow/dag-editor"
 import { CodeDisplay } from "@/components/code-editor"
+import { WorkflowDocs } from "@/components/workflow-docs"
 import type { LayoutMap } from "@/components/workflow/dag-layout"
 import { Play, RefreshCw, ArrowLeft, Pencil, X, ExternalLink, Loader2 } from "lucide-react"
 
@@ -290,6 +291,7 @@ export default function WorkflowDetailPage() {
             <TabsTrigger value="graph">Graph</TabsTrigger>
             <TabsTrigger value="runs">Runs</TabsTrigger>
             <TabsTrigger value="versions">Versions</TabsTrigger>
+            <TabsTrigger value="docs">Docs</TabsTrigger>
           </TabsList>
 
           <TabsContent value="graph" className="mt-4">
@@ -421,6 +423,12 @@ export default function WorkflowDetailPage() {
                 </tbody>
               </table>
             </div>
+          </TabsContent>
+
+          <TabsContent value="docs" className="mt-4">
+            {workflow && (
+              <WorkflowDocs workflow={workflow} currentVersion={currentVersionDetail} />
+            )}
           </TabsContent>
         </Tabs>
 
