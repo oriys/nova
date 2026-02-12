@@ -23,6 +23,7 @@ import (
 	"github.com/oriys/nova/internal/firecracker"
 	novagrpc "github.com/oriys/nova/internal/grpc"
 	"github.com/oriys/nova/internal/kubernetes"
+	"github.com/oriys/nova/internal/libkrun"
 	"github.com/oriys/nova/internal/layer"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
@@ -149,6 +150,13 @@ func daemonCmd() *cobra.Command {
 					return err
 				}
 				be = k8sMgr
+			case "libkrun":
+				logging.Op().Info("using libkrun backend")
+				libkrunMgr, err := libkrun.NewManager(&cfg.LibKrun)
+				if err != nil {
+					return err
+				}
+				be = libkrunMgr
 			default:
 				logging.Op().Info("using Firecracker backend")
 				adapter, err := firecracker.NewAdapter(&cfg.Firecracker)

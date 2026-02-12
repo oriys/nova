@@ -11,6 +11,7 @@ import (
 	"github.com/oriys/nova/internal/docker"
 	"github.com/oriys/nova/internal/firecracker"
 	"github.com/oriys/nova/internal/kubernetes"
+	"github.com/oriys/nova/internal/libkrun"
 	"github.com/oriys/nova/internal/wasm"
 )
 
@@ -184,6 +185,7 @@ type Config struct {
 	Docker        docker.Config       `json:"docker"`
 	Wasm          wasm.Config         `json:"wasm"`
 	Kubernetes    kubernetes.Config   `json:"kubernetes"`
+	LibKrun       libkrun.Config      `json:"libkrun"`
 	Postgres      PostgresConfig      `json:"postgres"`
 	Pool          PoolConfig          `json:"pool"`
 	Executor      ExecutorConfig      `json:"executor"`
@@ -207,11 +209,13 @@ func DefaultConfig() *Config {
 	dockerCfg := docker.DefaultConfig()
 	wasmCfg := wasm.DefaultConfig()
 	k8sCfg := kubernetes.DefaultConfig()
+	libkrunCfg := libkrun.DefaultConfig()
 	return &Config{
 		Firecracker: *fcCfg,
 		Docker:      *dockerCfg,
 		Wasm:        *wasmCfg,
 		Kubernetes:  *k8sCfg,
+		LibKrun:     *libkrunCfg,
 		Postgres: PostgresConfig{
 			DSN: "postgres://nova:nova@localhost:5432/nova?sslmode=disable",
 		},
@@ -716,6 +720,34 @@ func LoadFromEnv(cfg *Config) {
 	}
 	if v := os.Getenv("NOVA_AI_PROMPT_DIR"); v != "" {
 		cfg.AI.PromptDir = v
+	}
+
+	// LibKrun backend overrides
+	if v := os.Getenv("NOVA_LIBKRUN_CODE_DIR"); v != "" {
+		cfg.LibKrun.CodeDir = v
+	}
+	if v := os.Getenv("NOVA_LIBKRUN_ROOTFS_DIR"); v != "" {
+		cfg.LibKrun.RootfsDir = v
+	}
+	if v := os.Getenv("NOVA_LIBKRUN_PORT_RANGE_MIN"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.LibKrun.PortRangeMin = n
+		}
+	}
+	if v := os.Getenv("NOVA_LIBKRUN_PORT_RANGE_MAX"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.LibKrun.PortRangeMax = n
+		}
+	}
+	if v := os.Getenv("NOVA_LIBKRUN_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.LibKrun.DefaultTimeout = d
+		}
+	}
+	if v := os.Getenv("NOVA_LIBKRUN_AGENT_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.LibKrun.AgentTimeout = d
+		}
 	}
 }
 
