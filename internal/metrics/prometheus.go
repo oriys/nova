@@ -42,6 +42,10 @@ type PrometheusMetrics struct {
 	shedTotal      *prometheus.CounterVec
 	queueDepth     *prometheus.GaugeVec
 	queueWaitMs    *prometheus.GaugeVec
+
+	// Circuit breaker
+	circuitBreakerState       *prometheus.GaugeVec
+	circuitBreakerTripsTotal  *prometheus.CounterVec
 }
 
 // Default histogram buckets for invocation duration (in milliseconds)
@@ -239,6 +243,24 @@ func InitPrometheus(namespace string, buckets []float64) {
 			},
 			[]string{"function"},
 		),
+
+		circuitBreakerState: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "circuit_breaker_state",
+				Help:      "Current circuit breaker state (0=closed, 1=open, 2=half_open)",
+			},
+			[]string{"function"},
+		),
+
+		circuitBreakerTripsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Name:      "circuit_breaker_trips_total",
+				Help:      "Total circuit breaker state transitions",
+			},
+			[]string{"function", "to_state"},
+		),
 	}
 
 	pm.uptime = prometheus.NewGaugeFunc(
@@ -274,6 +296,8 @@ func InitPrometheus(namespace string, buckets []float64) {
 		pm.shedTotal,
 		pm.queueDepth,
 		pm.queueWaitMs,
+		pm.circuitBreakerState,
+		pm.circuitBreakerTripsTotal,
 	)
 
 	promMetrics = pm
@@ -460,4 +484,21 @@ func SetQueueWaitMs(funcName string, waitMs int64) {
 		return
 	}
 	promMetrics.queueWaitMs.WithLabelValues(funcName).Set(float64(waitMs))
+}
+
+// SetCircuitBreakerState sets the circuit breaker state gauge for a function.
+// state: 0=closed, 1=open, 2=half_open
+func SetCircuitBreakerState(funcName string, state int) {
+	if promMetrics == nil {
+		return
+	}
+	promMetrics.circuitBreakerState.WithLabelValues(funcName).Set(float64(state))
+}
+
+// RecordCircuitBreakerTrip records a circuit breaker state transition.
+func RecordCircuitBreakerTrip(funcName, toState string) {
+	if promMetrics == nil {
+		return
+	}
+	promMetrics.circuitBreakerTripsTotal.WithLabelValues(funcName, toState).Inc()
 }

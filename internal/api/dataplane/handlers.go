@@ -15,6 +15,7 @@ import (
 
 	"github.com/oriys/nova/internal/advisor"
 	"github.com/oriys/nova/internal/ai"
+	"github.com/oriys/nova/internal/cost"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/metrics"
@@ -224,6 +225,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /functions/{name}/recommendations", h.GetPerformanceRecommendations)
 	mux.HandleFunc("GET /functions/{name}/heatmap", h.FunctionHeatmap)
 	mux.HandleFunc("GET /metrics/heatmap", h.GlobalHeatmap)
+
+	// Cost intelligence
+	mux.HandleFunc("GET /functions/{name}/cost", h.FunctionCost)
+	mux.HandleFunc("GET /cost/summary", h.CostSummary)
 }
 
 // InvokeFunction handles POST /functions/{name}/invoke
@@ -288,6 +293,9 @@ func (h *Handler) InvokeFunction(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, pool.ErrConcurrencyLimit):
 			status = http.StatusServiceUnavailable
 			reason = "concurrency_limit"
+		case errors.Is(err, executor.ErrCircuitOpen):
+			status = http.StatusServiceUnavailable
+			reason = "circuit_breaker_open"
 		case errors.Is(err, context.DeadlineExceeded):
 			status = http.StatusGatewayTimeout
 			reason = "timeout"
@@ -416,6 +424,9 @@ func (h *Handler) InvokeFunctionStream(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(execErr, pool.ErrConcurrencyLimit):
 			status = http.StatusServiceUnavailable
 			reason = "concurrency_limit"
+		case errors.Is(execErr, executor.ErrCircuitOpen):
+			status = http.StatusServiceUnavailable
+			reason = "circuit_breaker_open"
 		case errors.Is(execErr, context.DeadlineExceeded):
 			status = http.StatusGatewayTimeout
 			reason = "timeout"
@@ -1301,4 +1312,120 @@ func (h *Handler) GetPerformanceRecommendations(w http.ResponseWriter, r *http.R
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// FunctionCost handles GET /functions/{name}/cost
+func (h *Handler) FunctionCost(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	windowStr := r.URL.Query().Get("window")
+	windowSeconds := defaultDiagnosticsWindowSeconds
+	if windowStr != "" {
+		if v, err := strconv.Atoi(windowStr); err == nil && v > 0 {
+			windowSeconds = v
+		}
+	}
+
+	logs, err := h.Store.ListInvocationLogs(r.Context(), fn.ID, 10000, 0)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	cutoff := time.Now().Add(-time.Duration(windowSeconds) * time.Second)
+	var totalDurationMs int64
+	var invocations int64
+	var coldStarts int64
+	for _, log := range logs {
+		if log.CreatedAt.Before(cutoff) {
+			continue
+		}
+		invocations++
+		totalDurationMs += log.DurationMs
+		if log.ColdStart {
+			coldStarts++
+		}
+	}
+
+	calc := cost.NewDefaultCalculator()
+	summary := cost.AggregateFunctionCost(
+		fn.ID, fn.Name,
+		invocations, totalDurationMs, coldStarts,
+		fn.MemoryMB, calc.GetPricing(),
+	)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(summary)
+}
+
+// CostSummary handles GET /cost/summary
+func (h *Handler) CostSummary(w http.ResponseWriter, r *http.Request) {
+	windowStr := r.URL.Query().Get("window")
+	windowSeconds := defaultDiagnosticsWindowSeconds
+	if windowStr != "" {
+		if v, err := strconv.Atoi(windowStr); err == nil && v > 0 {
+			windowSeconds = v
+		}
+	}
+
+	functions, err := h.Store.ListFunctions(r.Context(), 1000, 0)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	calc := cost.NewDefaultCalculator()
+	cutoff := time.Now().Add(-time.Duration(windowSeconds) * time.Second)
+	var summaries []*cost.FunctionCostSummary
+	var totalCost float64
+
+	for _, fn := range functions {
+		logs, err := h.Store.ListInvocationLogs(r.Context(), fn.ID, 10000, 0)
+		if err != nil {
+			continue
+		}
+
+		var totalDurationMs int64
+		var invocations int64
+		var coldStarts int64
+		for _, log := range logs {
+			if log.CreatedAt.Before(cutoff) {
+				continue
+			}
+			invocations++
+			totalDurationMs += log.DurationMs
+			if log.ColdStart {
+				coldStarts++
+			}
+		}
+
+		if invocations == 0 {
+			continue
+		}
+
+		summary := cost.AggregateFunctionCost(
+			fn.ID, fn.Name,
+			invocations, totalDurationMs, coldStarts,
+			fn.MemoryMB, calc.GetPricing(),
+		)
+		summaries = append(summaries, summary)
+		totalCost += summary.TotalCost
+	}
+
+	scope := store.TenantScopeFromContext(r.Context())
+	costResp := cost.TenantCostSummary{
+		TenantID:   scope.TenantID,
+		TotalCost:  totalCost,
+		Functions:  summaries,
+		PeriodFrom: cutoff,
+		PeriodTo:   time.Now(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(costResp)
 }
