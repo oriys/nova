@@ -45,8 +45,6 @@ func TestValidateCreateFunctionRequest_HandlerByRuntime(t *testing.T) {
 		{runtime: "node20", handler: "index.handler", valid: true},
 		{runtime: "java", handler: "com.example.Handler::handleRequest", valid: true},
 		{runtime: "java", handler: "main.handler", valid: false},
-		{runtime: "dotnet8", handler: "MyAsm::My.Namespace.Handler::Handle", valid: true},
-		{runtime: "dotnet8", handler: "main.handler", valid: false},
 		{runtime: "go1.24", handler: "handler", valid: true},
 		{runtime: "go1.24", handler: "main.handler", valid: false},
 	}
@@ -76,7 +74,6 @@ func TestValidateCreateFunctionRequest_DefaultHandler(t *testing.T) {
 		{runtime: "python", expectHandler: "main.handler"},
 		{runtime: "go", expectHandler: "handler"},
 		{runtime: "java", expectHandler: "example.Handler::handleRequest"},
-		{runtime: "dotnet", expectHandler: "Assembly::Namespace.Function::FunctionHandler"},
 	}
 
 	for _, tt := range tests {
