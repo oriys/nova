@@ -565,7 +565,7 @@ func runtimeExtension(runtime domain.Runtime) string {
 		domain.RuntimeR:      ".R",
 		domain.RuntimeJulia:  ".jl",
 		domain.RuntimeScala:   ".scala",
-		domain.RuntimeLibkrun: "",
+		domain.RuntimeLibkrun: "", // libkrun runs compiled binaries, no file extension
 	}
 	if ext, ok := exts[runtime]; ok {
 		return ext
