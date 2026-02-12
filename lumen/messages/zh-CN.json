@@ -20,7 +20,8 @@
   "pages": {
     "dashboard": {
       "title": "仪表盘",
-      "description": "无服务器函数概览"
+      "description": "无服务器函数概览",
+      "refresh": "刷新"
     },
     "functions": {
       "title": "函数",
@@ -401,7 +402,8 @@
     "warm": "热",
     "failedToLoad": "加载调用历史失败",
     "noInputCaptured": "未捕获输入",
-    "noOutputCaptured": "未捕获输出"
+    "noOutputCaptured": "未捕获输出",
+    "durationMs": "{duration}ms"
   },
   "configurations": {
     "failedToLoad": "加载配置失败",

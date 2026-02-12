@@ -411,7 +411,7 @@ export default function HistoryPage() {
                         </code>
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">
-                        {inv.duration}ms
+                        {th("durationMs", { duration: inv.duration })}
                       </td>
                       <td className="px-4 py-3">
                         {inv.coldStart ? (

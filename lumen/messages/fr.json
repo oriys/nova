@@ -20,7 +20,8 @@
   "pages": {
     "dashboard": {
       "title": "Tableau de bord",
-      "description": "Aperçu de vos fonctions serverless"
+      "description": "Aperçu de vos fonctions serverless",
+      "refresh": "Actualiser"
     },
     "functions": {
       "title": "Fonctions",
@@ -401,7 +402,8 @@
     "warm": "Chaud",
     "failedToLoad": "Échec du chargement de l'historique des invocations",
     "noInputCaptured": "Aucune entrée capturée",
-    "noOutputCaptured": "Aucune sortie capturée"
+    "noOutputCaptured": "Aucune sortie capturée",
+    "durationMs": "{duration}ms"
   },
   "configurations": {
     "failedToLoad": "Échec du chargement de la configuration",

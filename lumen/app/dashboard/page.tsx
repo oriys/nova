@@ -162,7 +162,7 @@ export default function DashboardPage() {
           </Button>
           <Button variant="outline" size="sm" onClick={() => fetchData(true)} disabled={refreshing}>
             <RefreshCw className={cn("mr-2 h-4 w-4", refreshing && "animate-spin")} />
-            Refresh
+            {t("dashboard.refresh")}
           </Button>
         </div>
 

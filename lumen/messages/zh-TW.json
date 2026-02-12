@@ -20,7 +20,8 @@
   "pages": {
     "dashboard": {
       "title": "儀表板",
-      "description": "無伺服器函數概覽"
+      "description": "無伺服器函數概覽",
+      "refresh": "重新整理"
     },
     "functions": {
       "title": "函數",
@@ -401,7 +402,8 @@
     "warm": "熱",
     "failedToLoad": "載入呼叫歷史失敗",
     "noInputCaptured": "未擷取輸入",
-    "noOutputCaptured": "未擷取輸出"
+    "noOutputCaptured": "未擷取輸出",
+    "durationMs": "{duration}ms"
   },
   "configurations": {
     "failedToLoad": "載入設定失敗",

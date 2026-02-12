@@ -20,7 +20,8 @@
   "pages": {
     "dashboard": {
       "title": "ダッシュボード",
-      "description": "サーバーレス関数の概要"
+      "description": "サーバーレス関数の概要",
+      "refresh": "更新"
     },
     "functions": {
       "title": "関数",
@@ -401,7 +402,8 @@
     "warm": "ウォーム",
     "failedToLoad": "呼び出し履歴の読み込みに失敗",
     "noInputCaptured": "入力がキャプチャされていません",
-    "noOutputCaptured": "出力がキャプチャされていません"
+    "noOutputCaptured": "出力がキャプチャされていません",
+    "durationMs": "{duration}ms"
   },
   "configurations": {
     "failedToLoad": "設定の読み込みに失敗",

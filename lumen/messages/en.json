@@ -20,7 +20,8 @@
   "pages": {
     "dashboard": {
       "title": "Dashboard",
-      "description": "Overview of your serverless functions"
+      "description": "Overview of your serverless functions",
+      "refresh": "Refresh"
     },
     "functions": {
       "title": "Functions",
@@ -401,7 +402,8 @@
     "warm": "Warm",
     "failedToLoad": "Failed to Load Invocation History",
     "noInputCaptured": "No input captured",
-    "noOutputCaptured": "No output captured"
+    "noOutputCaptured": "No output captured",
+    "durationMs": "{duration}ms"
   },
   "configurations": {
     "failedToLoad": "Failed to load configuration",
