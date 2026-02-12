@@ -225,7 +225,11 @@
     "validationTimeoutRange": "逾時必須在 1 到 900 秒之間（AWS Lambda 範圍）。",
     "validationJavaHandler": "Java/Kotlin/Scala 的處理程式格式必須為 '<package>.<Class>::<method>'。",
     "validationCompiledHandler": "編譯型執行環境的處理程式格式必須是可執行入口名稱（字母/數字/_-/）。",
-    "validationDefaultHandler": "處理程式格式必須為 AWS 風格 '<module>.<function>'（範例：'main.handler'）。"
+    "validationDefaultHandler": "處理程式格式必須為 AWS 風格 '<module>.<function>'（範例：'main.handler'）。",
+    "optional": "可選",
+    "addDeps": "新增依賴",
+    "removeDeps": "移除",
+    "depsHelp": "透過 {file} 新增外部依賴。它們將在部署時自動安裝。"
   },
   "functionsTable": {
     "unlimited": "無限制",

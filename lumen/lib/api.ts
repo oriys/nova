@@ -46,6 +46,8 @@ export interface FunctionCodeResponse {
 export interface UpdateCodeResponse {
   compile_status: CompileStatus;
   source_hash: string;
+  file_count?: number;
+  entry_point?: string;
 }
 
 export interface ResourceLimits {
@@ -627,6 +629,7 @@ export interface CreateFunctionRequest {
   runtime: string;
   handler?: string;
   code: string; // Source code (required)
+  dependency_files?: Record<string, string>; // Optional: dependency files like go.mod, requirements.txt, Cargo.toml, package.json
   memory_mb?: number;
   timeout_s?: number;
   min_replicas?: number;
@@ -867,6 +870,16 @@ export const functionsApi = {
     request<UpdateCodeResponse>(`/functions/${encodeURIComponent(name)}/code`, {
       method: "PUT",
       body: JSON.stringify({ code }),
+    }),
+
+  updateCodeWithFiles: (name: string, code: string, dependencyFiles: Record<string, string>, entryPoint?: string) =>
+    request<UpdateCodeResponse>(`/functions/${encodeURIComponent(name)}/code`, {
+      method: "PUT",
+      body: JSON.stringify({
+        code,
+        dependency_files: dependencyFiles,
+        ...(entryPoint ? { entry_point: entryPoint } : {}),
+      }),
     }),
 
   listVersions: (name: string, limit?: number, offset?: number) => {

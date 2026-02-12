@@ -225,7 +225,11 @@
     "validationTimeoutRange": "タイムアウトは1〜900秒の範囲内である必要があります（AWS Lambda範囲）。",
     "validationJavaHandler": "Java/Kotlin/Scalaのハンドラー形式は '<package>.<Class>::<method>' である必要があります。",
     "validationCompiledHandler": "コンパイル型ランタイムのハンドラー形式は実行可能エントリ名（英数字/_-/）である必要があります。",
-    "validationDefaultHandler": "ハンドラー形式はAWSスタイル '<module>.<function>'（例：'main.handler'）である必要があります。"
+    "validationDefaultHandler": "ハンドラー形式はAWSスタイル '<module>.<function>'（例：'main.handler'）である必要があります。",
+    "optional": "任意",
+    "addDeps": "依存関係を追加",
+    "removeDeps": "削除",
+    "depsHelp": "{file} で外部依存関係を追加します。デプロイ時に自動的にインストールされます。"
   },
   "functionsTable": {
     "unlimited": "無制限",

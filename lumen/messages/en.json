@@ -225,7 +225,11 @@
     "validationTimeoutRange": "Timeout must be between 1 and 900 seconds (AWS Lambda range).",
     "validationJavaHandler": "Handler format for Java/Kotlin/Scala must be '<package>.<Class>::<method>'.",
     "validationCompiledHandler": "Handler format for compiled runtimes must be an executable entry name (letters/numbers/_-/).",
-    "validationDefaultHandler": "Handler format must be AWS style '<module>.<function>' (example: 'main.handler')."
+    "validationDefaultHandler": "Handler format must be AWS style '<module>.<function>' (example: 'main.handler').",
+    "optional": "optional",
+    "addDeps": "Add Dependencies",
+    "removeDeps": "Remove",
+    "depsHelp": "Add external dependencies via {file}. They will be installed during deployment."
   },
   "functionsTable": {
     "unlimited": "Unlimited",
