@@ -51,10 +51,7 @@ export default function TenantDetailPage() {
       setLoading(true)
       setError("")
       try {
-        const [tenantList, namespaceList] = await Promise.all([
-          tenantsApi.list(),
-          tenantsApi.listNamespaces(tenantId),
-        ])
+        const tenantList = await tenantsApi.list()
 
         if (!active) return
 
@@ -65,6 +62,9 @@ export default function TenantDetailPage() {
           setError(`Tenant '${tenantId}' not found.`)
           return
         }
+
+        const namespaceList = await tenantsApi.listNamespaces(tenantId)
+        if (!active) return
 
         setTenant(selected)
         setNamespaces(namespaceList)

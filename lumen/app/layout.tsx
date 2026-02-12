@@ -6,6 +6,7 @@ import { Analytics } from '@vercel/analytics/next'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
 import { SidebarProvider } from '@/components/sidebar-context'
+import { AuthGate } from '@/components/auth-gate'
 import './globals.css'
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
@@ -36,7 +37,7 @@ export default async function RootLayout({
         <NextIntlClientProvider messages={messages} locale={locale}>
           <ThemeProvider attribute="class" defaultTheme="light">
             <SidebarProvider>
-              {children}
+              <AuthGate>{children}</AuthGate>
             </SidebarProvider>
           </ThemeProvider>
         </NextIntlClientProvider>

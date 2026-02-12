@@ -64,6 +64,13 @@ export function GlobalScopeSwitcher() {
       const tenantList = await tenantsApi.list()
       setTenants(tenantList)
 
+      if (tenantList.length === 0) {
+        setTenantDraft(DEFAULT_TENANT_ID)
+        setNamespaceDraft(DEFAULT_NAMESPACE)
+        setNamespaces([])
+        return
+      }
+
       const nextTenant =
         tenantList.find((tenant) => tenant.id === scope.tenantId)?.id ??
         tenantList[0]?.id ??
@@ -204,6 +211,12 @@ export function GlobalScopeSwitcher() {
             </Select>
           </div>
 
+          {tenants.length === 0 && !loading && (
+            <div className="rounded-md border border-border bg-muted/20 px-2.5 py-2 text-xs text-muted-foreground">
+              No available tenants for current user.
+            </div>
+          )}
+
           {error && (
             <div className="rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-2 text-xs text-destructive">
               {error}
@@ -222,7 +235,11 @@ export function GlobalScopeSwitcher() {
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               {tc("cancel")}
             </Button>
-            <Button type="button" onClick={applyScope} disabled={loading || applying}>
+            <Button
+              type="button"
+              onClick={applyScope}
+              disabled={loading || applying || tenants.length === 0 || namespaces.length === 0}
+            >
               {t("apply")}
             </Button>
           </div>

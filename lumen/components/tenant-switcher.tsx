@@ -10,7 +10,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { NamespaceEntry, TenantEntry, tenantsApi } from "@/lib/api"
-import { DEFAULT_NAMESPACE, DEFAULT_TENANT_ID, getTenantScope, isDefaultTenant, normalizeTenantScope, setTenantScope } from "@/lib/tenant-scope"
+import { isSuperUser } from "@/lib/auth"
+import { DEFAULT_NAMESPACE, DEFAULT_TENANT_ID, getTenantScope, normalizeTenantScope, setTenantScope } from "@/lib/tenant-scope"
 import { cn } from "@/lib/utils"
 
 const SCOPE_PART_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
@@ -30,7 +31,7 @@ export function TenantSwitcher() {
   const [loading, setLoading] = useState(true)
   const [mutating, setMutating] = useState(false)
   const [error, setError] = useState("")
-  const isDefault = isDefaultTenant()
+  const canManageTenants = isSuperUser()
 
   const [tenants, setTenants] = useState<TenantEntry[]>([])
   const [namespaces, setNamespaces] = useState<NamespaceEntry[]>([])
@@ -74,6 +75,14 @@ export function TenantSwitcher() {
 
         const tenantList = await tenantsApi.list()
         setTenants(tenantList)
+
+        if (tenantList.length === 0) {
+          setNamespaces([])
+          setCurrentTenant(DEFAULT_TENANT_ID)
+          setCurrentNamespace(DEFAULT_NAMESPACE)
+          setTenantScope({ tenantId: DEFAULT_TENANT_ID, namespace: DEFAULT_NAMESPACE })
+          return
+        }
 
         const nextTenant =
           tenantList.find((tenant) => tenant.id === normalized.tenantId)?.id ??
@@ -351,24 +360,25 @@ export function TenantSwitcher() {
             )}
           </div>
 
-          {isDefault && (
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <div className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                 <Building2 className="h-3.5 w-3.5" />
                 Tenants
               </div>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-7 w-7"
-                title="Create tenant"
-                onClick={() => setCreateTenantOpen(true)}
-                disabled={loading || mutating}
-                aria-label="Create tenant"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
+              {canManageTenants && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7"
+                  title="Create tenant"
+                  onClick={() => setCreateTenantOpen(true)}
+                  disabled={loading || mutating}
+                  aria-label="Create tenant"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+              )}
             </div>
 
             <div className="rounded-md border border-border overflow-hidden">
@@ -420,42 +430,45 @@ export function TenantSwitcher() {
                           <Eye className="h-3.5 w-3.5" />
                         </Link>
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        title="Rename tenant"
-                        onClick={() => {
-                          setEditTenantID(tenant.id)
-                          setEditTenantName(tenant.name || tenant.id)
-                          setEditTenantOpen(true)
-                        }}
-                        disabled={loading || mutating}
-                        aria-label={`Rename tenant ${tenant.id}`}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-destructive hover:text-destructive"
-                        title="Delete tenant"
-                        onClick={() => {
-                          setDeleteTenantID(tenant.id)
-                          setDeleteTenantOpen(true)
-                        }}
-                        disabled={loading || mutating || tenant.id === DEFAULT_TENANT_ID}
-                        aria-label={`Delete tenant ${tenant.id}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      {canManageTenants && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            title="Rename tenant"
+                            onClick={() => {
+                              setEditTenantID(tenant.id)
+                              setEditTenantName(tenant.name || tenant.id)
+                              setEditTenantOpen(true)
+                            }}
+                            disabled={loading || mutating}
+                            aria-label={`Rename tenant ${tenant.id}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            title="Delete tenant"
+                            onClick={() => {
+                              setDeleteTenantID(tenant.id)
+                              setDeleteTenantOpen(true)
+                            }}
+                            disabled={loading || mutating || tenant.id === DEFAULT_TENANT_ID}
+                            aria-label={`Delete tenant ${tenant.id}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                 ))
               )}
             </div>
           </div>
-          )}
 
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
@@ -470,7 +483,7 @@ export function TenantSwitcher() {
                   className="h-6 w-6"
                   title="Create namespace"
                   onClick={() => setCreateNamespaceOpen(true)}
-                  disabled={loading || mutating || !currentTenant}
+                  disabled={loading || mutating || tenants.length === 0 || !currentTenant}
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </Button>
@@ -483,7 +496,7 @@ export function TenantSwitcher() {
                     setEditNamespaceName(currentNamespace)
                     setEditNamespaceOpen(true)
                   }}
-                  disabled={loading || mutating || !currentNamespace}
+                  disabled={loading || mutating || tenants.length === 0 || !currentNamespace}
                 >
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>
@@ -493,7 +506,7 @@ export function TenantSwitcher() {
                   className="h-6 w-6 text-destructive hover:text-destructive"
                   title="Delete namespace"
                   onClick={() => setDeleteNamespaceOpen(true)}
-                  disabled={loading || mutating || !canDeleteCurrentNamespace}
+                  disabled={loading || mutating || tenants.length === 0 || !canDeleteCurrentNamespace}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
@@ -526,9 +539,9 @@ export function TenantSwitcher() {
         </div>
       </div>
 
-      {isDefault && (
-      <>
-      <Dialog open={createTenantOpen} onOpenChange={setCreateTenantOpen}>
+      {canManageTenants && (
+        <>
+          <Dialog open={createTenantOpen} onOpenChange={setCreateTenantOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Create Tenant</DialogTitle>
@@ -567,9 +580,9 @@ export function TenantSwitcher() {
             </DialogFooter>
           </form>
         </DialogContent>
-      </Dialog>
+          </Dialog>
 
-      <Dialog open={editTenantOpen} onOpenChange={setEditTenantOpen}>
+          <Dialog open={editTenantOpen} onOpenChange={setEditTenantOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Rename Tenant</DialogTitle>
@@ -598,9 +611,9 @@ export function TenantSwitcher() {
             </DialogFooter>
           </form>
         </DialogContent>
-      </Dialog>
+          </Dialog>
 
-      <Dialog open={deleteTenantOpen} onOpenChange={setDeleteTenantOpen}>
+          <Dialog open={deleteTenantOpen} onOpenChange={setDeleteTenantOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Delete Tenant</DialogTitle>
@@ -617,8 +630,8 @@ export function TenantSwitcher() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
-      </>
+          </Dialog>
+        </>
       )}
 
       <Dialog open={createNamespaceOpen} onOpenChange={setCreateNamespaceOpen}>

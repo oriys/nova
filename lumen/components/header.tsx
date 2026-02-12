@@ -12,17 +12,33 @@ import {
   ExternalLink,
   Info,
   Loader2,
+  LogOut,
   RefreshCw,
   Search,
   Server,
+  Shield,
   User,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { functionsApi, notificationsApi, type NotificationEntry, type NovaFunction } from "@/lib/api"
 import { useHealth, type HealthLevel } from "@/lib/hooks/use-health"
+import {
+  AUTH_CHANGED_EVENT,
+  getAuthSession,
+  logout,
+  type AuthSession,
+} from "@/lib/auth"
 import {
   FUNCTION_SEARCH_EVENT,
   type FunctionSearchDetail,
@@ -33,7 +49,6 @@ import { ThemeToggle } from "./theme-toggle"
 import { GlobalScopeSwitcher } from "./global-scope-switcher"
 import { CommandPalette } from "./command-palette"
 import { LanguageSwitcher } from "./language-switcher"
-import { isDefaultTenant } from "@/lib/tenant-scope"
 
 interface HeaderProps {
   title: string
@@ -61,12 +76,16 @@ export function Header({ title, description }: HeaderProps) {
   const [unreadCount, setUnreadCount] = useState(0)
   const [notificationLoading, setNotificationLoading] = useState(false)
   const [notificationRefreshing, setNotificationRefreshing] = useState(false)
+  const [session, setSession] = useState<AuthSession | null>(() => getAuthSession())
   const searchContainerRef = useRef<HTMLDivElement | null>(null)
   const healthContainerRef = useRef<HTMLDivElement | null>(null)
   const notificationContainerRef = useRef<HTMLDivElement | null>(null)
   const searchRequestIDRef = useRef(0)
   const isFunctionsPage = pathname === "/functions"
   const isDocsPage = pathname.startsWith("/docs")
+  const canSwitchTenant = Boolean(
+    session && (session.canAccessAllTenants || session.tenantIds.length > 1)
+  )
 
   const healthClassName: Record<HealthLevel, string> = {
     healthy: "bg-success",
@@ -91,6 +110,16 @@ export function Header({ title, description }: HeaderProps) {
     window.addEventListener(FUNCTION_SEARCH_EVENT, handleFunctionSearch)
     return () => {
       window.removeEventListener(FUNCTION_SEARCH_EVENT, handleFunctionSearch)
+    }
+  }, [])
+
+  useEffect(() => {
+    const syncSession = () => setSession(getAuthSession())
+    window.addEventListener("storage", syncSession)
+    window.addEventListener(AUTH_CHANGED_EVENT, syncSession as EventListener)
+    return () => {
+      window.removeEventListener("storage", syncSession)
+      window.removeEventListener(AUTH_CHANGED_EVENT, syncSession as EventListener)
     }
   }, [])
 
@@ -363,6 +392,12 @@ export function Header({ title, description }: HeaderProps) {
       return
     }
     router.push(next ? `/functions?q=${encodeURIComponent(next)}` : "/functions")
+  }
+
+  const handleLogout = () => {
+    logout()
+    setSession(null)
+    router.replace("/login")
   }
 
   const showSearchDropdown = searchFocused && query.trim().length > 0
@@ -674,15 +709,48 @@ export function Header({ title, description }: HeaderProps) {
           </Link>
         </Button>
 
-        {isDefaultTenant() && <GlobalScopeSwitcher />}
+        {canSwitchTenant && <GlobalScopeSwitcher />}
 
         <LanguageSwitcher />
 
         <ThemeToggle />
 
-        <Button variant="ghost" size="icon">
-          <User className="h-5 w-5 text-muted-foreground" />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" aria-label="User menu" title="User menu">
+              <User className="h-5 w-5 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel className="space-y-0.5">
+              <div className="text-sm font-medium text-foreground">
+                {session?.displayName || "Unknown user"}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                @{session?.username || "-"}
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="py-1.5 text-xs font-normal text-muted-foreground">
+              <span className="inline-flex items-center gap-1">
+                <Shield className="h-3.5 w-3.5" />
+                {session?.canAccessAllTenants
+                  ? "Super admin: all tenants"
+                  : `Tenants: ${session?.tenantIds.join(", ") || "-"}`}
+              </span>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={(event) => {
+                event.preventDefault()
+                handleLogout()
+              }}
+            >
+              <LogOut className="h-4 w-4" />
+              Sign out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   )

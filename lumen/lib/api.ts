@@ -1,6 +1,7 @@
 // nova API client
 // Connects to the nova backend at /api (proxied via Next.js rewrites)
 import { getTenantScopeHeaders } from "@/lib/tenant-scope";
+import { filterTenantsForSession } from "@/lib/auth";
 
 const API_BASE = "/api";
 
@@ -975,7 +976,7 @@ export const functionsApi = {
 
 // Tenant and namespace management API
 export const tenantsApi = {
-  list: (limit?: number, offset?: number) => {
+  list: async (limit?: number, offset?: number) => {
     const params = new URLSearchParams();
     if (typeof limit === "number" && Number.isFinite(limit) && limit > 0) {
       params.set("limit", String(Math.floor(limit)));
@@ -984,7 +985,8 @@ export const tenantsApi = {
       params.set("offset", String(Math.floor(offset)));
     }
     const qs = params.toString();
-    return request<TenantEntry[]>(`/tenants${qs ? `?${qs}` : ""}`);
+    const tenantList = await request<TenantEntry[]>(`/tenants${qs ? `?${qs}` : ""}`);
+    return filterTenantsForSession(tenantList);
   },
 
   create: (data: { id: string; name?: string; status?: string; tier?: string }) =>
