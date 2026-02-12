@@ -25,7 +25,7 @@ type EngineConfig struct {
 // Engine is the worker pool that polls for ready DAG nodes and executes them.
 type Engine struct {
 	store   *store.Store
-	exec    *executor.Executor
+	exec    executor.Invoker
 	cfg     EngineConfig
 	ownerID string
 	stopCh  chan struct{}
@@ -33,7 +33,7 @@ type Engine struct {
 }
 
 // NewEngine creates a new workflow engine.
-func NewEngine(s *store.Store, exec *executor.Executor, cfg EngineConfig) *Engine {
+func NewEngine(s *store.Store, exec executor.Invoker, cfg EngineConfig) *Engine {
 	if cfg.Workers <= 0 {
 		cfg.Workers = 4
 	}

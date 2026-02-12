@@ -16,13 +16,13 @@ import (
 type Scheduler struct {
 	cron    *cron.Cron
 	store   *store.Store
-	exec    *executor.Executor
+	exec    executor.Invoker
 	entries map[string]cron.EntryID // schedule ID -> cron entry ID
 	mu      sync.Mutex
 }
 
 // New creates a new Scheduler.
-func New(s *store.Store, exec *executor.Executor) *Scheduler {
+func New(s *store.Store, exec executor.Invoker) *Scheduler {
 	return &Scheduler{
 		cron:    cron.New(cron.WithParser(cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor))),
 		store:   s,
