@@ -86,6 +86,12 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /tenants/{tenantID}/quotas/{dimension}", h.UpsertTenantQuota)
 	mux.HandleFunc("DELETE /tenants/{tenantID}/quotas/{dimension}", h.DeleteTenantQuota)
 	mux.HandleFunc("GET /tenants/{tenantID}/usage", h.GetTenantUsage)
+	mux.HandleFunc("GET /tenants/{tenantID}/menu-permissions", h.ListTenantMenuPermissions)
+	mux.HandleFunc("PUT /tenants/{tenantID}/menu-permissions/{menuKey}", h.UpsertTenantMenuPermission)
+	mux.HandleFunc("DELETE /tenants/{tenantID}/menu-permissions/{menuKey}", h.DeleteTenantMenuPermission)
+	mux.HandleFunc("GET /tenants/{tenantID}/button-permissions", h.ListTenantButtonPermissions)
+	mux.HandleFunc("PUT /tenants/{tenantID}/button-permissions/{permissionKey}", h.UpsertTenantButtonPermission)
+	mux.HandleFunc("DELETE /tenants/{tenantID}/button-permissions/{permissionKey}", h.DeleteTenantButtonPermission)
 
 	// Snapshot management
 	mux.HandleFunc("GET /snapshots", h.ListSnapshots)

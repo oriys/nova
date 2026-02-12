@@ -1,11 +1,13 @@
 "use client"
 
+import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { useSidebar } from "./sidebar-context"
-import { isDefaultTenant } from "@/lib/tenant-scope"
+import { getTenantScope } from "@/lib/tenant-scope"
+import { tenantsApi, type MenuPermission } from "@/lib/api"
 import {
   LayoutDashboard,
   Code2,
@@ -22,16 +24,16 @@ import {
 
 type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "asyncJobs" | "history" | "runtimes" | "configurations" | "secrets" | "apiKeys"
 
-const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard; defaultOnly?: boolean }[] = [
+const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] = [
   { key: "dashboard", href: "/dashboard", icon: LayoutDashboard },
   { key: "functions", href: "/functions", icon: Code2 },
   { key: "events", href: "/events", icon: RadioTower },
   { key: "workflows", href: "/workflows", icon: GitBranch },
-  { key: "tenancy", href: "/tenancy", icon: Building2, defaultOnly: true },
+  { key: "tenancy", href: "/tenancy", icon: Building2 },
   { key: "asyncJobs", href: "/async-invocations", icon: Clock3 },
   { key: "history", href: "/history", icon: History },
   { key: "runtimes", href: "/runtimes", icon: Play },
-  { key: "configurations", href: "/configurations", icon: Settings, defaultOnly: true },
+  { key: "configurations", href: "/configurations", icon: Settings },
   { key: "secrets", href: "/secrets", icon: Lock },
   { key: "apiKeys", href: "/api-keys", icon: KeyRound },
 ]
@@ -56,15 +58,46 @@ function LumenLogo({ className }: { className?: string }) {
   )
 }
 
+function useMenuPermissions(): Set<string> | null {
+  const [enabledKeys, setEnabledKeys] = useState<Set<string> | null>(null)
+
+  const fetchPermissions = useCallback(() => {
+    const { tenantId } = getTenantScope()
+    tenantsApi
+      .listMenuPermissions(tenantId)
+      .then((perms: MenuPermission[]) => {
+        const keys = new Set<string>()
+        for (const p of perms) {
+          if (p.enabled) keys.add(p.menu_key)
+        }
+        setEnabledKeys(keys)
+      })
+      .catch(() => {
+        // On error, fall back to a safe minimal set (dashboard only)
+        setEnabledKeys(new Set(["dashboard"]))
+      })
+  }, [])
+
+  useEffect(() => {
+    fetchPermissions()
+    const handler = () => fetchPermissions()
+    window.addEventListener("nova:tenant-scope-changed", handler)
+    return () => window.removeEventListener("nova:tenant-scope-changed", handler)
+  }, [fetchPermissions])
+
+  return enabledKeys
+}
+
 export function Sidebar() {
   const pathname = usePathname()
   const { collapsed, toggle } = useSidebar()
   const t = useTranslations("nav")
-  const isDefault = isDefaultTenant()
+  const enabledMenuKeys = useMenuPermissions()
 
-  const visibleNavigation = isDefault
-    ? navigation
-    : navigation.filter((item) => !item.defaultOnly)
+  const visibleNavigation =
+    enabledMenuKeys === null
+      ? navigation
+      : navigation.filter((item) => enabledMenuKeys.has(item.key))
 
   return (
     <aside

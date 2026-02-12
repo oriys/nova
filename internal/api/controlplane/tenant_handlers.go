@@ -337,6 +337,144 @@ func (h *Handler) GetTenantUsage(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(usage)
 }
 
+// ─── Tenant Menu Permissions ────────────────────────────────────────────────
+
+// ListTenantMenuPermissions handles GET /tenants/{tenantID}/menu-permissions
+func (h *Handler) ListTenantMenuPermissions(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.PathValue("tenantID")
+	if !enforceTenantAccess(w, r, tenantID) {
+		return
+	}
+
+	perms, err := h.Store.ListTenantMenuPermissions(r.Context(), tenantID)
+	if err != nil {
+		http.Error(w, err.Error(), tenancyHTTPStatus(err))
+		return
+	}
+	if perms == nil {
+		perms = []*store.MenuPermissionRecord{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(perms)
+}
+
+// UpsertTenantMenuPermission handles PUT /tenants/{tenantID}/menu-permissions/{menuKey}
+func (h *Handler) UpsertTenantMenuPermission(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.PathValue("tenantID")
+	menuKey := r.PathValue("menuKey")
+	if !enforceTenantAccess(w, r, tenantID) {
+		return
+	}
+
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	perm, err := h.Store.UpsertTenantMenuPermission(r.Context(), tenantID, menuKey, req.Enabled)
+	if err != nil {
+		http.Error(w, err.Error(), tenancyHTTPStatus(err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(perm)
+}
+
+// DeleteTenantMenuPermission handles DELETE /tenants/{tenantID}/menu-permissions/{menuKey}
+func (h *Handler) DeleteTenantMenuPermission(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.PathValue("tenantID")
+	menuKey := r.PathValue("menuKey")
+	if !enforceTenantAccess(w, r, tenantID) {
+		return
+	}
+
+	if err := h.Store.DeleteTenantMenuPermission(r.Context(), tenantID, menuKey); err != nil {
+		http.Error(w, err.Error(), tenancyHTTPStatus(err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":    "deleted",
+		"tenant_id": tenantID,
+		"menu_key":  menuKey,
+	})
+}
+
+// ─── Tenant Button Permissions ──────────────────────────────────────────────
+
+// ListTenantButtonPermissions handles GET /tenants/{tenantID}/button-permissions
+func (h *Handler) ListTenantButtonPermissions(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.PathValue("tenantID")
+	if !enforceTenantAccess(w, r, tenantID) {
+		return
+	}
+
+	perms, err := h.Store.ListTenantButtonPermissions(r.Context(), tenantID)
+	if err != nil {
+		http.Error(w, err.Error(), tenancyHTTPStatus(err))
+		return
+	}
+	if perms == nil {
+		perms = []*store.ButtonPermissionRecord{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(perms)
+}
+
+// UpsertTenantButtonPermission handles PUT /tenants/{tenantID}/button-permissions/{permissionKey}
+func (h *Handler) UpsertTenantButtonPermission(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.PathValue("tenantID")
+	permissionKey := r.PathValue("permissionKey")
+	if !enforceTenantAccess(w, r, tenantID) {
+		return
+	}
+
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	perm, err := h.Store.UpsertTenantButtonPermission(r.Context(), tenantID, permissionKey, req.Enabled)
+	if err != nil {
+		http.Error(w, err.Error(), tenancyHTTPStatus(err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(perm)
+}
+
+// DeleteTenantButtonPermission handles DELETE /tenants/{tenantID}/button-permissions/{permissionKey}
+func (h *Handler) DeleteTenantButtonPermission(w http.ResponseWriter, r *http.Request) {
+	tenantID := r.PathValue("tenantID")
+	permissionKey := r.PathValue("permissionKey")
+	if !enforceTenantAccess(w, r, tenantID) {
+		return
+	}
+
+	if err := h.Store.DeleteTenantButtonPermission(r.Context(), tenantID, permissionKey); err != nil {
+		http.Error(w, err.Error(), tenancyHTTPStatus(err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":         "deleted",
+		"tenant_id":      tenantID,
+		"permission_key": permissionKey,
+	})
+}
+
 func tenancyHTTPStatus(err error) int {
 	if err == nil {
 		return http.StatusOK
