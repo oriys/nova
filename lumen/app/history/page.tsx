@@ -52,7 +52,9 @@ interface InvocationRecord {
 }
 
 export default function HistoryPage() {
-  const t = useTranslations("pages")
+  const tp = useTranslations("pages")
+  const th = useTranslations("history")
+  const tc = useTranslations("common")
   const [invocations, setInvocations] = useState<InvocationRecord[]>([])
   const [functions, setFunctions] = useState<FunctionData[]>([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -112,8 +114,8 @@ export default function HistoryPage() {
           coldStart: log.cold_start,
           input,
           output,
-          inputTitle: input ? prettyPayload(log.input) : "No input captured",
-          outputTitle: output ? prettyPayload(log.output) : "No output captured",
+          inputTitle: input ? prettyPayload(log.input) : th("noInputCaptured"),
+          outputTitle: output ? prettyPayload(log.output) : th("noOutputCaptured"),
         }
       })
 
@@ -197,9 +199,9 @@ export default function HistoryPage() {
   if (error) {
     return (
       <DashboardLayout>
-        <Header title={t("history.title")} description={t("history.description")} />
+        <Header title={tp("history.title")} description={tp("history.description")} />
         <div className="p-6">
-          <ErrorBanner error={error} title="Failed to Load Invocation History" onRetry={fetchData} />
+          <ErrorBanner error={error} title={th("failedToLoad")} onRetry={fetchData} />
         </div>
       </DashboardLayout>
     )
@@ -207,7 +209,7 @@ export default function HistoryPage() {
 
   return (
     <DashboardLayout>
-      <Header title={t("history.title")} description={t("history.description")} />
+      <Header title={tp("history.title")} description={tp("history.description")} />
 
       <div className="p-6 space-y-6">
         {/* Filters */}
@@ -217,7 +219,7 @@ export default function HistoryPage() {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Search invocations..."
+                placeholder={th("searchPlaceholder")}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
@@ -230,9 +232,9 @@ export default function HistoryPage() {
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="success">Success</SelectItem>
-                <SelectItem value="failed">Failed</SelectItem>
+                <SelectItem value="all">{th("allStatus")}</SelectItem>
+                <SelectItem value="success">{th("success")}</SelectItem>
+                <SelectItem value="failed">{th("failed")}</SelectItem>
               </SelectContent>
             </Select>
 
@@ -241,7 +243,7 @@ export default function HistoryPage() {
                 <SelectValue placeholder="Function" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Functions</SelectItem>
+                <SelectItem value="all">{th("allFunctions")}</SelectItem>
                 {functions.map((fn) => (
                   <SelectItem key={fn.id} value={fn.name}>
                     {fn.name}
@@ -253,7 +255,7 @@ export default function HistoryPage() {
 
           <Button variant="outline" onClick={fetchData} disabled={loading}>
             <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
-            Refresh
+            {tc("refresh")}
           </Button>
         </div>
 
@@ -262,7 +264,7 @@ export default function HistoryPage() {
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-center gap-2">
               <Zap className="h-4 w-4 text-primary" />
-              <p className="text-sm text-muted-foreground">Total Invocations</p>
+              <p className="text-sm text-muted-foreground">{th("totalInvocations")}</p>
             </div>
             <p className="text-2xl font-semibold text-foreground mt-1">
               {loading ? "..." : totalInvocations}
@@ -271,7 +273,7 @@ export default function HistoryPage() {
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-center gap-2">
               <CheckCircle className="h-4 w-4 text-success" />
-              <p className="text-sm text-muted-foreground">Successful</p>
+              <p className="text-sm text-muted-foreground">{th("successful")}</p>
             </div>
             <p className="text-2xl font-semibold text-success mt-1">
               {loading ? "..." : successCount}
@@ -280,7 +282,7 @@ export default function HistoryPage() {
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-center gap-2">
               <XCircle className="h-4 w-4 text-destructive" />
-              <p className="text-sm text-muted-foreground">Failed</p>
+              <p className="text-sm text-muted-foreground">{th("failed")}</p>
             </div>
             <p className="text-2xl font-semibold text-destructive mt-1">
               {loading ? "..." : failedCount}
@@ -289,7 +291,7 @@ export default function HistoryPage() {
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-center gap-2">
               <Snowflake className="h-4 w-4 text-blue-500" />
-              <p className="text-sm text-muted-foreground">Cold Starts</p>
+              <p className="text-sm text-muted-foreground">{th("coldStarts")}</p>
             </div>
             <p className="text-2xl font-semibold text-blue-500 mt-1">
               {loading ? "..." : coldStartCount}
@@ -298,7 +300,7 @@ export default function HistoryPage() {
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-center gap-2">
               <Clock className="h-4 w-4 text-primary" />
-              <p className="text-sm text-muted-foreground">Avg Duration</p>
+              <p className="text-sm text-muted-foreground">{th("avgDuration")}</p>
             </div>
             <p className="text-2xl font-semibold text-foreground mt-1">
               {loading ? "..." : `${avgDuration}ms`}
@@ -309,9 +311,9 @@ export default function HistoryPage() {
         {/* Invocations Table */}
         {!loading && invocations.length === 0 ? (
           <EmptyState
-            title="No Invocation Records Yet"
-            description="Invoke a function once to see the full invocation history here."
-            primaryAction={{ label: "Go to Functions", href: "/functions" }}
+            title={th("noRecords")}
+            description={th("noRecordsDesc")}
+            primaryAction={{ label: th("goToFunctions"), href: "/functions" }}
           />
         ) : (
         <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -320,31 +322,31 @@ export default function HistoryPage() {
               <thead>
                 <tr className="border-b border-border">
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
-                    Status
+                    {th("colStatus")}
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
-                    Timestamp
+                    {th("colTimestamp")}
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
-                    Function
+                    {th("colFunction")}
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
-                    Request ID
+                    {th("colRequestId")}
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
-                    Duration
+                    {th("colDuration")}
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
-                    Cold Start
+                    {th("colColdStart")}
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
-                    Input
+                    {th("colInput")}
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
-                    Output
+                    {th("colOutput")}
                   </th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">
-                    Actions
+                    {th("colActions")}
                   </th>
                 </tr>
               </thead>
@@ -363,7 +365,7 @@ export default function HistoryPage() {
                       colSpan={9}
                       className="px-4 py-8 text-center text-muted-foreground"
                     >
-                      No invocations found
+                      {th("noInvocations")}
                     </td>
                   </tr>
                 ) : (
@@ -415,12 +417,12 @@ export default function HistoryPage() {
                         {inv.coldStart ? (
                           <Badge variant="secondary" className="text-xs bg-blue-500/10 text-blue-500 border-0">
                             <Snowflake className="h-3 w-3 mr-1" />
-                            Cold
+                            {th("cold")}
                           </Badge>
                         ) : (
                           <Badge variant="secondary" className="text-xs bg-orange-500/10 text-orange-500 border-0">
                             <Flame className="h-3 w-3 mr-1" />
-                            Warm
+                            {th("warm")}
                           </Badge>
                         )}
                       </td>
