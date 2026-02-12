@@ -141,11 +141,22 @@ func (b *Breaker) State() State {
 	return b.state
 }
 
+// maxWindowEntries is a hard cap on sliding window entries to prevent memory exhaustion.
+const maxWindowEntries = 10000
+
 // trimWindow removes entries outside the sliding window. Must be called under lock.
 func (b *Breaker) trimWindow(now time.Time) {
 	cutoff := now.Add(-b.cfg.WindowDuration)
 	b.successes = trimBefore(b.successes, cutoff)
 	b.failures = trimBefore(b.failures, cutoff)
+
+	// Hard cap to prevent memory exhaustion under extreme load
+	if len(b.successes) > maxWindowEntries {
+		b.successes = b.successes[len(b.successes)-maxWindowEntries:]
+	}
+	if len(b.failures) > maxWindowEntries {
+		b.failures = b.failures[len(b.failures)-maxWindowEntries:]
+	}
 }
 
 // checkThreshold trips the breaker if error rate exceeds the configured threshold. Must be called under lock.

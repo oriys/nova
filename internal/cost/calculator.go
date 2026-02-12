@@ -69,6 +69,13 @@ func NewDefaultCalculator() *Calculator {
 
 // CalcInvocation calculates the cost of a single invocation.
 func (c *Calculator) CalcInvocation(memoryMB int, durationMs int64, coldStart bool) InvocationCost {
+	if memoryMB < 0 {
+		memoryMB = 0
+	}
+	if durationMs < 0 {
+		durationMs = 0
+	}
+
 	// Convert memory MB to GB
 	memoryGB := float64(memoryMB) / 1024.0
 	// Convert duration ms to seconds

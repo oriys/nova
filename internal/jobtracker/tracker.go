@@ -22,6 +22,7 @@ type Tracker struct {
 	mu       sync.RWMutex
 	progress map[string]*Progress // job ID -> progress
 	ttl      time.Duration        // how long to keep completed/stale entries
+	maxSize  int                  // hard cap on tracked entries (0 = unlimited)
 }
 
 // New creates a new job progress tracker.
@@ -32,6 +33,7 @@ func New(ttl time.Duration) *Tracker {
 	t := &Tracker{
 		progress: make(map[string]*Progress),
 		ttl:      ttl,
+		maxSize:  10000,
 	}
 	go t.cleanupLoop()
 	return t
@@ -52,6 +54,10 @@ func (t *Tracker) Update(jobID string, percent int, message, phase string) {
 
 	p, ok := t.progress[jobID]
 	if !ok {
+		// Enforce max size limit
+		if t.maxSize > 0 && len(t.progress) >= t.maxSize {
+			return
+		}
 		p = &Progress{JobID: jobID}
 		t.progress[jobID] = p
 	}

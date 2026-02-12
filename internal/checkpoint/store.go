@@ -20,9 +20,10 @@ type State struct {
 // This enables workflows and long-running invocations to resume from
 // intermediate steps after failures.
 type Store struct {
-	mu     sync.RWMutex
-	states map[string]*State // request ID -> checkpoint
-	ttl    time.Duration
+	mu      sync.RWMutex
+	states  map[string]*State // request ID -> checkpoint
+	ttl     time.Duration
+	maxSize int // hard cap on stored checkpoints (0 = unlimited)
 }
 
 // NewStore creates a new checkpoint store.
@@ -31,8 +32,9 @@ func NewStore(ttl time.Duration) *Store {
 		ttl = 1 * time.Hour
 	}
 	s := &Store{
-		states: make(map[string]*State),
-		ttl:    ttl,
+		states:  make(map[string]*State),
+		ttl:     ttl,
+		maxSize: 10000,
 	}
 	go s.cleanupLoop()
 	return s
@@ -43,6 +45,11 @@ func (s *Store) Save(requestID, functionID, step string, data json.RawMessage) {
 	now := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Enforce max size limit (allow updates to existing entries)
+	if _, exists := s.states[requestID]; !exists && s.maxSize > 0 && len(s.states) >= s.maxSize {
+		return
+	}
 
 	s.states[requestID] = &State{
 		RequestID:  requestID,
