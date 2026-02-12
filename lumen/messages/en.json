@@ -15,6 +15,7 @@
     "configurations": "Configurations",
     "secrets": "Secrets",
     "apiKeys": "API Keys",
+    "apiClient": "API Client",
     "apiDocs": "API Docs",
     "brandName": "Lumen"
   },
@@ -1492,6 +1493,44 @@
           "api": "Open API Reference"
         }
       }
+    },
+    "apiClient": {
+      "title": "API Client",
+      "description": "Test and debug HTTP APIs directly from your browser",
+      "send": "Send",
+      "sending": "Sending request…",
+      "request": "Request",
+      "response": "Response",
+      "urlPlaceholder": "https://api.example.com/endpoint",
+      "queryParams": "Params",
+      "headers": "Headers",
+      "body": "Body",
+      "variables": "Variables",
+      "paramKey": "Parameter name",
+      "paramValue": "Value",
+      "headerKey": "Header name",
+      "headerValue": "Value",
+      "formKey": "Field name",
+      "formValue": "Value",
+      "bodyType": {
+        "none": "None",
+        "json": "JSON",
+        "form": "Form",
+        "raw": "Raw"
+      },
+      "noBody": "This request does not have a body.",
+      "rawBodyPlaceholder": "Enter raw request body…",
+      "pretty": "Pretty",
+      "raw": "Raw",
+      "responseHeaders": "Headers",
+      "copy": "Copy",
+      "emptyResponse": "Enter a URL and click Send to make a request.",
+      "emptyBody": "(empty)",
+      "error": "Request Error",
+      "elapsed": "{ms} ms",
+      "envHint": "Use {{variable_name}} syntax in URL, headers, or body to substitute values.",
+      "addVariable": "Add Variable",
+      "add": "Add"
     }
   }
 }

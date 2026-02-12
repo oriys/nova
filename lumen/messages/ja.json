@@ -15,6 +15,7 @@
     "configurations": "設定",
     "secrets": "シークレット",
     "apiKeys": "APIキー",
+    "apiClient": "APIクライアント",
     "apiDocs": "APIドキュメント",
     "brandName": "Lumen"
   },
@@ -1492,6 +1493,44 @@
           "api": "Open API Reference"
         }
       }
+    },
+    "apiClient": {
+      "title": "APIクライアント",
+      "description": "ブラウザから直接 HTTP API をテスト・デバッグ",
+      "send": "送信",
+      "sending": "リクエスト送信中…",
+      "request": "リクエスト",
+      "response": "レスポンス",
+      "urlPlaceholder": "https://api.example.com/endpoint",
+      "queryParams": "パラメータ",
+      "headers": "ヘッダー",
+      "body": "ボディ",
+      "variables": "変数",
+      "paramKey": "パラメータ名",
+      "paramValue": "値",
+      "headerKey": "ヘッダー名",
+      "headerValue": "値",
+      "formKey": "フィールド名",
+      "formValue": "値",
+      "bodyType": {
+        "none": "なし",
+        "json": "JSON",
+        "form": "フォーム",
+        "raw": "Raw"
+      },
+      "noBody": "このリクエストにはボディがありません。",
+      "rawBodyPlaceholder": "リクエストボディを入力…",
+      "pretty": "整形",
+      "raw": "Raw",
+      "responseHeaders": "ヘッダー",
+      "copy": "コピー",
+      "emptyResponse": "URL を入力して送信をクリックしてリクエストを実行します。",
+      "emptyBody": "（空）",
+      "error": "リクエストエラー",
+      "elapsed": "{ms} ms",
+      "envHint": "URL、ヘッダー、またはボディで {{variable_name}} 構文を使用して値を置換します。",
+      "addVariable": "変数を追加",
+      "add": "追加"
     }
   }
 }
