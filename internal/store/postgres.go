@@ -774,6 +774,14 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 
+		// Per-workflow persisted documentation
+		`CREATE TABLE IF NOT EXISTS workflow_docs (
+			workflow_name TEXT PRIMARY KEY,
+			doc_content JSONB NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+
 		// pg_trgm GIN index for ILIKE text search on function names
 		`CREATE EXTENSION IF NOT EXISTS pg_trgm`,
 		`CREATE INDEX IF NOT EXISTS idx_functions_name_trgm ON functions USING gin(name gin_trgm_ops)`,
@@ -890,5 +898,33 @@ func (s *PostgresStore) GetFunctionDoc(ctx context.Context, functionName string)
 
 func (s *PostgresStore) DeleteFunctionDoc(ctx context.Context, functionName string) error {
 	_, err := s.pool.Exec(ctx, `DELETE FROM function_docs WHERE function_name = $1`, functionName)
+	return err
+}
+
+// --- Workflow Docs ---
+
+func (s *PostgresStore) SaveWorkflowDoc(ctx context.Context, doc *WorkflowDoc) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO workflow_docs (workflow_name, doc_content, updated_at, created_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (workflow_name) DO UPDATE SET doc_content = $2, updated_at = $3`,
+		doc.WorkflowName, doc.DocContent, doc.UpdatedAt, doc.CreatedAt)
+	return err
+}
+
+func (s *PostgresStore) GetWorkflowDoc(ctx context.Context, workflowName string) (*WorkflowDoc, error) {
+	var doc WorkflowDoc
+	err := s.pool.QueryRow(ctx, `
+		SELECT workflow_name, doc_content, updated_at, created_at
+		FROM workflow_docs WHERE workflow_name = $1`, workflowName).Scan(
+		&doc.WorkflowName, &doc.DocContent, &doc.UpdatedAt, &doc.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &doc, nil
+}
+
+func (s *PostgresStore) DeleteWorkflowDoc(ctx context.Context, workflowName string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM workflow_docs WHERE workflow_name = $1`, workflowName)
 	return err
 }

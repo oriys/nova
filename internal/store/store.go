@@ -265,6 +265,11 @@ type MetadataStore interface {
 	SaveFunctionDoc(ctx context.Context, doc *FunctionDoc) error
 	GetFunctionDoc(ctx context.Context, functionName string) (*FunctionDoc, error)
 	DeleteFunctionDoc(ctx context.Context, functionName string) error
+
+	// Workflow Docs (per-workflow persisted documentation)
+	SaveWorkflowDoc(ctx context.Context, doc *WorkflowDoc) error
+	GetWorkflowDoc(ctx context.Context, workflowName string) (*WorkflowDoc, error)
+	DeleteWorkflowDoc(ctx context.Context, workflowName string) error
 }
 
 // Store wraps the MetadataStore, WorkflowStore, and ScheduleStore (Postgres) for all persistence.
@@ -325,6 +330,14 @@ type APIDocShare struct {
 // FunctionDoc represents persisted API documentation for a function.
 type FunctionDoc struct {
 	FunctionName string          `json:"function_name"`
+	DocContent   json.RawMessage `json:"doc_content"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	CreatedAt    time.Time       `json:"created_at"`
+}
+
+// WorkflowDoc represents persisted API documentation for a workflow.
+type WorkflowDoc struct {
+	WorkflowName string          `json:"workflow_name"`
 	DocContent   json.RawMessage `json:"doc_content"`
 	UpdatedAt    time.Time       `json:"updated_at"`
 	CreatedAt    time.Time       `json:"created_at"`
