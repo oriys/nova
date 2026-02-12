@@ -35,7 +35,14 @@
     },
     "tenancy": {
       "title": "テナント",
-      "description": "テナントと名前空間の切り替えと管理"
+      "description": "テナントと名前空間の切り替えと管理",
+      "quotas": {
+        "title": "クォータ管理",
+        "description": "テナントのリソースクォータを設定・監視"
+      },
+      "governanceMoved": "テナントガバナンスはテナント詳細ページに移動しました。",
+      "selectTenantDetail": "テナントを選択して開く",
+      "detailView": "詳細ビュー"
     },
     "asyncInvocations": {
       "title": "非同期呼び出し",
@@ -300,5 +307,39 @@
     "page": "{number} ページ",
     "nextPage": "次のページ",
     "lastPage": "最後のページ"
+  },
+  "quotaManagement": {
+    "backToTenancy": "テナントに戻る",
+    "selectTenant": "テナント",
+    "selectTenantPlaceholder": "テナントを選択",
+    "refreshQuotas": "クォータと使用量を更新",
+    "configuredCount": "{total} 中 {count} のクォータを設定済み",
+    "overLimit": "{count} 件が上限超過",
+    "noTenants": "テナントが見つかりません。先にテナントを作成してください。",
+    "quotaRules": "クォータルール",
+    "limit": "上限",
+    "unlimited": "無制限",
+    "ofLimit": "使用率",
+    "saveQuota": "クォータを保存",
+    "deleteQuota": "クォータルールを削除",
+    "loadError": "クォータデータの読み込みに失敗しました。",
+    "saveError": "クォータの保存に失敗しました。",
+    "deleteError": "クォータの削除に失敗しました。",
+    "columnDimension": "ディメンション",
+    "columnUsage": "現在の使用量",
+    "columnHardLimit": "ハードリミット",
+    "columnSoftLimit": "ソフトリミット",
+    "columnBurst": "バースト",
+    "columnWindow": "ウィンドウ(秒)",
+    "columnActions": "アクション",
+    "dimensions": {
+      "invocations": "呼び出し回数",
+      "eventPublishes": "イベント発行",
+      "asyncQueueDepth": "非同期キュー深度",
+      "functionsCount": "関数数",
+      "memoryMb": "メモリ",
+      "vcpuMilli": "vCPU",
+      "diskIops": "ディスクIO"
+    }
   }
 }

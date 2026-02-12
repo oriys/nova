@@ -35,7 +35,14 @@
     },
     "tenancy": {
       "title": "Locataires",
-      "description": "Basculer et gérer les locataires et espaces de noms"
+      "description": "Basculer et gérer les locataires et espaces de noms",
+      "quotas": {
+        "title": "Gestion des quotas",
+        "description": "Configurer et surveiller les quotas de ressources des locataires"
+      },
+      "governanceMoved": "La gouvernance des locataires a été déplacée vers les pages de détail.",
+      "selectTenantDetail": "Sélectionnez un locataire et ouvrez la",
+      "detailView": "vue détaillée"
     },
     "asyncInvocations": {
       "title": "Invocations asynchrones",
@@ -300,5 +307,39 @@
     "page": "Page {number}",
     "nextPage": "Page suivante",
     "lastPage": "Dernière page"
+  },
+  "quotaManagement": {
+    "backToTenancy": "Retour aux locataires",
+    "selectTenant": "Locataire",
+    "selectTenantPlaceholder": "Sélectionner un locataire",
+    "refreshQuotas": "Actualiser les quotas et l'utilisation",
+    "configuredCount": "{count} sur {total} quotas configurés",
+    "overLimit": "{count} en dépassement",
+    "noTenants": "Aucun locataire trouvé. Créez d'abord un locataire.",
+    "quotaRules": "Règles de quota",
+    "limit": "Limite",
+    "unlimited": "Illimité",
+    "ofLimit": "de la limite",
+    "saveQuota": "Enregistrer le quota",
+    "deleteQuota": "Supprimer la règle de quota",
+    "loadError": "Échec du chargement des données de quota.",
+    "saveError": "Échec de l'enregistrement du quota.",
+    "deleteError": "Échec de la suppression du quota.",
+    "columnDimension": "Dimension",
+    "columnUsage": "Utilisation actuelle",
+    "columnHardLimit": "Limite stricte",
+    "columnSoftLimit": "Limite souple",
+    "columnBurst": "Rafale",
+    "columnWindow": "Fenêtre(s)",
+    "columnActions": "Actions",
+    "dimensions": {
+      "invocations": "Invocations",
+      "eventPublishes": "Publications d'événements",
+      "asyncQueueDepth": "Profondeur de file async",
+      "functionsCount": "Nombre de fonctions",
+      "memoryMb": "Mémoire",
+      "vcpuMilli": "vCPU",
+      "diskIops": "IO disque"
+    }
   }
 }
