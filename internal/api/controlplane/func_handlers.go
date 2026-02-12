@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/oriys/nova/internal/compiler"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/logging"
@@ -389,7 +390,7 @@ func (h *Handler) UpdateFunctionCode(w http.ResponseWriter, r *http.Request) {
 			if ep == "" {
 				ep = detectEntryPoint(files, fn.Runtime)
 				if ep == "" {
-					ep = "handler"
+					ep = "handler" + compiler.RuntimeExtension(fn.Runtime)
 				}
 			}
 			files[ep] = []byte(sourceCode)
@@ -563,8 +564,8 @@ func detectEntryPoint(files map[string][]byte, runtime domain.Runtime) string {
 	entryPoints := map[domain.Runtime][]string{
 		domain.RuntimePython: {"handler.py", "main.py", "app.py", "index.py"},
 		domain.RuntimeNode:   {"handler.js", "index.js", "main.js", "app.js"},
-		domain.RuntimeGo:     {"handler", "main.go", "handler.go"},
-		domain.RuntimeRust:   {"handler", "main.rs"},
+		domain.RuntimeGo:     {"handler.go", "main.go", "handler"},
+		domain.RuntimeRust:   {"handler.rs", "main.rs", "src/handler.rs", "src/main.rs"},
 		domain.RuntimeRuby:   {"handler.rb", "main.rb", "app.rb"},
 		domain.RuntimeJava:   {"Handler.java", "Main.java", "handler.jar"},
 		domain.RuntimePHP:    {"handler.php", "index.php", "main.php"},
