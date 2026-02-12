@@ -9,6 +9,12 @@ COMET_BIN    := $(BINARY_DIR)/comet
 COMET_LINUX  := $(BINARY_DIR)/comet-linux
 ZENITH_BIN   := $(BINARY_DIR)/zenith
 ZENITH_LINUX := $(BINARY_DIR)/zenith-linux
+CORONA_BIN   := $(BINARY_DIR)/corona
+CORONA_LINUX := $(BINARY_DIR)/corona-linux
+NEBULA_BIN   := $(BINARY_DIR)/nebula
+NEBULA_LINUX := $(BINARY_DIR)/nebula-linux
+AURORA_BIN   := $(BINARY_DIR)/aurora
+AURORA_LINUX := $(BINARY_DIR)/aurora-linux
 AGENT_BIN    := $(BINARY_DIR)/nova-agent
 ATLAS_BIN    := $(BINARY_DIR)/atlas
 ATLAS_LINUX  := $(BINARY_DIR)/atlas-linux
@@ -17,20 +23,26 @@ PREFIX       ?= nova-runtime
 
 # ─── Backend ──────────────────────────────────────────────────────────────────
 
-.PHONY: build build-linux agent comet comet-linux zenith zenith-linux proto
+.PHONY: build build-linux agent comet comet-linux zenith zenith-linux corona corona-linux nebula nebula-linux aurora aurora-linux proto
 
 proto:  ## Generate gRPC/protobuf code via buf (nova.proto)
 	cd api/proto && buf generate --path nova.proto
 
-build: $(NOVA_BIN) $(COMET_BIN) $(ZENITH_BIN) $(AGENT_BIN)  ## Build nova/comet/zenith (native) + agent (linux/amd64)
+build: $(NOVA_BIN) $(COMET_BIN) $(ZENITH_BIN) $(CORONA_BIN) $(NEBULA_BIN) $(AURORA_BIN) $(AGENT_BIN)  ## Build all services (native) + agent (linux/amd64)
 
-build-linux: $(NOVA_LINUX) $(COMET_LINUX) $(ZENITH_LINUX) $(AGENT_BIN)  ## Cross-compile nova/comet/zenith + agent for linux/amd64
+build-linux: $(NOVA_LINUX) $(COMET_LINUX) $(ZENITH_LINUX) $(CORONA_LINUX) $(NEBULA_LINUX) $(AURORA_LINUX) $(AGENT_BIN)  ## Cross-compile all services + agent for linux/amd64
 
 agent: $(AGENT_BIN)  ## Build only the guest agent (linux/amd64)
 comet: $(COMET_BIN)  ## Build Comet data plane (native)
 comet-linux: $(COMET_LINUX)  ## Cross-compile Comet for linux/amd64
 zenith: $(ZENITH_BIN)  ## Build Zenith gateway (native)
 zenith-linux: $(ZENITH_LINUX)  ## Cross-compile Zenith for linux/amd64
+corona: $(CORONA_BIN)  ## Build Corona scheduler/placement plane (native)
+corona-linux: $(CORONA_LINUX)  ## Cross-compile Corona for linux/amd64
+nebula: $(NEBULA_BIN)  ## Build Nebula event ingestion plane (native)
+nebula-linux: $(NEBULA_LINUX)  ## Cross-compile Nebula for linux/amd64
+aurora: $(AURORA_BIN)  ## Build Aurora observability plane (native)
+aurora-linux: $(AURORA_LINUX)  ## Cross-compile Aurora for linux/amd64
 
 $(NOVA_BIN): cmd/nova/main.go internal/**/*.go
 	@mkdir -p $(BINARY_DIR)
@@ -55,6 +67,30 @@ $(ZENITH_BIN): cmd/zenith/main.go cmd/zenith/serve.go internal/**/*.go api/proto
 $(ZENITH_LINUX): cmd/zenith/main.go cmd/zenith/serve.go internal/**/*.go api/proto/novapb/*.go
 	@mkdir -p $(BINARY_DIR)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $@ ./cmd/zenith
+
+$(CORONA_BIN): cmd/corona/main.go cmd/corona/daemon.go internal/**/*.go
+	@mkdir -p $(BINARY_DIR)
+	CGO_ENABLED=0 go build -o $@ ./cmd/corona
+
+$(CORONA_LINUX): cmd/corona/main.go cmd/corona/daemon.go internal/**/*.go
+	@mkdir -p $(BINARY_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $@ ./cmd/corona
+
+$(NEBULA_BIN): cmd/nebula/main.go cmd/nebula/daemon.go internal/**/*.go
+	@mkdir -p $(BINARY_DIR)
+	CGO_ENABLED=0 go build -o $@ ./cmd/nebula
+
+$(NEBULA_LINUX): cmd/nebula/main.go cmd/nebula/daemon.go internal/**/*.go
+	@mkdir -p $(BINARY_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $@ ./cmd/nebula
+
+$(AURORA_BIN): cmd/aurora/main.go cmd/aurora/daemon.go internal/**/*.go
+	@mkdir -p $(BINARY_DIR)
+	CGO_ENABLED=0 go build -o $@ ./cmd/aurora
+
+$(AURORA_LINUX): cmd/aurora/main.go cmd/aurora/daemon.go internal/**/*.go
+	@mkdir -p $(BINARY_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $@ ./cmd/aurora
 
 $(AGENT_BIN): cmd/agent/main.go
 	@mkdir -p $(BINARY_DIR)
@@ -142,7 +178,7 @@ all: build orbit atlas frontend docker-backend docker-frontend docker-runtimes  
 
 .PHONY: dev seed
 
-dev: download-assets  ## Start full stack via docker compose (Postgres + Nova + Comet + Zenith + Lumen)
+dev: download-assets  ## Start full stack via docker compose (Postgres + Nova + Comet + Corona + Nebula + Aurora + Zenith + Lumen)
 	docker-compose up --build
 
 seed:  ## Seed sample functions via scripts/seed-functions.sh

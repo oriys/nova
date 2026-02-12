@@ -51,13 +51,27 @@ There are no tests or linting configured in this project.
 
 ## Architecture
 
-### Three Components
+### Five-Plane Architecture + Gateway
 
-1. **`cmd/nova/main.go`** - CLI and daemon. Single-file (~1800 lines) Cobra app with commands: `register`, `list`, `get`, `delete`, `update`, `invoke`, `snapshot`, `version`, `schedule`, `daemon`.
+The backend is split into five architectural planes, each running as an independent service:
 
-2. **`cmd/agent/main.go`** - Guest agent that runs as PID 1 inside Firecracker VMs. Listens on vsock port 9999, receives Init/Exec/Ping/Stop messages, executes user code.
+| Plane | Service | Role | Port | Protocol |
+|-------|---------|------|------|----------|
+| Control Plane | **nova** | Function CRUD, API keys, secrets, auth, gateway management | 9001 | HTTP REST |
+| Isolation & Execution | **comet** | Executor, VM/container pool, backend lifecycle | 9090 | gRPC |
+| Scheduler / Placement | **corona** | Cron scheduling, autoscaling | — | Background worker |
+| Event Ingestion | **nebula** | Event bus, async queue, workflow engine | — | Background worker |
+| Observability | **aurora** | SLO evaluation, Prometheus metrics, output capture | 9002 | HTTP /metrics |
+| Gateway | **zenith** | Unified entry for UI/MCP/CLI traffic | 9000 | HTTP |
 
-3. **`lumen/`** - Next.js 16 web dashboard with i18n support (en, zh-CN, zh-TW, ja, fr). Pages: Dashboard, Functions, Workflows, Events, Runtimes, Configurations, History, Secrets, API Keys, Gateway, App Store, Tenancy. Uses shadcn/ui components, Recharts, Monaco Editor, and next-intl.
+1. **`cmd/nova/`** - Control plane daemon. HTTP REST API for function management.
+2. **`cmd/comet/`** - Isolation & execution daemon. gRPC server for function invocation via VM/container pool.
+3. **`cmd/corona/`** - Scheduler/placement daemon. Runs cron scheduler and autoscaler; invokes functions via Comet gRPC.
+4. **`cmd/nebula/`** - Event ingestion daemon. Runs event bus, async queue, workflow engine; invokes functions via Comet gRPC.
+5. **`cmd/aurora/`** - Observability daemon. Runs SLO evaluation and exposes Prometheus metrics.
+6. **`cmd/zenith/`** - Gateway. Routes UI/MCP/CLI traffic to Nova and Comet.
+7. **`cmd/agent/`** - Guest agent that runs as PID 1 inside Firecracker VMs.
+8. **`lumen/`** - Next.js 16 web dashboard with i18n support (en, zh-CN, zh-TW, ja, fr).
 
 ### Backend Internal Packages
 

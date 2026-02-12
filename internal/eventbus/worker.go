@@ -27,7 +27,7 @@ type Config struct {
 // WorkerPool polls queued deliveries and dispatches subscribed targets.
 type WorkerPool struct {
 	store   *store.Store
-	exec    *executor.Executor
+	exec    executor.Invoker
 	wf      *workflow.Service
 	cfg     Config
 	stopCh  chan struct{}
@@ -37,7 +37,7 @@ type WorkerPool struct {
 }
 
 // New creates a new event delivery worker pool.
-func New(s *store.Store, exec *executor.Executor, wf *workflow.Service, cfg Config) *WorkerPool {
+func New(s *store.Store, exec executor.Invoker, wf *workflow.Service, cfg Config) *WorkerPool {
 	if cfg.Workers <= 0 {
 		cfg.Workers = 4
 	}
