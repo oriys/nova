@@ -102,6 +102,44 @@
       "colActions": "Actions",
       "noShares": "Aucun lien partagé. Générez la documentation et partagez-la.",
       "neverExpires": "Jamais"
+    },
+    "apiClient": {
+      "title": "Client API",
+      "description": "Testez et déboguez les API HTTP directement depuis votre navigateur",
+      "send": "Envoyer",
+      "sending": "Envoi de la requête…",
+      "request": "Requête",
+      "response": "Réponse",
+      "urlPlaceholder": "https://api.example.com/endpoint",
+      "queryParams": "Paramètres",
+      "headers": "En-têtes",
+      "body": "Corps",
+      "variables": "Variables",
+      "paramKey": "Nom du paramètre",
+      "paramValue": "Valeur",
+      "headerKey": "Nom de l'en-tête",
+      "headerValue": "Valeur",
+      "formKey": "Nom du champ",
+      "formValue": "Valeur",
+      "bodyType": {
+        "none": "Aucun",
+        "json": "JSON",
+        "form": "Formulaire",
+        "raw": "Brut"
+      },
+      "noBody": "Cette requête n'a pas de corps.",
+      "rawBodyPlaceholder": "Saisissez le corps brut de la requête…",
+      "pretty": "Formaté",
+      "raw": "Brut",
+      "responseHeaders": "En-têtes",
+      "copy": "Copier",
+      "emptyResponse": "Saisissez une URL et cliquez sur Envoyer pour effectuer une requête.",
+      "emptyBody": "(vide)",
+      "error": "Erreur de requête",
+      "elapsed": "{ms} ms",
+      "envHint": "Utilisez la syntaxe '{{variable_name}}' dans l'URL, les en-têtes ou le corps pour substituer des valeurs.",
+      "addVariable": "Ajouter une variable",
+      "add": "Ajouter"
     }
   },
   "common": {
@@ -1493,44 +1531,6 @@
           "api": "Open API Reference"
         }
       }
-    },
-    "apiClient": {
-      "title": "Client API",
-      "description": "Testez et déboguez les API HTTP directement depuis votre navigateur",
-      "send": "Envoyer",
-      "sending": "Envoi de la requête…",
-      "request": "Requête",
-      "response": "Réponse",
-      "urlPlaceholder": "https://api.example.com/endpoint",
-      "queryParams": "Paramètres",
-      "headers": "En-têtes",
-      "body": "Corps",
-      "variables": "Variables",
-      "paramKey": "Nom du paramètre",
-      "paramValue": "Valeur",
-      "headerKey": "Nom de l'en-tête",
-      "headerValue": "Valeur",
-      "formKey": "Nom du champ",
-      "formValue": "Valeur",
-      "bodyType": {
-        "none": "Aucun",
-        "json": "JSON",
-        "form": "Formulaire",
-        "raw": "Brut"
-      },
-      "noBody": "Cette requête n'a pas de corps.",
-      "rawBodyPlaceholder": "Saisissez le corps brut de la requête…",
-      "pretty": "Formaté",
-      "raw": "Brut",
-      "responseHeaders": "En-têtes",
-      "copy": "Copier",
-      "emptyResponse": "Saisissez une URL et cliquez sur Envoyer pour effectuer une requête.",
-      "emptyBody": "(vide)",
-      "error": "Erreur de requête",
-      "elapsed": "{ms} ms",
-      "envHint": "Utilisez la syntaxe {{variable_name}} dans l'URL, les en-têtes ou le corps pour substituer des valeurs.",
-      "addVariable": "Ajouter une variable",
-      "add": "Ajouter"
     }
   }
 }

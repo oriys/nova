@@ -102,6 +102,44 @@
       "colActions": "操作",
       "noShares": "暂无分享链接。生成文档后即可分享。",
       "neverExpires": "永不"
+    },
+    "apiClient": {
+      "title": "API 客户端",
+      "description": "直接在浏览器中测试和调试 HTTP API",
+      "send": "发送",
+      "sending": "正在发送请求…",
+      "request": "请求",
+      "response": "响应",
+      "urlPlaceholder": "https://api.example.com/endpoint",
+      "queryParams": "参数",
+      "headers": "请求头",
+      "body": "请求体",
+      "variables": "变量",
+      "paramKey": "参数名",
+      "paramValue": "值",
+      "headerKey": "请求头名",
+      "headerValue": "值",
+      "formKey": "字段名",
+      "formValue": "值",
+      "bodyType": {
+        "none": "无",
+        "json": "JSON",
+        "form": "表单",
+        "raw": "原始"
+      },
+      "noBody": "此请求没有请求体。",
+      "rawBodyPlaceholder": "输入原始请求体…",
+      "pretty": "格式化",
+      "raw": "原始",
+      "responseHeaders": "响应头",
+      "copy": "复制",
+      "emptyResponse": "输入 URL 并点击发送以发起请求。",
+      "emptyBody": "（空）",
+      "error": "请求错误",
+      "elapsed": "{ms} ms",
+      "envHint": "在 URL、请求头或请求体中使用 '{{variable_name}}' 语法替换变量值。",
+      "addVariable": "添加变量",
+      "add": "添加"
     }
   },
   "common": {
@@ -1493,44 +1531,6 @@
           "api": "Open API Reference"
         }
       }
-    },
-    "apiClient": {
-      "title": "API 客户端",
-      "description": "直接在浏览器中测试和调试 HTTP API",
-      "send": "发送",
-      "sending": "正在发送请求…",
-      "request": "请求",
-      "response": "响应",
-      "urlPlaceholder": "https://api.example.com/endpoint",
-      "queryParams": "参数",
-      "headers": "请求头",
-      "body": "请求体",
-      "variables": "变量",
-      "paramKey": "参数名",
-      "paramValue": "值",
-      "headerKey": "请求头名",
-      "headerValue": "值",
-      "formKey": "字段名",
-      "formValue": "值",
-      "bodyType": {
-        "none": "无",
-        "json": "JSON",
-        "form": "表单",
-        "raw": "原始"
-      },
-      "noBody": "此请求没有请求体。",
-      "rawBodyPlaceholder": "输入原始请求体…",
-      "pretty": "格式化",
-      "raw": "原始",
-      "responseHeaders": "响应头",
-      "copy": "复制",
-      "emptyResponse": "输入 URL 并点击发送以发起请求。",
-      "emptyBody": "（空）",
-      "error": "请求错误",
-      "elapsed": "{ms} ms",
-      "envHint": "在 URL、请求头或请求体中使用 {{variable_name}} 语法替换变量值。",
-      "addVariable": "添加变量",
-      "add": "添加"
     }
   }
 }
