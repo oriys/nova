@@ -14,7 +14,8 @@
     "runtimes": "Environnements",
     "configurations": "Configurations",
     "secrets": "Secrets",
-    "apiKeys": "Clés API"
+    "apiKeys": "Clés API",
+    "apiDocs": "Docs API"
   },
   "pages": {
     "dashboard": {
@@ -71,6 +72,33 @@
     "gateway": {
       "title": "Passerelle",
       "description": "Gérer les routes HTTP mappées aux fonctions Nova"
+    },
+    "apiDocs": {
+      "title": "Documentation API",
+      "description": "Générer et partager de la documentation API avec l'IA",
+      "generateTitle": "Générer la documentation",
+      "generateDescription": "Sélectionnez une fonction pour générer une documentation API complète avec l'IA",
+      "selectFunction": "Fonction",
+      "selectFunctionPlaceholder": "Sélectionner une fonction...",
+      "generate": "Générer",
+      "generating": "Génération...",
+      "share": "Partager",
+      "createShareLink": "Créer un lien de partage",
+      "shareTitle": "Titre du lien",
+      "shareTitlePlaceholder": "Ex : Documentation API partenaires",
+      "expiry": "Expiration",
+      "noExpiration": "Sans expiration",
+      "creating": "Création...",
+      "createLink": "Créer le lien",
+      "sharedLinks": "Liens partagés",
+      "refresh": "Actualiser",
+      "colTitle": "Titre",
+      "colFunction": "Fonction",
+      "colExpires": "Expiration",
+      "colAccess": "Accès",
+      "colActions": "Actions",
+      "noShares": "Aucun lien partagé. Générez la documentation et partagez-la.",
+      "neverExpires": "Jamais"
     }
   },
   "common": {

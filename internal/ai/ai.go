@@ -150,6 +150,87 @@ type DiagnosticsAnomaly struct {
 	Description string `json:"description"`
 }
 
+// GenerateDocsRequest is the request payload for API documentation generation.
+type GenerateDocsRequest struct {
+	FunctionName string `json:"function_name"`
+	Runtime      string `json:"runtime"`
+	Code         string `json:"code"`
+	Handler      string `json:"handler"`
+	Method       string `json:"method,omitempty"`
+	Path         string `json:"path,omitempty"`
+}
+
+// GenerateDocsResponse is the structured API documentation.
+type GenerateDocsResponse struct {
+	// Meta
+	Name        string `json:"name"`
+	OperationID string `json:"operation_id"`
+	Service     string `json:"service"`
+	Version     string `json:"version"`
+	Protocol    string `json:"protocol"`
+	Stability   string `json:"stability"`
+	Summary     string `json:"summary"`
+	// Request
+	Method      string          `json:"method"`
+	Path        string          `json:"path"`
+	ContentType string          `json:"content_type"`
+	Auth        string          `json:"auth"`
+	RequestFields  []DocField      `json:"request_fields"`
+	// Response
+	ResponseFields []DocField      `json:"response_fields"`
+	SuccessCodes   []DocStatusCode `json:"success_codes"`
+	ErrorCodes     []DocStatusCode `json:"error_codes"`
+	// Error Model
+	ErrorModel     DocErrorModel   `json:"error_model"`
+	// Examples
+	CurlExample     string `json:"curl_example"`
+	RequestExample  string `json:"request_example"`
+	ResponseExample string `json:"response_example"`
+	ErrorExample    string `json:"error_example"`
+	// Security & Auth
+	AuthMethod    string   `json:"auth_method"`
+	RolesRequired []string `json:"roles_required"`
+	// Idempotency
+	Idempotent    bool   `json:"idempotent"`
+	IdempotentKey string `json:"idempotent_key"`
+	// Rate Limiting
+	RateLimit string `json:"rate_limit"`
+	Timeout   string `json:"timeout"`
+	// Pagination
+	Pagination string `json:"pagination"`
+	// Observability
+	SupportsTracing bool `json:"supports_tracing"`
+	// Changelog
+	Changelog []string `json:"changelog"`
+	// Notes
+	Notes []string `json:"notes"`
+}
+
+// DocField represents a single field in request or response documentation.
+type DocField struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Required    bool   `json:"required"`
+	Description string `json:"description"`
+	Default     string `json:"default,omitempty"`
+	Example     string `json:"example,omitempty"`
+	Validation  string `json:"validation,omitempty"`
+	EnumValues  string `json:"enum_values,omitempty"`
+}
+
+// DocStatusCode represents an HTTP status code and its meaning.
+type DocStatusCode struct {
+	Code    int    `json:"code"`
+	Meaning string `json:"meaning"`
+}
+
+// DocErrorModel describes the error response format.
+type DocErrorModel struct {
+	Format      string `json:"format"`
+	Retryable   string `json:"retryable"`
+	Description string `json:"description"`
+}
+
 // Service provides AI-powered code operations.
 type Service struct {
 	cfg     Config
@@ -551,6 +632,211 @@ var analyzeDiagnosticsTool = map[string]interface{}{
 	},
 }
 
+// generateDocsTool is the OpenAI function tool schema for API documentation generation.
+var generateDocsTool = map[string]interface{}{
+	"type": "function",
+	"function": map[string]interface{}{
+		"name":        "generate_api_docs",
+		"description": "Generate comprehensive API documentation for a serverless function deployed on the Nova platform.",
+		"parameters": map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"name": map[string]interface{}{
+					"type":        "string",
+					"description": "API endpoint name.",
+				},
+				"operation_id": map[string]interface{}{
+					"type":        "string",
+					"description": "Unique operation identifier for the endpoint.",
+				},
+				"service": map[string]interface{}{
+					"type":        "string",
+					"description": "Service or domain the API belongs to.",
+				},
+				"version": map[string]interface{}{
+					"type":        "string",
+					"description": "API version (e.g., v1).",
+				},
+				"protocol": map[string]interface{}{
+					"type":        "string",
+					"description": "Protocol used (e.g., HTTP, gRPC).",
+				},
+				"stability": map[string]interface{}{
+					"type":        "string",
+					"description": "Stability level (e.g., stable, beta, alpha).",
+				},
+				"summary": map[string]interface{}{
+					"type":        "string",
+					"description": "Short summary of what the API endpoint does.",
+				},
+				"method": map[string]interface{}{
+					"type":        "string",
+					"description": "HTTP method (GET, POST, PUT, DELETE, etc.).",
+				},
+				"path": map[string]interface{}{
+					"type":        "string",
+					"description": "API endpoint path.",
+				},
+				"content_type": map[string]interface{}{
+					"type":        "string",
+					"description": "Request content type (e.g., application/json).",
+				},
+				"auth": map[string]interface{}{
+					"type":        "string",
+					"description": "Authentication requirement description.",
+				},
+				"request_fields": map[string]interface{}{
+					"type":        "array",
+					"description": "List of request fields with type information.",
+					"items": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"name":        map[string]interface{}{"type": "string", "description": "Field name."},
+							"type":        map[string]interface{}{"type": "string", "description": "Field type (e.g., string, integer, boolean)."},
+							"required":    map[string]interface{}{"type": "boolean", "description": "Whether the field is required."},
+							"description": map[string]interface{}{"type": "string", "description": "Field description."},
+							"default":     map[string]interface{}{"type": "string", "description": "Default value if any."},
+							"example":     map[string]interface{}{"type": "string", "description": "Example value."},
+							"validation":  map[string]interface{}{"type": "string", "description": "Validation rules."},
+							"enum_values": map[string]interface{}{"type": "string", "description": "Comma-separated enum values if applicable."},
+						},
+						"required": []string{"name", "type", "required", "description"},
+					},
+				},
+				"response_fields": map[string]interface{}{
+					"type":        "array",
+					"description": "List of response fields with type information.",
+					"items": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"name":        map[string]interface{}{"type": "string", "description": "Field name."},
+							"type":        map[string]interface{}{"type": "string", "description": "Field type."},
+							"required":    map[string]interface{}{"type": "boolean", "description": "Whether the field is always present."},
+							"description": map[string]interface{}{"type": "string", "description": "Field description."},
+							"default":     map[string]interface{}{"type": "string", "description": "Default value if any."},
+							"example":     map[string]interface{}{"type": "string", "description": "Example value."},
+							"validation":  map[string]interface{}{"type": "string", "description": "Validation rules."},
+							"enum_values": map[string]interface{}{"type": "string", "description": "Comma-separated enum values if applicable."},
+						},
+						"required": []string{"name", "type", "required", "description"},
+					},
+				},
+				"success_codes": map[string]interface{}{
+					"type":        "array",
+					"description": "List of success HTTP status codes.",
+					"items": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"code":    map[string]interface{}{"type": "integer", "description": "HTTP status code."},
+							"meaning": map[string]interface{}{"type": "string", "description": "What the status code means."},
+						},
+						"required": []string{"code", "meaning"},
+					},
+				},
+				"error_codes": map[string]interface{}{
+					"type":        "array",
+					"description": "List of error HTTP status codes.",
+					"items": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"code":    map[string]interface{}{"type": "integer", "description": "HTTP status code."},
+							"meaning": map[string]interface{}{"type": "string", "description": "What the error means."},
+						},
+						"required": []string{"code", "meaning"},
+					},
+				},
+				"error_model": map[string]interface{}{
+					"type":        "object",
+					"description": "Error response model.",
+					"properties": map[string]interface{}{
+						"format":      map[string]interface{}{"type": "string", "description": "Error response format."},
+						"retryable":   map[string]interface{}{"type": "string", "description": "Whether errors are retryable."},
+						"description": map[string]interface{}{"type": "string", "description": "Error model description."},
+					},
+					"required": []string{"format", "retryable", "description"},
+				},
+				"curl_example": map[string]interface{}{
+					"type":        "string",
+					"description": "Example curl command to invoke the API.",
+				},
+				"request_example": map[string]interface{}{
+					"type":        "string",
+					"description": "Example JSON request body.",
+				},
+				"response_example": map[string]interface{}{
+					"type":        "string",
+					"description": "Example JSON response body.",
+				},
+				"error_example": map[string]interface{}{
+					"type":        "string",
+					"description": "Example JSON error response.",
+				},
+				"auth_method": map[string]interface{}{
+					"type":        "string",
+					"description": "Authentication method (e.g., Bearer token, API key).",
+				},
+				"roles_required": map[string]interface{}{
+					"type":        "array",
+					"description": "List of roles required to access the endpoint.",
+					"items": map[string]interface{}{
+						"type": "string",
+					},
+				},
+				"idempotent": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Whether the endpoint is idempotent.",
+				},
+				"idempotent_key": map[string]interface{}{
+					"type":        "string",
+					"description": "Idempotency key header or field name.",
+				},
+				"rate_limit": map[string]interface{}{
+					"type":        "string",
+					"description": "Rate limiting information.",
+				},
+				"timeout": map[string]interface{}{
+					"type":        "string",
+					"description": "Request timeout information.",
+				},
+				"pagination": map[string]interface{}{
+					"type":        "string",
+					"description": "Pagination details if applicable.",
+				},
+				"supports_tracing": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Whether the endpoint supports distributed tracing.",
+				},
+				"changelog": map[string]interface{}{
+					"type":        "array",
+					"description": "List of changelog entries.",
+					"items": map[string]interface{}{
+						"type": "string",
+					},
+				},
+				"notes": map[string]interface{}{
+					"type":        "array",
+					"description": "Additional notes or caveats.",
+					"items": map[string]interface{}{
+						"type": "string",
+					},
+				},
+			},
+			"required": []string{
+				"name", "operation_id", "service", "version", "protocol", "stability", "summary",
+				"method", "path", "content_type", "auth",
+				"request_fields", "response_fields", "success_codes", "error_codes", "error_model",
+				"curl_example", "request_example", "response_example", "error_example",
+				"auth_method", "roles_required",
+				"idempotent", "idempotent_key",
+				"rate_limit", "timeout", "pagination",
+				"supports_tracing", "changelog", "notes",
+			},
+			"additionalProperties": false,
+		},
+		"strict": true,
+	},
+}
+
 // --- Service methods ---
 
 // Generate creates function code from a natural language description.
@@ -698,6 +984,39 @@ func (s *Service) ListModels(ctx context.Context) (*ListModelsResponse, error) {
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 	return &result, nil
+}
+
+// GenerateDocs generates comprehensive API documentation for a function.
+func (s *Service) GenerateDocs(ctx context.Context, req GenerateDocsRequest) (*GenerateDocsResponse, error) {
+	if !s.Enabled() {
+		return nil, fmt.Errorf("AI service is not enabled")
+	}
+
+	systemPrompt := "You are an API documentation expert. Generate comprehensive API documentation following enterprise best practices. Include all sections: meta information, request/response definitions, field-level definitions with types and validation, error models, authentication, idempotency, rate limiting, pagination, examples (curl, request, response, error), observability, and notes."
+
+	userPrompt := fmt.Sprintf("Generate complete API documentation for the following function:\n\nFunction: %s\nRuntime: %s\nHandler: %s\nMethod: %s\nPath: %s\n\nSource Code:\n```\n%s\n```\n\nGenerate documentation covering: meta info, request fields with types/required/defaults/validation/examples, response fields, HTTP status codes, error model, authentication, idempotency, rate limiting, pagination, curl example, request/response/error examples, observability support, and changelog.",
+		req.FunctionName, req.Runtime, req.Handler,
+		defaultStr(req.Method, "POST"),
+		defaultStr(req.Path, "/functions/"+req.FunctionName+"/invoke"),
+		req.Code)
+
+	resp, err := s.chatCompletionWithTools(ctx, systemPrompt, userPrompt, []interface{}{generateDocsTool}, "generate_api_docs", maxGenerateTokens)
+	if err != nil {
+		return nil, fmt.Errorf("generate docs: %w", err)
+	}
+
+	var result GenerateDocsResponse
+	if err := json.Unmarshal([]byte(resp), &result); err != nil {
+		return nil, fmt.Errorf("decode docs response: %w", err)
+	}
+	return &result, nil
+}
+
+func defaultStr(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
 }
 
 // --- OpenAI API types (following the official specification) ---

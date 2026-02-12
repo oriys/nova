@@ -14,7 +14,8 @@
     "runtimes": "Runtimes",
     "configurations": "Configurations",
     "secrets": "Secrets",
-    "apiKeys": "API Keys"
+    "apiKeys": "API Keys",
+    "apiDocs": "API Docs"
   },
   "pages": {
     "dashboard": {
@@ -71,6 +72,33 @@
     "gateway": {
       "title": "Gateway",
       "description": "Manage HTTP routes mapped to Nova functions"
+    },
+    "apiDocs": {
+      "title": "API Documentation",
+      "description": "Generate and share AI-powered API documentation",
+      "generateTitle": "Generate Documentation",
+      "generateDescription": "Select a function to generate comprehensive API documentation using AI",
+      "selectFunction": "Function",
+      "selectFunctionPlaceholder": "Select a function...",
+      "generate": "Generate Docs",
+      "generating": "Generating...",
+      "share": "Share",
+      "createShareLink": "Create Share Link",
+      "shareTitle": "Link Title",
+      "shareTitlePlaceholder": "e.g., External Partners API Docs",
+      "expiry": "Expires",
+      "noExpiration": "Never expires",
+      "creating": "Creating...",
+      "createLink": "Create Link",
+      "sharedLinks": "Shared Links",
+      "refresh": "Refresh",
+      "colTitle": "Title",
+      "colFunction": "Function",
+      "colExpires": "Expires",
+      "colAccess": "Accessed",
+      "colActions": "Actions",
+      "noShares": "No shared links yet. Generate docs and share them.",
+      "neverExpires": "Never"
     }
   },
   "common": {

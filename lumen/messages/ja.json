@@ -14,7 +14,8 @@
     "runtimes": "ランタイム",
     "configurations": "設定",
     "secrets": "シークレット",
-    "apiKeys": "APIキー"
+    "apiKeys": "APIキー",
+    "apiDocs": "APIドキュメント"
   },
   "pages": {
     "dashboard": {
@@ -71,6 +72,33 @@
     "gateway": {
       "title": "ゲートウェイ",
       "description": "Nova関数にマッピングされたHTTPルートの管理"
+    },
+    "apiDocs": {
+      "title": "APIドキュメント",
+      "description": "AIを使用してAPIドキュメントを生成・共有",
+      "generateTitle": "ドキュメント生成",
+      "generateDescription": "関数を選択し、AIで包括的なAPIドキュメントを生成します",
+      "selectFunction": "関数",
+      "selectFunctionPlaceholder": "関数を選択...",
+      "generate": "ドキュメント生成",
+      "generating": "生成中...",
+      "share": "共有",
+      "createShareLink": "共有リンクを作成",
+      "shareTitle": "リンクタイトル",
+      "shareTitlePlaceholder": "例：外部パートナー向けAPIドキュメント",
+      "expiry": "有効期限",
+      "noExpiration": "無期限",
+      "creating": "作成中...",
+      "createLink": "リンクを作成",
+      "sharedLinks": "共有リンク",
+      "refresh": "更新",
+      "colTitle": "タイトル",
+      "colFunction": "関数",
+      "colExpires": "有効期限",
+      "colAccess": "アクセス数",
+      "colActions": "操作",
+      "noShares": "共有リンクはまだありません。ドキュメントを生成して共有してください。",
+      "neverExpires": "無期限"
     }
   },
   "common": {

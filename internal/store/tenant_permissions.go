@@ -38,6 +38,7 @@ var AllMenuKeys = []string{
 	"configurations",
 	"secrets",
 	"apiKeys",
+	"apiDocs",
 }
 
 // DefaultTenantOnlyMenuKeys are menu keys that only the default (platform)
