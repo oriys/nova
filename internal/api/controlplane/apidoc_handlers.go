@@ -232,7 +232,7 @@ func (h *APIDocHandler) GetFunctionDoc(w http.ResponseWriter, r *http.Request) {
 
 	doc, err := h.Store.GetFunctionDoc(r.Context(), name)
 	if err != nil {
-		http.Error(w, "document not found", http.StatusNotFound)
+		http.Error(w, "documentation not found for function: "+name, http.StatusNotFound)
 		return
 	}
 
@@ -276,7 +276,7 @@ func (h *APIDocHandler) SaveFunctionDoc(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.Store.SaveFunctionDoc(r.Context(), doc); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to save documentation", http.StatusInternalServerError)
 		return
 	}
 
@@ -292,7 +292,7 @@ func (h *APIDocHandler) DeleteFunctionDoc(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.Store.DeleteFunctionDoc(r.Context(), name); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to delete documentation", http.StatusInternalServerError)
 		return
 	}
 
