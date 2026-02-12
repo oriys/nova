@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // MenuPermissionRecord represents a menu permission assigned to a tenant.
@@ -211,17 +213,21 @@ func (s *PostgresStore) DeleteTenantButtonPermission(ctx context.Context, tenant
 
 // ─── Seed Helpers ───────────────────────────────────────────────────────────
 
-// SeedDefaultMenuPermissions inserts the default set of menu permissions for a
-// tenant. The default (platform) tenant gets all menus enabled; other tenants
-// get everything except the "defaultOnly" menus.
-func (s *PostgresStore) SeedDefaultMenuPermissions(ctx context.Context, tenantID string) error {
+// dbExecer is satisfied by both *pgxpool.Pool and pgx.Tx.
+type dbExecer interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+}
+
+// seedMenuPermissions inserts the default menu permissions using the given
+// executor (a pool or transaction).
+func seedMenuPermissions(ctx context.Context, exec dbExecer, tenantID string) error {
 	isDefault := tenantID == DefaultTenantID
 	for _, key := range AllMenuKeys {
 		enabled := true
 		if !isDefault && DefaultTenantOnlyMenuKeys[key] {
 			enabled = false
 		}
-		_, err := s.pool.Exec(ctx, `
+		_, err := exec.Exec(ctx, `
 			INSERT INTO tenant_menu_permissions (tenant_id, menu_key, enabled, created_at)
 			VALUES ($1, $2, $3, NOW())
 			ON CONFLICT (tenant_id, menu_key) DO NOTHING
@@ -233,11 +239,11 @@ func (s *PostgresStore) SeedDefaultMenuPermissions(ctx context.Context, tenantID
 	return nil
 }
 
-// SeedDefaultButtonPermissions inserts the default set of button permissions
-// for a tenant. All button permissions are enabled by default.
-func (s *PostgresStore) SeedDefaultButtonPermissions(ctx context.Context, tenantID string) error {
+// seedButtonPermissions inserts the default button permissions using the given
+// executor (a pool or transaction).
+func seedButtonPermissions(ctx context.Context, exec dbExecer, tenantID string) error {
 	for _, key := range AllButtonPermissionKeys {
-		_, err := s.pool.Exec(ctx, `
+		_, err := exec.Exec(ctx, `
 			INSERT INTO tenant_button_permissions (tenant_id, permission_key, enabled, created_at)
 			VALUES ($1, $2, TRUE, NOW())
 			ON CONFLICT (tenant_id, permission_key) DO NOTHING
@@ -247,4 +253,17 @@ func (s *PostgresStore) SeedDefaultButtonPermissions(ctx context.Context, tenant
 		}
 	}
 	return nil
+}
+
+// SeedDefaultMenuPermissions inserts the default set of menu permissions for a
+// tenant. The default (platform) tenant gets all menus enabled; other tenants
+// get everything except the "defaultOnly" menus.
+func (s *PostgresStore) SeedDefaultMenuPermissions(ctx context.Context, tenantID string) error {
+	return seedMenuPermissions(ctx, s.pool, tenantID)
+}
+
+// SeedDefaultButtonPermissions inserts the default set of button permissions
+// for a tenant. All button permissions are enabled by default.
+func (s *PostgresStore) SeedDefaultButtonPermissions(ctx context.Context, tenantID string) error {
+	return seedButtonPermissions(ctx, s.pool, tenantID)
 }

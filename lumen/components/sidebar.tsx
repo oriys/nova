@@ -73,8 +73,8 @@ function useMenuPermissions(): Set<string> | null {
         setEnabledKeys(keys)
       })
       .catch(() => {
-        // On error, show all menus as a safe fallback
-        setEnabledKeys(null)
+        // On error, fall back to a safe minimal set (dashboard only)
+        setEnabledKeys(new Set(["dashboard"]))
       })
   }, [])
 

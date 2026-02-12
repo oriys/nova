@@ -154,30 +154,13 @@ func (s *PostgresStore) CreateTenant(ctx context.Context, tenant *TenantRecord) 
 	}
 
 	// Seed default menu permissions for the new tenant.
-	isDefault := tenantID == DefaultTenantID
-	for _, key := range AllMenuKeys {
-		menuEnabled := true
-		if !isDefault && DefaultTenantOnlyMenuKeys[key] {
-			menuEnabled = false
-		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO tenant_menu_permissions (tenant_id, menu_key, enabled, created_at)
-			VALUES ($1, $2, $3, NOW())
-			ON CONFLICT (tenant_id, menu_key) DO NOTHING
-		`, tenantID, key, menuEnabled); err != nil {
-			return nil, fmt.Errorf("seed menu permission %s for tenant %s: %w", key, tenantID, err)
-		}
+	if err := seedMenuPermissions(ctx, tx, tenantID); err != nil {
+		return nil, err
 	}
 
 	// Seed default button permissions for the new tenant.
-	for _, key := range AllButtonPermissionKeys {
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO tenant_button_permissions (tenant_id, permission_key, enabled, created_at)
-			VALUES ($1, $2, TRUE, NOW())
-			ON CONFLICT (tenant_id, permission_key) DO NOTHING
-		`, tenantID, key); err != nil {
-			return nil, fmt.Errorf("seed button permission %s for tenant %s: %w", key, tenantID, err)
-		}
+	if err := seedButtonPermissions(ctx, tx, tenantID); err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
