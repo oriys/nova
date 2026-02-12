@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation"
 import { useEffect, useState, useRef, useCallback, useMemo } from "react"
+import { useTranslations } from "next-intl"
 
 const baseFunctions = [
   { lang: "python", icon: "devicon-python-plain", name: "process_image", code: "def handler(e):\n  return resize(e)" },
@@ -62,6 +63,7 @@ interface Particle {
 }
 
 export default function LandingPage() {
+  const t = useTranslations("landingPage")
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
   const [cards, setCards] = useState<FunctionCard[]>([])
@@ -98,8 +100,8 @@ export default function LandingPage() {
         id: 'start',
         lang: startLang.lang,
         icon: startLang.icon,
-        name: 'start',
-        code: '// Click to enter\nrouter.push("/dashboard")',
+        name: t("startCard.name"),
+        code: `${t("startCard.codeComment")}\nrouter.push("/dashboard")`,
         isStart: true,
         x: Math.random() * 80 + 10,
         y: Math.random() * 75 + 10,
@@ -110,7 +112,7 @@ export default function LandingPage() {
         exploding: false,
       },
     ]
-  }, [])
+  }, [t])
 
   useEffect(() => {
     setMounted(true)

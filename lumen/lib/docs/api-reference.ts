@@ -961,20 +961,44 @@ export function apiDomainHref(domain: ApiDomainKey): string {
   return `/docs/api/${domain}`
 }
 
-export function buildApiDocsNavGroups() {
+interface ApiDocsNavLabels {
+  guides: string
+  introduction: string
+  architecture: string
+  installation: string
+  reference: string
+  apiOverview: string
+  orbitCli: string
+  atlasMcpServer: string
+}
+
+const defaultApiDocsNavLabels: ApiDocsNavLabels = {
+  guides: "Guides",
+  introduction: "Introduction",
+  architecture: "Architecture",
+  installation: "Installation",
+  reference: "Reference",
+  apiOverview: "API Overview",
+  orbitCli: "Orbit CLI",
+  atlasMcpServer: "Atlas MCP Server",
+}
+
+export function buildApiDocsNavGroups(labels?: Partial<ApiDocsNavLabels>) {
+  const l = { ...defaultApiDocsNavLabels, ...labels }
+
   return [
     {
-      title: "Guides",
+      title: l.guides,
       items: [
-        { id: "introduction", label: "Introduction", href: "/docs" },
-        { id: "architecture", label: "Architecture", href: "/docs/architecture" },
-        { id: "installation", label: "Installation", href: "/docs/installation" },
+        { id: "introduction", label: l.introduction, href: "/docs" },
+        { id: "architecture", label: l.architecture, href: "/docs/architecture" },
+        { id: "installation", label: l.installation, href: "/docs/installation" },
       ],
     },
     {
-      title: "Reference",
+      title: l.reference,
       items: [
-        { id: "api", label: "API Overview", href: "/docs/api" },
+        { id: "api", label: l.apiOverview, href: "/docs/api" },
         ...apiDomainOrder.map((domain) => ({
           id: "api" as const,
           label: apiDomainDocs[domain].title,
@@ -984,8 +1008,8 @@ export function buildApiDocsNavGroups() {
             href: apiEndpointHref(domain, endpoint.slug),
           })),
         })),
-        { id: "cli", label: "Orbit CLI", href: "/docs/cli" },
-        { id: "mcp", label: "Atlas MCP Server", href: "/docs/mcp-server" },
+        { id: "cli", label: l.orbitCli, href: "/docs/cli" },
+        { id: "mcp", label: l.atlasMcpServer, href: "/docs/mcp-server" },
       ],
     },
   ]

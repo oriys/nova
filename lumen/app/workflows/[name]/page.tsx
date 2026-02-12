@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { useParams } from "next/navigation"
+import { useTranslations } from "next-intl"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
@@ -41,6 +42,7 @@ type Notice = {
 }
 
 export default function WorkflowDetailPage() {
+  const t = useTranslations("workflowDetailPage")
   const params = useParams()
   const name = decodeURIComponent(params.name as string)
 
@@ -119,11 +121,11 @@ export default function WorkflowDetailPage() {
       }
     } catch (err) {
       console.error("Failed to fetch workflow:", err)
-      setError(err instanceof Error ? err.message : "Failed to load workflow")
+      setError(err instanceof Error ? err.message : t("loadFailed"))
     } finally {
       setLoading(false)
     }
-  }, [name])
+  }, [name, t])
 
   useEffect(() => {
     fetchData()
@@ -135,10 +137,10 @@ export default function WorkflowDetailPage() {
       await workflowsApi.publishVersion(name, def)
       setGraphEditing(false)
       fetchData()
-      setNotice({ kind: "success", text: "Workflow version published" })
+      setNotice({ kind: "success", text: t("notice.versionPublished") })
     } catch (err) {
       console.error("Failed to publish version:", err)
-      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to publish" })
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : t("notice.publishFailed") })
     } finally {
       setPublishing(false)
     }
@@ -151,10 +153,10 @@ export default function WorkflowDetailPage() {
       await workflowsApi.triggerRun(name, input)
       setIsTriggerOpen(false)
       fetchData()
-      setNotice({ kind: "success", text: "Workflow run triggered" })
+      setNotice({ kind: "success", text: t("notice.runTriggered") })
     } catch (err) {
       console.error("Failed to trigger run:", err)
-      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to trigger" })
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : t("notice.triggerFailed") })
     } finally {
       setTriggering(false)
     }
@@ -171,15 +173,15 @@ export default function WorkflowDetailPage() {
         functionsApi.getCode(fnName),
       ])
       setCodeViewData({
-        code: codeResp.source_code || "// No source code available",
+        code: codeResp.source_code || t("noSourceCode"),
         runtime: fn.runtime,
       })
     } catch (err) {
-      setCodeViewError(err instanceof Error ? err.message : "Failed to load source code")
+      setCodeViewError(err instanceof Error ? err.message : t("sourceLoadFailed"))
     } finally {
       setCodeViewLoading(false)
     }
-  }, [])
+  }, [t])
 
   /** Switch to edit mode, optionally loading current version */
   const enterEdit = useCallback((fromVersion?: WorkflowVersion) => {
@@ -195,10 +197,10 @@ export default function WorkflowDetailPage() {
   if (error) {
     return (
       <DashboardLayout>
-        <Header title={`Workflow: ${name}`} />
+        <Header title={t("headerTitle", { name })} />
         <div className="p-6">
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
-            <p className="font-medium">Failed to load workflow</p>
+            <p className="font-medium">{t("loadFailed")}</p>
             <p className="text-sm mt-1">{error}</p>
           </div>
         </div>
@@ -217,7 +219,7 @@ export default function WorkflowDetailPage() {
 
   return (
     <DashboardLayout>
-      <Header title={`Workflow: ${name}`} description={workflow?.description} />
+      <Header title={t("headerTitle", { name })} description={workflow?.description} />
 
       <div className="p-6 space-y-6">
         {notice && (
@@ -233,7 +235,7 @@ export default function WorkflowDetailPage() {
             <div className="flex items-center justify-between gap-3">
               <p>{notice.text}</p>
               <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
-                Dismiss
+                {t("dismiss")}
               </Button>
             </div>
           </div>
@@ -243,20 +245,20 @@ export default function WorkflowDetailPage() {
           <Link href="/workflows">
             <Button variant="ghost" size="sm">
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Workflows
+              {t("backToWorkflows")}
             </Button>
           </Link>
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={fetchData} disabled={loading}>
               <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-              Refresh
+              {t("refresh")}
             </Button>
             <Button
               onClick={() => setIsTriggerOpen(true)}
               disabled={!workflow || workflow.current_version === 0}
             >
               <Play className="mr-2 h-4 w-4" />
-              Trigger Run
+              {t("triggerRun")}
             </Button>
           </div>
         </div>
@@ -264,23 +266,23 @@ export default function WorkflowDetailPage() {
         {workflow && (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div className="rounded-lg border border-border bg-card p-4">
-              <p className="text-sm text-muted-foreground">Status</p>
+              <p className="text-sm text-muted-foreground">{t("summary.status")}</p>
               <Badge variant={workflow.status === "active" ? "default" : "secondary"}>
                 {workflow.status}
               </Badge>
             </div>
             <div className="rounded-lg border border-border bg-card p-4">
-              <p className="text-sm text-muted-foreground">Current Version</p>
+              <p className="text-sm text-muted-foreground">{t("summary.currentVersion")}</p>
               <p className="text-2xl font-semibold">
                 {workflow.current_version > 0 ? `v${workflow.current_version}` : "-"}
               </p>
             </div>
             <div className="rounded-lg border border-border bg-card p-4">
-              <p className="text-sm text-muted-foreground">Total Versions</p>
+              <p className="text-sm text-muted-foreground">{t("summary.totalVersions")}</p>
               <p className="text-2xl font-semibold">{versions.length}</p>
             </div>
             <div className="rounded-lg border border-border bg-card p-4">
-              <p className="text-sm text-muted-foreground">Total Runs</p>
+              <p className="text-sm text-muted-foreground">{t("summary.totalRuns")}</p>
               <p className="text-2xl font-semibold">{runs.length}</p>
             </div>
           </div>
@@ -288,10 +290,10 @@ export default function WorkflowDetailPage() {
 
         <Tabs defaultValue="graph">
           <TabsList>
-            <TabsTrigger value="graph">Graph</TabsTrigger>
-            <TabsTrigger value="runs">Runs</TabsTrigger>
-            <TabsTrigger value="versions">Versions</TabsTrigger>
-            <TabsTrigger value="docs">Docs</TabsTrigger>
+            <TabsTrigger value="graph">{t("tabs.graph")}</TabsTrigger>
+            <TabsTrigger value="runs">{t("tabs.runs")}</TabsTrigger>
+            <TabsTrigger value="versions">{t("tabs.versions")}</TabsTrigger>
+            <TabsTrigger value="docs">{t("tabs.docs")}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="graph" className="mt-4">
@@ -315,22 +317,22 @@ export default function WorkflowDetailPage() {
                   {currentVersionDetail && (
                     <Button variant="outline" size="sm" onClick={() => enterEdit(currentVersionDetail)}>
                       <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                      Edit
+                      {t("edit")}
                     </Button>
                   )}
                   <Button variant="outline" size="sm" onClick={() => enterEdit()}>
                     <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                    New Version
+                    {t("newVersion")}
                   </Button>
                 </div>
                 {currentVersionDetail ? (
                   <DagViewer version={currentVersionDetail} onFunctionClick={handleFunctionClick} />
                 ) : (
                   <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-border bg-card text-muted-foreground" style={{ height: 400 }}>
-                    <p>No published version yet.</p>
+                    <p>{t("noPublishedVersion")}</p>
                     <Button variant="outline" size="sm" onClick={() => enterEdit()}>
                       <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                      Create First Version
+                      {t("createFirstVersion")}
                     </Button>
                   </div>
                 )}
@@ -343,19 +345,19 @@ export default function WorkflowDetailPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Run ID</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Version</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Status</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Trigger</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Started</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Finished</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("runs.colRunId")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("runs.colVersion")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("runs.colStatus")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("runs.colTrigger")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("runs.colStarted")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("runs.colFinished")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {runs.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                        No runs yet. Trigger a run to get started.
+                        {t("runs.empty")}
                       </td>
                     </tr>
                   ) : (
@@ -399,15 +401,15 @@ export default function WorkflowDetailPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Version</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Created</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colVersion")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colCreated")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {versions.length === 0 ? (
                     <tr>
                       <td colSpan={2} className="px-4 py-8 text-center text-muted-foreground">
-                        No versions published yet.
+                        {t("versions.empty")}
                       </td>
                     </tr>
                   ) : (
@@ -436,11 +438,11 @@ export default function WorkflowDetailPage() {
         <Dialog open={isTriggerOpen} onOpenChange={setIsTriggerOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Trigger Run</DialogTitle>
+              <DialogTitle>{t("triggerDialog.title")}</DialogTitle>
             </DialogHeader>
             <div className="py-4">
               <p className="text-sm text-muted-foreground mb-2">
-                Input JSON to pass to root nodes:
+                {t("triggerDialog.inputHint")}
               </p>
               <Textarea
                 className="font-mono text-sm min-h-[150px]"
@@ -449,9 +451,9 @@ export default function WorkflowDetailPage() {
               />
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsTriggerOpen(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => setIsTriggerOpen(false)}>{t("cancel")}</Button>
               <Button onClick={handleTrigger} disabled={triggering}>
-                {triggering ? "Triggering..." : "Trigger"}
+                {triggering ? t("triggerDialog.triggering") : t("triggerDialog.trigger")}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -482,7 +484,7 @@ export default function WorkflowDetailPage() {
               {codeViewLoading && (
                 <div className="flex items-center justify-center py-12 text-muted-foreground">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Loading source code...
+                  {t("loadingSourceCode")}
                 </div>
               )}
               {codeViewError && (

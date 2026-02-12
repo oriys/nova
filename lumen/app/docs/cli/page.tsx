@@ -1,30 +1,34 @@
+import { getTranslations } from "next-intl/server"
 import { DocsShell } from "@/components/docs/docs-shell"
 import { CodeBlock } from "@/components/docs/code-block"
 
-export default function DocsCLIPage() {
+export default async function DocsCLIPage() {
+  const t = await getTranslations("docsCliPage")
+
   return (
     <DocsShell
       current="cli"
-      title="Orbit CLI"
-      description="Orbit is the primary CLI for Nova operations. Nova binary now runs backend services only (daemon mode)."
+      title={t("title")}
+      description={t("description")}
       toc={[
-        { id: "positioning", label: "Positioning" },
-        { id: "global-context", label: "Global Context" },
-        { id: "command-groups", label: "Command Groups" },
-        { id: "task-recipes", label: "Task Recipes" },
-        { id: "pull-local-test", label: "Pull & Local Test" },
-        { id: "troubleshooting", label: "Troubleshooting" },
+        { id: "positioning", label: t("toc.positioning") },
+        { id: "global-context", label: t("toc.globalContext") },
+        { id: "command-groups", label: t("toc.commandGroups") },
+        { id: "task-recipes", label: t("toc.taskRecipes") },
+        { id: "pull-local-test", label: t("toc.pullLocalTest") },
+        { id: "troubleshooting", label: t("toc.troubleshooting") },
       ]}
     >
       <section id="positioning" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Positioning</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.positioning.title")}</h2>
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
           <li>
-            <strong>Nova binary:</strong> backend service process only, run with <code>nova daemon</code>.
+            <strong>{t("sections.positioning.items.novaBinary.label")}:</strong>{" "}
+            {t("sections.positioning.items.novaBinary.value")} <code>nova daemon</code>.
           </li>
           <li>
-            <strong>Orbit CLI:</strong> full operational surface for functions, workflows, events, tenants, secrets,
-            metrics, and gateway.
+            <strong>{t("sections.positioning.items.orbitCli.label")}:</strong>{" "}
+            {t("sections.positioning.items.orbitCli.value")}
           </li>
         </ul>
         <CodeBlock
@@ -38,9 +42,9 @@ orbit functions --help`}
       </section>
 
       <section id="global-context" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Global Context</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.globalContext.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          Orbit resolves target server and tenant scope from flags, environment variables, or local config.
+          {t("sections.globalContext.description")}
         </p>
         <CodeBlock
           code={`# Flags
@@ -67,7 +71,7 @@ orbit config set output table`}
       </section>
 
       <section id="command-groups" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Command Groups</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.commandGroups.title")}</h2>
         <CodeBlock
           code={`Core
 - orbit functions (alias: fn)
@@ -93,9 +97,9 @@ Operations
       </section>
 
       <section id="task-recipes" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Task Recipes</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.taskRecipes.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          Use these as copy-paste starters for common operator workflows.
+          {t("sections.taskRecipes.description")}
         </p>
         <CodeBlock
           code={`# 1) Function lifecycle
@@ -131,10 +135,9 @@ orbit topics subscriptions list orders`}
       </section>
 
       <section id="pull-local-test" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Pull &amp; Local Test</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.pullLocalTest.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          Orbit can pull remote function source to local workspace and run a local test with your payload.
-          If runtime toolchain is missing, Orbit prints install instructions directly.
+          {t("sections.pullLocalTest.description")}
         </p>
         <CodeBlock
           code={`# Pull remote function source to local folder
@@ -154,19 +157,21 @@ orbit functions pull echo \\
   --payload-file ./payload.json`}
         />
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
-          <li>Auto local runner currently supports Python and Node.js runtimes.</li>
-          <li>Go/Rust/Java runtimes still pull source and check toolchain, then show manual test guidance.</li>
-          <li>Pulled files include source code, <code>payload.json</code>, and <code>function.meta.json</code>.</li>
+          <li>{t("sections.pullLocalTest.items.item1")}</li>
+          <li>{t("sections.pullLocalTest.items.item2")}</li>
+          <li>
+            {t("sections.pullLocalTest.items.item3Prefix")} <code>payload.json</code> {t("sections.pullLocalTest.items.item3Middle")} <code>function.meta.json</code>.
+          </li>
         </ul>
       </section>
 
       <section id="troubleshooting" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Troubleshooting</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.troubleshooting.title")}</h2>
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
-          <li>If commands fail with scope errors, set <code>--tenant</code> and <code>--namespace</code> explicitly.</li>
-          <li>If auth is enabled, verify <code>--api-key</code> or Authorization header configuration.</li>
-          <li>If create/invoke succeeds but metrics look empty, check the selected tenant badge in Lumen.</li>
-          <li>For noisy output in automation, use <code>--output json</code> and parse deterministically.</li>
+          <li>{t("sections.troubleshooting.items.item1Prefix")} <code>--tenant</code> {t("sections.troubleshooting.items.item1Middle")} <code>--namespace</code> {t("sections.troubleshooting.items.item1Suffix")}</li>
+          <li>{t("sections.troubleshooting.items.item2Prefix")} <code>--api-key</code> {t("sections.troubleshooting.items.item2Suffix")}</li>
+          <li>{t("sections.troubleshooting.items.item3")}</li>
+          <li>{t("sections.troubleshooting.items.item4Prefix")} <code>--output json</code> {t("sections.troubleshooting.items.item4Suffix")}</li>
         </ul>
       </section>
     </DocsShell>

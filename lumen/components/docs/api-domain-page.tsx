@@ -1,3 +1,4 @@
+import { useTranslations } from "next-intl"
 import { DocsShell } from "@/components/docs/docs-shell"
 import { EndpointTable } from "@/components/docs/endpoint-table"
 import { apiEndpointHref, apiDomainDocs, buildApiDocsNavGroups, type ApiDomainKey } from "@/lib/docs/api-reference"
@@ -7,6 +8,7 @@ interface ApiDomainPageProps {
 }
 
 export function ApiDomainPage({ domain }: ApiDomainPageProps) {
+  const t = useTranslations("docsApiDomainPage")
   const domainDoc = apiDomainDocs[domain]
 
   return (
@@ -15,21 +17,30 @@ export function ApiDomainPage({ domain }: ApiDomainPageProps) {
       activeHref={`/docs/api/${domain}`}
       title={domainDoc.title}
       description={domainDoc.description}
-      navGroups={buildApiDocsNavGroups()}
+      navGroups={buildApiDocsNavGroups({
+        guides: t("nav.guides"),
+        introduction: t("nav.introduction"),
+        architecture: t("nav.architecture"),
+        installation: t("nav.installation"),
+        reference: t("nav.reference"),
+        apiOverview: t("nav.apiOverview"),
+        orbitCli: t("nav.orbitCli"),
+        atlasMcpServer: t("nav.atlasMcpServer"),
+      })}
       toc={[
-        { id: "coverage", label: "Coverage" },
-        { id: "endpoint-index", label: "Endpoint Index" },
+        { id: "coverage", label: t("toc.coverage") },
+        { id: "endpoint-index", label: t("toc.endpointIndex") },
       ]}
     >
       <section id="coverage" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Coverage</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("coverageTitle")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">{domainDoc.coverage}</p>
       </section>
 
       <section id="endpoint-index" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Endpoint Index</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("endpointIndexTitle")}</h2>
         <p className="mb-4 mt-3 text-lg leading-8 text-muted-foreground">
-          Each endpoint has a dedicated contract page with request/response fields, status codes, and examples.
+          {t("endpointIndexDescription")}
         </p>
 
         <EndpointTable
@@ -41,7 +52,7 @@ export function ApiDomainPage({ domain }: ApiDomainPageProps) {
           }))}
         />
         <p className="mt-4 text-sm text-muted-foreground">
-          Endpoint hierarchy is also available in the left sidebar for direct navigation.
+          {t("leftSidebarHint")}
         </p>
       </section>
     </DocsShell>

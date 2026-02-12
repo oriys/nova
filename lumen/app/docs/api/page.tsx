@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { getTranslations } from "next-intl/server"
 import { DocsShell } from "@/components/docs/docs-shell"
 import { CodeBlock } from "@/components/docs/code-block"
 import { EndpointTable, type Endpoint } from "@/components/docs/endpoint-table"
@@ -19,37 +20,48 @@ const endpointIndex: Endpoint[] = apiDomainOrder.flatMap((domain) =>
   }))
 )
 
-export default function DocsAPIPage() {
+export default async function DocsAPIPage() {
+  const t = await getTranslations("docsApiOverviewPage")
+
   return (
     <DocsShell
       current="api"
       activeHref="/docs/api"
-      title="API Overview"
-      description="Nova API is contract-first and tenant-scoped. Use this page for protocol rules, then open per-endpoint contracts from the left sidebar."
-      navGroups={buildApiDocsNavGroups()}
+      title={t("title")}
+      description={t("description")}
+      navGroups={buildApiDocsNavGroups({
+        guides: t("nav.guides"),
+        introduction: t("nav.introduction"),
+        architecture: t("nav.architecture"),
+        installation: t("nav.installation"),
+        reference: t("nav.reference"),
+        apiOverview: t("nav.apiOverview"),
+        orbitCli: t("nav.orbitCli"),
+        atlasMcpServer: t("nav.atlasMcpServer"),
+      })}
       toc={[
-        { id: "api-basics", label: "API Basics" },
-        { id: "headers-auth", label: "Headers & Auth" },
-        { id: "error-format", label: "Error Format" },
-        { id: "pagination-retries", label: "Pagination & Retries" },
-        { id: "reference-sections", label: "Reference Sections" },
-        { id: "endpoint-index", label: "Endpoint Index" },
+        { id: "api-basics", label: t("toc.apiBasics") },
+        { id: "headers-auth", label: t("toc.headersAuth") },
+        { id: "error-format", label: t("toc.errorFormat") },
+        { id: "pagination-retries", label: t("toc.paginationRetries") },
+        { id: "reference-sections", label: t("toc.referenceSections") },
+        { id: "endpoint-index", label: t("toc.endpointIndex") },
       ]}
     >
       <section id="api-basics" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">API Basics</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.apiBasics.title")}</h2>
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
-          <li>Base URL: <code>http://&lt;nova-host&gt;:9000</code></li>
-          <li>Default media type: <code>application/json</code></li>
-          <li>Time format: RFC3339 timestamps</li>
-          <li>Tenant-aware routing and persistence on every request</li>
+          <li>{t("sections.apiBasics.items.baseUrl")} <code>http://&lt;nova-host&gt;:9000</code></li>
+          <li>{t("sections.apiBasics.items.mediaType")} <code>application/json</code></li>
+          <li>{t("sections.apiBasics.items.timeFormat")}</li>
+          <li>{t("sections.apiBasics.items.tenantAware")}</li>
         </ul>
       </section>
 
       <section id="headers-auth" className="scroll-mt-24 space-y-2">
-        <h2 className="text-3xl font-semibold tracking-tight">Headers &amp; Auth</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.headersAuth.title")}</h2>
         <p className="text-lg leading-8 text-muted-foreground">
-          Explicit tenant headers are recommended for every write and operator workflow.
+          {t("sections.headersAuth.description")}
         </p>
         <CodeBlock
           code={`Content-Type: application/json
@@ -63,9 +75,9 @@ X-API-Key: <api-key>`}
       </section>
 
       <section id="error-format" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Error Format</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.errorFormat.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          Most handlers return plain-text errors; some middleware returns structured JSON errors.
+          {t("sections.errorFormat.description")}
         </p>
         <CodeBlock
           code={`# Plain text example
@@ -81,19 +93,19 @@ invalid JSON payload
       </section>
 
       <section id="pagination-retries" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Pagination &amp; Retries</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.paginationRetries.title")}</h2>
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
-          <li>List endpoints generally accept <code>limit</code> and optional status filters.</li>
-          <li>Async invocation supports idempotency with <code>idempotency_key</code> and TTL.</li>
-          <li>Event subscriptions support replay and seek from sequence/time anchors.</li>
-          <li>Delivery pipelines use bounded retry with backoff and DLQ transitions.</li>
+          <li>{t("sections.paginationRetries.items.limitAndFilters")} <code>limit</code> {t("sections.paginationRetries.items.limitAndFiltersSuffix")}</li>
+          <li>{t("sections.paginationRetries.items.asyncIdempotencyPrefix")} <code>idempotency_key</code> {t("sections.paginationRetries.items.asyncIdempotencySuffix")}</li>
+          <li>{t("sections.paginationRetries.items.subscriptionReplay")}</li>
+          <li>{t("sections.paginationRetries.items.deliveryRetry")}</li>
         </ul>
       </section>
 
       <section id="reference-sections" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Reference Sections</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.referenceSections.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          Detailed endpoint contracts are split by domain for easier maintenance and faster lookup.
+          {t("sections.referenceSections.description")}
         </p>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           {apiDomainOrder.map((domain) => (
@@ -110,9 +122,9 @@ invalid JSON payload
       </section>
 
       <section id="endpoint-index" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Endpoint Index</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.endpointIndex.title")}</h2>
         <p className="mb-4 mt-3 text-lg leading-8 text-muted-foreground">
-          Frequently used endpoints across all API domains.
+          {t("sections.endpointIndex.description")}
         </p>
         <EndpointTable endpoints={endpointIndex} />
       </section>

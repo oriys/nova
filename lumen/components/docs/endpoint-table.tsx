@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { useTranslations } from "next-intl"
 import { Badge } from "@/components/ui/badge"
 
 export interface Endpoint {
@@ -30,6 +31,7 @@ interface EndpointTableProps {
 }
 
 export function EndpointTable({ endpoints }: EndpointTableProps) {
+  const t = useTranslations("docsComponents.endpointTable")
   const hasLinks = endpoints.some((endpoint) => !!endpoint.href)
 
   return (
@@ -37,10 +39,10 @@ export function EndpointTable({ endpoints }: EndpointTableProps) {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border bg-muted/30">
-            <th className="px-3 py-2 text-left font-medium text-muted-foreground">Method</th>
-            <th className="px-3 py-2 text-left font-medium text-muted-foreground">Path</th>
-            <th className="px-3 py-2 text-left font-medium text-muted-foreground">Description</th>
-            {hasLinks && <th className="px-3 py-2 text-left font-medium text-muted-foreground">Doc</th>}
+            <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("method")}</th>
+            <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("path")}</th>
+            <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("description")}</th>
+            {hasLinks && <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("doc")}</th>}
           </tr>
         </thead>
         <tbody>
@@ -58,7 +60,7 @@ export function EndpointTable({ endpoints }: EndpointTableProps) {
                       href={endpoint.href}
                       className="text-foreground underline underline-offset-4 hover:text-foreground/80"
                     >
-                      Open
+                      {t("open")}
                     </Link>
                   ) : (
                     <span className="text-muted-foreground">-</span>

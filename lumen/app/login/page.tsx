@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +13,7 @@ function isSafeRedirectTarget(target: string | null): target is string {
 }
 
 export default function LoginPage() {
+  const t = useTranslations("loginPage");
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextTarget = searchParams?.get("next") || null;
@@ -30,7 +32,7 @@ export default function LoginPage() {
       login(username, password);
       router.replace(isSafeRedirectTarget(nextTarget) ? nextTarget : "/dashboard");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed.");
+      setError(err instanceof Error ? err.message : t("loginFailed"));
       setSubmitting(false);
     }
   };
@@ -43,15 +45,15 @@ export default function LoginPage() {
             <ShieldCheck className="h-3.5 w-3.5" />
             Nova Console
           </div>
-          <h1 className="mt-4 text-2xl font-semibold text-foreground">User Login</h1>
+          <h1 className="mt-4 text-2xl font-semibold text-foreground">{t("title")}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            One user can join multiple tenants. Super admin can access all tenants.
+            {t("description")}
           </p>
 
           <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground" htmlFor="username">
-                Username
+                {t("username")}
               </label>
               <Input
                 id="username"
@@ -64,7 +66,7 @@ export default function LoginPage() {
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground" htmlFor="password">
-                Password
+                {t("password")}
               </label>
               <Input
                 id="password"
@@ -84,15 +86,15 @@ export default function LoginPage() {
             )}
 
             <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? "Signing in..." : "Sign in"}
+              {submitting ? t("signingIn") : t("signIn")}
             </Button>
           </form>
         </section>
 
         <section className="rounded-2xl border border-border bg-card p-6 shadow-sm lg:p-8">
-          <h2 className="text-lg font-semibold text-card-foreground">Built-in test users</h2>
+          <h2 className="text-lg font-semibold text-card-foreground">{t("testUsersTitle")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Use these accounts to test tenant visibility and switching.
+            {t("testUsersDescription")}
           </p>
 
           <div className="mt-5 space-y-3">

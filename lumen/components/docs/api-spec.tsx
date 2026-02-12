@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { useTranslations } from "next-intl"
 import { CodeBlock } from "@/components/docs/code-block"
 import { SchemaTable, type SchemaField } from "@/components/docs/schema-table"
 
@@ -42,6 +43,8 @@ function methodBadgeVariant(method: EndpointMethod): "default" | "secondary" | "
 }
 
 export function EndpointSpecCard({ spec, showHeading = true }: { spec: EndpointSpec; showHeading?: boolean }) {
+  const t = useTranslations("docsComponents.apiSpec")
+
   return (
     <section id={spec.id} className="scroll-mt-24 space-y-5">
       <div className="space-y-2">
@@ -55,18 +58,18 @@ export function EndpointSpecCard({ spec, showHeading = true }: { spec: EndpointS
 
       <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
         <p>
-          <span className="font-medium text-foreground">Auth:</span> {spec.auth}
+          <span className="font-medium text-foreground">{t("auth")}:</span> {spec.auth}
         </p>
       </div>
 
-      {spec.pathFields && spec.pathFields.length > 0 && <SchemaTable title="Path Parameters" fields={spec.pathFields} />}
-      {spec.queryFields && spec.queryFields.length > 0 && <SchemaTable title="Query Parameters" fields={spec.queryFields} />}
-      {spec.requestFields && spec.requestFields.length > 0 && <SchemaTable title="Request Body" fields={spec.requestFields} />}
-      <SchemaTable title="Response Body" fields={spec.responseFields} />
+      {spec.pathFields && spec.pathFields.length > 0 && <SchemaTable title={t("pathParameters")} fields={spec.pathFields} />}
+      {spec.queryFields && spec.queryFields.length > 0 && <SchemaTable title={t("queryParameters")} fields={spec.queryFields} />}
+      {spec.requestFields && spec.requestFields.length > 0 && <SchemaTable title={t("requestBody")} fields={spec.requestFields} />}
+      <SchemaTable title={t("responseBody")} fields={spec.responseFields} />
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-lg border border-border p-4">
-          <p className="mb-2 text-sm font-medium text-foreground">Success Status</p>
+          <p className="mb-2 text-sm font-medium text-foreground">{t("successStatus")}</p>
           <ul className="space-y-1 text-sm text-muted-foreground">
             {spec.successCodes.map((item) => (
               <li key={`success-${item.code}`}>
@@ -76,10 +79,10 @@ export function EndpointSpecCard({ spec, showHeading = true }: { spec: EndpointS
           </ul>
         </div>
         <div className="rounded-lg border border-border p-4">
-          <p className="mb-2 text-sm font-medium text-foreground">Error Status</p>
+          <p className="mb-2 text-sm font-medium text-foreground">{t("errorStatus")}</p>
           <ul className="space-y-1 text-sm text-muted-foreground">
             {spec.errorCodes.length === 0 ? (
-              <li>No endpoint-specific errors.</li>
+              <li>{t("noEndpointSpecificErrors")}</li>
             ) : (
               spec.errorCodes.map((item) => (
                 <li key={`error-${item.code}`}>
@@ -93,7 +96,7 @@ export function EndpointSpecCard({ spec, showHeading = true }: { spec: EndpointS
 
       {spec.notes && spec.notes.length > 0 && (
         <div className="rounded-lg border border-border p-4">
-          <p className="mb-2 text-sm font-medium text-foreground">Notes</p>
+          <p className="mb-2 text-sm font-medium text-foreground">{t("notes")}</p>
           <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             {spec.notes.map((note) => (
               <li key={note}>{note}</li>
@@ -104,26 +107,26 @@ export function EndpointSpecCard({ spec, showHeading = true }: { spec: EndpointS
 
       {spec.requestExample && (
         <div className="space-y-2">
-          <p className="text-sm font-medium text-foreground">Request Example</p>
+          <p className="text-sm font-medium text-foreground">{t("requestExample")}</p>
           <CodeBlock code={spec.requestExample} />
         </div>
       )}
 
       <div className="space-y-2">
-        <p className="text-sm font-medium text-foreground">Response Example</p>
+        <p className="text-sm font-medium text-foreground">{t("responseExample")}</p>
         <CodeBlock code={spec.responseExample} />
       </div>
 
       {spec.curlExample && (
         <div className="space-y-2">
-          <p className="text-sm font-medium text-foreground">cURL Example</p>
+          <p className="text-sm font-medium text-foreground">{t("curlExample")}</p>
           <CodeBlock code={spec.curlExample} />
         </div>
       )}
 
       {spec.orbitExample && (
         <div className="space-y-2">
-          <p className="text-sm font-medium text-foreground">Orbit Example</p>
+          <p className="text-sm font-medium text-foreground">{t("orbitExample")}</p>
           <CodeBlock code={spec.orbitExample} />
         </div>
       )}

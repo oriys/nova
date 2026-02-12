@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import { useParams } from "next/navigation"
+import { useTranslations } from "next-intl"
 import { ArrowLeft, RefreshCw } from "lucide-react"
 
 import { DashboardLayout } from "@/components/dashboard-layout"
@@ -20,6 +21,7 @@ function formatDate(value?: string): string {
 }
 
 export default function TenantDetailPage() {
+  const t = useTranslations("tenantDetailPage")
   const params = useParams<{ tenantId: string }>()
   const rawTenantId = Array.isArray(params?.tenantId) ? params.tenantId[0] : params?.tenantId
   const tenantId = useMemo(() => {
@@ -41,7 +43,7 @@ export default function TenantDetailPage() {
       setTenant(null)
       setNamespaces([])
       setLoading(false)
-      setError("Tenant ID is required.")
+      setError(t("tenantIdRequired"))
       return
     }
 
@@ -59,7 +61,7 @@ export default function TenantDetailPage() {
         if (!selected) {
           setTenant(null)
           setNamespaces([])
-          setError(`Tenant '${tenantId}' not found.`)
+          setError(t("notFound", { tenantId }))
           return
         }
 
@@ -72,7 +74,7 @@ export default function TenantDetailPage() {
         if (!active) return
         setTenant(null)
         setNamespaces([])
-        setError(err instanceof Error ? err.message : "Failed to load tenant details.")
+        setError(err instanceof Error ? err.message : t("loadFailed"))
       } finally {
         if (active) {
           setLoading(false)
@@ -102,8 +104,8 @@ export default function TenantDetailPage() {
   return (
     <DashboardLayout>
       <Header
-        title={tenantId ? `Tenant: ${tenantId}` : "Tenant Detail"}
-        description="Tenant metadata, namespaces, and governance"
+        title={tenantId ? t("titleWithTenant", { tenantId }) : t("title")}
+        description={t("description")}
       />
 
       <div className="space-y-6 p-6">
@@ -111,18 +113,18 @@ export default function TenantDetailPage() {
           <Button asChild variant="outline" size="sm">
             <Link href="/tenancy">
               <ArrowLeft className="mr-1.5 h-4 w-4" />
-              Back to Tenancy
+              {t("backToTenancy")}
             </Link>
           </Button>
           <Button variant="ghost" size="sm" onClick={applyScope} disabled={!tenantId || loading || !!error}>
             <RefreshCw className="mr-1.5 h-4 w-4" />
-            Use This Tenant
+            {t("useThisTenant")}
           </Button>
         </div>
 
         {loading && (
           <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
-            Loading tenant detail...
+            {t("loading")}
           </div>
         )}
 
@@ -135,39 +137,39 @@ export default function TenantDetailPage() {
         {!loading && !error && tenant && (
           <>
             <div className="rounded-xl border border-border bg-card p-6">
-              <h3 className="text-lg font-semibold text-card-foreground">Tenant Detail</h3>
+              <h3 className="text-lg font-semibold text-card-foreground">{t("detailCardTitle")}</h3>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <div>
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">ID</div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">{t("labels.id")}</div>
                   <div className="mt-1 text-sm font-medium text-foreground">{tenant.id}</div>
                 </div>
                 <div>
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Name</div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">{t("labels.name")}</div>
                   <div className="mt-1 text-sm font-medium text-foreground">{tenant.name || tenant.id}</div>
                 </div>
                 <div>
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Status</div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">{t("labels.status")}</div>
                   <div className="mt-1 text-sm font-medium text-foreground">{tenant.status}</div>
                 </div>
                 <div>
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Tier</div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">{t("labels.tier")}</div>
                   <div className="mt-1 text-sm font-medium text-foreground">{tenant.tier}</div>
                 </div>
                 <div>
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Created</div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">{t("labels.created")}</div>
                   <div className="mt-1 text-sm font-medium text-foreground">{formatDate(tenant.created_at)}</div>
                 </div>
                 <div>
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Updated</div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">{t("labels.updated")}</div>
                   <div className="mt-1 text-sm font-medium text-foreground">{formatDate(tenant.updated_at)}</div>
                 </div>
               </div>
 
               <div className="mt-5 rounded-lg border border-border bg-muted/20 p-3">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">Namespaces</div>
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">{t("labels.namespaces")}</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {namespaces.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">No namespaces</span>
+                    <span className="text-xs text-muted-foreground">{t("noNamespaces")}</span>
                   ) : (
                     namespaces.map((ns) => (
                       <span

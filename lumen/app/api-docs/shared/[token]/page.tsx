@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
+import { useTranslations } from "next-intl"
 import { Badge } from "@/components/ui/badge"
 import { apiDocsApi, type APIDocShare } from "@/lib/api"
 import { FileText, AlertTriangle, Loader2 } from "lucide-react"
 
 export default function SharedDocPage() {
+  const t = useTranslations("apiDocsSharedPage")
   const params = useParams()
   const token = params.token as string
   const [doc, setDoc] = useState<APIDocShare | null>(null)
@@ -18,9 +20,9 @@ export default function SharedDocPage() {
     apiDocsApi
       .getSharedDoc(token)
       .then((data) => setDoc(data))
-      .catch((err) => setError(err instanceof Error ? err.message : "Document not found or expired"))
+      .catch((err) => setError(err instanceof Error ? err.message : t("documentNotFoundOrExpired")))
       .finally(() => setLoading(false))
-  }, [token])
+  }, [t, token])
 
   if (loading) {
     return (
@@ -35,8 +37,8 @@ export default function SharedDocPage() {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-4">
           <AlertTriangle className="mx-auto h-12 w-12 text-destructive" />
-          <h1 className="text-2xl font-bold">Document Not Available</h1>
-          <p className="text-muted-foreground">{error || "The requested document was not found."}</p>
+          <h1 className="text-2xl font-bold">{t("documentNotAvailable")}</h1>
+          <p className="text-muted-foreground">{error || t("documentNotFound")}</p>
         </div>
       </div>
     )
@@ -52,7 +54,7 @@ export default function SharedDocPage() {
           <div>
             <h1 className="text-xl font-bold">{doc.title}</h1>
             <p className="text-sm text-muted-foreground">
-              Shared API Documentation · {doc.function_name}
+              {t("sharedApiDocumentation")} · {doc.function_name}
             </p>
           </div>
         </div>
@@ -68,36 +70,36 @@ export default function SharedDocPage() {
           </div>
           <p className="text-lg text-muted-foreground">{docs.summary}</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 rounded-lg border p-4">
-            <div><span className="text-xs text-muted-foreground block">Protocol</span><span className="text-sm font-medium">{docs.protocol}</span></div>
-            <div><span className="text-xs text-muted-foreground block">Auth</span><span className="text-sm font-medium">{docs.auth_method}</span></div>
-            <div><span className="text-xs text-muted-foreground block">Rate Limit</span><span className="text-sm font-medium">{docs.rate_limit}</span></div>
-            <div><span className="text-xs text-muted-foreground block">Timeout</span><span className="text-sm font-medium">{docs.timeout}</span></div>
+            <div><span className="text-xs text-muted-foreground block">{t("labels.protocol")}</span><span className="text-sm font-medium">{docs.protocol}</span></div>
+            <div><span className="text-xs text-muted-foreground block">{t("labels.auth")}</span><span className="text-sm font-medium">{docs.auth_method}</span></div>
+            <div><span className="text-xs text-muted-foreground block">{t("labels.rateLimit")}</span><span className="text-sm font-medium">{docs.rate_limit}</span></div>
+            <div><span className="text-xs text-muted-foreground block">{t("labels.timeout")}</span><span className="text-sm font-medium">{docs.timeout}</span></div>
           </div>
         </section>
 
         {/* Endpoint */}
         <section className="space-y-2">
-          <h3 className="text-lg font-semibold">Endpoint</h3>
+          <h3 className="text-lg font-semibold">{t("sections.endpoint")}</h3>
           <div className="flex items-center gap-2">
             <Badge>{docs.method}</Badge>
             <code className="rounded bg-muted px-2 py-1 text-sm">{docs.path}</code>
           </div>
-          <p className="text-sm text-muted-foreground">Content-Type: {docs.content_type}</p>
+          <p className="text-sm text-muted-foreground">{t("contentType")}: {docs.content_type}</p>
         </section>
 
         {/* Request Fields */}
         {docs.request_fields && docs.request_fields.length > 0 && (
           <section className="space-y-2">
-            <h3 className="text-lg font-semibold">Request Fields</h3>
+            <h3 className="text-lg font-semibold">{t("sections.requestFields")}</h3>
             <div className="rounded-lg border overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    <th className="px-3 py-2 text-left font-medium">Field</th>
-                    <th className="px-3 py-2 text-left font-medium">Type</th>
-                    <th className="px-3 py-2 text-left font-medium">Required</th>
-                    <th className="px-3 py-2 text-left font-medium">Default</th>
-                    <th className="px-3 py-2 text-left font-medium">Description</th>
+                    <th className="px-3 py-2 text-left font-medium">{t("table.field")}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t("table.type")}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t("table.required")}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t("table.default")}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t("table.description")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -105,7 +107,7 @@ export default function SharedDocPage() {
                     <tr key={i} className="border-b">
                       <td className="px-3 py-2 font-mono text-xs">{f.name}</td>
                       <td className="px-3 py-2"><Badge variant="outline" className="text-xs">{f.type}</Badge></td>
-                      <td className="px-3 py-2">{f.required ? <Badge variant="default" className="text-xs">Required</Badge> : <span className="text-muted-foreground text-xs">Optional</span>}</td>
+                      <td className="px-3 py-2">{f.required ? <Badge variant="default" className="text-xs">{t("required")}</Badge> : <span className="text-muted-foreground text-xs">{t("optional")}</span>}</td>
                       <td className="px-3 py-2 text-xs text-muted-foreground">{f.default || "-"}</td>
                       <td className="px-3 py-2 text-muted-foreground">{f.description}</td>
                     </tr>
@@ -119,14 +121,14 @@ export default function SharedDocPage() {
         {/* Response Fields */}
         {docs.response_fields && docs.response_fields.length > 0 && (
           <section className="space-y-2">
-            <h3 className="text-lg font-semibold">Response Fields</h3>
+            <h3 className="text-lg font-semibold">{t("sections.responseFields")}</h3>
             <div className="rounded-lg border overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    <th className="px-3 py-2 text-left font-medium">Field</th>
-                    <th className="px-3 py-2 text-left font-medium">Type</th>
-                    <th className="px-3 py-2 text-left font-medium">Description</th>
+                    <th className="px-3 py-2 text-left font-medium">{t("table.field")}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t("table.type")}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t("table.description")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -147,7 +149,7 @@ export default function SharedDocPage() {
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {docs.success_codes && docs.success_codes.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-lg font-semibold">Success Codes</h3>
+              <h3 className="text-lg font-semibold">{t("sections.successCodes")}</h3>
               <div className="space-y-1">
                 {docs.success_codes.map((c, i) => (
                   <div key={i} className="flex items-center gap-2">
@@ -160,7 +162,7 @@ export default function SharedDocPage() {
           )}
           {docs.error_codes && docs.error_codes.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-lg font-semibold">Error Codes</h3>
+              <h3 className="text-lg font-semibold">{t("sections.errorCodes")}</h3>
               <div className="space-y-1">
                 {docs.error_codes.map((c, i) => (
                   <div key={i} className="flex items-center gap-2">
@@ -176,11 +178,11 @@ export default function SharedDocPage() {
         {/* Error Model */}
         {docs.error_model && (
           <section className="space-y-2">
-            <h3 className="text-lg font-semibold">Error Model</h3>
+            <h3 className="text-lg font-semibold">{t("sections.errorModel")}</h3>
             <div className="rounded-lg border p-4 space-y-2 text-sm">
-              <p><span className="font-medium">Format:</span> {docs.error_model.format}</p>
-              <p><span className="font-medium">Retryable:</span> {docs.error_model.retryable}</p>
-              <p><span className="font-medium">Description:</span> {docs.error_model.description}</p>
+              <p><span className="font-medium">{t("labels.format")}:</span> {docs.error_model.format}</p>
+              <p><span className="font-medium">{t("labels.retryable")}:</span> {docs.error_model.retryable}</p>
+              <p><span className="font-medium">{t("labels.description")}:</span> {docs.error_model.description}</p>
             </div>
           </section>
         )}
@@ -188,56 +190,56 @@ export default function SharedDocPage() {
         {/* Auth & Idempotency */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <h3 className="text-lg font-semibold">Authentication</h3>
+            <h3 className="text-lg font-semibold">{t("sections.authentication")}</h3>
             <div className="rounded-lg border p-4 space-y-1 text-sm">
-              <p><span className="font-medium">Method:</span> {docs.auth_method}</p>
+              <p><span className="font-medium">{t("labels.method")}:</span> {docs.auth_method}</p>
               {docs.roles_required && docs.roles_required.length > 0 && (
-                <p><span className="font-medium">Roles:</span> {docs.roles_required.join(", ")}</p>
+                <p><span className="font-medium">{t("labels.roles")}:</span> {docs.roles_required.join(", ")}</p>
               )}
             </div>
           </div>
           <div className="space-y-2">
-            <h3 className="text-lg font-semibold">Idempotency</h3>
+            <h3 className="text-lg font-semibold">{t("sections.idempotency")}</h3>
             <div className="rounded-lg border p-4 space-y-1 text-sm">
-              <p><span className="font-medium">Idempotent:</span> {docs.idempotent ? "Yes" : "No"}</p>
-              {docs.idempotent_key && <p><span className="font-medium">Key:</span> {docs.idempotent_key}</p>}
+              <p><span className="font-medium">{t("labels.idempotent")}:</span> {docs.idempotent ? t("yes") : t("no")}</p>
+              {docs.idempotent_key && <p><span className="font-medium">{t("labels.key")}:</span> {docs.idempotent_key}</p>}
             </div>
           </div>
         </section>
 
         {/* Observability */}
         <section className="space-y-2">
-          <h3 className="text-lg font-semibold">Observability & Performance</h3>
+          <h3 className="text-lg font-semibold">{t("sections.observability")}</h3>
           <div className="rounded-lg border p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div><span className="font-medium">Tracing:</span> {docs.supports_tracing ? "Yes (X-Request-Id)" : "No"}</div>
-            <div><span className="font-medium">Rate Limit:</span> {docs.rate_limit}</div>
-            <div><span className="font-medium">Timeout:</span> {docs.timeout}</div>
-            <div><span className="font-medium">Pagination:</span> {docs.pagination || "N/A"}</div>
+            <div><span className="font-medium">{t("labels.tracing")}:</span> {docs.supports_tracing ? t("tracingEnabled") : t("no")}</div>
+            <div><span className="font-medium">{t("labels.rateLimit")}:</span> {docs.rate_limit}</div>
+            <div><span className="font-medium">{t("labels.timeout")}:</span> {docs.timeout}</div>
+            <div><span className="font-medium">{t("labels.pagination")}:</span> {docs.pagination || t("na")}</div>
           </div>
         </section>
 
         {/* Examples */}
         {docs.curl_example && (
           <section className="space-y-2">
-            <h3 className="text-lg font-semibold">cURL Example</h3>
+            <h3 className="text-lg font-semibold">{t("sections.curlExample")}</h3>
             <pre className="rounded-lg border bg-muted/30 p-4 text-sm overflow-x-auto"><code>{docs.curl_example}</code></pre>
           </section>
         )}
         {docs.request_example && (
           <section className="space-y-2">
-            <h3 className="text-lg font-semibold">Request Example</h3>
+            <h3 className="text-lg font-semibold">{t("sections.requestExample")}</h3>
             <pre className="rounded-lg border bg-muted/30 p-4 text-sm overflow-x-auto"><code>{docs.request_example}</code></pre>
           </section>
         )}
         {docs.response_example && (
           <section className="space-y-2">
-            <h3 className="text-lg font-semibold">Response Example</h3>
+            <h3 className="text-lg font-semibold">{t("sections.responseExample")}</h3>
             <pre className="rounded-lg border bg-muted/30 p-4 text-sm overflow-x-auto"><code>{docs.response_example}</code></pre>
           </section>
         )}
         {docs.error_example && (
           <section className="space-y-2">
-            <h3 className="text-lg font-semibold">Error Response Example</h3>
+            <h3 className="text-lg font-semibold">{t("sections.errorResponseExample")}</h3>
             <pre className="rounded-lg border bg-muted/30 p-4 text-sm overflow-x-auto"><code>{docs.error_example}</code></pre>
           </section>
         )}
@@ -245,7 +247,7 @@ export default function SharedDocPage() {
         {/* Notes */}
         {docs.notes && docs.notes.length > 0 && (
           <section className="space-y-2">
-            <h3 className="text-lg font-semibold">Notes</h3>
+            <h3 className="text-lg font-semibold">{t("sections.notes")}</h3>
             <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
               {docs.notes.map((n, i) => <li key={i}>{n}</li>)}
             </ul>
@@ -255,7 +257,7 @@ export default function SharedDocPage() {
         {/* Changelog */}
         {docs.changelog && docs.changelog.length > 0 && (
           <section className="space-y-2">
-            <h3 className="text-lg font-semibold">Changelog</h3>
+            <h3 className="text-lg font-semibold">{t("sections.changelog")}</h3>
             <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
               {docs.changelog.map((c, i) => <li key={i}>{c}</li>)}
             </ul>
@@ -263,7 +265,7 @@ export default function SharedDocPage() {
         )}
 
         <footer className="border-t pt-6 text-center text-sm text-muted-foreground">
-          <p>Generated by Nova AI · Shared on {new Date(doc.created_at).toLocaleDateString()}</p>
+          <p>{t("generatedBy", { date: new Date(doc.created_at).toLocaleDateString() })}</p>
         </footer>
       </main>
     </div>

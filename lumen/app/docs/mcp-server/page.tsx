@@ -1,26 +1,28 @@
+import { getTranslations } from "next-intl/server"
 import { DocsShell } from "@/components/docs/docs-shell"
 import { CodeBlock } from "@/components/docs/code-block"
 
-export default function DocsMCPServerPage() {
+export default async function DocsMCPServerPage() {
+  const t = await getTranslations("docsMcpServerPage")
+
   return (
     <DocsShell
       current="mcp"
-      title="Atlas MCP Server"
-      description="Atlas exposes Nova capabilities as MCP tools so AI agents can operate Nova through a typed stdio tool interface."
+      title={t("title")}
+      description={t("description")}
       toc={[
-        { id: "overview", label: "Overview" },
-        { id: "when-to-use", label: "When To Use" },
-        { id: "build-and-run", label: "Build & Run" },
-        { id: "connection-config", label: "Connection Config" },
-        { id: "tool-surface", label: "Tool Surface" },
-        { id: "operational-guidance", label: "Operational Guidance" },
+        { id: "overview", label: t("toc.overview") },
+        { id: "when-to-use", label: t("toc.whenToUse") },
+        { id: "build-and-run", label: t("toc.buildAndRun") },
+        { id: "connection-config", label: t("toc.connectionConfig") },
+        { id: "tool-surface", label: t("toc.toolSurface") },
+        { id: "operational-guidance", label: t("toc.operationalGuidance") },
       ]}
     >
       <section id="overview" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Overview</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.overview.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          Atlas is implemented in Go and runs over MCP stdio transport. It maps Nova HTTP APIs to MCP tools with a
-          consistent <code>nova_*</code> naming convention.
+          {t("sections.overview.descriptionPrefix")} <code>nova_*</code> {t("sections.overview.descriptionSuffix")}
         </p>
         <CodeBlock
           code={`Component: atlas
@@ -32,16 +34,16 @@ Target backend: ZENITH_URL (default http://localhost:9000)`}
       </section>
 
       <section id="when-to-use" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">When To Use</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.whenToUse.title")}</h2>
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
-          <li>Automate operational runbooks from AI coding/ops assistants.</li>
-          <li>Drive function, workflow, and event operations from natural language requests.</li>
-          <li>Keep the same tenant/namespace scoping model as Orbit and HTTP clients.</li>
+          <li>{t("sections.whenToUse.items.item1")}</li>
+          <li>{t("sections.whenToUse.items.item2")}</li>
+          <li>{t("sections.whenToUse.items.item3")}</li>
         </ul>
       </section>
 
       <section id="build-and-run" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Build &amp; Run</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.buildAndRun.title")}</h2>
         <CodeBlock
           code={`# Build Atlas
 make atlas
@@ -55,9 +57,9 @@ make atlas-linux`}
       </section>
 
       <section id="connection-config" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Connection Config</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.connectionConfig.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          Atlas reads backend context from environment variables and forwards them as Nova request headers.
+          {t("sections.connectionConfig.description")}
         </p>
         <CodeBlock
           code={`Environment variables
@@ -89,16 +91,16 @@ X-Nova-Namespace: <NOVA_NAMESPACE>`}
       </section>
 
       <section id="tool-surface" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Tool Surface</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.toolSurface.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          Atlas tools are grouped by domain to mirror Nova APIs.
+          {t("sections.toolSurface.description")}
         </p>
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
-          <li>Functions: lifecycle, code, versions, invocation, async invocation.</li>
-          <li>Workflows: create/update/list, versions, runs.</li>
-          <li>Events: topics, subscriptions, deliveries, replay, outbox.</li>
-          <li>Governance: tenants, API keys, secrets, config.</li>
-          <li>Operations: health, stats, metrics, logs, invocations.</li>
+          <li>{t("sections.toolSurface.items.functions")}</li>
+          <li>{t("sections.toolSurface.items.workflows")}</li>
+          <li>{t("sections.toolSurface.items.events")}</li>
+          <li>{t("sections.toolSurface.items.governance")}</li>
+          <li>{t("sections.toolSurface.items.operations")}</li>
         </ul>
         <CodeBlock
           code={`Example tools
@@ -114,12 +116,12 @@ nova_get_metrics`}
       </section>
 
       <section id="operational-guidance" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Operational Guidance</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.operationalGuidance.title")}</h2>
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
-          <li>Always set tenant and namespace explicitly in shared environments.</li>
-          <li>Prefer least-privilege API keys per automation/agent workflow.</li>
-          <li>Treat MCP tool responses as source-of-truth runtime state, not cached assumptions.</li>
-          <li>Use replay/seek/dlq tools for controlled recovery instead of ad-hoc DB changes.</li>
+          <li>{t("sections.operationalGuidance.items.item1")}</li>
+          <li>{t("sections.operationalGuidance.items.item2")}</li>
+          <li>{t("sections.operationalGuidance.items.item3")}</li>
+          <li>{t("sections.operationalGuidance.items.item4")}</li>
         </ul>
       </section>
     </DocsShell>

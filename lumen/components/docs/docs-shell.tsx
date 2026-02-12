@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
+import { useTranslations } from "next-intl"
 import { Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -46,29 +47,6 @@ interface DocsShellProps {
   children: React.ReactNode
 }
 
-const defaultDocsNavGroups: DocsNavGroup[] = [
-  {
-    title: "Guides",
-    items: [
-      { id: "introduction", label: "Introduction", href: "/docs" },
-      { id: "architecture", label: "Architecture", href: "/docs/architecture" },
-      { id: "installation", label: "Installation", href: "/docs/installation" },
-    ],
-  },
-  {
-    title: "Reference",
-    items: [
-      { id: "api", label: "API Overview", href: "/docs/api" },
-      { id: "api", label: "Functions API", href: "/docs/api/functions" },
-      { id: "api", label: "Workflows API", href: "/docs/api/workflows" },
-      { id: "api", label: "Events API", href: "/docs/api/events" },
-      { id: "api", label: "Operations API", href: "/docs/api/operations" },
-      { id: "cli", label: "Orbit CLI", href: "/docs/cli" },
-      { id: "mcp", label: "Atlas MCP Server", href: "/docs/mcp-server" },
-    ],
-  },
-]
-
 function isNavItemActive(item: DocsNavItem, activeHref?: string, current?: DocsSection): boolean {
   if (activeHref) {
     if (activeHref === item.href) return true
@@ -87,7 +65,12 @@ function normalizeSearchText(value: string): string {
   return value.trim().toLowerCase()
 }
 
-function buildSearchItems(navGroups: DocsNavGroup[], toc: TocItem[], pathname: string): DocsSearchItem[] {
+function buildSearchItems(
+  navGroups: DocsNavGroup[],
+  toc: TocItem[],
+  pathname: string,
+  onThisPageLabel: string
+): DocsSearchItem[] {
   const baseItems: DocsSearchItem[] = []
 
   for (const group of navGroups) {
@@ -114,7 +97,7 @@ function buildSearchItems(navGroups: DocsNavGroup[], toc: TocItem[], pathname: s
     baseItems.push({
       label: item.label,
       href: `${pathname}#${item.id}`,
-      context: "On This Page",
+      context: onThisPageLabel,
       keywords: `section ${item.label} ${item.id}`,
     })
   }
@@ -148,6 +131,7 @@ function scoreSearchItem(item: DocsSearchItem, query: string): number {
 }
 
 export function DocsShell({ current, activeHref, title, description, toc, navGroups, children }: DocsShellProps) {
+  const t = useTranslations("docsShell")
   const [activeTocId, setActiveTocId] = useState<string>(toc[0]?.id ?? "")
   const [searchValue, setSearchValue] = useState("")
   const [isSearchOpen, setIsSearchOpen] = useState(false)
@@ -155,13 +139,38 @@ export function DocsShell({ current, activeHref, title, description, toc, navGro
   const searchContainerRef = useRef<HTMLDivElement>(null)
   const pathname = usePathname() || "/docs"
   const router = useRouter()
-  const resolvedNavGroups = navGroups ?? defaultDocsNavGroups
+  const defaultNavGroups = useMemo<DocsNavGroup[]>(
+    () => [
+      {
+        title: t("nav.guides"),
+        items: [
+          { id: "introduction", label: t("nav.introduction"), href: "/docs" },
+          { id: "architecture", label: t("nav.architecture"), href: "/docs/architecture" },
+          { id: "installation", label: t("nav.installation"), href: "/docs/installation" },
+        ],
+      },
+      {
+        title: t("nav.reference"),
+        items: [
+          { id: "api", label: t("nav.apiOverview"), href: "/docs/api" },
+          { id: "api", label: t("nav.functionsApi"), href: "/docs/api/functions" },
+          { id: "api", label: t("nav.workflowsApi"), href: "/docs/api/workflows" },
+          { id: "api", label: t("nav.eventsApi"), href: "/docs/api/events" },
+          { id: "api", label: t("nav.operationsApi"), href: "/docs/api/operations" },
+          { id: "cli", label: t("nav.orbitCli"), href: "/docs/cli" },
+          { id: "mcp", label: t("nav.atlasMcpServer"), href: "/docs/mcp-server" },
+        ],
+      },
+    ],
+    [t]
+  )
+  const resolvedNavGroups = navGroups ?? defaultNavGroups
 
   const normalizedSearch = normalizeSearchText(searchValue)
 
   const searchItems = useMemo(
-    () => buildSearchItems(resolvedNavGroups, toc, pathname),
-    [resolvedNavGroups, toc, pathname]
+    () => buildSearchItems(resolvedNavGroups, toc, pathname, t("onThisPage")),
+    [resolvedNavGroups, toc, pathname, t]
   )
 
   const searchResults = useMemo(() => {
@@ -332,14 +341,14 @@ export function DocsShell({ current, activeHref, title, description, toc, navGro
         <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center justify-between gap-4 px-4 md:px-6">
           <div className="flex min-w-0 items-center gap-6">
             <Link href="/docs" className="text-base font-semibold tracking-tight">
-              Nova Docs
+              {t("title")}
             </Link>
           </div>
 
           <div ref={searchContainerRef} className="relative hidden lg:block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search documentation..."
+              placeholder={t("search.placeholder")}
               className="h-9 w-72 border-border bg-background pl-9"
               value={searchValue}
               onChange={(event) => {
@@ -348,7 +357,7 @@ export function DocsShell({ current, activeHref, title, description, toc, navGro
               }}
               onFocus={() => setIsSearchOpen(true)}
               onKeyDown={handleSearchKeyDown}
-              aria-label="Search documentation"
+              aria-label={t("search.ariaLabel")}
               aria-expanded={showSearchMenu}
               aria-controls="docs-search-results"
             />
@@ -375,7 +384,7 @@ export function DocsShell({ current, activeHref, title, description, toc, navGro
                   </ul>
                 ) : (
                   <p className="px-3 py-2 text-sm text-muted-foreground">
-                    No matches for <span className="font-medium text-foreground">{searchValue.trim()}</span>
+                    {t("search.noMatches", { query: searchValue.trim() })}
                   </p>
                 )}
               </div>
@@ -387,7 +396,7 @@ export function DocsShell({ current, activeHref, title, description, toc, navGro
 
       <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 xl:grid-cols-[260px_minmax(0,1fr)_260px]">
         <aside className="relative hidden h-[calc(100vh-4rem)] px-6 py-8 xl:sticky xl:top-16 xl:block xl:self-start">
-          <p className="mb-3 text-sm text-muted-foreground">Documentation</p>
+          <p className="mb-3 text-sm text-muted-foreground">{t("documentation")}</p>
           <div className="space-y-5">
             {resolvedNavGroups.map((group) => (
               <div key={group.title} className="space-y-1">
@@ -443,7 +452,7 @@ export function DocsShell({ current, activeHref, title, description, toc, navGro
 
         <aside className="relative hidden h-[calc(100vh-4rem)] px-6 py-8 xl:sticky xl:top-16 xl:block xl:self-start">
           <div className="pointer-events-none absolute inset-y-0 left-0 w-px bg-gradient-to-b from-border/15 via-border to-border/15" />
-          <p className="mb-3 text-sm text-muted-foreground">On This Page</p>
+          <p className="mb-3 text-sm text-muted-foreground">{t("onThisPage")}</p>
           <div className="space-y-2">
             {toc.map((item) => (
               <a

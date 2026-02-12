@@ -2,6 +2,7 @@
 
 import { use, useEffect, useMemo, useState, useCallback } from "react"
 import Link from "next/link"
+import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -52,6 +53,7 @@ export default function FunctionDetailPage({
   params: Promise<{ id: string }>
   searchParams: Promise<{ tab?: string; request_id?: string }>
 }) {
+  const t = useTranslations("functionDetailPage")
   const { id } = use(params)
   const query = use(searchParams)
   const requestedLogID =
@@ -145,11 +147,11 @@ export default function FunctionDetailPage({
       setLogs(mergedLogs.map(transformLog))
     } catch (err) {
       console.error("Failed to fetch function:", err)
-      setError(err instanceof Error ? err.message : "Failed to load function")
+      setError(err instanceof Error ? err.message : t("loadFailed"))
     } finally {
       setLoading(false)
     }
-  }, [id, refreshAsyncJobs, requestedLogID])
+  }, [id, refreshAsyncJobs, requestedLogID, t])
 
   useEffect(() => {
     fetchData()
@@ -175,7 +177,7 @@ export default function FunctionDetailPage({
           setInvokeError(
             parseError instanceof Error
               ? parseError.message
-              : "Invalid JSON payload"
+              : t("invalidJsonPayload")
           )
           return
         }
@@ -196,15 +198,22 @@ export default function FunctionDetailPage({
             2
           )
         )
-        setInvokeMeta(`job_id: ${job.id} · status: ${job.status} · attempts: ${job.attempt}/${job.max_attempts}`)
+        setInvokeMeta(t("invokeMetaAsync", {
+          jobId: job.id,
+          status: job.status,
+          attempt: job.attempt,
+          maxAttempts: job.max_attempts,
+        }))
         refreshAsyncJobs(func.name)
       } else {
         const response = await functionsApi.invoke(func.name, payload)
         markOnboardingStep("function_invoked", true)
         setInvokeOutput(JSON.stringify(response.output ?? null, null, 2))
-        setInvokeMeta(
-          `request_id: ${response.request_id} · duration: ${response.duration_ms} ms · ${response.cold_start ? "cold" : "warm"} start`
-        )
+        setInvokeMeta(t("invokeMetaSync", {
+          requestId: response.request_id,
+          duration: response.duration_ms,
+          startState: response.cold_start ? t("coldStart") : t("warmStart"),
+        }))
         if (response.error) {
           setInvokeError(response.error)
         }
@@ -213,7 +222,7 @@ export default function FunctionDetailPage({
       }
     } catch (err) {
       console.error("Failed to invoke function:", err)
-      setInvokeError(err instanceof Error ? err.message : "Invocation failed")
+      setInvokeError(err instanceof Error ? err.message : t("invocationFailed"))
     } finally {
       setInvoking(false)
     }
@@ -224,13 +233,17 @@ export default function FunctionDetailPage({
     setInvokeError(null)
     try {
       const requeued = await functionsApi.retryAsyncInvocation(jobID)
-      setInvokeMeta(`job_id: ${requeued.id} requeued · attempts reset to ${requeued.attempt}/${requeued.max_attempts}`)
+      setInvokeMeta(t("retryMeta", {
+        jobId: requeued.id,
+        attempt: requeued.attempt,
+        maxAttempts: requeued.max_attempts,
+      }))
       if (func) {
         refreshAsyncJobs(func.name)
       }
     } catch (err) {
       console.error("Failed to retry async job:", err)
-      setInvokeError(err instanceof Error ? err.message : "Retry failed")
+      setInvokeError(err instanceof Error ? err.message : t("retryFailed"))
     } finally {
       setRetryingAsyncJobId(null)
     }
@@ -251,10 +264,10 @@ export default function FunctionDetailPage({
       <DashboardLayout>
         <div className="flex flex-col items-center justify-center h-[60vh]">
           <p className="text-muted-foreground mb-4">
-            {error || "Function not found"}
+            {error || t("functionNotFound")}
           </p>
           <Button asChild variant="outline">
-            <Link href="/functions">Back to Functions</Link>
+            <Link href="/functions">{t("backToFunctions")}</Link>
           </Button>
         </div>
       </DashboardLayout>
@@ -298,7 +311,7 @@ export default function FunctionDetailPage({
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
               <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
-              Refresh
+              {t("refresh")}
             </Button>
             <Button
               size="sm"
@@ -310,7 +323,7 @@ export default function FunctionDetailPage({
               ) : (
                 <Play className="mr-2 h-4 w-4" />
               )}
-              {invokeMode === "async" ? "Enqueue" : "Invoke"}
+              {invokeMode === "async" ? t("enqueue") : t("invoke")}
             </Button>
           </div>
         </div>
@@ -322,49 +335,49 @@ export default function FunctionDetailPage({
               value="overview"
               className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
             >
-              Overview
+              {t("tabs.overview")}
             </TabsTrigger>
             <TabsTrigger
               value="code"
               className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
             >
-              Code
+              {t("tabs.code")}
             </TabsTrigger>
             <TabsTrigger
               value="logs"
               className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
             >
-              Logs
+              {t("tabs.logs")}
             </TabsTrigger>
             <TabsTrigger
               value="diagnostics"
               className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
             >
-              Diagnostics
+              {t("tabs.diagnostics")}
             </TabsTrigger>
             <TabsTrigger
               value="config"
               className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
             >
-              Configuration
+              {t("tabs.configuration")}
             </TabsTrigger>
             <TabsTrigger
               value="versions"
               className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
             >
-              Versions
+              {t("tabs.versions")}
             </TabsTrigger>
             <TabsTrigger
               value="schedules"
               className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
             >
-              Schedules
+              {t("tabs.schedules")}
             </TabsTrigger>
             <TabsTrigger
               value="docs"
               className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
             >
-              Docs
+              {t("tabs.docs")}
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -416,20 +429,20 @@ export default function FunctionDetailPage({
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Version</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Code Hash</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Handler</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Memory</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Timeout</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Mode</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Created</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colVersion")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colCodeHash")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colHandler")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colMemory")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colTimeout")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colMode")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colCreated")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {versions.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
-                        No versions published yet
+                        {t("versions.empty")}
                       </td>
                     </tr>
                   ) : (
@@ -447,7 +460,7 @@ export default function FunctionDetailPage({
                         <td className="px-4 py-3 text-sm text-muted-foreground">{v.memory_mb} MB</td>
                         <td className="px-4 py-3 text-sm text-muted-foreground">{v.timeout_s}s</td>
                         <td className="px-4 py-3">
-                          <Badge variant="secondary" className="text-xs">{v.mode || "process"}</Badge>
+                          <Badge variant="secondary" className="text-xs">{v.mode || t("modeProcess")}</Badge>
                         </td>
                         <td className="px-4 py-3 text-sm text-muted-foreground">
                           {new Date(v.created_at).toLocaleString()}
@@ -466,30 +479,30 @@ export default function FunctionDetailPage({
                 <DialogTrigger asChild>
                   <Button size="sm">
                     <Plus className="mr-2 h-4 w-4" />
-                    Create Schedule
+                    {t("schedules.createSchedule")}
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Create Schedule</DialogTitle>
+                    <DialogTitle>{t("schedules.createTitle")}</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Cron Expression</label>
+                      <label className="text-sm font-medium">{t("schedules.cronExpression")}</label>
                       <Input
                         value={newCron}
                         onChange={(e) => setNewCron(e.target.value)}
-                        placeholder="@every 5m"
+                        placeholder={t("schedules.cronPlaceholder")}
                       />
                       <div className="flex flex-wrap gap-1.5">
                         {[
-                          { label: "Every 1m", value: "@every 1m" },
-                          { label: "Every 5m", value: "@every 5m" },
-                          { label: "Every 15m", value: "*/15 * * * *" },
-                          { label: "Every 30m", value: "*/30 * * * *" },
-                          { label: "Hourly", value: "@hourly" },
-                          { label: "Daily", value: "@daily" },
-                          { label: "Weekly", value: "@weekly" },
+                          { label: t("schedules.presets.every1m"), value: "@every 1m" },
+                          { label: t("schedules.presets.every5m"), value: "@every 5m" },
+                          { label: t("schedules.presets.every15m"), value: "*/15 * * * *" },
+                          { label: t("schedules.presets.every30m"), value: "*/30 * * * *" },
+                          { label: t("schedules.presets.hourly"), value: "@hourly" },
+                          { label: t("schedules.presets.daily"), value: "@daily" },
+                          { label: t("schedules.presets.weekly"), value: "@weekly" },
                         ].map((preset) => (
                           <button
                             key={preset.value}
@@ -508,11 +521,11 @@ export default function FunctionDetailPage({
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Input (optional JSON)</label>
+                      <label className="text-sm font-medium">{t("schedules.inputOptionalJson")}</label>
                       <Textarea
                         value={newSchedInput}
                         onChange={(e) => setNewSchedInput(e.target.value)}
-                        placeholder='{"key": "value"}'
+                        placeholder={t("schedules.inputPlaceholder")}
                         className="min-h-[80px] font-mono text-xs"
                       />
                     </div>
@@ -540,7 +553,7 @@ export default function FunctionDetailPage({
                       }}
                       disabled={creatingSchedule || !newCron.trim()}
                     >
-                      {creatingSchedule ? "Creating..." : "Create"}
+                      {creatingSchedule ? t("schedules.creating") : t("schedules.create")}
                     </Button>
                   </div>
                 </DialogContent>
@@ -553,25 +566,25 @@ export default function FunctionDetailPage({
               }}>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Edit Schedule</DialogTitle>
+                    <DialogTitle>{t("schedules.editTitle")}</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Cron Expression</label>
+                      <label className="text-sm font-medium">{t("schedules.cronExpression")}</label>
                       <Input
                         value={editCron}
                         onChange={(e) => setEditCron(e.target.value)}
-                        placeholder="@every 5m"
+                        placeholder={t("schedules.cronPlaceholder")}
                       />
                       <div className="flex flex-wrap gap-1.5">
                         {[
-                          { label: "Every 1m", value: "@every 1m" },
-                          { label: "Every 5m", value: "@every 5m" },
-                          { label: "Every 15m", value: "*/15 * * * *" },
-                          { label: "Every 30m", value: "*/30 * * * *" },
-                          { label: "Hourly", value: "@hourly" },
-                          { label: "Daily", value: "@daily" },
-                          { label: "Weekly", value: "@weekly" },
+                          { label: t("schedules.presets.every1m"), value: "@every 1m" },
+                          { label: t("schedules.presets.every5m"), value: "@every 5m" },
+                          { label: t("schedules.presets.every15m"), value: "*/15 * * * *" },
+                          { label: t("schedules.presets.every30m"), value: "*/30 * * * *" },
+                          { label: t("schedules.presets.hourly"), value: "@hourly" },
+                          { label: t("schedules.presets.daily"), value: "@daily" },
+                          { label: t("schedules.presets.weekly"), value: "@weekly" },
                         ].map((preset) => (
                           <button
                             key={preset.value}
@@ -605,7 +618,7 @@ export default function FunctionDetailPage({
                       }}
                       disabled={!editCron.trim() || editCron.trim() === editingSchedule?.cron_expression}
                     >
-                      Save
+                      {t("schedules.save")}
                     </Button>
                   </div>
                 </DialogContent>
@@ -616,18 +629,18 @@ export default function FunctionDetailPage({
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Cron</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Status</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Last Run</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Created</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Actions</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("schedules.table.colCron")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("schedules.table.colStatus")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("schedules.table.colLastRun")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("schedules.table.colCreated")}</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">{t("schedules.table.colActions")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {schedules.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                        No schedules configured
+                        {t("schedules.table.empty")}
                       </td>
                     </tr>
                   ) : (
@@ -646,11 +659,11 @@ export default function FunctionDetailPage({
                                 : "bg-muted text-muted-foreground border-0"
                             )}
                           >
-                            {s.enabled ? "Active" : "Disabled"}
+                            {s.enabled ? t("schedules.statusActive") : t("schedules.statusDisabled")}
                           </Badge>
                         </td>
                         <td className="px-4 py-3 text-sm text-muted-foreground">
-                          {s.last_run_at ? new Date(s.last_run_at).toLocaleString() : "Never"}
+                          {s.last_run_at ? new Date(s.last_run_at).toLocaleString() : t("schedules.never")}
                         </td>
                         <td className="px-4 py-3 text-sm text-muted-foreground">
                           {new Date(s.created_at).toLocaleString()}
@@ -665,7 +678,7 @@ export default function FunctionDetailPage({
                                 setEditCron(s.cron_expression)
                                 setEditDialogOpen(true)
                               }}
-                              title="Edit"
+                              title={t("actions.edit")}
                             >
                               <Pencil className="h-4 w-4" />
                             </Button>
@@ -678,7 +691,7 @@ export default function FunctionDetailPage({
                                 const updated = await schedulesApi.list(func.name)
                                 setSchedules(updated || [])
                               }}
-                              title={s.enabled ? "Disable" : "Enable"}
+                              title={s.enabled ? t("actions.disable") : t("actions.enable")}
                             >
                               {s.enabled ? (
                                 <ToggleRight className="h-4 w-4 text-success" />

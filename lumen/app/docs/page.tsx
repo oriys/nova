@@ -1,186 +1,192 @@
 import Link from "next/link"
+import { getTranslations } from "next-intl/server"
 import { DocsShell } from "@/components/docs/docs-shell"
 import { CodeBlock } from "@/components/docs/code-block"
 import { Badge } from "@/components/ui/badge"
 
 type CoverageLevel = "full" | "partial" | "none"
+type SurfaceComparisonRowKey =
+  | "functionsLifecycle"
+  | "workflowsLifecycle"
+  | "eventsLifecycle"
+  | "tenancyGovernance"
+  | "gatewayRoutes"
+  | "layerManagement"
+  | "batchAutomation"
+  | "aiToolCalling"
 
 type SurfaceComparisonRow = {
-  capability: string
+  key: SurfaceComparisonRowKey
   lumen: CoverageLevel
   orbit: CoverageLevel
   mcp: CoverageLevel
-  note: string
 }
 
 const surfaceComparisonRows: SurfaceComparisonRow[] = [
   {
-    capability: "Functions lifecycle + invoke + logs",
+    key: "functionsLifecycle",
     lumen: "full",
     orbit: "full",
     mcp: "full",
-    note: "All three cover daily function development and operations.",
   },
   {
-    capability: "Workflows (define/version/run)",
+    key: "workflowsLifecycle",
     lumen: "full",
     orbit: "full",
     mcp: "full",
-    note: "Complete workflow lifecycle is available across all interfaces.",
   },
   {
-    capability: "Events (topic/subscription/delivery/replay)",
+    key: "eventsLifecycle",
     lumen: "full",
     orbit: "full",
     mcp: "full",
-    note: "End-to-end event delivery controls are available in each surface.",
   },
   {
-    capability: "Tenancy governance (quotas/usage)",
+    key: "tenancyGovernance",
     lumen: "full",
     orbit: "full",
     mcp: "full",
-    note: "Tenant and namespace governance is exposed everywhere.",
   },
   {
-    capability: "Gateway route management",
+    key: "gatewayRoutes",
     lumen: "none",
     orbit: "full",
     mcp: "full",
-    note: "Gateway operations are currently CLI/MCP-first.",
   },
   {
-    capability: "Layer management",
+    key: "layerManagement",
     lumen: "none",
     orbit: "full",
     mcp: "full",
-    note: "Layer operations are currently CLI/MCP-first.",
   },
   {
-    capability: "Scriptable batch automation",
+    key: "batchAutomation",
     lumen: "partial",
     orbit: "full",
     mcp: "full",
-    note: "Lumen can operate interactively; automation is stronger with Orbit/MCP.",
   },
   {
-    capability: "AI-native tool calling",
+    key: "aiToolCalling",
     lumen: "none",
     orbit: "none",
     mcp: "full",
-    note: "MCP is designed for agentic and assistant-driven operations.",
   },
 ]
 
-function coverageBadge(level: CoverageLevel) {
+function coverageBadge(level: CoverageLevel, t: Awaited<ReturnType<typeof getTranslations>>) {
   switch (level) {
     case "full":
       return (
         <Badge variant="secondary" className="border-0 bg-success/10 text-success">
-          Full
+          {t("comparison.badges.full")}
         </Badge>
       )
     case "partial":
       return (
         <Badge variant="secondary" className="border-0 bg-amber-500/15 text-amber-700 dark:text-amber-400">
-          Partial
+          {t("comparison.badges.partial")}
         </Badge>
       )
     default:
       return (
         <Badge variant="secondary" className="border-0 bg-muted text-muted-foreground">
-          Not Primary
+          {t("comparison.badges.notPrimary")}
         </Badge>
       )
   }
 }
 
-export default function DocsPage() {
+export default async function DocsPage() {
+  const t = await getTranslations("docsIntroPage")
+
   return (
     <DocsShell
       current="introduction"
-      title="Introduction"
-      description="Nova is a backend-first serverless control plane. It provides function execution, workflow orchestration, event delivery, and tenant-aware operations behind one API."
+      title={t("title")}
+      description={t("description")}
       toc={[
-        { id: "who-this-is-for", label: "Who This Is For" },
-        { id: "what-you-get", label: "What You Get" },
-        { id: "control-surface-comparison", label: "Control Surface Comparison" },
-        { id: "docs-map", label: "Docs Map" },
-        { id: "recommended-learning-path", label: "Recommended Learning Path" },
-        { id: "first-smoke-test", label: "First Smoke Test" },
-        { id: "next-steps", label: "Next Steps" },
+        { id: "who-this-is-for", label: t("toc.whoThisIsFor") },
+        { id: "what-you-get", label: t("toc.whatYouGet") },
+        { id: "control-surface-comparison", label: t("toc.controlSurfaceComparison") },
+        { id: "docs-map", label: t("toc.docsMap") },
+        { id: "recommended-learning-path", label: t("toc.recommendedLearningPath") },
+        { id: "first-smoke-test", label: t("toc.firstSmokeTest") },
+        { id: "next-steps", label: t("toc.nextSteps") },
       ]}
     >
       <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
         <p className="text-sm text-muted-foreground">
-          Looking for capability differences? Jump to{" "}
+          {t("jumpToComparison.prefix")}{" "}
           <Link href="#control-surface-comparison" className="font-medium text-foreground underline underline-offset-4">
-            Control Surface Comparison
+            {t("toc.controlSurfaceComparison")}
           </Link>
-          .
+          {t("jumpToComparison.suffix")}
         </p>
       </div>
 
       <section id="who-this-is-for" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Who This Is For</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.whoThisIsFor.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          This documentation is for platform engineers and backend developers who want to run Nova as a
-          multi-tenant serverless backend and operate it with Orbit CLI.
+          {t("sections.whoThisIsFor.description")}
         </p>
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
-          <li>You need one backend API for functions, workflows, and event-driven delivery.</li>
-          <li>You want tenant and namespace isolation at request level.</li>
-          <li>You need local development parity with production-like operational primitives.</li>
+          <li>{t("sections.whoThisIsFor.items.item1")}</li>
+          <li>{t("sections.whoThisIsFor.items.item2")}</li>
+          <li>{t("sections.whoThisIsFor.items.item3")}</li>
         </ul>
       </section>
 
       <section id="what-you-get" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">What You Get</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.whatYouGet.title")}</h2>
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
           <li>
-            <strong>Function runtime control:</strong> create/update/invoke functions, observe logs and metrics.
+            <strong>{t("sections.whatYouGet.items.functionControl.label")}:</strong>{" "}
+            {t("sections.whatYouGet.items.functionControl.value")}
           </li>
           <li>
-            <strong>Workflow orchestration:</strong> publish workflow definitions and trigger runs.
+            <strong>{t("sections.whatYouGet.items.workflowOrchestration.label")}:</strong>{" "}
+            {t("sections.whatYouGet.items.workflowOrchestration.value")}
           </li>
           <li>
-            <strong>Event bus:</strong> topics, subscriptions, delivery retries, replay, outbox relay.
+            <strong>{t("sections.whatYouGet.items.eventBus.label")}:</strong>{" "}
+            {t("sections.whatYouGet.items.eventBus.value")}
           </li>
           <li>
-            <strong>Platform governance:</strong> tenants, namespaces, quotas, API keys, secrets.
+            <strong>{t("sections.whatYouGet.items.platformGovernance.label")}:</strong>{" "}
+            {t("sections.whatYouGet.items.platformGovernance.value")}
           </li>
           <li>
-            <strong>Operations tooling:</strong> Orbit CLI for operators and Atlas MCP server for AI tooling.
+            <strong>{t("sections.whatYouGet.items.operationsTooling.label")}:</strong>{" "}
+            {t("sections.whatYouGet.items.operationsTooling.value")}
           </li>
         </ul>
       </section>
 
       <section id="control-surface-comparison" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Control Surface Comparison</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.comparison.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          Nova exposes the same backend through three operation surfaces. They overlap heavily but are not identical.
-          Use this matrix to pick the right entry point for each task.
+          {t("sections.comparison.description")}
         </p>
 
         <div className="mt-5 overflow-x-auto rounded-lg border border-border">
           <table className="w-full min-w-[980px] text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/30">
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Capability</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Lumen UI</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Orbit CLI</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Atlas MCP</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Notes</th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("sections.comparison.columns.capability")}</th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("sections.comparison.columns.lumenUi")}</th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("sections.comparison.columns.orbitCli")}</th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("sections.comparison.columns.atlasMcp")}</th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("sections.comparison.columns.notes")}</th>
               </tr>
             </thead>
             <tbody>
               {surfaceComparisonRows.map((row) => (
-                <tr key={row.capability} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2 font-medium text-foreground">{row.capability}</td>
-                  <td className="px-3 py-2">{coverageBadge(row.lumen)}</td>
-                  <td className="px-3 py-2">{coverageBadge(row.orbit)}</td>
-                  <td className="px-3 py-2">{coverageBadge(row.mcp)}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{row.note}</td>
+                <tr key={row.key} className="border-b border-border last:border-0">
+                  <td className="px-3 py-2 font-medium text-foreground">{t(`sections.comparison.rows.${row.key}.capability`)}</td>
+                  <td className="px-3 py-2">{coverageBadge(row.lumen, t)}</td>
+                  <td className="px-3 py-2">{coverageBadge(row.orbit, t)}</td>
+                  <td className="px-3 py-2">{coverageBadge(row.mcp, t)}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{t(`sections.comparison.rows.${row.key}.note`)}</td>
                 </tr>
               ))}
             </tbody>
@@ -189,30 +195,30 @@ export default function DocsPage() {
 
         <div className="mt-5 grid gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-sm font-medium text-foreground">Choose Lumen UI when</p>
+            <p className="text-sm font-medium text-foreground">{t("sections.comparison.choose.lumenTitle")}</p>
             <p className="mt-2 text-sm text-muted-foreground">
-              you need visual inspection, quick interactive edits, and dashboard-driven troubleshooting.
+              {t("sections.comparison.choose.lumenDescription")}
             </p>
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-sm font-medium text-foreground">Choose Orbit CLI when</p>
+            <p className="text-sm font-medium text-foreground">{t("sections.comparison.choose.orbitTitle")}</p>
             <p className="mt-2 text-sm text-muted-foreground">
-              you need full API coverage, repeatable scripts, CI/CD integration, and bulk operations.
+              {t("sections.comparison.choose.orbitDescription")}
             </p>
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-sm font-medium text-foreground">Choose Atlas MCP when</p>
+            <p className="text-sm font-medium text-foreground">{t("sections.comparison.choose.atlasTitle")}</p>
             <p className="mt-2 text-sm text-muted-foreground">
-              you want AI agents to call typed Nova tools directly with tenant-scoped context.
+              {t("sections.comparison.choose.atlasDescription")}
             </p>
           </div>
         </div>
       </section>
 
       <section id="docs-map" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Docs Map</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.docsMap.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          The docs are split into guides and reference pages to match common engineering workflows.
+          {t("sections.docsMap.description")}
         </p>
         <CodeBlock
           code={`Guides
@@ -228,32 +234,43 @@ Reference
       </section>
 
       <section id="recommended-learning-path" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Recommended Learning Path</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.learningPath.title")}</h2>
         <ol className="mt-4 list-decimal space-y-3 pl-6 text-lg leading-8">
           <li>
-            Read <Link href="/docs/architecture" className="underline underline-offset-4">Architecture</Link> to
-            understand control plane vs data plane and delivery pipelines.
+            {t("sections.learningPath.items.architecture.prefix")}{" "}
+            <Link href="/docs/architecture" className="underline underline-offset-4">
+              {t("sections.learningPath.items.architecture.link")}
+            </Link>{" "}
+            {t("sections.learningPath.items.architecture.suffix")}
           </li>
           <li>
-            Follow <Link href="/docs/installation" className="underline underline-offset-4">Installation</Link> to
-            stand up Nova + Lumen + Orbit in your environment.
+            {t("sections.learningPath.items.installation.prefix")}{" "}
+            <Link href="/docs/installation" className="underline underline-offset-4">
+              {t("sections.learningPath.items.installation.link")}
+            </Link>{" "}
+            {t("sections.learningPath.items.installation.suffix")}
           </li>
           <li>
-            Use <Link href="/docs/api" className="underline underline-offset-4">API Reference</Link> for request and
-            response schemas while integrating clients.
+            {t("sections.learningPath.items.api.prefix")}{" "}
+            <Link href="/docs/api" className="underline underline-offset-4">
+              {t("sections.learningPath.items.api.link")}
+            </Link>{" "}
+            {t("sections.learningPath.items.api.suffix")}
           </li>
           <li>
-            Keep <Link href="/docs/cli" className="underline underline-offset-4">Orbit CLI</Link> open for operational
-            tasks and day-2 operations.
+            {t("sections.learningPath.items.cli.prefix")}{" "}
+            <Link href="/docs/cli" className="underline underline-offset-4">
+              {t("sections.learningPath.items.cli.link")}
+            </Link>{" "}
+            {t("sections.learningPath.items.cli.suffix")}
           </li>
         </ol>
       </section>
 
       <section id="first-smoke-test" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">First Smoke Test</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.firstSmokeTest.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          After deployment, run this minimal end-to-end test to verify API reachability, function lifecycle, and
-          execution path.
+          {t("sections.firstSmokeTest.description")}
         </p>
         <CodeBlock
           code={`# 1) Verify backend health (Zenith entrypoint)
@@ -276,16 +293,16 @@ orbit functions invoke hello-docs --payload '{"source":"docs"}'`}
       </section>
 
       <section id="next-steps" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Next Steps</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.nextSteps.title")}</h2>
         <div className="mt-4 flex flex-wrap gap-3">
           <Link href="/docs/architecture" className="rounded-md border border-border px-3 py-2 text-sm hover:bg-muted/60">
-            Read Architecture
+            {t("sections.nextSteps.actions.architecture")}
           </Link>
           <Link href="/docs/installation" className="rounded-md border border-border px-3 py-2 text-sm hover:bg-muted/60">
-            Run Installation
+            {t("sections.nextSteps.actions.installation")}
           </Link>
           <Link href="/docs/api" className="rounded-md border border-border px-3 py-2 text-sm hover:bg-muted/60">
-            Open API Reference
+            {t("sections.nextSteps.actions.api")}
           </Link>
         </div>
       </section>

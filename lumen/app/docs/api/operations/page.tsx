@@ -1,3 +1,4 @@
+import { getTranslations } from "next-intl/server"
 import { DocsShell } from "@/components/docs/docs-shell"
 import { EndpointSpecCard, type EndpointSpec } from "@/components/docs/api-spec"
 
@@ -155,26 +156,28 @@ curl -s http://localhost:9000/health/startup`,
   },
 ]
 
-export default function DocsAPIOperationsPage() {
+export default async function DocsAPIOperationsPage() {
+  const t = await getTranslations("docsApiOperationsPage")
+
   return (
     <DocsShell
       current="api"
       activeHref="/docs/api/operations"
-      title="Operations API"
-      description="Operational observability and probe endpoints for health, metrics, logs, and recent invocations."
+      title={t("title")}
+      description={t("description")}
       toc={[
-        { id: "coverage", label: "Coverage" },
-        { id: "health", label: "Health" },
-        { id: "health-probes", label: "Health Probes" },
-        { id: "global-timeseries", label: "Global Timeseries" },
-        { id: "function-logs", label: "Function Logs" },
-        { id: "list-invocations", label: "Recent Invocations" },
+        { id: "coverage", label: t("toc.coverage") },
+        { id: "health", label: t("toc.health") },
+        { id: "health-probes", label: t("toc.healthProbes") },
+        { id: "global-timeseries", label: t("toc.globalTimeseries") },
+        { id: "function-logs", label: t("toc.functionLogs") },
+        { id: "list-invocations", label: t("toc.recentInvocations") },
       ]}
     >
       <section id="coverage" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Coverage</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("coverageTitle")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          This section documents runtime health and observability endpoints used by dashboards and SRE workflows.
+          {t("coverageDescription")}
         </p>
       </section>
 

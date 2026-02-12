@@ -1,65 +1,68 @@
+import { getTranslations } from "next-intl/server"
 import { DocsShell } from "@/components/docs/docs-shell"
 import { CodeBlock } from "@/components/docs/code-block"
 
-export default function DocsInstallationPage() {
+export default async function DocsInstallationPage() {
+  const t = await getTranslations("docsInstallationPage")
+
   return (
     <DocsShell
       current="installation"
-      title="Installation"
-      description="Linux x86_64 zero-to-service installation guide based on scripts/setup.sh. Includes full build flow, deployment modes, and component responsibilities."
+      title={t("title")}
+      description={t("description")}
       toc={[
-        { id: "before-you-begin", label: "Before You Begin" },
-        { id: "deployment-modes", label: "Deployment Modes" },
-        { id: "dev-mode-docker", label: "Mode A: Docker Dev" },
-        { id: "linux-zero-to-service", label: "Mode B: Linux Zero-to-Service" },
-        { id: "what-setup-does", label: "What setup.sh Does" },
-        { id: "component-roles", label: "Component Roles" },
-        { id: "verify-installation", label: "Verify Installation" },
-        { id: "orbit-and-atlas", label: "Orbit and Atlas" },
-        { id: "operations-checklist", label: "Operations Checklist" },
+        { id: "before-you-begin", label: t("toc.beforeYouBegin") },
+        { id: "deployment-modes", label: t("toc.deploymentModes") },
+        { id: "dev-mode-docker", label: t("toc.devModeDocker") },
+        { id: "linux-zero-to-service", label: t("toc.linuxZeroToService") },
+        { id: "what-setup-does", label: t("toc.whatSetupDoes") },
+        { id: "component-roles", label: t("toc.componentRoles") },
+        { id: "verify-installation", label: t("toc.verifyInstallation") },
+        { id: "orbit-and-atlas", label: t("toc.orbitAndAtlas") },
+        { id: "operations-checklist", label: t("toc.operationsChecklist") },
       ]}
     >
       <section id="before-you-begin" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Before You Begin</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.beforeYouBegin.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          The one-click script targets Linux x86_64 servers and expects prebuilt Nova binaries.
+          {t("sections.beforeYouBegin.description")}
         </p>
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
-          <li>OS/Arch: Linux + x86_64</li>
-          <li>Privileges: root (run with <code>sudo</code>)</li>
-          <li>Hardware: <code>/dev/kvm</code> recommended for Firecracker VM execution</li>
-          <li>Build toolchain: Go <code>1.24+</code>, make, git, curl, unzip, e2fsprogs</li>
-          <li>Ports: <code>9000</code> (Zenith gateway/API entrypoint), <code>3000</code> (Lumen UI), <code>5432</code> (PostgreSQL)</li>
+          <li>{t("sections.beforeYouBegin.items.item1")}</li>
+          <li>{t("sections.beforeYouBegin.items.item2Prefix")} <code>sudo</code>{t("sections.beforeYouBegin.items.item2Suffix")}</li>
+          <li>{t("sections.beforeYouBegin.items.item3Prefix")} <code>/dev/kvm</code> {t("sections.beforeYouBegin.items.item3Suffix")}</li>
+          <li>{t("sections.beforeYouBegin.items.item4Prefix")} <code>1.24+</code>, make, git, curl, unzip, e2fsprogs</li>
+          <li>{t("sections.beforeYouBegin.items.item5Prefix")} <code>9000</code> {t("sections.beforeYouBegin.items.item5Middle")} <code>3000</code> {t("sections.beforeYouBegin.items.item5Middle2")} <code>5432</code> {t("sections.beforeYouBegin.items.item5Suffix")}</li>
         </ul>
         <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-400">
-          <p className="font-medium">Data safety note</p>
+          <p className="font-medium">{t("sections.beforeYouBegin.dataSafetyTitle")}</p>
           <p className="mt-1">
-            <code>scripts/setup.sh</code> performs a fresh deployment and recreates the <code>nova</code> database.
-            Existing data will be removed.
+            <code>scripts/setup.sh</code> {t("sections.beforeYouBegin.dataSafetyBodyPrefix")} <code>nova</code> {t("sections.beforeYouBegin.dataSafetyBodySuffix")}
           </p>
         </div>
       </section>
 
       <section id="deployment-modes" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Deployment Modes</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.deploymentModes.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          Nova supports two practical installation modes:
+          {t("sections.deploymentModes.description")}
         </p>
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
           <li>
-            <strong>Mode A (Docker Dev):</strong> fastest local development path, containerized stack.
+            <strong>{t("sections.deploymentModes.items.modeA.label")}:</strong>{" "}
+            {t("sections.deploymentModes.items.modeA.value")}
           </li>
           <li>
-            <strong>Mode B (Linux Zero-to-Service):</strong> build binaries + run <code>scripts/setup.sh</code> for
-            host-level deployment with systemd.
+            <strong>{t("sections.deploymentModes.items.modeB.label")}:</strong>{" "}
+            {t("sections.deploymentModes.items.modeB.valuePrefix")} <code>scripts/setup.sh</code> {t("sections.deploymentModes.items.modeB.valueSuffix")}
           </li>
         </ul>
       </section>
 
       <section id="dev-mode-docker" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Mode A: Docker Dev</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.devModeDocker.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          Use this when you need a quick local environment for feature work and docs browsing.
+          {t("sections.devModeDocker.description")}
         </p>
         <CodeBlock
           code={`git clone https://github.com/oriys/nova.git
@@ -75,10 +78,9 @@ http://localhost:3000/docs`}
       </section>
 
       <section id="linux-zero-to-service" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Mode B: Linux Zero-to-Service</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.linuxZeroToService.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          This is the full from-scratch flow on Linux host. It builds binaries and lets <code>setup.sh</code>
-          install PostgreSQL, Firecracker, rootfs images, Nova, and Lumen as systemd services.
+          {t("sections.linuxZeroToService.descriptionPrefix")} <code>setup.sh</code> {t("sections.linuxZeroToService.descriptionSuffix")}
         </p>
 
         <CodeBlock
@@ -109,7 +111,7 @@ curl -I http://127.0.0.1:3000`}
         />
 
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          Remote deployment variant (build locally, run setup remotely):
+          {t("sections.linuxZeroToService.remoteVariant")}
         </p>
         <CodeBlock
           code={`# Local machine
@@ -122,94 +124,94 @@ ssh user@server 'sudo bash /tmp/nova-deploy/scripts/setup.sh'`}
       </section>
 
       <section id="what-setup-does" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">What setup.sh Does</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.whatSetupDoes.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          Internally, <code>scripts/setup.sh</code> executes these stages in order:
+          {t("sections.whatSetupDoes.descriptionPrefix")} <code>scripts/setup.sh</code> {t("sections.whatSetupDoes.descriptionSuffix")}
         </p>
         <ol className="mt-4 list-decimal space-y-3 pl-6 text-lg leading-8">
-          <li>Checks root permissions, Linux/x86_64, and binary artifacts.</li>
-          <li>Installs host dependencies and Node.js 20.</li>
-          <li>Resets previous installation state under <code>/opt/nova</code> and <code>/tmp/nova</code>.</li>
-          <li>Installs and initializes PostgreSQL; recreates <code>nova</code> role/database.</li>
-          <li>Applies <code>scripts/init-db.sql</code> schema and default records.</li>
-          <li>Installs Firecracker + Jailer and downloads Firecracker-compatible kernel.</li>
-          <li>Deploys Nova binaries and generates <code>/opt/nova/configs/nova.json</code>.</li>
-          <li>Builds all runtime rootfs images (<code>.ext4</code>), each embedding <code>nova-agent</code> as <code>/init</code>.</li>
-          <li>Builds Lumen (Next.js standalone) and deploys to <code>/opt/nova/lumen</code>.</li>
-          <li>Creates and starts <code>nova.service</code> and <code>lumen.service</code>.</li>
-          <li>Seeds sample functions via Nova API for initial validation.</li>
+          <li>{t("sections.whatSetupDoes.items.item1")}</li>
+          <li>{t("sections.whatSetupDoes.items.item2")}</li>
+          <li>{t("sections.whatSetupDoes.items.item3Prefix")} <code>/opt/nova</code> {t("sections.whatSetupDoes.items.item3Middle")} <code>/tmp/nova</code>.</li>
+          <li>{t("sections.whatSetupDoes.items.item4Prefix")} <code>nova</code> {t("sections.whatSetupDoes.items.item4Suffix")}</li>
+          <li>{t("sections.whatSetupDoes.items.item5Prefix")} <code>scripts/init-db.sql</code> {t("sections.whatSetupDoes.items.item5Suffix")}</li>
+          <li>{t("sections.whatSetupDoes.items.item6")}</li>
+          <li>{t("sections.whatSetupDoes.items.item7Prefix")} <code>/opt/nova/configs/nova.json</code>.</li>
+          <li>{t("sections.whatSetupDoes.items.item8Prefix")} <code>.ext4</code>{t("sections.whatSetupDoes.items.item8Middle")} <code>nova-agent</code> {t("sections.whatSetupDoes.items.item8Suffix")} <code>/init</code>.</li>
+          <li>{t("sections.whatSetupDoes.items.item9Prefix")} <code>/opt/nova/lumen</code>.</li>
+          <li>{t("sections.whatSetupDoes.items.item10Prefix")} <code>nova.service</code> {t("sections.whatSetupDoes.items.item10Middle")} <code>lumen.service</code>.</li>
+          <li>{t("sections.whatSetupDoes.items.item11")}</li>
         </ol>
       </section>
 
       <section id="component-roles" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Component Roles</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.componentRoles.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          Components used in the full Linux deployment and what each one does:
+          {t("sections.componentRoles.description")}
         </p>
         <div className="mt-5 overflow-x-auto rounded-lg border border-border">
           <table className="w-full min-w-[980px] text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/30">
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Component</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Type</th>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">Role</th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("sections.componentRoles.table.component")}</th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("sections.componentRoles.table.type")}</th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("sections.componentRoles.table.role")}</th>
               </tr>
             </thead>
             <tbody>
               <tr className="border-b border-border">
                 <td className="px-3 py-2 font-mono text-xs">postgresql</td>
-                <td className="px-3 py-2 text-muted-foreground">Database</td>
-                <td className="px-3 py-2 text-muted-foreground">Persists control-plane state, metadata, logs, keys, and configuration.</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.postgresql.type")}</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.postgresql.role")}</td>
               </tr>
               <tr className="border-b border-border">
                 <td className="px-3 py-2 font-mono text-xs">scripts/init-db.sql</td>
-                <td className="px-3 py-2 text-muted-foreground">Schema bootstrap</td>
-                <td className="px-3 py-2 text-muted-foreground">Creates tables/indexes and default records required by Nova.</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.initDb.type")}</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.initDb.role")}</td>
               </tr>
               <tr className="border-b border-border">
                 <td className="px-3 py-2 font-mono text-xs">/opt/nova/bin/nova</td>
-                <td className="px-3 py-2 text-muted-foreground">Backend service</td>
-                <td className="px-3 py-2 text-muted-foreground">Runs Nova API/control plane on port 9000.</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.novaBinary.type")}</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.novaBinary.role")}</td>
               </tr>
               <tr className="border-b border-border">
                 <td className="px-3 py-2 font-mono text-xs">/opt/nova/bin/nova-agent</td>
-                <td className="px-3 py-2 text-muted-foreground">Guest runtime agent</td>
-                <td className="px-3 py-2 text-muted-foreground">Executed inside VM rootfs as /init to run function workloads.</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.novaAgent.type")}</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.novaAgent.role")}</td>
               </tr>
               <tr className="border-b border-border">
                 <td className="px-3 py-2 font-mono text-xs">firecracker + jailer</td>
-                <td className="px-3 py-2 text-muted-foreground">VM runtime</td>
-                <td className="px-3 py-2 text-muted-foreground">Provides lightweight microVM isolation for function execution.</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.firecracker.type")}</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.firecracker.role")}</td>
               </tr>
               <tr className="border-b border-border">
                 <td className="px-3 py-2 font-mono text-xs">/opt/nova/kernel/vmlinux</td>
-                <td className="px-3 py-2 text-muted-foreground">Kernel artifact</td>
-                <td className="px-3 py-2 text-muted-foreground">Linux kernel used by Firecracker guest VMs.</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.kernel.type")}</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.kernel.role")}</td>
               </tr>
               <tr className="border-b border-border">
                 <td className="px-3 py-2 font-mono text-xs">/opt/nova/rootfs/*.ext4</td>
-                <td className="px-3 py-2 text-muted-foreground">Runtime images</td>
-                <td className="px-3 py-2 text-muted-foreground">Language-specific root filesystems (python/node/go/java/...)</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.rootfs.type")}</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.rootfs.role")}</td>
               </tr>
               <tr className="border-b border-border">
                 <td className="px-3 py-2 font-mono text-xs">lumen.service</td>
-                <td className="px-3 py-2 text-muted-foreground">UI service</td>
-                <td className="px-3 py-2 text-muted-foreground">Runs Lumen dashboard (Next.js standalone) on port 3000.</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.lumenService.type")}</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.lumenService.role")}</td>
               </tr>
               <tr className="border-b border-border">
                 <td className="px-3 py-2 font-mono text-xs">nova.service</td>
-                <td className="px-3 py-2 text-muted-foreground">systemd unit</td>
-                <td className="px-3 py-2 text-muted-foreground">Supervises Nova daemon process and restart policy.</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.novaService.type")}</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.novaService.role")}</td>
               </tr>
               <tr className="border-b border-border">
                 <td className="px-3 py-2 font-mono text-xs">/opt/nova</td>
-                <td className="px-3 py-2 text-muted-foreground">Install root</td>
-                <td className="px-3 py-2 text-muted-foreground">Holds binaries, configs, kernel, rootfs, snapshots, and UI bundle.</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.installRoot.type")}</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.installRoot.role")}</td>
               </tr>
               <tr>
                 <td className="px-3 py-2 font-mono text-xs">/tmp/nova</td>
-                <td className="px-3 py-2 text-muted-foreground">Runtime temp dir</td>
-                <td className="px-3 py-2 text-muted-foreground">Stores sockets, vsock files, and execution logs during runtime.</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.runtimeTempDir.type")}</td>
+                <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.runtimeTempDir.role")}</td>
               </tr>
             </tbody>
           </table>
@@ -217,11 +219,11 @@ ssh user@server 'sudo bash /tmp/nova-deploy/scripts/setup.sh'`}
       </section>
 
       <section id="verify-installation" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Verify Installation</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.verifyInstallation.title")}</h2>
         <ol className="mt-4 list-decimal space-y-3 pl-6 text-lg leading-8">
-          <li>Check systemd status for <code>postgresql</code>, <code>nova</code>, and <code>lumen</code>.</li>
-          <li>Check backend health endpoints (Zenith entrypoint).</li>
-          <li>Call API once to confirm function lifecycle works.</li>
+          <li>{t("sections.verifyInstallation.items.item1Prefix")} <code>postgresql</code>, <code>nova</code>, {t("sections.verifyInstallation.items.item1Middle")} <code>lumen</code>.</li>
+          <li>{t("sections.verifyInstallation.items.item2")}</li>
+          <li>{t("sections.verifyInstallation.items.item3")}</li>
         </ol>
         <CodeBlock
           code={`# Services
@@ -242,9 +244,9 @@ curl -s -X POST http://127.0.0.1:9000/functions \
       </section>
 
       <section id="orbit-and-atlas" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Orbit and Atlas</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.orbitAndAtlas.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
-          <code>setup.sh</code> deploys backend and UI. Orbit CLI and Atlas MCP are built separately when needed.
+          <code>setup.sh</code> {t("sections.orbitAndAtlas.description")}
         </p>
         <CodeBlock
           code={`# Orbit CLI
@@ -262,19 +264,19 @@ make atlas-linux
       </section>
 
       <section id="operations-checklist" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Operations Checklist</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.operationsChecklist.title")}</h2>
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
-          <li>Enable auth and tenant governance before exposing APIs outside trusted networks.</li>
-          <li>Back up PostgreSQL and verify restore procedures regularly.</li>
-          <li>Pin Firecracker/kernel versions in controlled environments instead of floating latest.</li>
-          <li>Monitor <code>journalctl -u nova</code> and <code>journalctl -u lumen</code> for runtime issues.</li>
-          <li>Set up metrics/tracing exporters and retention policy for invocation logs.</li>
-          <li>Treat rerunning <code>setup.sh</code> as a re-provision operation, not an in-place upgrade.</li>
+          <li>{t("sections.operationsChecklist.items.item1")}</li>
+          <li>{t("sections.operationsChecklist.items.item2")}</li>
+          <li>{t("sections.operationsChecklist.items.item3")}</li>
+          <li>{t("sections.operationsChecklist.items.item4Prefix")} <code>journalctl -u nova</code> {t("sections.operationsChecklist.items.item4Middle")} <code>journalctl -u lumen</code> {t("sections.operationsChecklist.items.item4Suffix")}</li>
+          <li>{t("sections.operationsChecklist.items.item5")}</li>
+          <li>{t("sections.operationsChecklist.items.item6Prefix")} <code>setup.sh</code> {t("sections.operationsChecklist.items.item6Suffix")}</li>
         </ul>
       </section>
 
       <section id="production-checklist" className="scroll-mt-24">
-        <h2 className="text-3xl font-semibold tracking-tight">Daily Commands</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">{t("sections.dailyCommands.title")}</h2>
         <CodeBlock
           code={`# Follow logs
 journalctl -u nova -f

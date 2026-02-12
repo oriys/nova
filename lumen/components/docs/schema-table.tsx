@@ -1,3 +1,5 @@
+import { useTranslations } from "next-intl"
+
 export interface SchemaField {
   name: string
   type: string
@@ -11,6 +13,8 @@ interface SchemaTableProps {
 }
 
 export function SchemaTable({ title, fields }: SchemaTableProps) {
+  const t = useTranslations("docsComponents.schemaTable")
+
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium text-foreground">{title}</p>
@@ -18,10 +22,10 @@ export function SchemaTable({ title, fields }: SchemaTableProps) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/30">
-              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Field</th>
-              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Type</th>
-              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Required</th>
-              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Description</th>
+              <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("field")}</th>
+              <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("type")}</th>
+              <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("required")}</th>
+              <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("description")}</th>
             </tr>
           </thead>
           <tbody>
@@ -29,7 +33,7 @@ export function SchemaTable({ title, fields }: SchemaTableProps) {
               <tr key={field.name} className="border-b border-border last:border-0">
                 <td className="px-3 py-2 font-mono text-xs text-foreground">{field.name}</td>
                 <td className="px-3 py-2 text-muted-foreground">{field.type}</td>
-                <td className="px-3 py-2 text-muted-foreground">{field.required ? "yes" : "no"}</td>
+                <td className="px-3 py-2 text-muted-foreground">{field.required ? t("yes") : t("no")}</td>
                 <td className="px-3 py-2 text-muted-foreground">{field.description}</td>
               </tr>
             ))}
