@@ -57,7 +57,7 @@ const GOVERNANCE_DIMENSIONS: GovernanceDimension[] = [
 
 function toDraftQuota(quota?: TenantQuotaEntry, windowed = false): DraftQuota {
   if (!quota) {
-    return { hard_limit: "0", soft_limit: "0", burst: "0", window_s: windowed ? "60" : "60" }
+    return { hard_limit: "0", soft_limit: "0", burst: "0", window_s: "60" }
   }
   return {
     hard_limit: String(quota.hard_limit ?? 0),
@@ -292,7 +292,7 @@ export default function TenantQuotasPage() {
                   <div key={dim.key} className="rounded-lg border border-border bg-card p-3">
                     <div className="text-xs text-muted-foreground">{t(`dimensions.${dim.labelKey}`)}</div>
                     <div className="mt-1 text-lg font-semibold text-foreground">{used.toLocaleString()}</div>
-                    <div className="text-[11px] text-muted-foreground mt-1">
+                    <div className="mt-1 text-[11px] text-muted-foreground">
                       {limit > 0
                         ? `${t("limit")} ${limit.toLocaleString()} ${dim.unit}`
                         : t("unlimited")}
