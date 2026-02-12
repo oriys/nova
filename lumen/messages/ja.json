@@ -194,7 +194,6 @@
     "validationMemoryRange": "メモリは128〜10240 MBの範囲内である必要があります（AWS Lambda範囲）。",
     "validationTimeoutRange": "タイムアウトは1〜900秒の範囲内である必要があります（AWS Lambda範囲）。",
     "validationJavaHandler": "Java/Kotlin/Scalaのハンドラー形式は '<package>.<Class>::<method>' である必要があります。",
-    "validationDotnetHandler": ".NETのハンドラー形式は '<Assembly>::<Namespace.Class>::<Method>' である必要があります。",
     "validationCompiledHandler": "コンパイル型ランタイムのハンドラー形式は実行可能エントリ名（英数字/_-/）である必要があります。",
     "validationDefaultHandler": "ハンドラー形式はAWSスタイル '<module>.<function>'（例：'main.handler'）である必要があります。"
   },

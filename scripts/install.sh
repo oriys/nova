@@ -16,7 +16,6 @@ ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-m
 WASMTIME_VERSION="v41.0.1"
 DENO_VERSION="v2.6.7"
 BUN_VERSION="bun-v1.3.8"
-DOTNET_VERSION="8.0.23"
 ROOTFS_SIZE_MB=256
 ROOTFS_SIZE_JAVA_MB=512
 
@@ -149,7 +148,6 @@ download_kernel() {
 #   ruby.ext4   - Alpine + ruby
 #   java.ext4   - Alpine + OpenJDK
 #   php.ext4    - Alpine + php
-#   dotnet.ext4 - Alpine + .NET runtime (musl)
 #   deno.ext4   - Alpine + deno (+ glibc compat)
 #   bun.ext4    - Alpine + bun (musl)
 #
@@ -339,39 +337,6 @@ build_php_rootfs() {
     log "php.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
-build_dotnet_rootfs() {
-    local output="${INSTALL_DIR}/rootfs/dotnet.ext4"
-    local mnt=$(mktemp -d)
-
-    log "Building dotnet rootfs (Alpine + .NET runtime)..."
-    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
-    mkfs.ext4 -F -q "${output}"
-    mount -o loop "${output}" "${mnt}"
-
-    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
-    mkdir -p "${mnt}"/{code,tmp,usr/share/dotnet}
-    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
-
-    # Match dotnet runtime-deps for Alpine (https://github.com/dotnet/dotnet-docker)
-    chroot "${mnt}" /bin/sh -c "apk add --no-cache ca-certificates-bundle libgcc libssl3 libstdc++ zlib" >/dev/null 2>&1
-
-    # Download and install .NET Runtime (musl)
-    curl -fsSL \
-        "https://builds.dotnet.microsoft.com/dotnet/Runtime/${DOTNET_VERSION}/dotnet-runtime-${DOTNET_VERSION}-linux-musl-x64.tar.gz" \
-        -o /tmp/dotnet-runtime.tar.gz
-    tar -xzf /tmp/dotnet-runtime.tar.gz -C "${mnt}/usr/share/dotnet"
-    ln -sf /usr/share/dotnet/dotnet "${mnt}/usr/bin/dotnet"
-    rm -f /tmp/dotnet-runtime.tar.gz
-
-    # init = nova-agent
-    [[ -f ${INSTALL_DIR}/bin/nova-agent ]] && \
-        cp ${INSTALL_DIR}/bin/nova-agent "${mnt}/init" && \
-        chmod +x "${mnt}/init"
-
-    umount "${mnt}" && rmdir "${mnt}"
-    log "dotnet.ext4 ready ($(du -h ${output} | cut -f1))"
-}
-
 build_deno_rootfs() {
     local output="${INSTALL_DIR}/rootfs/deno.ext4"
     local rootfs_dir=$(mktemp -d)
@@ -525,7 +490,6 @@ main() {
     build_ruby_rootfs
     build_java_rootfs
     build_php_rootfs
-    build_dotnet_rootfs
     build_deno_rootfs
     build_bun_rootfs
 
@@ -551,7 +515,6 @@ main() {
     echo "  ${INSTALL_DIR}/rootfs/ruby.ext4     (Ruby)"
     echo "  ${INSTALL_DIR}/rootfs/java.ext4     (Java)"
     echo "  ${INSTALL_DIR}/rootfs/php.ext4      (PHP)"
-    echo "  ${INSTALL_DIR}/rootfs/dotnet.ext4   (.NET)"
     echo "  ${INSTALL_DIR}/rootfs/deno.ext4     (Deno)"
     echo "  ${INSTALL_DIR}/rootfs/bun.ext4      (Bun)"
     echo "  ${INSTALL_DIR}/snapshots/     (VM snapshots)"

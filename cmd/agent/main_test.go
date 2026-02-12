@@ -9,7 +9,6 @@ func TestNormalizeRuntime(t *testing.T) {
 	}{
 		{"rust1.84", "rust"},
 		{"go1.23", "go"},
-		{"dotnet8", "dotnet"},
 		{"python3.12", "python"},
 		{"node24", "node"},
 		{"wasm", "wasm"},

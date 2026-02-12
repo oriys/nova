@@ -1,7 +1,7 @@
 #!/bin/bash
 # test_all_runtimes.sh - Build and test hello functions for all supported runtimes.
 #
-# Supported (VM): python, go, rust, wasm, node, ruby, java, php, dotnet, deno, bun
+# Supported (VM): python, go, rust, wasm, node, ruby, java, php, deno, bun
 #
 # Prerequisites:
 #   - nova daemon running (VM mode)
@@ -10,7 +10,6 @@
 #       - Rust + musl target (for rust):  rustup target add x86_64-unknown-linux-musl
 #       - Rust + WASI target (for wasm):  rustup target add wasm32-wasip1 (or wasm32-wasi)
 #       - JDK (for java): javac + jar
-#       - .NET SDK (for dotnet): dotnet
 
 set -euo pipefail
 
@@ -68,13 +67,6 @@ else
   echo "--- Skipping hello-java (artifact missing) ---"
 fi
 
-if [[ -f "${BUILD_DIR}/dotnet/handler" ]]; then
-  register_or_update "hello-dotnet" "dotnet" "${BUILD_DIR}/dotnet/handler"
-else
-  echo ""
-  echo "--- Skipping hello-dotnet (artifact missing) ---"
-fi
-
 echo ""
 echo "=========================================="
 echo "  Testing (cold start)"
@@ -97,16 +89,13 @@ fi
 if nova get hello-java &>/dev/null; then
   nova invoke hello-java --payload '{"name": "Java"}'
 fi
-if nova get hello-dotnet &>/dev/null; then
-  nova invoke hello-dotnet --payload '{"name": ".NET"}'
-fi
 
 echo ""
 echo "=========================================="
 echo "  Warm reuse (3 rapid requests each)"
 echo "=========================================="
 
-for fn in hello-python hello-go hello-node hello-ruby hello-php hello-dotnet hello-deno hello-bun hello-rust hello-wasm hello-java; do
+for fn in hello-python hello-go hello-node hello-ruby hello-php hello-deno hello-bun hello-rust hello-wasm hello-java; do
   if ! nova get "${fn}" &>/dev/null; then
     continue
   fi

@@ -194,7 +194,6 @@
     "validationMemoryRange": "記憶體必須在 128 到 10240 MB 之間（AWS Lambda 範圍）。",
     "validationTimeoutRange": "逾時必須在 1 到 900 秒之間（AWS Lambda 範圍）。",
     "validationJavaHandler": "Java/Kotlin/Scala 的處理程式格式必須為 '<package>.<Class>::<method>'。",
-    "validationDotnetHandler": ".NET 的處理程式格式必須為 '<Assembly>::<Namespace.Class>::<Method>'。",
     "validationCompiledHandler": "編譯型執行環境的處理程式格式必須是可執行入口名稱（字母/數字/_-/）。",
     "validationDefaultHandler": "處理程式格式必須為 AWS 風格 '<module>.<function>'（範例：'main.handler'）。"
   },

@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	goruntime "runtime"
 	"strings"
 	"sync"
 
@@ -474,28 +473,6 @@ rustflags = ["-C", "target-feature=+crt-static"]
 		if err := os.WriteFile(filepath.Join(workDir, "main.zig"), []byte(zigWrapperMain), 0644); err != nil {
 			return err
 		}
-	case domain.RuntimeDotnet:
-		rid := dotnetRuntimeIdentifier()
-		// Save user code as Handler.cs
-		if err := os.WriteFile(filepath.Join(workDir, "Handler.cs"), []byte(sourceCode), 0644); err != nil {
-			return err
-		}
-		// Generate wrapper Program.cs
-		if err := os.WriteFile(filepath.Join(workDir, "Program.cs"), []byte(dotnetWrapperMain), 0644); err != nil {
-			return err
-		}
-		csproj := `<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
-    <RuntimeIdentifier>` + rid + `</RuntimeIdentifier>
-    <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
-  </PropertyGroup>
-</Project>`
-		if err := os.WriteFile(filepath.Join(workDir, "handler.csproj"), []byte(csproj), 0644); err != nil {
-			return err
-		}
 	case domain.RuntimeScala:
 		if err := os.WriteFile(filepath.Join(workDir, "Handler.scala"), []byte(sourceCode), 0644); err != nil {
 			return err
@@ -526,9 +503,6 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 		return "swift:5.10", "cd /work && swiftc -o handler -static-executable Handler.swift main.swift"
 	case domain.RuntimeZig:
 		return "euantorano/zig:0.13.0", "cd /work && zig build-exe main.zig -name handler -target x86_64-linux-musl"
-	case domain.RuntimeDotnet:
-		rid := dotnetRuntimeIdentifier()
-		return "mcr.microsoft.com/dotnet/sdk:8.0", fmt.Sprintf("cd /work && dotnet publish -c Release -r %s -o out && cp out/handler /work/handler", rid)
 	case domain.RuntimeScala:
 		return "sbtscala/scala-sbt:eclipse-temurin-21.0.2_13_1.10.1_3.5.1",
 			`cd /work && scalac Main.scala Handler.scala && ` +
@@ -555,7 +529,6 @@ func runtimeExtension(runtime domain.Runtime) string {
 		domain.RuntimeBun:    ".ts",
 		domain.RuntimeWasm:   ".wasm",
 		domain.RuntimePHP:    ".php",
-		domain.RuntimeDotnet: ".cs",
 		domain.RuntimeElixir: ".exs",
 		domain.RuntimeKotlin: ".kt",
 		domain.RuntimeSwift:  ".swift",
@@ -576,15 +549,6 @@ func hashBytes(data []byte) string {
 	h := sha256.New()
 	h.Write(data)
 	return hex.EncodeToString(h.Sum(nil))[:16]
-}
-
-func dotnetRuntimeIdentifier() string {
-	switch goruntime.GOARCH {
-	case "arm64":
-		return "linux-musl-arm64"
-	default:
-		return "linux-musl-x64"
-	}
 }
 
 // ─── Wrapper templates for compiled runtimes ────────────────────────
@@ -787,26 +751,6 @@ pub fn main() !void {
     try stdout.writeAll(result);
     try stdout.writeAll("\n");
 }
-`
-
-// .NET: user writes public static class Handler { public static object Handle(string event, Dictionary<string, object> context) }
-const dotnetWrapperMain = `using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Text.Json;
-
-var input = File.ReadAllText(args[0]);
-var context = new Dictionary<string, object>
-{
-    ["request_id"] = Environment.GetEnvironmentVariable("NOVA_REQUEST_ID") ?? "",
-    ["function_name"] = Environment.GetEnvironmentVariable("NOVA_FUNCTION_NAME") ?? "",
-    ["function_version"] = Environment.GetEnvironmentVariable("NOVA_FUNCTION_VERSION") ?? "",
-    ["memory_limit_mb"] = Environment.GetEnvironmentVariable("NOVA_MEMORY_LIMIT_MB") ?? "0",
-    ["timeout_s"] = Environment.GetEnvironmentVariable("NOVA_TIMEOUT_S") ?? "0",
-    ["runtime"] = Environment.GetEnvironmentVariable("NOVA_RUNTIME") ?? "",
-};
-var result = Handler.Handle(input, context);
-Console.WriteLine(JsonSerializer.Serialize(result));
 `
 
 // Scala: user writes object Handler { def handler(event: String, context: Map[String, Any]): Any }

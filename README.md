@@ -1,6 +1,6 @@
 # Nova
 
-Nova 是一个极简的 Serverless 平台，基于 [Firecracker](https://github.com/firecracker-microvm/firecracker) microVM 实现函数级别的隔离执行。每次函数调用都运行在独立的轻量虚拟机中，支持 Python、Go、Rust、WASM、Node.js、Ruby、Java、PHP、.NET、Deno、Bun、Lua 等 20+ 运行时。
+Nova 是一个极简的 Serverless 平台，基于 [Firecracker](https://github.com/firecracker-microvm/firecracker) microVM 实现函数级别的隔离执行。每次函数调用都运行在独立的轻量虚拟机中，支持 Python、Go、Rust、WASM、Node.js、Ruby、Java、PHP、Deno、Bun、Lua 等 20+ 运行时。
 
 ## 后端拆分
 
@@ -71,7 +71,7 @@ Nova 是一个极简的 Serverless 平台，基于 [Firecracker](https://github.
 - 流量分割 / 金丝雀发布（`TrafficSplit`）
 
 ### 多运行时
-- 编译型：Go、Rust、Zig、Swift、Java、.NET、WASM
+- 编译型：Go、Rust、Zig、Swift、Java、WASM
 - 解释型：Python、Node.js、Ruby、PHP、Deno、Bun、Lua
 - 自定义运行时：`custom` / `provided`（用户自带 bootstrap）
 
@@ -303,7 +303,6 @@ Firecracker VM
 | Ruby | ruby.ext4 | `ruby /code/handler input.json` |
 | Java | java.ext4 | `java -jar /code/handler input.json` |
 | PHP | php.ext4 | `php /code/handler input.json` |
-| .NET | dotnet.ext4 | `/code/handler input.json` |
 | Deno | deno.ext4 | `deno run --allow-read /code/handler input.json` |
 | Bun | bun.ext4 | `bun run /code/handler input.json` |
 | WASM | wasm.ext4 | `wasmtime /code/handler -- input.json` |
@@ -407,7 +406,7 @@ sudo bash scripts/setup.sh
 │   ├── base.ext4          # Go/Rust/Zig
 │   ├── python.ext4        # Python
 │   ├── node.ext4          # Node.js
-│   └── ...                # ruby/java/php/dotnet/deno/bun/wasm
+│   └── ...                # ruby/java/php/deno/bun/wasm
 └── snapshots/
 ```
 

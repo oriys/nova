@@ -29,7 +29,6 @@ ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-m
 WASMTIME_VERSION="v41.0.1"
 DENO_VERSION="v2.6.7"
 BUN_VERSION="bun-v1.3.8"
-DOTNET_VERSION="8.0.23"
 ROOTFS_SIZE_MB=256
 ROOTFS_SIZE_JAVA_MB=512
 NODE_VERSION=20
@@ -666,39 +665,6 @@ build_php_rootfs() {
     log "php.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
-build_dotnet_rootfs() {
-    local output="${INSTALL_DIR}/rootfs/dotnet.ext4"
-    local mnt=$(mktemp -d)
-
-    log "Building dotnet rootfs (Alpine + .NET runtime)..."
-    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
-    mkfs.ext4 -F -q "${output}"
-    mount -o loop "${output}" "${mnt}"
-
-    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
-    mkdir -p "${mnt}"/{code,tmp,usr/share/dotnet}
-    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
-
-    chroot "${mnt}" /bin/sh -c "apk add --no-cache ca-certificates-bundle libgcc libssl3 libstdc++ zlib" >/dev/null 2>&1
-
-    local dotnet_tar
-    dotnet_tar="$(mktemp /tmp/dotnet-runtime.XXXXXX.tar.gz)"
-
-    curl -fsSL \
-        "https://builds.dotnet.microsoft.com/dotnet/Runtime/${DOTNET_VERSION}/dotnet-runtime-${DOTNET_VERSION}-linux-musl-x64.tar.gz" \
-        -o "${dotnet_tar}"
-    tar -xzf "${dotnet_tar}" -C "${mnt}/usr/share/dotnet"
-    ln -sf /usr/share/dotnet/dotnet "${mnt}/usr/bin/dotnet"
-    rm -f "${dotnet_tar}"
-
-    [[ -f "${INSTALL_DIR}/bin/nova-agent" ]] && \
-        cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
-        chmod +x "${mnt}/init"
-
-    umount "${mnt}" && rmdir "${mnt}"
-    log "dotnet.ext4 ready ($(du -h ${output} | cut -f1))"
-}
-
 build_deno_rootfs() {
     local output="${INSTALL_DIR}/rootfs/deno.ext4"
     local rootfs_dir=$(mktemp -d)
@@ -794,7 +760,6 @@ build_rootfs_images() {
         build_ruby_rootfs
         build_java_rootfs
         build_php_rootfs
-        build_dotnet_rootfs
         build_deno_rootfs
         build_bun_rootfs
     )

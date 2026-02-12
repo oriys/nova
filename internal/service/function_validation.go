@@ -14,7 +14,6 @@ var (
 	awsFunctionNamePattern   = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 	awsModuleHandlerPattern  = regexp.MustCompile(`^[A-Za-z0-9_./-]+\.[A-Za-z0-9_$][A-Za-z0-9_$.]*$`)
 	awsJavaHandlerPattern    = regexp.MustCompile(`^[A-Za-z0-9_$.]+::[A-Za-z0-9_$]+$`)
-	awsDotnetHandlerPattern  = regexp.MustCompile(`^[A-Za-z0-9_.-]+::[A-Za-z0-9_.$+]+::[A-Za-z0-9_$]+$`)
 	awsExecutableNamePattern = regexp.MustCompile(`^[A-Za-z0-9_/-]{1,128}$`)
 	awsGenericHandlerPattern = regexp.MustCompile(`^[^\s]{1,128}$`)
 )
@@ -87,8 +86,6 @@ func defaultHandlerForRuntime(runtime string) string {
 	switch runtimeFamily(runtime) {
 	case "java", "kotlin", "scala":
 		return "example.Handler::handleRequest"
-	case "dotnet":
-		return "Assembly::Namespace.Function::FunctionHandler"
 	case "go", "rust", "swift", "zig", "wasm", "provided", "custom":
 		return "handler"
 	default:
@@ -109,10 +106,6 @@ func validateAWSHandlerFormat(runtime, handler string) error {
 	case "java", "kotlin", "scala":
 		if !awsJavaHandlerPattern.MatchString(handler) {
 			return validationErrorf("invalid handler for %s: expected AWS Java style '<package>.<Class>::<method>'", runtime)
-		}
-	case "dotnet":
-		if !awsDotnetHandlerPattern.MatchString(handler) {
-			return validationErrorf("invalid handler for %s: expected AWS .NET style '<Assembly>::<Namespace.Class>::<Method>'", runtime)
 		}
 	case "go", "rust", "swift", "zig", "wasm", "provided", "custom":
 		if !awsExecutableNamePattern.MatchString(handler) {
@@ -144,8 +137,6 @@ func runtimeFamily(runtime string) string {
 		return "ruby"
 	case strings.HasPrefix(rt, "php"):
 		return "php"
-	case strings.HasPrefix(rt, "dotnet"):
-		return "dotnet"
 	case strings.HasPrefix(rt, "deno"):
 		return "deno"
 	case strings.HasPrefix(rt, "bun"):

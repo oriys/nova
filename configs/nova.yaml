@@ -32,6 +32,5 @@ secrets:
 #   ruby.ext4   -> Ruby      (needs ruby)
 #   java.ext4   -> Java      (needs JVM)
 #   php.ext4    -> PHP       (needs php)
-#   dotnet.ext4 -> .NET      (needs dotnet)
 #   deno.ext4   -> Deno      (needs deno)
 #   bun.ext4    -> Bun       (needs bun)

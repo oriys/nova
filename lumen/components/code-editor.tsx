@@ -20,7 +20,6 @@ const LANGUAGE_MAP: Record<string, string> = {
   java: "java",
   ruby: "ruby",
   php: "php",
-  dotnet: "csharp",
   deno: "typescript",
   bun: "typescript",
   javascript: "javascript",
