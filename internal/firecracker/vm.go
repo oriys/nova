@@ -1783,8 +1783,6 @@ func rootfsForRuntime(rt domain.Runtime) string {
 		return "php.ext4"
 	case r == string(domain.RuntimeLua) || strings.HasPrefix(r, "lua"):
 		return "lua.ext4"
-	case r == string(domain.RuntimeDotnet) || strings.HasPrefix(r, "dotnet"):
-		return "dotnet.ext4"
 	case r == string(domain.RuntimeDeno) || strings.HasPrefix(r, "deno"):
 		return "deno.ext4"
 	case r == string(domain.RuntimeBun) || strings.HasPrefix(r, "bun"):

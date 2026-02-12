@@ -449,8 +449,6 @@ func imageForRuntime(rt domain.Runtime, prefix string) string {
 		return prefix + "-php"
 	case r == string(domain.RuntimeLua) || strings.HasPrefix(r, "lua"):
 		return prefix + "-lua"
-	case r == string(domain.RuntimeDotnet) || strings.HasPrefix(r, "dotnet"):
-		return prefix + "-dotnet"
 	case r == string(domain.RuntimeDeno) || strings.HasPrefix(r, "deno"):
 		return prefix + "-deno"
 	case r == string(domain.RuntimeBun) || strings.HasPrefix(r, "bun"):

@@ -73,8 +73,6 @@ func imageForRuntime(rt domain.Runtime) string {
 		return "java.ext4"
 	case r == string(domain.RuntimePHP) || strings.HasPrefix(r, "php"):
 		return "php.ext4"
-	case r == string(domain.RuntimeDotnet) || strings.HasPrefix(r, "dotnet"):
-		return "dotnet.ext4"
 	case r == string(domain.RuntimeDeno) || strings.HasPrefix(r, "deno"):
 		return "deno.ext4"
 	case r == string(domain.RuntimeBun) || strings.HasPrefix(r, "bun"):

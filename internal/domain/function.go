@@ -18,7 +18,6 @@ const (
 	RuntimeDeno     Runtime = "deno"
 	RuntimeBun      Runtime = "bun"
 	RuntimePHP      Runtime = "php"
-	RuntimeDotnet   Runtime = "dotnet"
 	RuntimeElixir   Runtime = "elixir"
 	RuntimeKotlin   Runtime = "kotlin"
 	RuntimeSwift    Runtime = "swift"
@@ -47,7 +46,7 @@ func (r Runtime) IsValid() bool {
 	validRuntimes := map[Runtime]bool{
 		RuntimePython: true, RuntimeGo: true, RuntimeRust: true, RuntimeWasm: true,
 		RuntimeNode: true, RuntimeRuby: true, RuntimeJava: true, RuntimeDeno: true, RuntimeBun: true,
-		RuntimePHP: true, RuntimeDotnet: true, RuntimeElixir: true, RuntimeKotlin: true, RuntimeSwift: true,
+		RuntimePHP: true, RuntimeElixir: true, RuntimeKotlin: true, RuntimeSwift: true,
 		RuntimeZig: true, RuntimeLua: true, RuntimePerl: true, RuntimeR: true, RuntimeJulia: true, RuntimeScala: true,
 		RuntimeCustom: true, RuntimeProvided: true,
 	}
@@ -57,7 +56,7 @@ func (r Runtime) IsValid() bool {
 	// Versioned runtime IDs (e.g., python3.11, node20, go1.21)
 	versionedPrefixes := []string{
 		"python3.", "go1.", "node", "rust1.", "ruby3.", "ruby2.",
-		"java", "php8.", "dotnet", "scala",
+		"java", "php8.", "scala",
 	}
 	for _, prefix := range versionedPrefixes {
 		if len(r) > len(prefix) && string(r)[:len(prefix)] == prefix {
@@ -322,7 +321,6 @@ func NeedsCompilation(runtime Runtime) bool {
 		RuntimeKotlin: true,
 		RuntimeSwift:  true,
 		RuntimeZig:    true,
-		RuntimeDotnet: true,
 		RuntimeScala:  true,
 	}
 	if compiledRuntimes[runtime] {
@@ -331,7 +329,7 @@ func NeedsCompilation(runtime Runtime) bool {
 
 	rt := string(runtime)
 	versionedPrefixes := []string{
-		"go1.", "rust1.", "java", "dotnet", "scala",
+		"go1.", "rust1.", "java", "scala",
 	}
 	for _, prefix := range versionedPrefixes {
 		if len(rt) > len(prefix) && rt[:len(prefix)] == prefix {
