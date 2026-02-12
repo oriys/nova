@@ -2167,3 +2167,123 @@ export const rbacApi = {
       method: "DELETE",
     }),
 };
+
+// ─── API Docs Types ─────────────────────────────────────────────────────────
+
+export interface DocField {
+  name: string;
+  type: string;
+  required: boolean;
+  description: string;
+  default?: string;
+  example?: string;
+  validation?: string;
+  enum_values?: string;
+}
+
+export interface DocStatusCode {
+  code: number;
+  meaning: string;
+}
+
+export interface DocErrorModel {
+  format: string;
+  retryable: string;
+  description: string;
+}
+
+export interface GenerateDocsRequest {
+  function_name: string;
+  runtime: string;
+  code: string;
+  handler: string;
+  method?: string;
+  path?: string;
+}
+
+export interface GenerateDocsResponse {
+  name: string;
+  operation_id: string;
+  service: string;
+  version: string;
+  protocol: string;
+  stability: string;
+  summary: string;
+  method: string;
+  path: string;
+  content_type: string;
+  auth: string;
+  request_fields: DocField[];
+  response_fields: DocField[];
+  success_codes: DocStatusCode[];
+  error_codes: DocStatusCode[];
+  error_model: DocErrorModel;
+  curl_example: string;
+  request_example: string;
+  response_example: string;
+  error_example: string;
+  auth_method: string;
+  roles_required: string[];
+  idempotent: boolean;
+  idempotent_key: string;
+  rate_limit: string;
+  timeout: string;
+  pagination: string;
+  supports_tracing: boolean;
+  changelog: string[];
+  notes: string[];
+}
+
+export interface APIDocShare {
+  id: string;
+  tenant_id: string;
+  namespace: string;
+  function_name: string;
+  title: string;
+  token: string;
+  doc_content: GenerateDocsResponse;
+  created_by: string;
+  expires_at?: string;
+  access_count: number;
+  last_access_at?: string;
+  created_at: string;
+}
+
+export interface CreateShareRequest {
+  function_name: string;
+  title: string;
+  doc_content: GenerateDocsResponse;
+  expires_in?: string;
+}
+
+export interface CreateShareResponse {
+  id: string;
+  token: string;
+  share_url: string;
+  expires_at?: string;
+  created_at: string;
+}
+
+export const apiDocsApi = {
+  generateDocs: (data: GenerateDocsRequest) =>
+    request<GenerateDocsResponse>("/ai/generate-docs", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  createShare: (data: CreateShareRequest) =>
+    request<CreateShareResponse>("/api-docs/shares", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  listShares: () => request<APIDocShare[]>("/api-docs/shares"),
+
+  deleteShare: (id: string) =>
+    request<{ status: string; id: string }>(`/api-docs/shares/${id}`, {
+      method: "DELETE",
+    }),
+
+  getSharedDoc: (token: string) =>
+    request<APIDocShare>(`/api-docs/shared/${token}`),
+};

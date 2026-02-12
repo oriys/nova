@@ -14,7 +14,8 @@
     "runtimes": "執行環境",
     "configurations": "設定",
     "secrets": "密鑰",
-    "apiKeys": "API 密鑰"
+    "apiKeys": "API 密鑰",
+    "apiDocs": "API 文件"
   },
   "pages": {
     "dashboard": {
@@ -71,6 +72,33 @@
     "gateway": {
       "title": "閘道",
       "description": "管理映射到 Nova 函數的 HTTP 路由"
+    },
+    "apiDocs": {
+      "title": "API 文件",
+      "description": "產生和分享 AI 驅動的 API 文件",
+      "generateTitle": "產生文件",
+      "generateDescription": "選擇一個函式，使用 AI 產生完整的 API 文件",
+      "selectFunction": "函式",
+      "selectFunctionPlaceholder": "選擇函式...",
+      "generate": "產生文件",
+      "generating": "產生中...",
+      "share": "分享",
+      "createShareLink": "建立分享連結",
+      "shareTitle": "連結標題",
+      "shareTitlePlaceholder": "例如：外部夥伴 API 文件",
+      "expiry": "到期時間",
+      "noExpiration": "永不到期",
+      "creating": "建立中...",
+      "createLink": "建立連結",
+      "sharedLinks": "分享連結",
+      "refresh": "重新整理",
+      "colTitle": "標題",
+      "colFunction": "函式",
+      "colExpires": "到期時間",
+      "colAccess": "存取次數",
+      "colActions": "操作",
+      "noShares": "尚無分享連結。產生文件後即可分享。",
+      "neverExpires": "永不"
     }
   },
   "common": {

@@ -14,7 +14,8 @@
     "runtimes": "运行时",
     "configurations": "配置",
     "secrets": "密钥",
-    "apiKeys": "API 密钥"
+    "apiKeys": "API 密钥",
+    "apiDocs": "API 文档"
   },
   "pages": {
     "dashboard": {
@@ -71,6 +72,33 @@
     "gateway": {
       "title": "网关",
       "description": "管理映射到 Nova 函数的 HTTP 路由"
+    },
+    "apiDocs": {
+      "title": "API 文档",
+      "description": "生成和分享 AI 驱动的 API 文档",
+      "generateTitle": "生成文档",
+      "generateDescription": "选择一个函数，使用 AI 生成全面的 API 文档",
+      "selectFunction": "函数",
+      "selectFunctionPlaceholder": "选择函数...",
+      "generate": "生成文档",
+      "generating": "生成中...",
+      "share": "分享",
+      "createShareLink": "创建分享链接",
+      "shareTitle": "链接标题",
+      "shareTitlePlaceholder": "例如：外部合作伙伴 API 文档",
+      "expiry": "过期时间",
+      "noExpiration": "永不过期",
+      "creating": "创建中...",
+      "createLink": "创建链接",
+      "sharedLinks": "分享链接",
+      "refresh": "刷新",
+      "colTitle": "标题",
+      "colFunction": "函数",
+      "colExpires": "过期时间",
+      "colAccess": "访问次数",
+      "colActions": "操作",
+      "noShares": "暂无分享链接。生成文档后即可分享。",
+      "neverExpires": "永不"
     }
   },
   "common": {
@@ -460,9 +488,9 @@
     "descPlaceholder": "这个工作流做什么？",
     "creating": "创建中…",
     "failedToLoad": "加载工作流失败",
-    "workflowCreated": "工作流\u201c{name}\u201d已创建",
-    "confirmDeleteNotice": "再次点击删除以确认删除工作流\u201c{name}\u201d",
-    "workflowDeleted": "工作流\u201c{name}\u201d已删除"
+    "workflowCreated": "工作流“{name}”已创建",
+    "confirmDeleteNotice": "再次点击删除以确认删除工作流“{name}”",
+    "workflowDeleted": "工作流“{name}”已删除"
   },
   "secretsPage": {
     "createSecret": "创建密钥",
