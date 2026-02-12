@@ -31,6 +31,7 @@ const DEVICON_CLASSES: Record<string, string> = {
   clojure: "devicon-clojure-plain",
   erlang: "devicon-erlang-plain",
   ocaml: "devicon-ocaml-plain",
+  libkrun: "devicon-linux-plain",
 }
 
 // Runtime brand colors
@@ -55,6 +56,7 @@ export const RUNTIME_COLORS: Record<string, string> = {
   r: "bg-[#276DC3]",
   julia: "bg-[#9558B2]",
   wasm: "bg-[#654FF0]",
+  libkrun: "bg-[#E95420]",
 }
 
 // Get base runtime from versioned ID (e.g., "python3.11" -> "python")

@@ -1789,6 +1789,8 @@ func rootfsForRuntime(rt domain.Runtime) string {
 		return "deno.ext4"
 	case r == string(domain.RuntimeBun) || strings.HasPrefix(r, "bun"):
 		return "bun.ext4"
+	case r == string(domain.RuntimeLibkrun) || strings.HasPrefix(r, "libkrun"):
+		return "libkrun.ext4"
 	default:
 		// Go, Rust, Zig, Swift use base. (Swift might need more, but base is current)
 		return "base.ext4"

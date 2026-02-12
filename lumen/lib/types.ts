@@ -107,6 +107,7 @@ const RUNTIME_DISPLAY_NAMES: Record<string, string> = {
   dotnet: ".NET 8.0.23",
   deno: "Deno 2.6.7",
   bun: "Bun 1.3.8",
+  libkrun: "libkrun 1.9.6",
 };
 
 // Runtime icons for display
@@ -121,6 +122,7 @@ const RUNTIME_ICONS: Record<string, string> = {
   dotnet: "dotnet",
   deno: "deno",
   bun: "bun",
+  libkrun: "linux",
 };
 
 // Transform backend function to frontend display format

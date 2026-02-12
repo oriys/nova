@@ -89,7 +89,7 @@ func defaultHandlerForRuntime(runtime string) string {
 		return "example.Handler::handleRequest"
 	case "dotnet":
 		return "Assembly::Namespace.Function::FunctionHandler"
-	case "go", "rust", "swift", "zig", "wasm", "provided", "custom":
+	case "go", "rust", "swift", "zig", "wasm", "libkrun", "provided", "custom":
 		return "handler"
 	default:
 		return "main.handler"
@@ -114,7 +114,7 @@ func validateAWSHandlerFormat(runtime, handler string) error {
 		if !awsDotnetHandlerPattern.MatchString(handler) {
 			return validationErrorf("invalid handler for %s: expected AWS .NET style '<Assembly>::<Namespace.Class>::<Method>'", runtime)
 		}
-	case "go", "rust", "swift", "zig", "wasm", "provided", "custom":
+	case "go", "rust", "swift", "zig", "wasm", "libkrun", "provided", "custom":
 		if !awsExecutableNamePattern.MatchString(handler) {
 			return validationErrorf("invalid handler for %s: expected executable entry name (letters/numbers/_-/)", runtime)
 		}
@@ -168,6 +168,8 @@ func runtimeFamily(runtime string) string {
 		return "scala"
 	case strings.HasPrefix(rt, "wasm"):
 		return "wasm"
+	case strings.HasPrefix(rt, "libkrun"):
+		return "libkrun"
 	case strings.HasPrefix(rt, "provided"):
 		return "provided"
 	case strings.HasPrefix(rt, "custom"):

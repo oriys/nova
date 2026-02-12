@@ -1,0 +1,23 @@
+# libkrun runtime image for macOS-compatible virtualization
+# Uses libkrun (https://github.com/containers/libkrun) for lightweight VM execution
+# Suitable for environments where Firecracker/KVM is unavailable (e.g., macOS)
+
+FROM alpine:3.19
+
+# Install basic utilities and build dependencies
+RUN apk add --no-cache ca-certificates tzdata
+
+# Copy nova-agent binary (built during docker build)
+COPY bin/nova-agent /usr/local/bin/nova-agent
+
+# Create code directory
+RUN mkdir -p /code /tmp && chmod 1777 /tmp
+
+# Set environment for libkrun mode
+ENV NOVA_AGENT_MODE=tcp
+ENV NOVA_SKIP_MOUNT=true
+ENV NOVA_VM_BACKEND=libkrun
+
+EXPOSE 9999
+
+CMD ["/usr/local/bin/nova-agent"]

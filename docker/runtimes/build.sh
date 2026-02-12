@@ -17,7 +17,7 @@ echo ""
 echo "Building runtime images with prefix: $PREFIX"
 echo ""
 
-RUNTIMES=(base python node ruby java php lua dotnet deno bun wasm)
+RUNTIMES=(base python node ruby java php lua dotnet deno bun wasm libkrun)
 
 for rt in "${RUNTIMES[@]}"; do
     echo "Building $PREFIX-$rt..."

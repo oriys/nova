@@ -28,6 +28,7 @@ const (
 	RuntimeR        Runtime = "r"
 	RuntimeJulia    Runtime = "julia"
 	RuntimeScala    Runtime = "scala"
+	RuntimeLibkrun  Runtime = "libkrun"
 	RuntimeCustom   Runtime = "custom"
 	RuntimeProvided Runtime = "provided"
 )
@@ -49,7 +50,7 @@ func (r Runtime) IsValid() bool {
 		RuntimeNode: true, RuntimeRuby: true, RuntimeJava: true, RuntimeDeno: true, RuntimeBun: true,
 		RuntimePHP: true, RuntimeDotnet: true, RuntimeElixir: true, RuntimeKotlin: true, RuntimeSwift: true,
 		RuntimeZig: true, RuntimeLua: true, RuntimePerl: true, RuntimeR: true, RuntimeJulia: true, RuntimeScala: true,
-		RuntimeCustom: true, RuntimeProvided: true,
+		RuntimeLibkrun: true, RuntimeCustom: true, RuntimeProvided: true,
 	}
 	if validRuntimes[r] {
 		return true
