@@ -51,9 +51,6 @@ func daemonCmd() *cobra.Command {
 			if cmd.Flags().Changed("log-level") {
 				cfg.Daemon.LogLevel = logLevel
 			}
-			if cmd.Flags().Changed("comet-grpc") {
-				cometAddr = cometAddr // value already set by flag
-			}
 
 			logging.SetLevelFromString(cfg.Daemon.LogLevel)
 			logging.InitStructured(cfg.Observability.Logging.Format, cfg.Observability.Logging.Level)

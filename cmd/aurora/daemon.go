@@ -125,8 +125,8 @@ func daemonCmd() *cobra.Command {
 
 			if httpServer != nil {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
 				httpServer.Shutdown(ctx)
-				cancel()
 			}
 
 			return nil
