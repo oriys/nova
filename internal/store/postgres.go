@@ -730,6 +730,24 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_rbac_role_assignments_principal ON rbac_role_assignments(tenant_id, principal_type, principal_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_rbac_role_assignments_role ON rbac_role_assignments(role_id)`,
 
+		// Tenant menu permissions
+		`CREATE TABLE IF NOT EXISTS tenant_menu_permissions (
+			tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+			menu_key TEXT NOT NULL,
+			enabled BOOLEAN NOT NULL DEFAULT TRUE,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (tenant_id, menu_key)
+		)`,
+
+		// Tenant button permissions
+		`CREATE TABLE IF NOT EXISTS tenant_button_permissions (
+			tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+			permission_key TEXT NOT NULL,
+			enabled BOOLEAN NOT NULL DEFAULT TRUE,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (tenant_id, permission_key)
+		)`,
+
 		// pg_trgm GIN index for ILIKE text search on function names
 		`CREATE EXTENSION IF NOT EXISTS pg_trgm`,
 		`CREATE INDEX IF NOT EXISTS idx_functions_name_trgm ON functions USING gin(name gin_trgm_ops)`,
@@ -740,6 +758,27 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			return fmt.Errorf("ensure schema: %w", err)
 		}
 	}
+
+	// Seed default tenant menu & button permissions if not already present.
+	for _, key := range AllMenuKeys {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO tenant_menu_permissions (tenant_id, menu_key, enabled, created_at)
+			VALUES ('default', $1, TRUE, NOW())
+			ON CONFLICT (tenant_id, menu_key) DO NOTHING
+		`, key); err != nil {
+			return fmt.Errorf("seed default menu permission %s: %w", key, err)
+		}
+	}
+	for _, key := range AllButtonPermissionKeys {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO tenant_button_permissions (tenant_id, permission_key, enabled, created_at)
+			VALUES ('default', $1, TRUE, NOW())
+			ON CONFLICT (tenant_id, permission_key) DO NOTHING
+		`, key); err != nil {
+			return fmt.Errorf("seed default button permission %s: %w", key, err)
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit schema transaction: %w", err)
 	}

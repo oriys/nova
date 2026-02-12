@@ -241,6 +241,18 @@ type MetadataStore interface {
 	ListRoleAssignments(ctx context.Context, tenantID string, limit, offset int) ([]*RoleAssignmentRecord, error)
 	ListRoleAssignmentsByPrincipal(ctx context.Context, tenantID string, principalType domain.PrincipalType, principalID string) ([]*RoleAssignmentRecord, error)
 	DeleteRoleAssignment(ctx context.Context, id string) error
+
+	// Tenant-level menu permissions
+	ListTenantMenuPermissions(ctx context.Context, tenantID string) ([]*MenuPermissionRecord, error)
+	UpsertTenantMenuPermission(ctx context.Context, tenantID, menuKey string, enabled bool) (*MenuPermissionRecord, error)
+	DeleteTenantMenuPermission(ctx context.Context, tenantID, menuKey string) error
+	SeedDefaultMenuPermissions(ctx context.Context, tenantID string) error
+
+	// Tenant-level button permissions
+	ListTenantButtonPermissions(ctx context.Context, tenantID string) ([]*ButtonPermissionRecord, error)
+	UpsertTenantButtonPermission(ctx context.Context, tenantID, permissionKey string, enabled bool) (*ButtonPermissionRecord, error)
+	DeleteTenantButtonPermission(ctx context.Context, tenantID, permissionKey string) error
+	SeedDefaultButtonPermissions(ctx context.Context, tenantID string) error
 }
 
 // Store wraps the MetadataStore, WorkflowStore, and ScheduleStore (Postgres) for all persistence.

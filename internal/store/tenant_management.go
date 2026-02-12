@@ -153,6 +153,33 @@ func (s *PostgresStore) CreateTenant(ctx context.Context, tenant *TenantRecord) 
 		return nil, fmt.Errorf("create default namespace for tenant %s: %w", tenantID, err)
 	}
 
+	// Seed default menu permissions for the new tenant.
+	isDefault := tenantID == DefaultTenantID
+	for _, key := range AllMenuKeys {
+		menuEnabled := true
+		if !isDefault && DefaultTenantOnlyMenuKeys[key] {
+			menuEnabled = false
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO tenant_menu_permissions (tenant_id, menu_key, enabled, created_at)
+			VALUES ($1, $2, $3, NOW())
+			ON CONFLICT (tenant_id, menu_key) DO NOTHING
+		`, tenantID, key, menuEnabled); err != nil {
+			return nil, fmt.Errorf("seed menu permission %s for tenant %s: %w", key, tenantID, err)
+		}
+	}
+
+	// Seed default button permissions for the new tenant.
+	for _, key := range AllButtonPermissionKeys {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO tenant_button_permissions (tenant_id, permission_key, enabled, created_at)
+			VALUES ($1, $2, TRUE, NOW())
+			ON CONFLICT (tenant_id, permission_key) DO NOTHING
+		`, tenantID, key); err != nil {
+			return nil, fmt.Errorf("seed button permission %s for tenant %s: %w", key, tenantID, err)
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit tenant create tx: %w", err)
 	}
@@ -248,6 +275,16 @@ func (s *PostgresStore) DeleteTenant(ctx context.Context, id string) error {
 		sql  string
 		args []any
 	}{
+		{
+			name: "tenant_menu_permissions",
+			sql:  `DELETE FROM tenant_menu_permissions WHERE tenant_id = $1`,
+			args: []any{tenantID},
+		},
+		{
+			name: "tenant_button_permissions",
+			sql:  `DELETE FROM tenant_button_permissions WHERE tenant_id = $1`,
+			args: []any{tenantID},
+		},
 		{
 			name: "invocation_logs",
 			sql:  `DELETE FROM invocation_logs WHERE tenant_id = $1`,

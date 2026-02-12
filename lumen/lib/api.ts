@@ -277,6 +277,20 @@ export interface TenantQuotaDecision {
   retry_after_s?: number;
 }
 
+export interface MenuPermission {
+  tenant_id: string;
+  menu_key: string;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface ButtonPermission {
+  tenant_id: string;
+  permission_key: string;
+  enabled: boolean;
+  created_at: string;
+}
+
 export interface LogEntry {
   id: string;
   request_id?: string;
@@ -1031,6 +1045,48 @@ export const tenantsApi = {
   usage: (tenantID: string, refresh: boolean = true) =>
     request<TenantUsageEntry[]>(
       `/tenants/${encodeURIComponent(tenantID)}/usage?refresh=${refresh ? "true" : "false"}`
+    ),
+
+  listMenuPermissions: (tenantID: string) =>
+    request<MenuPermission[]>(
+      `/tenants/${encodeURIComponent(tenantID)}/menu-permissions`
+    ),
+
+  upsertMenuPermission: (
+    tenantID: string,
+    menuKey: string,
+    enabled: boolean
+  ) =>
+    request<MenuPermission>(
+      `/tenants/${encodeURIComponent(tenantID)}/menu-permissions/${encodeURIComponent(menuKey)}`,
+      { method: "PUT", body: JSON.stringify({ enabled }) }
+    ),
+
+  deleteMenuPermission: (tenantID: string, menuKey: string) =>
+    request<{ status: string }>(
+      `/tenants/${encodeURIComponent(tenantID)}/menu-permissions/${encodeURIComponent(menuKey)}`,
+      { method: "DELETE" }
+    ),
+
+  listButtonPermissions: (tenantID: string) =>
+    request<ButtonPermission[]>(
+      `/tenants/${encodeURIComponent(tenantID)}/button-permissions`
+    ),
+
+  upsertButtonPermission: (
+    tenantID: string,
+    permissionKey: string,
+    enabled: boolean
+  ) =>
+    request<ButtonPermission>(
+      `/tenants/${encodeURIComponent(tenantID)}/button-permissions/${encodeURIComponent(permissionKey)}`,
+      { method: "PUT", body: JSON.stringify({ enabled }) }
+    ),
+
+  deleteButtonPermission: (tenantID: string, permissionKey: string) =>
+    request<{ status: string }>(
+      `/tenants/${encodeURIComponent(tenantID)}/button-permissions/${encodeURIComponent(permissionKey)}`,
+      { method: "DELETE" }
     ),
 };
 
