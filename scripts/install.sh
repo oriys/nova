@@ -388,6 +388,14 @@ build_deno_rootfs() {
     # deno release is glibc-linked; add compatibility layer.
     chroot "${mnt}" /bin/sh -c "apk add --no-cache libstdc++ gcompat" >/dev/null 2>&1
 
+    # gcompat does not provide __res_init (glibc resolver symbol);
+    # build a minimal stub so the dynamic linker can resolve it.
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache build-base" >/dev/null 2>&1
+    printf 'int __res_init(void){return 0;}\n' > "${mnt}/tmp/res_stub.c"
+    chroot "${mnt}" /bin/sh -c "gcc -shared -o /lib/libresolv_stub.so /tmp/res_stub.c"
+    rm -f "${mnt}/tmp/res_stub.c"
+    chroot "${mnt}" /bin/sh -c "apk del --no-cache build-base" >/dev/null 2>&1
+
     # Download Deno binary
     curl -fsSL \
         "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" \
