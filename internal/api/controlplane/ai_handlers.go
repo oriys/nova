@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/oriys/nova/internal/ai"
 	"github.com/oriys/nova/internal/store"
@@ -67,7 +68,11 @@ func (h *AIHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		cfg.Enabled = *req.Enabled
 	}
 	if req.APIKey != nil {
-		cfg.APIKey = *req.APIKey
+		apiKey := strings.TrimSpace(*req.APIKey)
+		// Ignore masked keys returned by GET /ai/config (e.g. sk-****abcd).
+		if !isMaskedAPIKey(apiKey) {
+			cfg.APIKey = apiKey
+		}
 	}
 	if req.Model != nil && *req.Model != "" {
 		cfg.Model = *req.Model
@@ -90,7 +95,10 @@ func (h *AIHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 			_ = h.Store.SetConfig(ctx, "ai_enabled", val)
 		}
 		if req.APIKey != nil {
-			_ = h.Store.SetConfig(ctx, "ai_api_key", cfg.APIKey)
+			apiKey := strings.TrimSpace(*req.APIKey)
+			if !isMaskedAPIKey(apiKey) {
+				_ = h.Store.SetConfig(ctx, "ai_api_key", cfg.APIKey)
+			}
 		}
 		if req.Model != nil {
 			_ = h.Store.SetConfig(ctx, "ai_model", cfg.Model)
@@ -110,6 +118,13 @@ func (h *AIHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	masked := h.Service.GetConfig()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(masked)
+}
+
+func isMaskedAPIKey(apiKey string) bool {
+	// Current masking formats in service:
+	// - short keys: "****"
+	// - long keys: "<prefix>****<suffix>"
+	return apiKey == "****" || strings.Contains(apiKey, "****")
 }
 
 // loadAIConfigFromStore reads the full AI config from the database store.

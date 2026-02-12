@@ -51,6 +51,24 @@ function componentStatusText(value: unknown): string {
   return "unknown"
 }
 
+function componentBadgeClass(value: unknown): string {
+  const text = componentStatusText(value).toLowerCase()
+  if (isHealthyComponent(value) || text === "ok") {
+    return "bg-success/10 text-success border-0"
+  }
+  if (text === "unknown") {
+    return "bg-muted text-muted-foreground border-0"
+  }
+  return "bg-destructive/10 text-destructive border-0"
+}
+
+function formatComponentLabel(name: string): string {
+  if (!name) return "Unknown"
+  return name
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
 export default function ConfigurationsPage() {
   const t = useTranslations("pages")
   const [health, setHealth] = useState<HealthStatus | null>(null)
@@ -71,6 +89,7 @@ export default function ConfigurationsPage() {
   const [aiEnabled, setAiEnabled] = useState(false)
   const [aiBaseUrl, setAiBaseUrl] = useState("https://api.openai.com/v1")
   const [aiApiKey, setAiApiKey] = useState("")
+  const [aiApiKeyInitial, setAiApiKeyInitial] = useState("")
   const [aiModel, setAiModel] = useState("gpt-4o-mini")
   const [aiPromptDir, setAiPromptDir] = useState("configs/prompts/ai")
   const [aiDirty, setAiDirty] = useState(false)
@@ -155,7 +174,9 @@ export default function ConfigurationsPage() {
       if (aiConfigData) {
         setAiEnabled(aiConfigData.enabled)
         setAiBaseUrl(aiConfigData.base_url || "https://api.openai.com/v1")
-        setAiApiKey(aiConfigData.api_key || "")
+        const apiKey = aiConfigData.api_key || ""
+        setAiApiKey(apiKey)
+        setAiApiKeyInitial(apiKey)
         setAiModel(aiConfigData.model || "gpt-4o-mini")
         setAiPromptDir(aiConfigData.prompt_dir || "configs/prompts/ai")
         setAiDirty(false)
@@ -190,6 +211,20 @@ export default function ConfigurationsPage() {
     snapshotsPage * snapshotsPageSize
   )
   const selectedPromptMeta = promptTemplates.find((item) => item.name === selectedPrompt)
+  const healthComponents = health?.components ?? {}
+  const knownComponentConfig = [
+    { key: "postgres", label: "PostgreSQL", icon: Database },
+    { key: "zenith", label: "Zenith", icon: Server },
+    { key: "nova", label: "Nova", icon: Server },
+    { key: "comet", label: "Comet", icon: Server },
+    { key: "corona", label: "Corona", icon: Server },
+    { key: "nebula", label: "Nebula", icon: Server },
+    { key: "aurora", label: "Aurora", icon: Server },
+  ] as const
+  const knownKeys = new Set<string>(knownComponentConfig.map((item) => item.key))
+  const extraComponentKeys = Object.keys(healthComponents)
+    .filter((name) => name !== "pool" && !knownKeys.has(name))
+    .sort()
 
   const handleSave = async () => {
     try {
@@ -214,16 +249,30 @@ export default function ConfigurationsPage() {
     try {
       setAiSaving(true)
       setAiSaved(false)
-      const updated = await aiApi.updateConfig({
+      const payload: {
+        enabled: boolean
+        model: string
+        base_url: string
+        prompt_dir: string
+        api_key?: string
+      } = {
         enabled: aiEnabled,
         base_url: aiBaseUrl,
-        api_key: aiApiKey,
         model: aiModel,
         prompt_dir: aiPromptDir,
-      })
+      }
+
+      // Avoid sending masked key back unchanged (prevents overwriting real key).
+      if (aiApiKey !== aiApiKeyInitial) {
+        payload.api_key = aiApiKey
+      }
+
+      const updated = await aiApi.updateConfig(payload)
       setAiEnabled(updated.enabled)
       setAiBaseUrl(updated.base_url || "https://api.openai.com/v1")
-      setAiApiKey(updated.api_key || "")
+      const updatedApiKey = updated.api_key || ""
+      setAiApiKey(updatedApiKey)
+      setAiApiKeyInitial(updatedApiKey)
       setAiModel(updated.model || "gpt-4o-mini")
       setAiPromptDir(updated.prompt_dir || "configs/prompts/ai")
       await fetchPromptTemplates()
@@ -312,7 +361,7 @@ export default function ConfigurationsPage() {
           <h3 className="text-lg font-semibold text-card-foreground mb-4">
             System Health
           </h3>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
               <Server className="h-8 w-8 text-primary" />
               <div>
@@ -330,80 +379,56 @@ export default function ConfigurationsPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
-              <Database className="h-8 w-8 text-primary" />
-              <div>
-                <p className="text-sm text-muted-foreground">PostgreSQL</p>
-                <Badge
-                  variant="secondary"
-                  className={cn(
-                    isHealthyComponent(health?.components?.postgres)
-                      ? "bg-success/10 text-success border-0"
-                      : "bg-destructive/10 text-destructive border-0"
-                  )}
-                >
-                  {loading ? "..." : isHealthyComponent(health?.components?.postgres) ? "Connected" : "Disconnected"}
-                </Badge>
-              </div>
-            </div>
+            {knownComponentConfig.map((item) => {
+              const Icon = item.icon
+              const value = healthComponents[item.key]
+              return (
+                <div key={item.key} className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
+                  <Icon className="h-8 w-8 text-primary" />
+                  <div>
+                    <p className="text-sm text-muted-foreground">{item.label}</p>
+                    <Badge
+                      variant="secondary"
+                      className={cn(componentBadgeClass(value))}
+                    >
+                      {loading ? "..." : componentStatusText(value)}
+                    </Badge>
+                  </div>
+                </div>
+              )
+            })}
 
-            <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
-              <Server className="h-8 w-8 text-primary" />
-              <div>
-                <p className="text-sm text-muted-foreground">Zenith</p>
-                <Badge
-                  variant="secondary"
-                  className={cn(
-                    isHealthyComponent(health?.components?.zenith)
-                      ? "bg-success/10 text-success border-0"
-                      : "bg-destructive/10 text-destructive border-0"
-                  )}
-                >
-                  {loading ? "..." : componentStatusText(health?.components?.zenith)}
-                </Badge>
+            {extraComponentKeys.map((name) => (
+              <div key={name} className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
+                <Server className="h-8 w-8 text-primary" />
+                <div>
+                  <p className="text-sm text-muted-foreground">{formatComponentLabel(name)}</p>
+                  <Badge
+                    variant="secondary"
+                    className={cn(componentBadgeClass(healthComponents[name]))}
+                  >
+                    {loading ? "..." : componentStatusText(healthComponents[name])}
+                  </Badge>
+                </div>
               </div>
-            </div>
-
-            <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
-              <Server className="h-8 w-8 text-primary" />
-              <div>
-                <p className="text-sm text-muted-foreground">Nova</p>
-                <Badge
-                  variant="secondary"
-                  className={cn(
-                    isHealthyComponent(health?.components?.nova)
-                      ? "bg-success/10 text-success border-0"
-                      : "bg-destructive/10 text-destructive border-0"
-                  )}
-                >
-                  {loading ? "..." : componentStatusText(health?.components?.nova)}
-                </Badge>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
-              <Server className="h-8 w-8 text-primary" />
-              <div>
-                <p className="text-sm text-muted-foreground">Comet</p>
-                <Badge
-                  variant="secondary"
-                  className={cn(
-                    isHealthyComponent(health?.components?.comet)
-                      ? "bg-success/10 text-success border-0"
-                      : "bg-destructive/10 text-destructive border-0"
-                  )}
-                >
-                  {loading ? "..." : componentStatusText(health?.components?.comet)}
-                </Badge>
-              </div>
-            </div>
+            ))}
 
             <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
               <Server className="h-8 w-8 text-primary" />
               <div>
                 <p className="text-sm text-muted-foreground">Active VMs</p>
                 <p className="text-lg font-semibold">
-                  {loading ? "..." : health?.components?.pool?.active_vms ?? 0}
+                  {loading ? "..." : healthComponents.pool?.active_vms ?? 0}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
+              <Server className="h-8 w-8 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">Pool Count</p>
+                <p className="text-lg font-semibold">
+                  {loading ? "..." : healthComponents.pool?.total_pools ?? 0}
                 </p>
               </div>
             </div>
