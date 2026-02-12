@@ -133,8 +133,11 @@ func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunction
 		}
 		// Determine entry point filename
 		entryPoint := fn.Handler
+		ext := compiler.RuntimeExtension(rt)
 		if entryPoint == "" {
-			entryPoint = "handler" + compiler.RuntimeExtension(rt)
+			entryPoint = "handler" + ext
+		} else if ext != "" && !strings.Contains(entryPoint, ".") {
+			entryPoint = entryPoint + ext
 		}
 		files[entryPoint] = []byte(req.Code)
 
