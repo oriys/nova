@@ -35,7 +35,14 @@
     },
     "tenancy": {
       "title": "租户",
-      "description": "切换和管理租户与命名空间"
+      "description": "切换和管理租户与命名空间",
+      "quotas": {
+        "title": "配额管理",
+        "description": "配置和监控租户资源配额"
+      },
+      "governanceMoved": "租户治理已移至租户详情页面。",
+      "selectTenantDetail": "选择一个租户并打开",
+      "detailView": "详情视图"
     },
     "asyncInvocations": {
       "title": "异步调用",
@@ -300,5 +307,39 @@
     "page": "第 {number} 页",
     "nextPage": "下一页",
     "lastPage": "最后一页"
+  },
+  "quotaManagement": {
+    "backToTenancy": "返回租户",
+    "selectTenant": "租户",
+    "selectTenantPlaceholder": "选择租户",
+    "refreshQuotas": "刷新配额和使用量",
+    "configuredCount": "已配置 {count}/{total} 项配额",
+    "overLimit": "{count} 项超限",
+    "noTenants": "未找到租户，请先创建租户。",
+    "quotaRules": "配额规则",
+    "limit": "上限",
+    "unlimited": "无限制",
+    "ofLimit": "已用",
+    "saveQuota": "保存配额",
+    "deleteQuota": "删除配额规则",
+    "loadError": "加载配额数据失败。",
+    "saveError": "保存配额失败。",
+    "deleteError": "删除配额失败。",
+    "columnDimension": "维度",
+    "columnUsage": "当前用量",
+    "columnHardLimit": "硬限制",
+    "columnSoftLimit": "软限制",
+    "columnBurst": "突发",
+    "columnWindow": "时间窗口(秒)",
+    "columnActions": "操作",
+    "dimensions": {
+      "invocations": "调用次数",
+      "eventPublishes": "事件发布",
+      "asyncQueueDepth": "异步队列深度",
+      "functionsCount": "函数数量",
+      "memoryMb": "内存",
+      "vcpuMilli": "vCPU",
+      "diskIops": "磁盘IO"
+    }
   }
 }

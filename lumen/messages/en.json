@@ -35,7 +35,14 @@
     },
     "tenancy": {
       "title": "Tenancy",
-      "description": "Switch and manage tenants and namespaces"
+      "description": "Switch and manage tenants and namespaces",
+      "quotas": {
+        "title": "Quota Management",
+        "description": "Configure and monitor resource quotas for tenants"
+      },
+      "governanceMoved": "Tenant governance has moved to tenant detail pages.",
+      "selectTenantDetail": "Select a tenant and open",
+      "detailView": "detail view"
     },
     "asyncInvocations": {
       "title": "Async Invocations",
@@ -300,5 +307,39 @@
     "page": "Page {number}",
     "nextPage": "Next page",
     "lastPage": "Last page"
+  },
+  "quotaManagement": {
+    "backToTenancy": "Back to Tenancy",
+    "selectTenant": "Tenant",
+    "selectTenantPlaceholder": "Select a tenant",
+    "refreshQuotas": "Refresh quotas and usage",
+    "configuredCount": "{count} of {total} quotas configured",
+    "overLimit": "{count} over limit",
+    "noTenants": "No tenants found. Create a tenant first.",
+    "quotaRules": "Quota Rules",
+    "limit": "Limit",
+    "unlimited": "Unlimited",
+    "ofLimit": "of limit",
+    "saveQuota": "Save quota",
+    "deleteQuota": "Delete quota rule",
+    "loadError": "Failed to load quota data.",
+    "saveError": "Failed to save quota.",
+    "deleteError": "Failed to delete quota.",
+    "columnDimension": "Dimension",
+    "columnUsage": "Current Usage",
+    "columnHardLimit": "Hard Limit",
+    "columnSoftLimit": "Soft Limit",
+    "columnBurst": "Burst",
+    "columnWindow": "Window(s)",
+    "columnActions": "Actions",
+    "dimensions": {
+      "invocations": "Invocations",
+      "eventPublishes": "Event Publishes",
+      "asyncQueueDepth": "Async Queue Depth",
+      "functionsCount": "Functions Count",
+      "memoryMb": "Memory",
+      "vcpuMilli": "vCPU",
+      "diskIops": "Disk IO"
+    }
   }
 }
