@@ -53,9 +53,6 @@ create_function() {
             java*|kotlin*|scala*)
                 handler="Handler::handler"
                 ;;
-            dotnet*)
-                handler="handler::Handler::Handle"
-                ;;
             go*|rust*|swift*|zig*|wasm*|provided*|custom*)
                 handler="handler"
                 ;;
@@ -149,7 +146,7 @@ main() {
     create_function "hash-generator" "bun" '"const crypto = require(\"crypto\");\n\nfunction handler(event, context) {\n  const data = event.data || \"hello\";\n  const algorithm = event.algorithm || \"sha256\";\n  const hash = crypto.createHash(algorithm).update(data).digest(\"hex\");\n  return { data, algorithm, hash };\n}\n\nmodule.exports = { handler };"'
 
     # ─────────────────────────────────────────────────────────
-    # Compiled Languages (Go, Rust, Java, .NET)
+    # Compiled Languages (Go, Rust, Java)
     # ─────────────────────────────────────────────────────────
     if [[ "${SKIP_COMPILED}" == "1" ]]; then
         warn "Skipping compiled languages (SKIP_COMPILED=1)"
@@ -168,9 +165,6 @@ main() {
 
         create_function "hello-java" "java" '"import java.util.*;\n\npublic class Handler {\n    public static Object handler(String event, Map<String, Object> context) {\n        return \"{\\\"message\\\":\\\"Hello, World!\\\",\\\"runtime\\\":\\\"java\\\"}\";\n    }\n}"' 256
 
-        info "Creating .NET functions (will be compiled)..."
-
-        create_function "hello-dotnet" "dotnet" '"using System.Text.Json;\nusing System.Collections.Generic;\n\npublic static class Handler {\n    public static object Handle(string eventJson, Dictionary<string, object> context) {\n        var doc = JsonDocument.Parse(eventJson);\n        var name = doc.RootElement.TryGetProperty(\"name\", out var n) ? n.GetString() : \"World\";\n        return new { message = $\"Hello, {name}!\", runtime = \"dotnet\" };\n    }\n}"' 256
     fi
 
     echo ""

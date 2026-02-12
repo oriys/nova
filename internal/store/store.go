@@ -217,6 +217,59 @@ type MetadataStore interface {
 	UpdateVolume(ctx context.Context, id string, updates map[string]interface{}) error
 	DeleteVolume(ctx context.Context, id string) error
 	GetFunctionVolumes(ctx context.Context, functionID string) ([]*domain.Volume, error)
+
+	// RBAC: Roles
+	CreateRole(ctx context.Context, role *RoleRecord) (*RoleRecord, error)
+	GetRole(ctx context.Context, id string) (*RoleRecord, error)
+	ListRoles(ctx context.Context, tenantID string, limit, offset int) ([]*RoleRecord, error)
+	DeleteRole(ctx context.Context, id string) error
+
+	// RBAC: Permissions
+	CreatePermission(ctx context.Context, perm *PermissionRecord) (*PermissionRecord, error)
+	GetPermission(ctx context.Context, id string) (*PermissionRecord, error)
+	ListPermissions(ctx context.Context, limit, offset int) ([]*PermissionRecord, error)
+	DeletePermission(ctx context.Context, id string) error
+
+	// RBAC: Role ↔ Permission
+	AssignPermissionToRole(ctx context.Context, roleID, permissionID string) error
+	RevokePermissionFromRole(ctx context.Context, roleID, permissionID string) error
+	ListRolePermissions(ctx context.Context, roleID string) ([]*PermissionRecord, error)
+
+	// RBAC: Role Assignments (scoped)
+	CreateRoleAssignment(ctx context.Context, ra *RoleAssignmentRecord) (*RoleAssignmentRecord, error)
+	GetRoleAssignment(ctx context.Context, id string) (*RoleAssignmentRecord, error)
+	ListRoleAssignments(ctx context.Context, tenantID string, limit, offset int) ([]*RoleAssignmentRecord, error)
+	ListRoleAssignmentsByPrincipal(ctx context.Context, tenantID string, principalType domain.PrincipalType, principalID string) ([]*RoleAssignmentRecord, error)
+	DeleteRoleAssignment(ctx context.Context, id string) error
+
+	// Tenant-level menu permissions
+	ListTenantMenuPermissions(ctx context.Context, tenantID string) ([]*MenuPermissionRecord, error)
+	UpsertTenantMenuPermission(ctx context.Context, tenantID, menuKey string, enabled bool) (*MenuPermissionRecord, error)
+	DeleteTenantMenuPermission(ctx context.Context, tenantID, menuKey string) error
+	SeedDefaultMenuPermissions(ctx context.Context, tenantID string) error
+
+	// Tenant-level button permissions
+	ListTenantButtonPermissions(ctx context.Context, tenantID string) ([]*ButtonPermissionRecord, error)
+	UpsertTenantButtonPermission(ctx context.Context, tenantID, permissionKey string, enabled bool) (*ButtonPermissionRecord, error)
+	DeleteTenantButtonPermission(ctx context.Context, tenantID, permissionKey string) error
+	SeedDefaultButtonPermissions(ctx context.Context, tenantID string) error
+
+	// API Doc Shares
+	SaveAPIDocShare(ctx context.Context, share *APIDocShare) error
+	GetAPIDocShareByToken(ctx context.Context, token string) (*APIDocShare, error)
+	ListAPIDocShares(ctx context.Context, tenantID, namespace string, limit, offset int) ([]*APIDocShare, error)
+	DeleteAPIDocShare(ctx context.Context, id string) error
+	IncrementAPIDocShareAccess(ctx context.Context, token string) error
+
+	// Function Docs (per-function persisted documentation)
+	SaveFunctionDoc(ctx context.Context, doc *FunctionDoc) error
+	GetFunctionDoc(ctx context.Context, functionName string) (*FunctionDoc, error)
+	DeleteFunctionDoc(ctx context.Context, functionName string) error
+
+	// Workflow Docs (per-workflow persisted documentation)
+	SaveWorkflowDoc(ctx context.Context, doc *WorkflowDoc) error
+	GetWorkflowDoc(ctx context.Context, workflowName string) (*WorkflowDoc, error)
+	DeleteWorkflowDoc(ctx context.Context, workflowName string) error
 }
 
 // Store wraps the MetadataStore, WorkflowStore, and ScheduleStore (Postgres) for all persistence.
@@ -256,4 +309,36 @@ func (s *Store) Close() error {
 		return s.MetadataStore.Close()
 	}
 	return nil
+}
+
+// APIDocShare represents a shared API documentation link.
+type APIDocShare struct {
+	ID           string          `json:"id"`
+	TenantID     string          `json:"tenant_id"`
+	Namespace    string          `json:"namespace"`
+	FunctionName string          `json:"function_name"`
+	Title        string          `json:"title"`
+	Token        string          `json:"token"`
+	DocContent   json.RawMessage `json:"doc_content"`
+	CreatedBy    string          `json:"created_by"`
+	ExpiresAt    *time.Time      `json:"expires_at,omitempty"`
+	AccessCount  int64           `json:"access_count"`
+	LastAccessAt *time.Time      `json:"last_access_at,omitempty"`
+	CreatedAt    time.Time       `json:"created_at"`
+}
+
+// FunctionDoc represents persisted API documentation for a function.
+type FunctionDoc struct {
+	FunctionName string          `json:"function_name"`
+	DocContent   json.RawMessage `json:"doc_content"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	CreatedAt    time.Time       `json:"created_at"`
+}
+
+// WorkflowDoc represents persisted API documentation for a workflow.
+type WorkflowDoc struct {
+	WorkflowName string          `json:"workflow_name"`
+	DocContent   json.RawMessage `json:"doc_content"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	CreatedAt    time.Time       `json:"created_at"`
 }

@@ -25,7 +25,7 @@ type FunctionSpec struct {
 	Labels      map[string]string `yaml:"labels,omitempty"`
 
 	// Runtime configuration
-	Runtime string `yaml:"runtime"` // python, go, rust, wasm, node, ruby, java, php, dotnet, deno, bun
+	Runtime string `yaml:"runtime"` // python, go, rust, wasm, node, ruby, java, php, deno, bun
 	Handler string `yaml:"handler,omitempty"`
 	Code    string `yaml:"code"` // Path to code file or directory
 
@@ -122,7 +122,7 @@ func (s *FunctionSpec) Validate() error {
 	// Validate runtime
 	rt := domain.Runtime(s.Runtime)
 	if !rt.IsValid() {
-		return fmt.Errorf("invalid runtime: %s (valid: python, go, rust, wasm, node, ruby, java, php, dotnet, deno, bun)", s.Runtime)
+		return fmt.Errorf("invalid runtime: %s (valid: python, go, rust, wasm, node, ruby, java, php, deno, bun)", s.Runtime)
 	}
 
 	// Check code path exists

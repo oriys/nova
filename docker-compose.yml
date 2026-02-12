@@ -121,6 +121,58 @@ services:
       timeout: 5s
       retries: 10
 
+  corona:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: corona-runtime
+    container_name: corona-scheduler
+    command: ["corona", "daemon", "--config", "configs/nova.json", "--comet-grpc", "comet:9090"]
+    environment:
+      NOVA_PG_DSN: postgres://nova:nova@postgres:5432/nova?sslmode=disable
+      NOVA_LOG_LEVEL: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      comet:
+        condition: service_healthy
+
+  nebula:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: nebula-runtime
+    container_name: nebula-eventbus
+    command: ["nebula", "daemon", "--config", "configs/nova.json", "--comet-grpc", "comet:9090"]
+    environment:
+      NOVA_PG_DSN: postgres://nova:nova@postgres:5432/nova?sslmode=disable
+      NOVA_LOG_LEVEL: info
+      NOVA_MASTER_KEY: "1710f674b5e29cd55bba9c1481625ac255886d763ed7dd6aeab8b21382910d1e"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      comet:
+        condition: service_healthy
+
+  aurora:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: aurora-runtime
+    container_name: aurora-observability
+    command: ["aurora", "daemon", "--config", "configs/nova.json", "--listen", ":9002"]
+    environment:
+      NOVA_PG_DSN: postgres://nova:nova@postgres:5432/nova?sslmode=disable
+      NOVA_LOG_LEVEL: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9002/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   lumen:
     build:
       context: ./lumen

@@ -10,7 +10,6 @@
 #   wasm.ext4   - WASM (wasmtime + glibc compat)
 #   php.ext4    - PHP (apk php)
 #   lua.ext4    - Lua (apk lua5.4)
-#   dotnet.ext4 - .NET (dotnet runtime + dependencies)
 #   deno.ext4   - Deno (deno binary + glibc compat)
 #   bun.ext4    - Bun (bun binary, musl)
 #
@@ -25,8 +24,6 @@ ALPINE_URL="${ALPINE_URL:-https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x
 WASMTIME_VERSION="${WASMTIME_VERSION:-v41.0.1}"
 DENO_VERSION="${DENO_VERSION:-v2.6.7}"
 BUN_VERSION="${BUN_VERSION:-bun-v1.3.8}"
-DOTNET_VERSION="${DOTNET_VERSION:-8.0.23}"
-
 ROOTFS_SIZE_MB="${ROOTFS_SIZE_MB:-256}"
 ROOTFS_SIZE_JAVA_MB="${ROOTFS_SIZE_JAVA_MB:-512}"
 BASE_ROOTFS_SIZE_MB="${BASE_ROOTFS_SIZE_MB:-32}"
@@ -47,7 +44,6 @@ Env vars:
   WASMTIME_VERSION       Default: v41.0.1
   DENO_VERSION           Default: v2.6.7
   BUN_VERSION            Default: bun-v1.3.8
-  DOTNET_VERSION         Default: 8.0.23
   ROOTFS_SIZE_MB         Default: 256
   ROOTFS_SIZE_JAVA_MB    Default: 512
   BASE_ROOTFS_SIZE_MB    Default: 32
@@ -289,35 +285,6 @@ build_lua_rootfs() {
   log "lua.ext4 ready -> ${OUT_DIR}/lua.ext4"
 }
 
-build_dotnet_rootfs() {
-  log "Building dotnet rootfs (Alpine + .NET runtime)..."
-  local tmp
-  tmp="$(mktemp -d)"
-  stage_alpine_root "${tmp}"
-
-  # Match dotnet runtime-deps for Alpine (https://github.com/dotnet/dotnet-docker)
-  apk_add "${tmp}" ca-certificates-bundle libgcc libssl3 libstdc++ zlib
-
-  local dotnet_tmp
-  dotnet_tmp="$(mktemp -d)"
-  
-  fetch_asset \
-    "https://builds.dotnet.microsoft.com/dotnet/Runtime/${DOTNET_VERSION}/dotnet-runtime-${DOTNET_VERSION}-linux-musl-x64.tar.gz" \
-    "dotnet-runtime.tar.gz" \
-    "${dotnet_tmp}/dotnet-runtime.tar.gz"
-
-  mkdir -p "${tmp}/usr/share/dotnet"
-  tar -xzf "${dotnet_tmp}/dotnet-runtime.tar.gz" -C "${tmp}/usr/share/dotnet"
-  mkdir -p "${tmp}/usr/bin"
-  ln -sf ../share/dotnet/dotnet "${tmp}/usr/bin/dotnet"
-  rm -rf "${dotnet_tmp}"
-
-  inject_agent_init "${tmp}"
-  build_image_from_dir "${OUT_DIR}/dotnet.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
-  rm -rf "${tmp}"
-  log "dotnet.ext4 ready -> ${OUT_DIR}/dotnet.ext4"
-}
-
 build_deno_rootfs() {
   log "Building deno rootfs (Alpine + deno)..."
   local tmp
@@ -333,7 +300,7 @@ build_deno_rootfs() {
   printf 'int __res_init(void){return 0;}\n' > "${tmp}/tmp/res_stub.c"
   chroot "${tmp}" /bin/sh -c "gcc -shared -o /lib/libresolv_stub.so /tmp/res_stub.c"
   rm -f "${tmp}/tmp/res_stub.c"
-  chroot "${tmp}" /bin/sh -c "apk del --no-cache build-base" >/dev/null 2>&1
+  chroot "${tmp}" /bin/sh -c "apk del build-base" >/dev/null 2>&1
 
   local deno_tmp
   deno_tmp="$(mktemp -d)"
@@ -405,7 +372,6 @@ main() {
   build_wasm_rootfs
   build_php_rootfs
   build_lua_rootfs
-  build_dotnet_rootfs
   build_deno_rootfs
   build_bun_rootfs
 

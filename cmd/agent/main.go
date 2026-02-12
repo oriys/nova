@@ -46,7 +46,6 @@ const (
 	luaPath      = "/usr/bin/lua"
 	denoPath     = "/usr/local/bin/deno"
 	bunPath      = "/usr/local/bin/bun"
-	dotnetRoot   = "/usr/share/dotnet"
 
 	maxPersistentResponseBytes = 4 * 1024 * 1024 // 4MB
 )
@@ -241,7 +240,7 @@ func (a *Agent) handleInit(payload json.RawMessage) (*Message, error) {
 		return nil, err
 	}
 
-	// Normalize versioned runtime IDs (e.g., python3.12, node24, php8.4, dotnet8)
+	// Normalize versioned runtime IDs (e.g., python3.12, node24, php8.4)
 	// for legacy hardcoded paths only. Dynamic command mode bypasses this.
 	if len(init.Command) == 0 {
 		init.Runtime = normalizeRuntime(init.Runtime)
@@ -525,8 +524,6 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID s
 			cmd = exec.CommandContext(ctx, resolveBinary(wasmtimePath, "wasmtime"), CodePath, "--", "/tmp/input.json")
 		case "java", "kotlin", "scala":
 			cmd = exec.CommandContext(ctx, resolveBinary(javaPath, "java"), "-jar", CodePath, "/tmp/input.json")
-		case "dotnet":
-			cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
 		case "custom", "provided":
 			bootstrapPath := filepath.Join(CodeMountPoint, "bootstrap")
 			cmd = exec.CommandContext(ctx, bootstrapPath, "/tmp/input.json")
@@ -547,12 +544,6 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID s
 	)
 	// Add dependency paths based on runtime
 	cmd.Env = appendDependencyEnv(cmd.Env, a.function.Runtime)
-	if a.function.Runtime == "dotnet" {
-		cmd.Env = append(cmd.Env,
-			"DOTNET_ROOT="+dotnetRoot,
-			"DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=true",
-		)
-	}
 	for k, v := range a.function.EnvVars {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
@@ -716,14 +707,14 @@ func (a *Agent) handleStreamingExec(conn net.Conn, req *ExecPayload) (*Message, 
 func enrichExecError(err error, runtime string) error {
 	var pathErr *os.PathError
 	if errors.As(err, &pathErr) && errors.Is(pathErr.Err, syscall.ENOEXEC) {
-		if runtime == "go" || runtime == "rust" || runtime == "zig" || runtime == "swift" || runtime == "dotnet" {
+		if runtime == "go" || runtime == "rust" || runtime == "zig" || runtime == "swift" {
 			return fmt.Errorf("%w (exec format error: /code/handler must be a Linux executable for the VM architecture, e.g. x86_64-unknown-linux-musl)", err)
 		}
 		return fmt.Errorf("%w (exec format error: check shebang and executable format of /code/handler)", err)
 	}
 	if errors.As(err, &pathErr) && errors.Is(pathErr.Err, syscall.ENOENT) && pathErr.Path == CodePath {
 		if _, statErr := os.Stat(CodePath); statErr == nil {
-			if runtime == "go" || runtime == "rust" || runtime == "zig" || runtime == "swift" || runtime == "dotnet" {
+			if runtime == "go" || runtime == "rust" || runtime == "zig" || runtime == "swift" {
 				return fmt.Errorf("%w (/code/handler exists but required dynamic loader is missing; build a static Linux binary, e.g. Rust target x86_64-unknown-linux-musl)", err)
 			}
 			return fmt.Errorf("%w (/code/handler exists but its interpreter is missing; check shebang/interpreter path)", err)
@@ -964,8 +955,6 @@ func normalizeRuntime(rt string) string {
 		return "java"
 	case strings.HasPrefix(rt, "php"):
 		return "php"
-	case strings.HasPrefix(rt, "dotnet"):
-		return "dotnet"
 	case strings.HasPrefix(rt, "go"):
 		return "go"
 	case strings.HasPrefix(rt, "rust"):

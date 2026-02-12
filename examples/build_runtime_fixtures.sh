@@ -7,7 +7,6 @@
 # Notes:
 # - Go/Rust are built as Linux amd64 binaries (Go static, Rust musl).
 # - Java builds a single runnable JAR (renamed to "handler").
-# - .NET builds a single-file Linux musl executable (renamed to "handler").
 # - WASM builds a WASI module (renamed to "handler").
 
 set -euo pipefail
@@ -15,7 +14,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build"
 
-mkdir -p "${BUILD_DIR}"/{python,go,rust,node,ruby,java,php,dotnet,deno,bun,wasm}
+mkdir -p "${BUILD_DIR}"/{python,go,rust,node,ruby,java,php,deno,bun,wasm}
 
 echo "=========================================="
 echo "  Preparing sources"
@@ -81,39 +80,6 @@ if command -v javac &>/dev/null && command -v jar &>/dev/null; then
 else
   echo "Java build tools not found (javac/jar), skipping Java build"
   SKIP_JAVA=1
-fi
-
-echo ""
-echo "=========================================="
-echo "  Building .NET (linux-musl-x64, single-file)"
-echo "=========================================="
-
-SKIP_DOTNET=0
-if command -v dotnet &>/dev/null; then
-  DOTNET_TMP="$(mktemp -d)"
-  dotnet publish "${SCRIPT_DIR}/hello_dotnet/HelloDotnet.csproj" \
-    -c Release \
-    -r linux-musl-x64 \
-    -p:PublishSingleFile=true \
-    -p:SelfContained=true \
-    -p:InvariantGlobalization=true \
-    -p:DebugType=None \
-    -p:DebugSymbols=false \
-    -o "${DOTNET_TMP}" >/dev/null
-
-  if [[ -f "${DOTNET_TMP}/HelloDotnet" ]]; then
-    cp "${DOTNET_TMP}/HelloDotnet" "${BUILD_DIR}/dotnet/handler"
-    chmod +x "${BUILD_DIR}/dotnet/handler" || true
-    ls -lh "${BUILD_DIR}/dotnet/handler"
-  else
-    echo "Dotnet publish did not produce expected output, skipping .NET build"
-    SKIP_DOTNET=1
-  fi
-
-  rm -rf "${DOTNET_TMP}"
-else
-  echo "dotnet SDK not installed, skipping .NET build"
-  SKIP_DOTNET=1
 fi
 
 echo ""

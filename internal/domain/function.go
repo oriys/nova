@@ -18,7 +18,6 @@ const (
 	RuntimeDeno     Runtime = "deno"
 	RuntimeBun      Runtime = "bun"
 	RuntimePHP      Runtime = "php"
-	RuntimeDotnet   Runtime = "dotnet"
 	RuntimeElixir   Runtime = "elixir"
 	RuntimeKotlin   Runtime = "kotlin"
 	RuntimeSwift    Runtime = "swift"
@@ -47,7 +46,7 @@ func (r Runtime) IsValid() bool {
 	validRuntimes := map[Runtime]bool{
 		RuntimePython: true, RuntimeGo: true, RuntimeRust: true, RuntimeWasm: true,
 		RuntimeNode: true, RuntimeRuby: true, RuntimeJava: true, RuntimeDeno: true, RuntimeBun: true,
-		RuntimePHP: true, RuntimeDotnet: true, RuntimeElixir: true, RuntimeKotlin: true, RuntimeSwift: true,
+		RuntimePHP: true, RuntimeElixir: true, RuntimeKotlin: true, RuntimeSwift: true,
 		RuntimeZig: true, RuntimeLua: true, RuntimePerl: true, RuntimeR: true, RuntimeJulia: true, RuntimeScala: true,
 		RuntimeCustom: true, RuntimeProvided: true,
 	}
@@ -57,7 +56,7 @@ func (r Runtime) IsValid() bool {
 	// Versioned runtime IDs (e.g., python3.11, node20, go1.21)
 	versionedPrefixes := []string{
 		"python3.", "go1.", "node", "rust1.", "ruby3.", "ruby2.",
-		"java", "php8.", "dotnet", "scala",
+		"java", "php8.", "scala",
 	}
 	for _, prefix := range versionedPrefixes {
 		if len(r) > len(prefix) && string(r)[:len(prefix)] == prefix {
@@ -139,10 +138,10 @@ type CapacityPolicy struct {
 	MaxQueueWaitMs  int64   `json:"max_queue_wait_ms,omitempty"` // Max wait time for queue admission
 	ShedStatusCode  int     `json:"shed_status_code,omitempty"`  // 429 or 503 (default 503)
 	RetryAfterS     int     `json:"retry_after_s,omitempty"`     // Retry-After hint in seconds
-	BreakerErrorPct float64 `json:"breaker_error_pct,omitempty"` // Reserved for circuit breaker stage
-	BreakerWindowS  int     `json:"breaker_window_s,omitempty"`  // Reserved for circuit breaker stage
-	BreakerOpenS    int     `json:"breaker_open_s,omitempty"`    // Reserved for circuit breaker stage
-	HalfOpenProbes  int     `json:"half_open_probes,omitempty"`  // Reserved for circuit breaker stage
+	BreakerErrorPct float64 `json:"breaker_error_pct,omitempty"` // Error % threshold to trip the circuit breaker (0-100)
+	BreakerWindowS  int     `json:"breaker_window_s,omitempty"`  // Sliding window in seconds for error rate calculation
+	BreakerOpenS    int     `json:"breaker_open_s,omitempty"`    // Duration in seconds the breaker stays open
+	HalfOpenProbes  int     `json:"half_open_probes,omitempty"`  // Number of probe requests in half-open state
 }
 
 // SLOObjectives defines per-function SLO thresholds.
@@ -322,7 +321,6 @@ func NeedsCompilation(runtime Runtime) bool {
 		RuntimeKotlin: true,
 		RuntimeSwift:  true,
 		RuntimeZig:    true,
-		RuntimeDotnet: true,
 		RuntimeScala:  true,
 	}
 	if compiledRuntimes[runtime] {
@@ -331,7 +329,7 @@ func NeedsCompilation(runtime Runtime) bool {
 
 	rt := string(runtime)
 	versionedPrefixes := []string{
-		"go1.", "rust1.", "java", "dotnet", "scala",
+		"go1.", "rust1.", "java", "scala",
 	}
 	for _, prefix := range versionedPrefixes {
 		if len(rt) > len(prefix) && rt[:len(prefix)] == prefix {

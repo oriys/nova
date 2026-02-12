@@ -46,6 +46,8 @@ export interface FunctionCodeResponse {
 export interface UpdateCodeResponse {
   compile_status: CompileStatus;
   source_hash: string;
+  file_count?: number;
+  entry_point?: string;
 }
 
 export interface ResourceLimits {
@@ -275,6 +277,20 @@ export interface TenantQuotaDecision {
   limit: number;
   window_s?: number;
   retry_after_s?: number;
+}
+
+export interface MenuPermission {
+  tenant_id: string;
+  menu_key: string;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface ButtonPermission {
+  tenant_id: string;
+  permission_key: string;
+  enabled: boolean;
+  created_at: string;
 }
 
 export interface LogEntry {
@@ -613,6 +629,7 @@ export interface CreateFunctionRequest {
   runtime: string;
   handler?: string;
   code: string; // Source code (required)
+  dependency_files?: Record<string, string>; // Optional: dependency files like go.mod, requirements.txt, Cargo.toml, package.json
   memory_mb?: number;
   timeout_s?: number;
   min_replicas?: number;
@@ -748,6 +765,28 @@ async function request<T>(
   }
 }
 
+// Cost Intelligence types
+export interface FunctionCostSummary {
+  function_id: string;
+  function_name: string;
+  total_cost: number;
+  invocations_cost: number;
+  compute_cost: number;
+  cold_start_cost: number;
+  invocations: number;
+  total_duration_ms: number;
+  cold_starts: number;
+  avg_cost: number;
+}
+
+export interface TenantCostSummary {
+  tenant_id: string;
+  total_cost: number;
+  functions: FunctionCostSummary[];
+  period_from: string;
+  period_to: string;
+}
+
 // Functions API
 export const functionsApi = {
   list: (search?: string, limit?: number, offset?: number) => {
@@ -853,6 +892,16 @@ export const functionsApi = {
     request<UpdateCodeResponse>(`/functions/${encodeURIComponent(name)}/code`, {
       method: "PUT",
       body: JSON.stringify({ code }),
+    }),
+
+  updateCodeWithFiles: (name: string, code: string, dependencyFiles: Record<string, string>, entryPoint?: string) =>
+    request<UpdateCodeResponse>(`/functions/${encodeURIComponent(name)}/code`, {
+      method: "PUT",
+      body: JSON.stringify({
+        code,
+        dependency_files: dependencyFiles,
+        ...(entryPoint ? { entry_point: entryPoint } : {}),
+      }),
     }),
 
   listVersions: (name: string, limit?: number, offset?: number) => {
@@ -1031,6 +1080,48 @@ export const tenantsApi = {
   usage: (tenantID: string, refresh: boolean = true) =>
     request<TenantUsageEntry[]>(
       `/tenants/${encodeURIComponent(tenantID)}/usage?refresh=${refresh ? "true" : "false"}`
+    ),
+
+  listMenuPermissions: (tenantID: string) =>
+    request<MenuPermission[]>(
+      `/tenants/${encodeURIComponent(tenantID)}/menu-permissions`
+    ),
+
+  upsertMenuPermission: (
+    tenantID: string,
+    menuKey: string,
+    enabled: boolean
+  ) =>
+    request<MenuPermission>(
+      `/tenants/${encodeURIComponent(tenantID)}/menu-permissions/${encodeURIComponent(menuKey)}`,
+      { method: "PUT", body: JSON.stringify({ enabled }) }
+    ),
+
+  deleteMenuPermission: (tenantID: string, menuKey: string) =>
+    request<{ status: string }>(
+      `/tenants/${encodeURIComponent(tenantID)}/menu-permissions/${encodeURIComponent(menuKey)}`,
+      { method: "DELETE" }
+    ),
+
+  listButtonPermissions: (tenantID: string) =>
+    request<ButtonPermission[]>(
+      `/tenants/${encodeURIComponent(tenantID)}/button-permissions`
+    ),
+
+  upsertButtonPermission: (
+    tenantID: string,
+    permissionKey: string,
+    enabled: boolean
+  ) =>
+    request<ButtonPermission>(
+      `/tenants/${encodeURIComponent(tenantID)}/button-permissions/${encodeURIComponent(permissionKey)}`,
+      { method: "PUT", body: JSON.stringify({ enabled }) }
+    ),
+
+  deleteButtonPermission: (tenantID: string, permissionKey: string) =>
+    request<{ status: string }>(
+      `/tenants/${encodeURIComponent(tenantID)}/button-permissions/${encodeURIComponent(permissionKey)}`,
+      { method: "DELETE" }
     ),
 };
 
@@ -1974,4 +2065,342 @@ export const aiApi = {
         method: "POST",
       }
     ),
+};
+
+// ─── RBAC Types ─────────────────────────────────────────────────────────────
+
+export interface RBACRole {
+  id: string;
+  tenant_id: string;
+  name: string;
+  is_system: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RBACPermission {
+  id: string;
+  code: string;
+  resource_type: string;
+  action: string;
+  description: string;
+  created_at: string;
+}
+
+export interface RBACRoleAssignment {
+  id: string;
+  tenant_id: string;
+  principal_type: string;
+  principal_id: string;
+  role_id: string;
+  scope_type: string;
+  scope_id: string;
+  created_by: string;
+  created_at: string;
+}
+
+// ─── RBAC API ───────────────────────────────────────────────────────────────
+
+export const rbacApi = {
+  // Roles
+  listRoles: (params?: { tenant_id?: string; limit?: number; offset?: number }) =>
+    request<RBACRole[]>(
+      `/rbac/roles${params ? `?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])).toString()}` : ""}`
+    ),
+
+  getRole: (id: string) => request<RBACRole>(`/rbac/roles/${id}`),
+
+  createRole: (data: { id: string; tenant_id?: string; name: string; is_system?: boolean }) =>
+    request<RBACRole>("/rbac/roles", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deleteRole: (id: string) =>
+    request<{ status: string; id: string }>(`/rbac/roles/${id}`, {
+      method: "DELETE",
+    }),
+
+  // Permissions
+  listPermissions: (params?: { limit?: number; offset?: number }) =>
+    request<RBACPermission[]>(
+      `/rbac/permissions${params ? `?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])).toString()}` : ""}`
+    ),
+
+  getPermission: (id: string) => request<RBACPermission>(`/rbac/permissions/${id}`),
+
+  createPermission: (data: {
+    id: string;
+    code: string;
+    resource_type?: string;
+    action?: string;
+    description?: string;
+  }) =>
+    request<RBACPermission>("/rbac/permissions", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deletePermission: (id: string) =>
+    request<{ status: string; id: string }>(`/rbac/permissions/${id}`, {
+      method: "DELETE",
+    }),
+
+  // Role ↔ Permission mapping
+  listRolePermissions: (roleId: string) =>
+    request<RBACPermission[]>(`/rbac/roles/${roleId}/permissions`),
+
+  assignPermissionToRole: (roleId: string, permissionId: string) =>
+    request<{ status: string; role_id: string; permission_id: string }>(
+      `/rbac/roles/${roleId}/permissions`,
+      {
+        method: "POST",
+        body: JSON.stringify({ permission_id: permissionId }),
+      }
+    ),
+
+  revokePermissionFromRole: (roleId: string, permissionId: string) =>
+    request<{ status: string; role_id: string; permission_id: string }>(
+      `/rbac/roles/${roleId}/permissions/${permissionId}`,
+      {
+        method: "DELETE",
+      }
+    ),
+
+  // Role Assignments
+  listRoleAssignments: (params?: {
+    tenant_id?: string;
+    principal_type?: string;
+    principal_id?: string;
+    limit?: number;
+    offset?: number;
+  }) =>
+    request<RBACRoleAssignment[]>(
+      `/rbac/assignments${params ? `?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])).toString()}` : ""}`
+    ),
+
+  getRoleAssignment: (id: string) =>
+    request<RBACRoleAssignment>(`/rbac/assignments/${id}`),
+
+  createRoleAssignment: (data: {
+    id: string;
+    tenant_id?: string;
+    principal_type: string;
+    principal_id: string;
+    role_id: string;
+    scope_type: string;
+    scope_id?: string;
+    created_by?: string;
+  }) =>
+    request<RBACRoleAssignment>("/rbac/assignments", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deleteRoleAssignment: (id: string) =>
+    request<{ status: string; id: string }>(`/rbac/assignments/${id}`, {
+      method: "DELETE",
+    }),
+};
+
+// ─── API Docs Types ─────────────────────────────────────────────────────────
+
+export interface DocField {
+  name: string;
+  type: string;
+  required: boolean;
+  description: string;
+  default?: string;
+  example?: string;
+  validation?: string;
+  enum_values?: string;
+}
+
+export interface DocStatusCode {
+  code: number;
+  meaning: string;
+}
+
+export interface DocErrorModel {
+  format: string;
+  retryable: string;
+  description: string;
+}
+
+export interface GenerateDocsRequest {
+  function_name: string;
+  runtime: string;
+  code: string;
+  handler: string;
+  method?: string;
+  path?: string;
+}
+
+export interface GenerateWorkflowDocsRequest {
+  workflow_name: string;
+  description?: string;
+  nodes: string;
+  edges: string;
+}
+
+export interface GenerateDocsResponse {
+  name: string;
+  operation_id: string;
+  service: string;
+  version: string;
+  protocol: string;
+  stability: string;
+  summary: string;
+  method: string;
+  path: string;
+  content_type: string;
+  auth: string;
+  request_fields: DocField[];
+  response_fields: DocField[];
+  success_codes: DocStatusCode[];
+  error_codes: DocStatusCode[];
+  error_model: DocErrorModel;
+  curl_example: string;
+  request_example: string;
+  response_example: string;
+  error_example: string;
+  auth_method: string;
+  roles_required: string[];
+  idempotent: boolean;
+  idempotent_key: string;
+  rate_limit: string;
+  timeout: string;
+  pagination: string;
+  supports_tracing: boolean;
+  changelog: string[];
+  notes: string[];
+}
+
+export interface APIDocShare {
+  id: string;
+  tenant_id: string;
+  namespace: string;
+  function_name: string;
+  title: string;
+  token: string;
+  doc_content: GenerateDocsResponse;
+  created_by: string;
+  expires_at?: string;
+  access_count: number;
+  last_access_at?: string;
+  created_at: string;
+}
+
+export interface CreateShareRequest {
+  function_name: string;
+  title: string;
+  doc_content: GenerateDocsResponse;
+  expires_in?: string;
+}
+
+export interface CreateShareResponse {
+  id: string;
+  token: string;
+  share_url: string;
+  expires_at?: string;
+  created_at: string;
+}
+
+export const apiDocsApi = {
+  generateDocs: (data: GenerateDocsRequest) =>
+    request<GenerateDocsResponse>("/ai/generate-docs", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  generateWorkflowDocs: (data: GenerateWorkflowDocsRequest) =>
+    request<GenerateDocsResponse>("/ai/generate-workflow-docs", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  createShare: (data: CreateShareRequest) =>
+    request<CreateShareResponse>("/api-docs/shares", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  listShares: () => request<APIDocShare[]>("/api-docs/shares"),
+
+  deleteShare: (id: string) =>
+    request<{ status: string; id: string }>(`/api-docs/shares/${id}`, {
+      method: "DELETE",
+    }),
+
+  getSharedDoc: (token: string) =>
+    request<APIDocShare>(`/api-docs/shared/${token}`),
+};
+
+// Per-function persisted documentation
+export interface FunctionDocRecord {
+  function_name: string;
+  doc_content: GenerateDocsResponse;
+  updated_at: string;
+  created_at: string;
+}
+
+export const functionDocsApi = {
+  get: (functionName: string) =>
+    request<FunctionDocRecord>(`/functions/${functionName}/docs`),
+
+  save: (functionName: string, docContent: GenerateDocsResponse) =>
+    request<FunctionDocRecord>(`/functions/${functionName}/docs`, {
+      method: "PUT",
+      body: JSON.stringify({ doc_content: docContent }),
+    }),
+
+  delete: (functionName: string) =>
+    request<{ status: string; function_name: string }>(`/functions/${functionName}/docs`, {
+      method: "DELETE",
+    }),
+};
+
+// Per-workflow persisted documentation
+export interface WorkflowDocRecord {
+  workflow_name: string;
+  doc_content: GenerateDocsResponse;
+  updated_at: string;
+  created_at: string;
+}
+
+export const workflowDocsApi = {
+  get: (workflowName: string) =>
+    request<WorkflowDocRecord>(`/workflows/${encodeURIComponent(workflowName)}/docs`),
+
+  save: (workflowName: string, docContent: GenerateDocsResponse) =>
+    request<WorkflowDocRecord>(`/workflows/${encodeURIComponent(workflowName)}/docs`, {
+      method: "PUT",
+      body: JSON.stringify({ doc_content: docContent }),
+    }),
+
+  delete: (workflowName: string) =>
+    request<{ status: string; workflow_name: string }>(`/workflows/${encodeURIComponent(workflowName)}/docs`, {
+      method: "DELETE",
+    }),
+};
+
+// Cost Intelligence API
+export const costApi = {
+  functionCost: (name: string, windowSeconds?: number) => {
+    const params = new URLSearchParams();
+    if (typeof windowSeconds === "number" && Number.isFinite(windowSeconds) && windowSeconds > 0) {
+      params.set("window", String(windowSeconds));
+    }
+    const qs = params.toString();
+    return request<FunctionCostSummary>(`/functions/${encodeURIComponent(name)}/cost${qs ? `?${qs}` : ""}`);
+  },
+
+  summary: (windowSeconds?: number) => {
+    const params = new URLSearchParams();
+    if (typeof windowSeconds === "number" && Number.isFinite(windowSeconds) && windowSeconds > 0) {
+      params.set("window", String(windowSeconds));
+    }
+    const qs = params.toString();
+    return request<TenantCostSummary>(`/cost/summary${qs ? `?${qs}` : ""}`);
+  },
 };

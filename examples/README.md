@@ -3,7 +3,7 @@
 测试用例覆盖 CPU 计算、超时、网络、磁盘 I/O 四种场景（目前提供 Python / Go / Rust 三种语言实现）。
 
 同时提供 **Hello** 用例覆盖 Nova 当前支持的全部 VM runtime：
-`python, go, rust, wasm, node, ruby, java, php, dotnet, deno, bun`。
+`python, go, rust, wasm, node, ruby, java, php, deno, bun`。
 
 ## 快速测试
 
@@ -11,7 +11,7 @@
 # 构建所有 runtime 的 hello 产物（输出到 examples/build/<runtime>/handler）
 ./build_runtime_fixtures.sh
 
-# 测试所有运行时 (python, go, rust, wasm, node, ruby, java, php, dotnet, deno, bun)
+# 测试所有运行时 (python, go, rust, wasm, node, ruby, java, php, deno, bun)
 ./test_all_runtimes.sh
 
 # 仅测试 Python 和 Go
@@ -40,7 +40,6 @@
 | ruby | `hello_ruby.rb` |
 | java | `hello_java/Main.java` |
 | php | `hello_php.php` |
-| dotnet | `hello_dotnet/Program.cs` |
 | deno | `hello_deno.js` |
 | bun | `hello_bun.js` |
 

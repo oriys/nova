@@ -29,7 +29,8 @@ type CreateFunctionRequest struct {
 	Name                string                  `json:"name"`
 	Runtime             string                  `json:"runtime"`
 	Handler             string                  `json:"handler,omitempty"`
-	Code                string                  `json:"code"` // Source code (required)
+	Code                string                  `json:"code"`                          // Source code (required)
+	DependencyFiles     map[string]string       `json:"dependency_files,omitempty"`    // Optional dependency files: filename -> content (e.g., go.mod, requirements.txt, Cargo.toml, package.json)
 	MemoryMB            int                     `json:"memory_mb,omitempty"`
 	TimeoutS            int                     `json:"timeout_s,omitempty"`
 	MinReplicas         int                     `json:"min_replicas,omitempty"`
@@ -122,7 +123,44 @@ func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunction
 
 	var compileStatus domain.CompileStatus = domain.CompileStatusNotRequired
 
-	if s.compiler != nil {
+	hasDeps := len(req.DependencyFiles) > 0
+
+	if s.compiler != nil && hasDeps {
+		// Build files map: main code + dependency files
+		files := make(map[string][]byte)
+		for name, content := range req.DependencyFiles {
+			files[name] = []byte(content)
+		}
+		// Determine entry point filename
+		entryPoint := fn.Handler
+		ext := compiler.RuntimeExtension(rt)
+		if entryPoint == "" {
+			entryPoint = "handler" + ext
+		} else if ext != "" && !strings.Contains(entryPoint, ".") {
+			entryPoint = entryPoint + ext
+		}
+		files[entryPoint] = []byte(req.Code)
+
+		// Save multi-file structure
+		if err := s.store.SaveFunctionFiles(ctx, fn.ID, files); err != nil {
+			return nil, "", fmt.Errorf("save dependency files: %w", err)
+		}
+
+		// For interpreted languages, install dependencies first
+		if !domain.NeedsCompilation(rt) {
+			filesWithDeps, err := s.compiler.CompileWithDeps(ctx, fn, files)
+			if err == nil && len(filesWithDeps) > len(files) {
+				files = filesWithDeps
+				s.store.SaveFunctionFiles(ctx, fn.ID, files)
+			}
+		}
+
+		// Compile with all files (handles both compiled and interpreted)
+		s.compiler.CompileAsyncWithFiles(ctx, fn, files)
+		if domain.NeedsCompilation(rt) {
+			compileStatus = domain.CompileStatusCompiling
+		}
+	} else if s.compiler != nil {
 		s.compiler.CompileAsync(ctx, fn, req.Code)
 		if domain.NeedsCompilation(rt) {
 			compileStatus = domain.CompileStatusCompiling

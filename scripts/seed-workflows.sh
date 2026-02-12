@@ -54,9 +54,6 @@ create_function() {
             java*|kotlin*|scala*)
                 handler="Handler::handler"
                 ;;
-            dotnet*)
-                handler="handler::Handler::Handle"
-                ;;
             go*|rust*|swift*|zig*|wasm*|provided*|custom*)
                 handler="handler"
                 ;;

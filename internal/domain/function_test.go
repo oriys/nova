@@ -11,7 +11,6 @@ func TestNeedsCompilation(t *testing.T) {
 		{Runtime("rust1.84"), true},
 		{RuntimeGo, true},
 		{Runtime("go1.23"), true},
-		{Runtime("dotnet8"), true},
 		{RuntimePython, false},
 		{Runtime("python3.12"), false},
 	}

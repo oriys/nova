@@ -1,10 +1,13 @@
 "use client"
 
+import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { useSidebar } from "./sidebar-context"
+import { getTenantScope } from "@/lib/tenant-scope"
+import { tenantsApi, type MenuPermission } from "@/lib/api"
 import {
   LayoutDashboard,
   Code2,
@@ -17,9 +20,10 @@ import {
   RadioTower,
   Building2,
   Clock3,
+  FileText,
 } from "lucide-react"
 
-type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "asyncJobs" | "history" | "runtimes" | "configurations" | "secrets" | "apiKeys"
+type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "asyncJobs" | "history" | "runtimes" | "configurations" | "secrets" | "apiKeys" | "apiDocs"
 
 const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] = [
   { key: "dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -33,6 +37,7 @@ const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] 
   { key: "configurations", href: "/configurations", icon: Settings },
   { key: "secrets", href: "/secrets", icon: Lock },
   { key: "apiKeys", href: "/api-keys", icon: KeyRound },
+  { key: "apiDocs", href: "/api-docs", icon: FileText },
 ]
 
 function LumenLogo({ className }: { className?: string }) {
@@ -55,10 +60,46 @@ function LumenLogo({ className }: { className?: string }) {
   )
 }
 
+function useMenuPermissions(): Set<string> | null {
+  const [enabledKeys, setEnabledKeys] = useState<Set<string> | null>(null)
+
+  const fetchPermissions = useCallback(() => {
+    const { tenantId } = getTenantScope()
+    tenantsApi
+      .listMenuPermissions(tenantId)
+      .then((perms: MenuPermission[]) => {
+        const keys = new Set<string>()
+        for (const p of perms) {
+          if (p.enabled) keys.add(p.menu_key)
+        }
+        setEnabledKeys(keys)
+      })
+      .catch(() => {
+        // On error, fall back to a safe minimal set (dashboard only)
+        setEnabledKeys(new Set(["dashboard"]))
+      })
+  }, [])
+
+  useEffect(() => {
+    fetchPermissions()
+    const handler = () => fetchPermissions()
+    window.addEventListener("nova:tenant-scope-changed", handler)
+    return () => window.removeEventListener("nova:tenant-scope-changed", handler)
+  }, [fetchPermissions])
+
+  return enabledKeys
+}
+
 export function Sidebar() {
   const pathname = usePathname()
   const { collapsed, toggle } = useSidebar()
   const t = useTranslations("nav")
+  const enabledMenuKeys = useMenuPermissions()
+
+  const visibleNavigation =
+    enabledMenuKeys === null
+      ? navigation
+      : navigation.filter((item) => enabledMenuKeys.has(item.key))
 
   return (
     <aside
@@ -79,13 +120,13 @@ export function Sidebar() {
         </div>
         {!collapsed && (
           <span className="text-lg font-semibold tracking-tight text-foreground">
-            Lumen
+            {t("brandName")}
           </span>
         )}
       </button>
 
       <nav className={cn("flex-1 space-y-1", collapsed ? "px-2 py-4" : "px-3 py-4")}>
-        {navigation.map((item) => {
+        {visibleNavigation.map((item) => {
           const label = t(item.key)
           const isActive =
             pathname === item.href ||

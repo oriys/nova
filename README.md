@@ -1,14 +1,17 @@
 # Nova
 
-Nova 是一个极简的 Serverless 平台，基于 [Firecracker](https://github.com/firecracker-microvm/firecracker) microVM 实现函数级别的隔离执行。每次函数调用都运行在独立的轻量虚拟机中，支持 Python、Go、Rust、WASM、Node.js、Ruby、Java、PHP、.NET、Deno、Bun、Lua 等 20+ 运行时。
+Nova 是一个极简的 Serverless 平台，基于 [Firecracker](https://github.com/firecracker-microvm/firecracker) microVM 实现函数级别的隔离执行。每次函数调用都运行在独立的轻量虚拟机中，支持 Python、Go、Rust、WASM、Node.js、Ruby、Java、PHP、Deno、Bun、Lua 等 20+ 运行时。
 
 ## 后端拆分
 
-后端已拆分为三个独立服务：
+后端已拆分为五平面架构（六个独立服务）：
 
-- `nova`（控制平面）
-- `comet`（数据平面，提供 gRPC）
-- `zenith`（网关，供 UI/MCP/CLI 统一接入）
+- `nova`（控制平面）— 函数管理、配置、API Key、网关路由
+- `comet`（隔离执行平面）— 执行器、VM/容器池化，提供 gRPC
+- `corona`（调度放置平面）— Cron 调度、自动扩缩
+- `nebula`（事件摄入平面）— 事件总线、异步队列、工作流引擎
+- `aurora`（可观测平面）— SLO 评估、Prometheus 指标
+- `zenith`（网关）— 供 UI/MCP/CLI 统一接入
 
 详细启动方式见 `BACKEND_SPLIT.md`。
 
@@ -71,7 +74,7 @@ Nova 是一个极简的 Serverless 平台，基于 [Firecracker](https://github.
 - 流量分割 / 金丝雀发布（`TrafficSplit`）
 
 ### 多运行时
-- 编译型：Go、Rust、Zig、Swift、Java、.NET、WASM
+- 编译型：Go、Rust、Zig、Swift、Java、WASM
 - 解释型：Python、Node.js、Ruby、PHP、Deno、Bun、Lua
 - 自定义运行时：`custom` / `provided`（用户自带 bootstrap）
 
@@ -124,15 +127,18 @@ Nova 是一个极简的 Serverless 平台，基于 [Firecracker](https://github.
 
 ## 系统架构
 
-系统按“接入层 -> 网关 -> 控制平面/数据平面 -> 执行后端 -> 存储”组织：
+系统按“接入层 -> 网关 -> 五平面 -> 执行后端 -> 存储”组织：
 
-| 组件 | 说明 | 入口 |
-|------|------|------|
-| Zenith Gateway | 统一 HTTP 入口，转发到 Nova/Comet | `cmd/zenith/` |
-| Nova Control Plane | 控制平面（函数、租户、配置、工作流、路由管理） | `cmd/nova/` |
-| Comet Data Plane | 数据平面（执行、池化、异步），仅提供 gRPC | `cmd/comet/` |
-| Agent | VM/容器内执行进程，负责运行用户函数 | `cmd/agent/` |
-| Lumen / Atlas / Orbit | UI / MCP / CLI 调用方，统一访问 Zenith | `lumen/` / `atlas/` / `orbit/` |
+| 平面 | 服务 | 说明 | 入口 |
+|------|------|------|------|
+| Gateway | Zenith | 统一 HTTP 入口，转发到 Nova/Comet | `cmd/zenith/` |
+| Control Plane | Nova | 控制平面（函数、租户、配置、路由管理） | `cmd/nova/` |
+| Isolation & Execution | Comet | 隔离执行平面（执行器、池化），仅提供 gRPC | `cmd/comet/` |
+| Scheduler / Placement | Corona | 调度放置平面（Cron 调度、自动扩缩） | `cmd/corona/` |
+| Event Ingestion | Nebula | 事件摄入平面（事件总线、异步队列、工作流引擎） | `cmd/nebula/` |
+| Observability | Aurora | 可观测平面（SLO 评估、指标、输出捕获） | `cmd/aurora/` |
+| — | Agent | VM/容器内执行进程，负责运行用户函数 | `cmd/agent/` |
+| — | Lumen / Atlas / Orbit | UI / MCP / CLI 调用方，统一访问 Zenith | `lumen/` / `atlas/` / `orbit/` |
 
 ### 全组件依赖关系图
 
@@ -151,17 +157,32 @@ flowchart LR
 
     subgraph "Control Plane"
         nova["Nova (HTTP Control Plane)"]
-        scheduler["Scheduler"]
-        workflow["Workflow Engine"]
         compiler["Compiler / Function Service"]
     end
 
-    subgraph "Data Plane"
-        comet["Comet (gRPC Data Plane)"]
+    subgraph "Isolation & Execution Plane"
+        comet["Comet (gRPC Execution)"]
         executor["Executor"]
         pool["Worker / VM Pool"]
+    end
+
+    subgraph "Scheduler / Placement Plane"
+        corona["Corona (Scheduler)"]
+        scheduler["Scheduler"]
+        autoscaler["Autoscaler"]
+    end
+
+    subgraph "Event Ingestion Plane"
+        nebula["Nebula (Event Ingestion)"]
         asyncq["Async Queue Workers"]
         eventbus["Event Bus Workers"]
+        workflow["Workflow Engine"]
+    end
+
+    subgraph "Observability Plane"
+        aurora["Aurora (Observability)"]
+        slo["SLO Evaluator"]
+        prom["Prometheus Metrics"]
     end
 
     subgraph "Runtime Backends"
@@ -173,7 +194,6 @@ flowchart LR
 
     subgraph "State / Infra"
         pg["PostgreSQL"]
-        obs["Metrics / Tracing / Logs"]
     end
 
     lumen --> zenith
@@ -184,17 +204,26 @@ flowchart LR
     zenith -->|"HTTP management routes"| nova
     zenith -->|"gRPC invoke/proxy routes"| comet
 
-    nova --> scheduler
-    nova --> workflow
     nova --> compiler
     nova --> pg
-    nova --> obs
 
     comet --> executor
-    comet --> asyncq
-    comet --> eventbus
     comet --> pg
-    comet --> obs
+
+    corona -->|"gRPC invoke"| comet
+    corona --> scheduler
+    corona --> autoscaler
+    corona --> pg
+
+    nebula -->|"gRPC invoke"| comet
+    nebula --> asyncq
+    nebula --> eventbus
+    nebula --> workflow
+    nebula --> pg
+
+    aurora --> slo
+    aurora --> prom
+    aurora --> pg
 
     executor --> pool
     executor --> pg
@@ -303,7 +332,6 @@ Firecracker VM
 | Ruby | ruby.ext4 | `ruby /code/handler input.json` |
 | Java | java.ext4 | `java -jar /code/handler input.json` |
 | PHP | php.ext4 | `php /code/handler input.json` |
-| .NET | dotnet.ext4 | `/code/handler input.json` |
 | Deno | deno.ext4 | `deno run --allow-read /code/handler input.json` |
 | Bun | bun.ext4 | `bun run /code/handler input.json` |
 | WASM | wasm.ext4 | `wasmtime /code/handler -- input.json` |
@@ -401,13 +429,13 @@ sudo bash scripts/setup.sh
 
 ```
 /opt/nova/
-├── bin/nova, comet, zenith, nova-agent
+├── bin/nova, comet, corona, nebula, aurora, zenith, nova-agent
 ├── kernel/vmlinux
 ├── rootfs/
 │   ├── base.ext4          # Go/Rust/Zig
 │   ├── python.ext4        # Python
 │   ├── node.ext4          # Node.js
-│   └── ...                # ruby/java/php/dotnet/deno/bun/wasm
+│   └── ...                # ruby/java/php/deno/bun/wasm
 └── snapshots/
 ```
 
@@ -441,8 +469,8 @@ nova daemon --idle-ttl 60s
 ### 后端
 
 ```bash
-make build          # 构建 nova/comet/zenith (本机) + agent (linux/amd64)
-make build-linux    # 交叉编译 nova/comet/zenith + agent 全部为 linux/amd64
+make build          # 构建所有服务 (本机) + agent (linux/amd64)
+make build-linux    # 交叉编译所有服务 + agent 全部为 linux/amd64
 make agent          # 仅构建 guest agent
 ```
 

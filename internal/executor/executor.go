@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/oriys/nova/internal/circuitbreaker"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
@@ -23,6 +24,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
+// ErrCircuitOpen is returned when the circuit breaker is open for a function.
+var ErrCircuitOpen = fmt.Errorf("circuit breaker is open")
+
 type Executor struct {
 	store           *store.Store
 	pool            *pool.Pool
@@ -32,6 +36,7 @@ type Executor struct {
 	logBatcherConfig LogBatcherConfig
 	inflight        sync.WaitGroup
 	closing         atomic.Bool
+	breakers        *circuitbreaker.Registry
 }
 
 type Option func(*Executor)
@@ -59,9 +64,10 @@ func WithLogBatcherConfig(cfg LogBatcherConfig) Option {
 
 func New(store *store.Store, pool *pool.Pool, opts ...Option) *Executor {
 	e := &Executor{
-		store:  store,
-		pool:   pool,
-		logger: logging.Default(),
+		store:    store,
+		pool:     pool,
+		logger:   logging.Default(),
+		breakers: circuitbreaker.NewRegistry(),
 	}
 	for _, opt := range opts {
 		opt(e)
@@ -131,6 +137,13 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 				fn.LayerPaths = append(fn.LayerPaths, l.ImagePath)
 			}
 		}
+	}
+
+	// Circuit breaker check
+	breaker := e.getBreakerForFunction(fn)
+	if breaker != nil && !breaker.Allow() {
+		metrics.RecordShed(fn.Name, "circuit_breaker_open")
+		return nil, ErrCircuitOpen
 	}
 
 	// Fetch code content from store
@@ -261,6 +274,11 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		e.logger.Log(logEntry)
 		observability.SetSpanError(span, err)
 
+		// Record circuit breaker failure
+		if breaker != nil {
+			breaker.RecordFailure()
+		}
+
 		// Async persist invocation log to database
 		e.persistInvocationLog(reqID, fn, durationMs, pvm.ColdStart, false, err.Error(), len(payload), 0, payload, nil, "", "")
 
@@ -270,6 +288,15 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	// Record successful invocation
 	success := resp.Error == ""
 	metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, success)
+
+	// Record circuit breaker outcome
+	if breaker != nil {
+		if success {
+			breaker.RecordSuccess()
+		} else {
+			breaker.RecordFailure()
+		}
+	}
 
 	logEntry.Success = success
 	logEntry.Error = resp.Error
@@ -533,6 +560,28 @@ func (e *Executor) InvokeStream(ctx context.Context, funcName string, payload js
 
 	observability.SetSpanOK(span)
 	return execErr
+}
+
+// getBreakerForFunction returns the circuit breaker for a function based on its CapacityPolicy.
+// Returns nil if the function has no circuit breaker configured.
+func (e *Executor) getBreakerForFunction(fn *domain.Function) *circuitbreaker.Breaker {
+	if fn.CapacityPolicy == nil || !fn.CapacityPolicy.Enabled {
+		return nil
+	}
+	if fn.CapacityPolicy.BreakerErrorPct <= 0 || fn.CapacityPolicy.BreakerWindowS <= 0 || fn.CapacityPolicy.BreakerOpenS <= 0 {
+		return nil
+	}
+	return e.breakers.Get(fn.ID, circuitbreaker.Config{
+		ErrorPct:       fn.CapacityPolicy.BreakerErrorPct,
+		WindowDuration: time.Duration(fn.CapacityPolicy.BreakerWindowS) * time.Second,
+		OpenDuration:   time.Duration(fn.CapacityPolicy.BreakerOpenS) * time.Second,
+		HalfOpenProbes: fn.CapacityPolicy.HalfOpenProbes,
+	})
+}
+
+// BreakerSnapshot returns the current circuit breaker states for observability.
+func (e *Executor) BreakerSnapshot() map[string]string {
+	return e.breakers.Snapshot()
 }
 
 // persistInvocationLog asynchronously saves an invocation log to Postgres

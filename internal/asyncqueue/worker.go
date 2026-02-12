@@ -23,7 +23,7 @@ type Config struct {
 // WorkerPool polls queued async invocations and executes them.
 type WorkerPool struct {
 	store   *store.Store
-	exec    *executor.Executor
+	exec    executor.Invoker
 	cfg     Config
 	stopCh  chan struct{}
 	started bool
@@ -32,7 +32,7 @@ type WorkerPool struct {
 }
 
 // New creates a new async worker pool.
-func New(s *store.Store, exec *executor.Executor, cfg Config) *WorkerPool {
+func New(s *store.Store, exec executor.Invoker, cfg Config) *WorkerPool {
 	if cfg.Workers <= 0 {
 		cfg.Workers = 4
 	}

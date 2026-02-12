@@ -38,7 +38,6 @@ function getRuntimeId(displayName: string): string {
   if (lower.includes("java") && !lower.includes("javascript")) return "java"
   if (lower.includes("ruby")) return "ruby"
   if (lower.includes("php")) return "php"
-  if (lower.includes(".net") || lower.includes("dotnet")) return "dotnet"
   if (lower.includes("deno")) return "deno"
   if (lower.includes("bun")) return "bun"
   return "javascript"
@@ -188,7 +187,6 @@ export function FunctionCode({
       deno: ".ts",
       bun: ".ts",
       php: ".php",
-      dotnet: ".cs",
     }[runtimeId] || ".txt"
 
     const blob = new Blob([code], { type: "text/plain" })

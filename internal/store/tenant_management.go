@@ -153,6 +153,16 @@ func (s *PostgresStore) CreateTenant(ctx context.Context, tenant *TenantRecord) 
 		return nil, fmt.Errorf("create default namespace for tenant %s: %w", tenantID, err)
 	}
 
+	// Seed default menu permissions for the new tenant.
+	if err := seedMenuPermissions(ctx, tx, tenantID); err != nil {
+		return nil, err
+	}
+
+	// Seed default button permissions for the new tenant.
+	if err := seedButtonPermissions(ctx, tx, tenantID); err != nil {
+		return nil, err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit tenant create tx: %w", err)
 	}
@@ -248,6 +258,16 @@ func (s *PostgresStore) DeleteTenant(ctx context.Context, id string) error {
 		sql  string
 		args []any
 	}{
+		{
+			name: "tenant_menu_permissions",
+			sql:  `DELETE FROM tenant_menu_permissions WHERE tenant_id = $1`,
+			args: []any{tenantID},
+		},
+		{
+			name: "tenant_button_permissions",
+			sql:  `DELETE FROM tenant_button_permissions WHERE tenant_id = $1`,
+			args: []any{tenantID},
+		},
 		{
 			name: "invocation_logs",
 			sql:  `DELETE FROM invocation_logs WHERE tenant_id = $1`,

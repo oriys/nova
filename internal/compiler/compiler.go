@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	goruntime "runtime"
 	"strings"
 	"sync"
 
@@ -94,7 +93,9 @@ func (c *Compiler) CompileWithDeps(ctx context.Context, fn *domain.Function, fil
 		result[k] = v
 	}
 
-	switch fn.Runtime {
+	baseRuntime := baseRuntimeID(fn.Runtime)
+
+	switch baseRuntime {
 	case domain.RuntimePython:
 		if reqTxt, ok := files["requirements.txt"]; ok && len(reqTxt) > 0 {
 			deps, err := c.installPythonDeps(ctx, reqTxt)
@@ -120,9 +121,513 @@ func (c *Compiler) CompileWithDeps(ctx context.Context, fn *domain.Function, fil
 				logging.Op().Info("installed Node deps", "function", fn.Name, "dep_files", len(deps))
 			}
 		}
+
+	case domain.RuntimeRuby:
+		if gemfile, ok := files["Gemfile"]; ok && len(gemfile) > 0 {
+			deps, err := c.installRubyDeps(ctx, gemfile)
+			if err != nil {
+				logging.Op().Warn("failed to install Ruby deps", "function", fn.Name, "error", err)
+			} else {
+				for k, v := range deps {
+					result["vendor/bundle/"+k] = v
+				}
+				logging.Op().Info("installed Ruby deps", "function", fn.Name, "dep_files", len(deps))
+			}
+		}
+
+	case domain.RuntimePHP:
+		if composerJson, ok := files["composer.json"]; ok && len(composerJson) > 0 {
+			deps, err := c.installPHPDeps(ctx, composerJson)
+			if err != nil {
+				logging.Op().Warn("failed to install PHP deps", "function", fn.Name, "error", err)
+			} else {
+				for k, v := range deps {
+					result["vendor/"+k] = v
+				}
+				logging.Op().Info("installed PHP deps", "function", fn.Name, "dep_files", len(deps))
+			}
+		}
 	}
 
 	return result, nil
+}
+
+// CompileAsyncWithFiles starts an asynchronous compilation for a multi-file function.
+// It uses user-provided dependency files (go.mod, Cargo.toml, etc.) during compilation.
+func (c *Compiler) CompileAsyncWithFiles(ctx context.Context, fn *domain.Function, files map[string][]byte) {
+	if !domain.NeedsCompilation(fn.Runtime) {
+		// Interpreted language: find entry point and store as-is
+		entryPoint := findEntryPointFile(files, fn.Runtime, fn.Handler)
+		if src, ok := files[entryPoint]; ok {
+			c.handleInterpreted(ctx, fn, string(src))
+		}
+		return
+	}
+
+	// Mark as compiling
+	c.store.UpdateCompileResult(ctx, fn.ID, nil, "", domain.CompileStatusCompiling, "")
+
+	// Run compilation in background
+	go func() {
+		bgCtx := context.Background()
+		binary, err := c.compileWithFiles(bgCtx, fn, files)
+		if err != nil {
+			logging.Op().Error("compilation failed", "function", fn.Name, "error", err)
+			c.store.UpdateCompileResult(bgCtx, fn.ID, nil, "", domain.CompileStatusFailed, err.Error())
+			return
+		}
+
+		binaryHash := hashBytes(binary)
+
+		// Update code hash on function
+		fn.CodeHash = binaryHash
+
+		// Store result
+		if err := c.store.UpdateCompileResult(bgCtx, fn.ID, binary, binaryHash, domain.CompileStatusSuccess, ""); err != nil {
+			logging.Op().Error("failed to store compile result", "function", fn.Name, "error", err)
+			return
+		}
+
+		// Update function's code hash in store
+		c.store.SaveFunction(bgCtx, fn)
+
+		logging.Op().Info("compilation succeeded", "function", fn.Name, "binary_size", len(binary))
+	}()
+}
+
+// compileWithFiles compiles a multi-file function using all user-provided files.
+func (c *Compiler) compileWithFiles(ctx context.Context, fn *domain.Function, files map[string][]byte) ([]byte, error) {
+	// Create temp work directory
+	workDir, err := os.MkdirTemp(c.tmpDir, fmt.Sprintf("compile-%s-", fn.Name))
+	if err != nil {
+		return nil, fmt.Errorf("create work dir: %w", err)
+	}
+	defer os.RemoveAll(workDir)
+
+	// Write user files and generate any missing wrapper files
+	if err := c.writeSourceFilesFromMap(workDir, fn.Runtime, files); err != nil {
+		return nil, fmt.Errorf("write source: %w", err)
+	}
+
+	// Get Docker compile command
+	image, buildCmd := dockerCompileCommand(fn.Runtime)
+	if image == "" {
+		return nil, fmt.Errorf("unsupported compiled runtime: %s", fn.Runtime)
+	}
+
+	containerName := fmt.Sprintf("nova-compile-%s-%d", fn.Name, os.Getpid())
+
+	logging.Op().Info("starting multi-file compilation", "function", fn.Name, "runtime", fn.Runtime, "image", image, "files", len(files))
+
+	createArgs := []string{"create", "--platform", "linux/amd64", "--network", "host", "--name", containerName, image, "sh", "-c", buildCmd}
+	createCmd := exec.CommandContext(ctx, "docker", createArgs...)
+	var createStderr bytes.Buffer
+	createCmd.Stderr = &createStderr
+	if err := createCmd.Run(); err != nil {
+		return nil, fmt.Errorf("docker create failed: %w: %s", err, createStderr.String())
+	}
+
+	defer func() {
+		rmCmd := exec.Command("docker", "rm", "-f", containerName)
+		rmCmd.Run()
+	}()
+
+	cpInArgs := []string{"cp", workDir + "/.", containerName + ":/work/"}
+	cpInCmd := exec.CommandContext(ctx, "docker", cpInArgs...)
+	var cpInStderr bytes.Buffer
+	cpInCmd.Stderr = &cpInStderr
+	if err := cpInCmd.Run(); err != nil {
+		return nil, fmt.Errorf("docker cp (in) failed: %w: %s", err, cpInStderr.String())
+	}
+
+	startArgs := []string{"start", "-a", containerName}
+	startCmd := exec.CommandContext(ctx, "docker", startArgs...)
+	var stdout, stderr bytes.Buffer
+	startCmd.Stdout = &stdout
+	startCmd.Stderr = &stderr
+	if err := startCmd.Run(); err != nil {
+		return nil, fmt.Errorf("compilation error: %s\n%s", err, stderr.String())
+	}
+
+	cpOutArgs := []string{"cp", containerName + ":/work/handler", workDir + "/handler"}
+	cpOutCmd := exec.CommandContext(ctx, "docker", cpOutArgs...)
+	var cpOutStderr bytes.Buffer
+	cpOutCmd.Stderr = &cpOutStderr
+	if err := cpOutCmd.Run(); err != nil {
+		return nil, fmt.Errorf("docker cp (out) failed: %w: %s", err, cpOutStderr.String())
+	}
+
+	binaryPath := filepath.Join(workDir, "handler")
+	binary, err := os.ReadFile(binaryPath)
+	if err != nil {
+		return nil, fmt.Errorf("read compiled binary: %w", err)
+	}
+
+	return binary, nil
+}
+
+// writeSourceFilesFromMap writes all user files to workDir and generates wrapper files if missing.
+func (c *Compiler) writeSourceFilesFromMap(workDir string, runtime domain.Runtime, files map[string][]byte) error {
+	// Write all user-provided files first
+	for path, content := range files {
+		fullPath := filepath.Join(workDir, path)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			return fmt.Errorf("create dir for %s: %w", path, err)
+		}
+		if err := os.WriteFile(fullPath, content, 0644); err != nil {
+			return fmt.Errorf("write file %s: %w", path, err)
+		}
+	}
+
+	baseRuntime := baseRuntimeID(runtime)
+
+	// Generate missing wrapper files based on runtime
+	switch baseRuntime {
+	case domain.RuntimeGo:
+		if _, ok := files["main.go"]; !ok {
+			if err := os.WriteFile(filepath.Join(workDir, "main.go"), []byte(goWrapperMain), 0644); err != nil {
+				return err
+			}
+		}
+		if _, ok := files["context.go"]; !ok {
+			if err := os.WriteFile(filepath.Join(workDir, "context.go"), []byte(goWrapperContext), 0644); err != nil {
+				return err
+			}
+		}
+		if _, ok := files["go.mod"]; !ok {
+			goMod := "module handler\n\ngo 1.23\n"
+			if err := os.WriteFile(filepath.Join(workDir, "go.mod"), []byte(goMod), 0644); err != nil {
+				return err
+			}
+		}
+
+	case domain.RuntimeRust:
+		srcDir := filepath.Join(workDir, "src")
+		os.MkdirAll(srcDir, 0755)
+		// Move .rs files to src/ if not already there
+		for path, content := range files {
+			if strings.HasSuffix(path, ".rs") && !strings.HasPrefix(path, "src/") {
+				srcPath := filepath.Join(srcDir, path)
+				if err := os.WriteFile(srcPath, content, 0644); err != nil {
+					return err
+				}
+			}
+		}
+		if _, ok := files["src/main.rs"]; !ok {
+			if _, ok := files["main.rs"]; !ok {
+				if err := os.WriteFile(filepath.Join(srcDir, "main.rs"), []byte(rustWrapperMain), 0644); err != nil {
+					return err
+				}
+			}
+		}
+		if _, ok := files["src/context.rs"]; !ok {
+			if _, ok := files["context.rs"]; !ok {
+				if err := os.WriteFile(filepath.Join(srcDir, "context.rs"), []byte(rustWrapperContext), 0644); err != nil {
+					return err
+				}
+			}
+		}
+		if _, ok := files["Cargo.toml"]; !ok {
+			cargoToml := `[package]
+name = "handler"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+lto = true
+strip = true
+`
+			if err := os.WriteFile(filepath.Join(workDir, "Cargo.toml"), []byte(cargoToml), 0644); err != nil {
+				return err
+			}
+		}
+		// Create .cargo/config.toml if not provided
+		if _, ok := files[".cargo/config.toml"]; !ok {
+			cargoDir := filepath.Join(workDir, ".cargo")
+			os.MkdirAll(cargoDir, 0755)
+			cargoConfig := `[target.x86_64-unknown-linux-musl]
+rustflags = ["-C", "target-feature=+crt-static"]
+`
+			if err := os.WriteFile(filepath.Join(cargoDir, "config.toml"), []byte(cargoConfig), 0644); err != nil {
+				return err
+			}
+		}
+
+	case domain.RuntimeJava:
+		if _, ok := files["Main.java"]; !ok {
+			if err := os.WriteFile(filepath.Join(workDir, "Main.java"), []byte(javaWrapperMain), 0644); err != nil {
+				return err
+			}
+		}
+
+	case domain.RuntimeKotlin:
+		if _, ok := files["Main.kt"]; !ok {
+			if err := os.WriteFile(filepath.Join(workDir, "Main.kt"), []byte(kotlinWrapperMain), 0644); err != nil {
+				return err
+			}
+		}
+
+	case domain.RuntimeSwift:
+		if _, ok := files["main.swift"]; !ok {
+			if err := os.WriteFile(filepath.Join(workDir, "main.swift"), []byte(swiftWrapperMain), 0644); err != nil {
+				return err
+			}
+		}
+
+	case domain.RuntimeZig:
+		if _, ok := files["main.zig"]; !ok {
+			if err := os.WriteFile(filepath.Join(workDir, "main.zig"), []byte(zigWrapperMain), 0644); err != nil {
+				return err
+			}
+		}
+
+	case domain.RuntimeScala:
+		if _, ok := files["Main.scala"]; !ok {
+			if err := os.WriteFile(filepath.Join(workDir, "Main.scala"), []byte(scalaWrapperMain), 0644); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// findEntryPointFile determines the entry point file from a files map.
+func findEntryPointFile(files map[string][]byte, runtime domain.Runtime, handler string) string {
+	// Check if handler matches a file
+	if handler != "" {
+		if _, ok := files[handler]; ok {
+			return handler
+		}
+	}
+
+	baseRuntime := baseRuntimeID(runtime)
+
+	// Runtime-specific entry points
+	entryPoints := map[domain.Runtime][]string{
+		domain.RuntimePython: {"handler.py", "main.py", "app.py", "index.py"},
+		domain.RuntimeNode:   {"handler.js", "index.js", "main.js", "app.js"},
+		domain.RuntimeGo:     {"handler.go", "main.go"},
+		domain.RuntimeRust:   {"handler.rs", "src/handler.rs", "main.rs", "src/main.rs"},
+		domain.RuntimeRuby:   {"handler.rb", "main.rb", "app.rb"},
+		domain.RuntimeJava:   {"Handler.java", "Main.java"},
+		domain.RuntimePHP:    {"handler.php", "index.php", "main.php"},
+		domain.RuntimeDeno:   {"handler.ts", "main.ts", "index.ts"},
+		domain.RuntimeBun:    {"handler.ts", "handler.js", "index.ts", "index.js"},
+	}
+
+	if candidates, ok := entryPoints[baseRuntime]; ok {
+		for _, candidate := range candidates {
+			if _, exists := files[candidate]; exists {
+				return candidate
+			}
+		}
+	}
+
+	// Fallback: return first file
+	for path := range files {
+		return path
+	}
+	return "handler"
+}
+
+// baseRuntimeID extracts the base runtime from a versioned runtime ID
+// (e.g., "python3.11" -> RuntimePython, "go1.21" -> RuntimeGo)
+func baseRuntimeID(runtime domain.Runtime) domain.Runtime {
+	rt := string(runtime)
+	prefixMap := map[string]domain.Runtime{
+		"python": domain.RuntimePython,
+		"node":   domain.RuntimeNode,
+		"go":     domain.RuntimeGo,
+		"rust":   domain.RuntimeRust,
+		"ruby":   domain.RuntimeRuby,
+		"java":   domain.RuntimeJava,
+		"php":    domain.RuntimePHP,
+		"deno":   domain.RuntimeDeno,
+		"bun":    domain.RuntimeBun,
+		"kotlin": domain.RuntimeKotlin,
+		"swift":  domain.RuntimeSwift,
+		"zig":    domain.RuntimeZig,
+		"scala":  domain.RuntimeScala,
+	}
+	for prefix, base := range prefixMap {
+		if strings.HasPrefix(rt, prefix) {
+			return base
+		}
+	}
+	return runtime
+}
+
+// HasDependencyFiles checks if the files map contains any dependency manifest files.
+func HasDependencyFiles(files map[string][]byte) bool {
+	depFiles := []string{
+		"go.mod", "go.sum",
+		"package.json", "package-lock.json",
+		"requirements.txt", "Pipfile", "pyproject.toml",
+		"Cargo.toml", "Cargo.lock",
+		"Gemfile", "Gemfile.lock",
+		"composer.json", "composer.lock",
+	}
+	for _, name := range depFiles {
+		if _, ok := files[name]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// installRubyDeps installs Ruby dependencies from Gemfile
+func (c *Compiler) installRubyDeps(ctx context.Context, gemfile []byte) (map[string][]byte, error) {
+	hash := hashBytes(gemfile)
+	if cached, ok := c.depsCache.Load(hash); ok {
+		return cached.(map[string][]byte), nil
+	}
+
+	workDir, err := os.MkdirTemp(c.tmpDir, "rubydeps-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(workDir)
+
+	if err := os.WriteFile(filepath.Join(workDir, "Gemfile"), gemfile, 0644); err != nil {
+		return nil, err
+	}
+
+	depsDir := filepath.Join(workDir, "vendor")
+	os.MkdirAll(depsDir, 0755)
+
+	containerName := fmt.Sprintf("nova-rubydeps-%s", hash[:12])
+	image := "ruby:3.3-slim"
+	buildCmd := "cd /work && bundle config set --local path vendor/bundle && bundle install --jobs=4 2>&1"
+
+	createCmd := exec.CommandContext(ctx, "docker", "create", "--network", "host", "--name", containerName, image, "sh", "-c", buildCmd)
+	var createStderr bytes.Buffer
+	createCmd.Stderr = &createStderr
+	if err := createCmd.Run(); err != nil {
+		return nil, fmt.Errorf("docker create failed: %w: %s", err, createStderr.String())
+	}
+	defer func() {
+		exec.Command("docker", "rm", "-f", containerName).Run()
+	}()
+
+	cpInCmd := exec.CommandContext(ctx, "docker", "cp", workDir+"/.", containerName+":/work/")
+	if out, err := cpInCmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("docker cp (in) failed: %w: %s", err, out)
+	}
+
+	startCmd := exec.CommandContext(ctx, "docker", "start", "-a", containerName)
+	var stderr bytes.Buffer
+	startCmd.Stderr = &stderr
+
+	logging.Op().Debug("installing Ruby deps", "gemfile_size", len(gemfile))
+
+	if err := startCmd.Run(); err != nil {
+		return nil, fmt.Errorf("bundle install failed: %w: %s", err, stderr.String())
+	}
+
+	cpOutCmd := exec.CommandContext(ctx, "docker", "cp", containerName+":/work/vendor/.", depsDir+"/")
+	if out, err := cpOutCmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("docker cp (out) failed: %w: %s", err, out)
+	}
+
+	deps := make(map[string][]byte)
+	err = filepath.Walk(depsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return err
+		}
+		relPath, _ := filepath.Rel(depsDir, path)
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		deps[relPath] = content
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	c.depsCache.Store(hash, deps)
+	return deps, nil
+}
+
+// installPHPDeps installs PHP dependencies from composer.json
+func (c *Compiler) installPHPDeps(ctx context.Context, composerJson []byte) (map[string][]byte, error) {
+	hash := hashBytes(composerJson)
+	if cached, ok := c.depsCache.Load(hash); ok {
+		return cached.(map[string][]byte), nil
+	}
+
+	workDir, err := os.MkdirTemp(c.tmpDir, "phpdeps-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(workDir)
+
+	if err := os.WriteFile(filepath.Join(workDir, "composer.json"), composerJson, 0644); err != nil {
+		return nil, err
+	}
+
+	vendorDir := filepath.Join(workDir, "vendor")
+	os.MkdirAll(vendorDir, 0755)
+
+	containerName := fmt.Sprintf("nova-phpdeps-%s", hash[:12])
+	image := "composer:2"
+	buildCmd := "cd /work && composer install --no-dev --no-interaction --optimize-autoloader 2>&1"
+
+	createCmd := exec.CommandContext(ctx, "docker", "create", "--network", "host", "--name", containerName, image, "sh", "-c", buildCmd)
+	var createStderr bytes.Buffer
+	createCmd.Stderr = &createStderr
+	if err := createCmd.Run(); err != nil {
+		return nil, fmt.Errorf("docker create failed: %w: %s", err, createStderr.String())
+	}
+	defer func() {
+		exec.Command("docker", "rm", "-f", containerName).Run()
+	}()
+
+	cpInCmd := exec.CommandContext(ctx, "docker", "cp", workDir+"/.", containerName+":/work/")
+	if out, err := cpInCmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("docker cp (in) failed: %w: %s", err, out)
+	}
+
+	startCmd := exec.CommandContext(ctx, "docker", "start", "-a", containerName)
+	var stderr bytes.Buffer
+	startCmd.Stderr = &stderr
+
+	logging.Op().Debug("installing PHP deps", "composer_json_size", len(composerJson))
+
+	if err := startCmd.Run(); err != nil {
+		return nil, fmt.Errorf("composer install failed: %w: %s", err, stderr.String())
+	}
+
+	cpOutCmd := exec.CommandContext(ctx, "docker", "cp", containerName+":/work/vendor/.", vendorDir+"/")
+	if out, err := cpOutCmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("docker cp (out) failed: %w: %s", err, out)
+	}
+
+	deps := make(map[string][]byte)
+	err = filepath.Walk(vendorDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return err
+		}
+		relPath, _ := filepath.Rel(vendorDir, path)
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		deps[relPath] = content
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	c.depsCache.Store(hash, deps)
+	return deps, nil
 }
 
 // installPythonDeps installs Python dependencies from requirements.txt
@@ -474,28 +979,6 @@ rustflags = ["-C", "target-feature=+crt-static"]
 		if err := os.WriteFile(filepath.Join(workDir, "main.zig"), []byte(zigWrapperMain), 0644); err != nil {
 			return err
 		}
-	case domain.RuntimeDotnet:
-		rid := dotnetRuntimeIdentifier()
-		// Save user code as Handler.cs
-		if err := os.WriteFile(filepath.Join(workDir, "Handler.cs"), []byte(sourceCode), 0644); err != nil {
-			return err
-		}
-		// Generate wrapper Program.cs
-		if err := os.WriteFile(filepath.Join(workDir, "Program.cs"), []byte(dotnetWrapperMain), 0644); err != nil {
-			return err
-		}
-		csproj := `<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
-    <RuntimeIdentifier>` + rid + `</RuntimeIdentifier>
-    <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
-  </PropertyGroup>
-</Project>`
-		if err := os.WriteFile(filepath.Join(workDir, "handler.csproj"), []byte(csproj), 0644); err != nil {
-			return err
-		}
 	case domain.RuntimeScala:
 		if err := os.WriteFile(filepath.Join(workDir, "Handler.scala"), []byte(sourceCode), 0644); err != nil {
 			return err
@@ -526,9 +1009,6 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 		return "swift:5.10", "cd /work && swiftc -o handler -static-executable Handler.swift main.swift"
 	case domain.RuntimeZig:
 		return "euantorano/zig:0.13.0", "cd /work && zig build-exe main.zig -name handler -target x86_64-linux-musl"
-	case domain.RuntimeDotnet:
-		rid := dotnetRuntimeIdentifier()
-		return "mcr.microsoft.com/dotnet/sdk:8.0", fmt.Sprintf("cd /work && dotnet publish -c Release -r %s -o out && cp out/handler /work/handler", rid)
 	case domain.RuntimeScala:
 		return "sbtscala/scala-sbt:eclipse-temurin-21.0.2_13_1.10.1_3.5.1",
 			`cd /work && scalac Main.scala Handler.scala && ` +
@@ -544,6 +1024,12 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 }
 
 func runtimeExtension(runtime domain.Runtime) string {
+	return RuntimeExtension(runtime)
+}
+
+// RuntimeExtension returns the file extension for a runtime (e.g., ".py" for Python).
+func RuntimeExtension(runtime domain.Runtime) string {
+	rt := baseRuntimeID(runtime)
 	exts := map[domain.Runtime]string{
 		domain.RuntimePython: ".py",
 		domain.RuntimeGo:     ".go",
@@ -555,7 +1041,6 @@ func runtimeExtension(runtime domain.Runtime) string {
 		domain.RuntimeBun:    ".ts",
 		domain.RuntimeWasm:   ".wasm",
 		domain.RuntimePHP:    ".php",
-		domain.RuntimeDotnet: ".cs",
 		domain.RuntimeElixir: ".exs",
 		domain.RuntimeKotlin: ".kt",
 		domain.RuntimeSwift:  ".swift",
@@ -566,7 +1051,7 @@ func runtimeExtension(runtime domain.Runtime) string {
 		domain.RuntimeJulia:  ".jl",
 		domain.RuntimeScala:  ".scala",
 	}
-	if ext, ok := exts[runtime]; ok {
+	if ext, ok := exts[rt]; ok {
 		return ext
 	}
 	return ".txt"
@@ -576,15 +1061,6 @@ func hashBytes(data []byte) string {
 	h := sha256.New()
 	h.Write(data)
 	return hex.EncodeToString(h.Sum(nil))[:16]
-}
-
-func dotnetRuntimeIdentifier() string {
-	switch goruntime.GOARCH {
-	case "arm64":
-		return "linux-musl-arm64"
-	default:
-		return "linux-musl-x64"
-	}
 }
 
 // ─── Wrapper templates for compiled runtimes ────────────────────────
@@ -787,26 +1263,6 @@ pub fn main() !void {
     try stdout.writeAll(result);
     try stdout.writeAll("\n");
 }
-`
-
-// .NET: user writes public static class Handler { public static object Handle(string event, Dictionary<string, object> context) }
-const dotnetWrapperMain = `using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Text.Json;
-
-var input = File.ReadAllText(args[0]);
-var context = new Dictionary<string, object>
-{
-    ["request_id"] = Environment.GetEnvironmentVariable("NOVA_REQUEST_ID") ?? "",
-    ["function_name"] = Environment.GetEnvironmentVariable("NOVA_FUNCTION_NAME") ?? "",
-    ["function_version"] = Environment.GetEnvironmentVariable("NOVA_FUNCTION_VERSION") ?? "",
-    ["memory_limit_mb"] = Environment.GetEnvironmentVariable("NOVA_MEMORY_LIMIT_MB") ?? "0",
-    ["timeout_s"] = Environment.GetEnvironmentVariable("NOVA_TIMEOUT_S") ?? "0",
-    ["runtime"] = Environment.GetEnvironmentVariable("NOVA_RUNTIME") ?? "",
-};
-var result = Handler.Handle(input, context);
-Console.WriteLine(JsonSerializer.Serialize(result));
 `
 
 // Scala: user writes object Handler { def handler(event: String, context: Map[String, Any]): Any }

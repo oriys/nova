@@ -104,7 +104,6 @@ const RUNTIME_DISPLAY_NAMES: Record<string, string> = {
   java: "Java 21.0.10",
   ruby: "Ruby 3.4.8",
   php: "PHP 8.4.17",
-  dotnet: ".NET 8.0.23",
   deno: "Deno 2.6.7",
   bun: "Bun 1.3.8",
 };
@@ -118,7 +117,6 @@ const RUNTIME_ICONS: Record<string, string> = {
   java: "java",
   ruby: "ruby",
   php: "php",
-  dotnet: "dotnet",
   deno: "deno",
   bun: "bun",
 };

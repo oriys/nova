@@ -9,7 +9,6 @@ const DEVICON_CLASSES: Record<string, string> = {
   ruby: "devicon-ruby-plain",
   java: "devicon-java-plain",
   php: "devicon-php-plain",
-  dotnet: "devicon-dotnetcore-plain",
   deno: "devicon-denojs-original",
   bun: "devicon-bun-plain",
   swift: "devicon-swift-plain",
@@ -42,7 +41,6 @@ export const RUNTIME_COLORS: Record<string, string> = {
   ruby: "bg-[#CC342D]",
   java: "bg-[#ED8B00]",
   php: "bg-[#777BB4]",
-  dotnet: "bg-[#512BD4]",
   deno: "bg-[#000000]",
   bun: "bg-[#FBF0DF]",
   swift: "bg-[#F05138]",
@@ -59,7 +57,7 @@ export const RUNTIME_COLORS: Record<string, string> = {
 
 // Get base runtime from versioned ID (e.g., "python3.11" -> "python")
 function getBaseRuntime(runtimeId: string): string {
-  const prefixes = ['python', 'go', 'node', 'rust', 'ruby', 'java', 'php', 'dotnet', 'scala']
+  const prefixes = ['python', 'go', 'node', 'rust', 'ruby', 'java', 'php', 'scala']
   for (const prefix of prefixes) {
     if (runtimeId.startsWith(prefix)) return prefix
   }

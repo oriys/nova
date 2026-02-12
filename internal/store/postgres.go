@@ -686,6 +686,102 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		`DROP INDEX IF EXISTS idx_dag_workflows_tenant_namespace_name`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_dag_workflows_tenant_namespace_name_unique ON dag_workflows(tenant_id, namespace, name)`,
 
+		// RBAC: roles
+		`CREATE TABLE IF NOT EXISTS rbac_roles (
+			id TEXT PRIMARY KEY,
+			tenant_id TEXT NOT NULL DEFAULT 'default',
+			name TEXT NOT NULL,
+			is_system BOOLEAN NOT NULL DEFAULT FALSE,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE(tenant_id, name)
+		)`,
+
+		// RBAC: permissions
+		`CREATE TABLE IF NOT EXISTS rbac_permissions (
+			id TEXT PRIMARY KEY,
+			code TEXT NOT NULL UNIQUE,
+			resource_type TEXT NOT NULL DEFAULT '',
+			action TEXT NOT NULL DEFAULT '',
+			description TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+
+		// RBAC: role ↔ permission mapping
+		`CREATE TABLE IF NOT EXISTS rbac_role_permissions (
+			role_id TEXT NOT NULL REFERENCES rbac_roles(id) ON DELETE CASCADE,
+			permission_id TEXT NOT NULL REFERENCES rbac_permissions(id) ON DELETE CASCADE,
+			PRIMARY KEY (role_id, permission_id)
+		)`,
+
+		// RBAC: scoped role assignments
+		`CREATE TABLE IF NOT EXISTS rbac_role_assignments (
+			id TEXT PRIMARY KEY,
+			tenant_id TEXT NOT NULL DEFAULT 'default',
+			principal_type TEXT NOT NULL,
+			principal_id TEXT NOT NULL,
+			role_id TEXT NOT NULL REFERENCES rbac_roles(id) ON DELETE CASCADE,
+			scope_type TEXT NOT NULL,
+			scope_id TEXT NOT NULL DEFAULT '',
+			created_by TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_rbac_role_assignments_tenant ON rbac_role_assignments(tenant_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_rbac_role_assignments_principal ON rbac_role_assignments(tenant_id, principal_type, principal_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_rbac_role_assignments_role ON rbac_role_assignments(role_id)`,
+
+		// Tenant menu permissions
+		`CREATE TABLE IF NOT EXISTS tenant_menu_permissions (
+			tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+			menu_key TEXT NOT NULL,
+			enabled BOOLEAN NOT NULL DEFAULT TRUE,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (tenant_id, menu_key)
+		)`,
+
+		// Tenant button permissions
+		`CREATE TABLE IF NOT EXISTS tenant_button_permissions (
+			tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+			permission_key TEXT NOT NULL,
+			enabled BOOLEAN NOT NULL DEFAULT TRUE,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (tenant_id, permission_key)
+		)`,
+
+		// API documentation shares
+		`CREATE TABLE IF NOT EXISTS api_doc_shares (
+			id TEXT PRIMARY KEY,
+			tenant_id TEXT NOT NULL DEFAULT 'default',
+			namespace TEXT NOT NULL DEFAULT 'default',
+			function_name TEXT NOT NULL,
+			title TEXT NOT NULL,
+			token TEXT NOT NULL UNIQUE,
+			doc_content JSONB NOT NULL,
+			created_by TEXT NOT NULL DEFAULT '',
+			expires_at TIMESTAMPTZ,
+			access_count BIGINT NOT NULL DEFAULT 0,
+			last_access_at TIMESTAMPTZ,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_doc_shares_token ON api_doc_shares(token)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_doc_shares_tenant_namespace ON api_doc_shares(tenant_id, namespace, created_at DESC)`,
+
+		// Per-function persisted documentation
+		`CREATE TABLE IF NOT EXISTS function_docs (
+			function_name TEXT PRIMARY KEY,
+			doc_content JSONB NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+
+		// Per-workflow persisted documentation
+		`CREATE TABLE IF NOT EXISTS workflow_docs (
+			workflow_name TEXT PRIMARY KEY,
+			doc_content JSONB NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+
 		// pg_trgm GIN index for ILIKE text search on function names
 		`CREATE EXTENSION IF NOT EXISTS pg_trgm`,
 		`CREATE INDEX IF NOT EXISTS idx_functions_name_trgm ON functions USING gin(name gin_trgm_ops)`,
@@ -696,8 +792,139 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			return fmt.Errorf("ensure schema: %w", err)
 		}
 	}
+
+	// Seed default tenant menu & button permissions if not already present.
+	for _, key := range AllMenuKeys {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO tenant_menu_permissions (tenant_id, menu_key, enabled, created_at)
+			VALUES ('default', $1, TRUE, NOW())
+			ON CONFLICT (tenant_id, menu_key) DO NOTHING
+		`, key); err != nil {
+			return fmt.Errorf("seed default menu permission %s: %w", key, err)
+		}
+	}
+	for _, key := range AllButtonPermissionKeys {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO tenant_button_permissions (tenant_id, permission_key, enabled, created_at)
+			VALUES ('default', $1, TRUE, NOW())
+			ON CONFLICT (tenant_id, permission_key) DO NOTHING
+		`, key); err != nil {
+			return fmt.Errorf("seed default button permission %s: %w", key, err)
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit schema transaction: %w", err)
 	}
 	return nil
+}
+
+// --- API Doc Shares ---
+
+func (s *PostgresStore) SaveAPIDocShare(ctx context.Context, share *APIDocShare) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO api_doc_shares (id, tenant_id, namespace, function_name, title, token, doc_content, created_by, expires_at, access_count, last_access_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		share.ID, share.TenantID, share.Namespace, share.FunctionName, share.Title, share.Token, share.DocContent, share.CreatedBy, share.ExpiresAt, share.AccessCount, share.LastAccessAt, share.CreatedAt)
+	return err
+}
+
+func (s *PostgresStore) GetAPIDocShareByToken(ctx context.Context, token string) (*APIDocShare, error) {
+	var share APIDocShare
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, namespace, function_name, title, token, doc_content, created_by, expires_at, access_count, last_access_at, created_at
+		FROM api_doc_shares WHERE token = $1`, token).Scan(
+		&share.ID, &share.TenantID, &share.Namespace, &share.FunctionName, &share.Title, &share.Token, &share.DocContent, &share.CreatedBy, &share.ExpiresAt, &share.AccessCount, &share.LastAccessAt, &share.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &share, nil
+}
+
+func (s *PostgresStore) ListAPIDocShares(ctx context.Context, tenantID, namespace string, limit, offset int) ([]*APIDocShare, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, namespace, function_name, title, token, doc_content, created_by, expires_at, access_count, last_access_at, created_at
+		FROM api_doc_shares WHERE tenant_id = $1 AND namespace = $2
+		ORDER BY created_at DESC LIMIT $3 OFFSET $4`, tenantID, namespace, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var shares []*APIDocShare
+	for rows.Next() {
+		var share APIDocShare
+		if err := rows.Scan(&share.ID, &share.TenantID, &share.Namespace, &share.FunctionName, &share.Title, &share.Token, &share.DocContent, &share.CreatedBy, &share.ExpiresAt, &share.AccessCount, &share.LastAccessAt, &share.CreatedAt); err != nil {
+			return nil, err
+		}
+		shares = append(shares, &share)
+	}
+	return shares, nil
+}
+
+func (s *PostgresStore) DeleteAPIDocShare(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM api_doc_shares WHERE id = $1`, id)
+	return err
+}
+
+func (s *PostgresStore) IncrementAPIDocShareAccess(ctx context.Context, token string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE api_doc_shares SET access_count = access_count + 1, last_access_at = NOW()
+		WHERE token = $1`, token)
+	return err
+}
+
+// --- Function Docs ---
+
+func (s *PostgresStore) SaveFunctionDoc(ctx context.Context, doc *FunctionDoc) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO function_docs (function_name, doc_content, updated_at, created_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (function_name) DO UPDATE SET doc_content = $2, updated_at = $3`,
+		doc.FunctionName, doc.DocContent, doc.UpdatedAt, doc.CreatedAt)
+	return err
+}
+
+func (s *PostgresStore) GetFunctionDoc(ctx context.Context, functionName string) (*FunctionDoc, error) {
+	var doc FunctionDoc
+	err := s.pool.QueryRow(ctx, `
+		SELECT function_name, doc_content, updated_at, created_at
+		FROM function_docs WHERE function_name = $1`, functionName).Scan(
+		&doc.FunctionName, &doc.DocContent, &doc.UpdatedAt, &doc.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &doc, nil
+}
+
+func (s *PostgresStore) DeleteFunctionDoc(ctx context.Context, functionName string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM function_docs WHERE function_name = $1`, functionName)
+	return err
+}
+
+// --- Workflow Docs ---
+
+func (s *PostgresStore) SaveWorkflowDoc(ctx context.Context, doc *WorkflowDoc) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO workflow_docs (workflow_name, doc_content, updated_at, created_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (workflow_name) DO UPDATE SET doc_content = $2, updated_at = $3`,
+		doc.WorkflowName, doc.DocContent, doc.UpdatedAt, doc.CreatedAt)
+	return err
+}
+
+func (s *PostgresStore) GetWorkflowDoc(ctx context.Context, workflowName string) (*WorkflowDoc, error) {
+	var doc WorkflowDoc
+	err := s.pool.QueryRow(ctx, `
+		SELECT workflow_name, doc_content, updated_at, created_at
+		FROM workflow_docs WHERE workflow_name = $1`, workflowName).Scan(
+		&doc.WorkflowName, &doc.DocContent, &doc.UpdatedAt, &doc.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &doc, nil
+}
+
+func (s *PostgresStore) DeleteWorkflowDoc(ctx context.Context, workflowName string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM workflow_docs WHERE workflow_name = $1`, workflowName)
+	return err
 }

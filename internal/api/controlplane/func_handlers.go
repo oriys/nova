@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/oriys/nova/internal/compiler"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/logging"
@@ -361,8 +362,9 @@ func (h *Handler) UpdateFunctionCode(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Handle JSON body (backward compatible)
 		var req struct {
-			Code       string `json:"code"`
-			EntryPoint string `json:"entry_point,omitempty"`
+			Code            string            `json:"code"`
+			EntryPoint      string            `json:"entry_point,omitempty"`
+			DependencyFiles map[string]string  `json:"dependency_files,omitempty"` // Optional: dependency files like go.mod, requirements.txt
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -376,6 +378,23 @@ func (h *Handler) UpdateFunctionCode(w http.ResponseWriter, r *http.Request) {
 
 		sourceCode = req.Code
 		entryPoint = req.EntryPoint
+
+		// If dependency files provided via JSON, build multi-file map
+		if len(req.DependencyFiles) > 0 {
+			files = make(map[string][]byte)
+			for name, content := range req.DependencyFiles {
+				files[name] = []byte(content)
+			}
+			// Add main code file
+			ep := entryPoint
+			if ep == "" {
+				ep = detectEntryPoint(files, fn.Runtime)
+				if ep == "" {
+					ep = "handler" + compiler.RuntimeExtension(fn.Runtime)
+				}
+			}
+			files[ep] = []byte(sourceCode)
+		}
 	}
 
 	// Handle multi-file case
@@ -461,7 +480,13 @@ func (h *Handler) UpdateFunctionCode(w http.ResponseWriter, r *http.Request) {
 
 	var compileStatus domain.CompileStatus
 	if h.Compiler != nil {
-		h.Compiler.CompileAsync(r.Context(), fn, sourceCode)
+		if files != nil && len(files) > 0 {
+			// Multi-file function: use CompileAsyncWithFiles to support user-provided
+			// dependency files (go.mod, Cargo.toml, package.json, requirements.txt, etc.)
+			h.Compiler.CompileAsyncWithFiles(r.Context(), fn, files)
+		} else {
+			h.Compiler.CompileAsync(r.Context(), fn, sourceCode)
+		}
 		if domain.NeedsCompilation(fn.Runtime) {
 			compileStatus = domain.CompileStatusCompiling
 		} else {
@@ -539,8 +564,8 @@ func detectEntryPoint(files map[string][]byte, runtime domain.Runtime) string {
 	entryPoints := map[domain.Runtime][]string{
 		domain.RuntimePython: {"handler.py", "main.py", "app.py", "index.py"},
 		domain.RuntimeNode:   {"handler.js", "index.js", "main.js", "app.js"},
-		domain.RuntimeGo:     {"handler", "main.go", "handler.go"},
-		domain.RuntimeRust:   {"handler", "main.rs"},
+		domain.RuntimeGo:     {"handler.go", "main.go", "handler"},
+		domain.RuntimeRust:   {"handler.rs", "main.rs", "src/handler.rs", "src/main.rs"},
 		domain.RuntimeRuby:   {"handler.rb", "main.rb", "app.rb"},
 		domain.RuntimeJava:   {"Handler.java", "Main.java", "handler.jar"},
 		domain.RuntimePHP:    {"handler.php", "index.php", "main.php"},

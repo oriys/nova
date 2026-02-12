@@ -22,9 +22,10 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { CodeEditor } from "@/components/code-editor"
+import { Textarea } from "@/components/ui/textarea"
 import { RuntimeInfo } from "@/lib/types"
 import { functionsApi, aiApi, CompileStatus, type NetworkPolicy, type ResourceLimits } from "@/lib/api"
-import { Loader2, Check, AlertCircle, Trash2, Sparkles } from "lucide-react"
+import { Loader2, Check, AlertCircle, Trash2, Sparkles, Package } from "lucide-react"
 
 // Code templates for each runtime (handler-only style)
 const CODE_TEMPLATES: Record<string, string> = {
@@ -88,19 +89,6 @@ function handler($event, $context) {
     return ['message' => "Hello, $name!"];
 }
 `,
-  dotnet: `using System.Text.Json;
-using System.Collections.Generic;
-
-public static class Handler
-{
-    public static object Handle(string eventJson, Dictionary<string, object> context)
-    {
-        var evt = JsonSerializer.Deserialize<Dictionary<string, string>>(eventJson);
-        var name = evt?.GetValueOrDefault("name", "World") ?? "World";
-        return new { message = $"Hello, {name}!" };
-    }
-}
-`,
   deno: `export function handler(event, context) {
   const name = event.name || 'World';
   return { message: \`Hello, \${name}!\` };
@@ -116,17 +104,16 @@ module.exports = { handler };
 }
 
 // Runtimes that require compilation
-const COMPILED_RUNTIMES = ['go', 'rust', 'java', 'kotlin', 'swift', 'zig', 'dotnet', 'scala']
+const COMPILED_RUNTIMES = ['go', 'rust', 'java', 'kotlin', 'swift', 'zig', 'scala']
 
 const AWS_FUNCTION_NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
 const AWS_MODULE_HANDLER_PATTERN = /^[A-Za-z0-9_./-]+\.[A-Za-z0-9_$][A-Za-z0-9_$.]*$/
 const AWS_JAVA_HANDLER_PATTERN = /^[A-Za-z0-9_$.]+::[A-Za-z0-9_$]+$/
-const AWS_DOTNET_HANDLER_PATTERN = /^[A-Za-z0-9_.-]+::[A-Za-z0-9_.$+]+::[A-Za-z0-9_$]+$/
 const AWS_EXECUTABLE_HANDLER_PATTERN = /^[A-Za-z0-9_/-]{1,128}$/
 
 // Get base runtime from versioned ID (e.g., "python3.11" -> "python")
 function getBaseRuntime(runtimeId: string): string {
-  const prefixes = ['python', 'node', 'go', 'rust', 'java', 'ruby', 'php', 'dotnet', 'deno', 'bun']
+  const prefixes = ['python', 'node', 'go', 'rust', 'java', 'ruby', 'php', 'deno', 'bun']
   for (const prefix of prefixes) {
     if (runtimeId.startsWith(prefix)) return prefix
   }
@@ -143,13 +130,74 @@ function getDefaultHandler(runtimeId: string): string {
   if (base === "java" || base === "kotlin" || base === "scala") {
     return "example.Handler::handleRequest"
   }
-  if (base === "dotnet") {
-    return "Assembly::Namespace.Function::FunctionHandler"
-  }
   if (base === "go" || base === "rust" || base === "swift" || base === "zig" || base === "wasm") {
     return "handler"
   }
   return "main.handler"
+}
+
+// Returns the dependency file name for a runtime (e.g., "go.mod" for Go)
+function getDepFileName(runtimeId: string): string {
+  const base = getBaseRuntime(runtimeId)
+  const depFiles: Record<string, string> = {
+    go: "go.mod",
+    rust: "Cargo.toml",
+    node: "package.json",
+    python: "requirements.txt",
+    ruby: "Gemfile",
+    php: "composer.json",
+    bun: "package.json",
+    deno: "package.json",
+  }
+  return depFiles[base] || ""
+}
+
+// Returns placeholder content for a dependency file based on runtime
+function getDepFilePlaceholder(runtimeId: string): string {
+  const base = getBaseRuntime(runtimeId)
+  const placeholders: Record<string, string> = {
+    go: `module handler
+
+go 1.23
+
+require (
+    github.com/example/pkg v1.0.0
+)`,
+    rust: `[package]
+name = "handler"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }`,
+    node: `{
+  "name": "handler",
+  "version": "1.0.0",
+  "dependencies": {
+    "axios": "^1.6.0"
+  }
+}`,
+    python: `requests>=2.31.0
+boto3>=1.28.0`,
+    ruby: `source 'https://rubygems.org'
+
+gem 'json'
+gem 'httparty'`,
+    php: `{
+  "name": "handler",
+  "require": {
+    "guzzlehttp/guzzle": "^7.0"
+  }
+}`,
+  }
+  return placeholders[base] || ""
+}
+
+// Returns whether a runtime supports dependency files
+function hasDepFileSupport(runtimeId: string): boolean {
+  return getDepFileName(runtimeId) !== ""
 }
 
 type ValidationKey =
@@ -157,7 +205,6 @@ type ValidationKey =
   | "validationMemoryRange"
   | "validationTimeoutRange"
   | "validationJavaHandler"
-  | "validationDotnetHandler"
   | "validationCompiledHandler"
   | "validationDefaultHandler"
 
@@ -187,12 +234,6 @@ function validateAwsCreateInput(params: {
     }
     return null
   }
-  if (base === "dotnet") {
-    if (!AWS_DOTNET_HANDLER_PATTERN.test(handler)) {
-      return "validationDotnetHandler"
-    }
-    return null
-  }
   if (base === "go" || base === "rust" || base === "swift" || base === "zig" || base === "wasm") {
     if (!AWS_EXECUTABLE_HANDLER_PATTERN.test(handler)) {
       return "validationCompiledHandler"
@@ -216,7 +257,8 @@ interface CreateFunctionDialogProps {
     timeout: number,
     code: string,
     limits?: ResourceLimits,
-    networkPolicy?: NetworkPolicy
+    networkPolicy?: NetworkPolicy,
+    dependencyFiles?: Record<string, string>
   ) => Promise<void>
   runtimes?: RuntimeInfo[]
 }
@@ -269,11 +311,17 @@ export function CreateFunctionDialog({
   const [aiDescription, setAiDescription] = useState("")
   const [aiGenerating, setAiGenerating] = useState(false)
 
+  // Dependency files state
+  const [depFileEnabled, setDepFileEnabled] = useState(false)
+  const [depFileContent, setDepFileContent] = useState("")
+
   // Update code template when runtime changes
   useEffect(() => {
     const baseRuntime = getBaseRuntime(runtime)
     setCode(CODE_TEMPLATES[baseRuntime] || CODE_TEMPLATES.python)
     setHandler(getDefaultHandler(runtime))
+    setDepFileContent("")
+    setDepFileEnabled(false)
   }, [runtime])
 
   // Poll for compile status after creation
@@ -388,7 +436,9 @@ export function CreateFunctionDialog({
         ingress_rules: parsedIngressRules,
         egress_rules: parsedEgressRules,
       }
-      await onCreate(trimmedName, runtime, resolvedHandler, parsedMemory, parsedTimeout, codeValue, limits, networkPolicy)
+      await onCreate(trimmedName, runtime, resolvedHandler, parsedMemory, parsedTimeout, codeValue, limits, networkPolicy,
+        depFileEnabled && depFileContent.trim() ? { [getDepFileName(runtime)]: depFileContent } : undefined
+      )
 
       // If it's a compiled language, track compile status
       if (needsCompilation(runtime)) {
@@ -425,6 +475,8 @@ export function CreateFunctionDialog({
     setCreatedFunctionName(null)
     setCompileStatus(undefined)
     setCompileError(undefined)
+    setDepFileEnabled(false)
+    setDepFileContent("")
   }
 
   const addEgressRule = () => {
@@ -465,7 +517,6 @@ export function CreateFunctionDialog({
     { id: "java", name: "Java", version: "21.0.10", status: "available" as const, functionsCount: 0, icon: "java" },
     { id: "ruby", name: "Ruby", version: "3.4.8", status: "available" as const, functionsCount: 0, icon: "ruby" },
     { id: "php", name: "PHP", version: "8.4.17", status: "available" as const, functionsCount: 0, icon: "php" },
-    { id: "dotnet", name: ".NET", version: "8.0.23", status: "available" as const, functionsCount: 0, icon: "dotnet" },
     { id: "deno", name: "Deno", version: "2.6.7", status: "available" as const, functionsCount: 0, icon: "deno" },
     { id: "bun", name: "Bun", version: "1.3.8", status: "available" as const, functionsCount: 0, icon: "bun" },
   ]
@@ -625,6 +676,50 @@ export function CreateFunctionDialog({
               {t("templateLoaded", { runtime: getBaseRuntime(runtime) })}
               {needsCompilation(runtime) && t("requiresCompilation")}
             </p>
+
+            {/* Dependency Files Section */}
+            {hasDepFileSupport(runtime) && (
+              <div className="space-y-2 rounded-md border p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Package className="h-4 w-4 text-muted-foreground" />
+                    <Label className="text-sm font-medium">
+                      {getDepFileName(runtime)}
+                    </Label>
+                    <Badge variant="outline" className="text-xs">
+                      {t("optional")}
+                    </Badge>
+                  </div>
+                  <Button
+                    type="button"
+                    variant={depFileEnabled ? "secondary" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      const next = !depFileEnabled
+                      setDepFileEnabled(next)
+                      if (next && !depFileContent) {
+                        setDepFileContent(getDepFilePlaceholder(runtime))
+                      }
+                    }}
+                  >
+                    {depFileEnabled ? t("removeDeps") : t("addDeps")}
+                  </Button>
+                </div>
+                {depFileEnabled && (
+                  <>
+                    <Textarea
+                      value={depFileContent}
+                      onChange={(e) => setDepFileContent(e.target.value)}
+                      placeholder={getDepFilePlaceholder(runtime)}
+                      className="font-mono text-sm min-h-[120px]"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {t("depsHelp", { file: getDepFileName(runtime) })}
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-4">

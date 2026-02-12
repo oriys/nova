@@ -29,7 +29,6 @@ ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-m
 WASMTIME_VERSION="v41.0.1"
 DENO_VERSION="v2.6.7"
 BUN_VERSION="bun-v1.3.8"
-DOTNET_VERSION="8.0.23"
 ROOTFS_SIZE_MB=256
 ROOTFS_SIZE_JAVA_MB=512
 NODE_VERSION=20
@@ -748,53 +747,28 @@ build_php_rootfs() {
     log "php.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
-build_dotnet_rootfs() {
-    local output="${INSTALL_DIR}/rootfs/dotnet.ext4"
-    local mnt=$(mktemp -d)
-
-    log "Building dotnet rootfs (Alpine + .NET runtime)..."
-    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
-    mkfs.ext4 -F -q "${output}"
-    mount -o loop "${output}" "${mnt}"
-
-    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
-    mkdir -p "${mnt}"/{code,tmp,usr/share/dotnet}
-    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
-
-    chroot "${mnt}" /bin/sh -c "apk add --no-cache ca-certificates-bundle libgcc libssl3 libstdc++ zlib" >/dev/null 2>&1
-
-    local dotnet_tar
-    dotnet_tar="$(mktemp /tmp/dotnet-runtime.XXXXXX.tar.gz)"
-
-    curl -fsSL \
-        "https://builds.dotnet.microsoft.com/dotnet/Runtime/${DOTNET_VERSION}/dotnet-runtime-${DOTNET_VERSION}-linux-musl-x64.tar.gz" \
-        -o "${dotnet_tar}"
-    tar -xzf "${dotnet_tar}" -C "${mnt}/usr/share/dotnet"
-    ln -sf /usr/share/dotnet/dotnet "${mnt}/usr/bin/dotnet"
-    rm -f "${dotnet_tar}"
-
-    [[ -f "${INSTALL_DIR}/bin/nova-agent" ]] && \
-        cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
-        chmod +x "${mnt}/init"
-
-    umount "${mnt}" && rmdir "${mnt}"
-    log "dotnet.ext4 ready ($(du -h ${output} | cut -f1))"
-}
-
 build_deno_rootfs() {
     local output="${INSTALL_DIR}/rootfs/deno.ext4"
-    local mnt=$(mktemp -d)
+    local rootfs_dir=$(mktemp -d)
 
     log "Building deno rootfs (Alpine + deno)..."
-    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
-    mkfs.ext4 -F -q "${output}"
-    mount -o loop "${output}" "${mnt}"
 
-    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
-    mkdir -p "${mnt}"/{code,tmp,usr/local/bin}
-    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
+    # Build in a temp directory instead of a mounted ext4 image.
+    # build-base (gcc) temporarily needs more space than the 256MB rootfs allows.
+    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${rootfs_dir}"
+    mkdir -p "${rootfs_dir}"/{dev,code,tmp,usr/local/bin}
+    mknod -m 666 "${rootfs_dir}/dev/null" c 1 3 2>/dev/null || true
+    echo "nameserver 8.8.8.8" > "${rootfs_dir}/etc/resolv.conf"
 
-    chroot "${mnt}" /bin/sh -c "apk add --no-cache libstdc++ gcompat" >/dev/null 2>&1
+    chroot "${rootfs_dir}" /bin/sh -c "apk add --no-cache libstdc++ gcompat" >/dev/null 2>&1
+
+    # gcompat does not provide __res_init (glibc resolver symbol);
+    # build a minimal stub so the dynamic linker can resolve it.
+    chroot "${rootfs_dir}" /bin/sh -c "apk add --no-cache build-base" >/dev/null 2>&1
+    printf 'int __res_init(void){return 0;}\n' > "${rootfs_dir}/tmp/res_stub.c"
+    chroot "${rootfs_dir}" /bin/sh -c "gcc -shared -o /lib/libresolv_stub.so /tmp/res_stub.c"
+    rm -f "${rootfs_dir}/tmp/res_stub.c"
+    chroot "${rootfs_dir}" /bin/sh -c "apk del build-base" >/dev/null 2>&1
 
     local deno_zip
     deno_zip="$(mktemp /tmp/deno.XXXXXX.zip)"
@@ -802,15 +776,18 @@ build_deno_rootfs() {
     curl -fsSL \
         "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" \
         -o "${deno_zip}"
-    unzip -q -o "${deno_zip}" -d "${mnt}/usr/local/bin"
-    chmod +x "${mnt}/usr/local/bin/deno"
+    unzip -q -o "${deno_zip}" -d "${rootfs_dir}/usr/local/bin"
+    chmod +x "${rootfs_dir}/usr/local/bin/deno"
     rm -f "${deno_zip}"
 
     [[ -f "${INSTALL_DIR}/bin/nova-agent" ]] && \
-        cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
-        chmod +x "${mnt}/init"
+        cp "${INSTALL_DIR}/bin/nova-agent" "${rootfs_dir}/init" && \
+        chmod +x "${rootfs_dir}/init"
 
-    umount "${mnt}" && rmdir "${mnt}"
+    # Create the ext4 image from the populated directory.
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q -d "${rootfs_dir}" "${output}" >/dev/null
+    rm -rf "${rootfs_dir}"
     log "deno.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
@@ -919,7 +896,6 @@ build_rootfs_images() {
         build_ruby_rootfs
         build_java_rootfs
         build_php_rootfs
-        build_dotnet_rootfs
         build_deno_rootfs
         build_bun_rootfs
     )
