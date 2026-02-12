@@ -748,6 +748,24 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			PRIMARY KEY (tenant_id, permission_key)
 		)`,
 
+		// API documentation shares
+		`CREATE TABLE IF NOT EXISTS api_doc_shares (
+			id TEXT PRIMARY KEY,
+			tenant_id TEXT NOT NULL DEFAULT 'default',
+			namespace TEXT NOT NULL DEFAULT 'default',
+			function_name TEXT NOT NULL,
+			title TEXT NOT NULL,
+			token TEXT NOT NULL UNIQUE,
+			doc_content JSONB NOT NULL,
+			created_by TEXT NOT NULL DEFAULT '',
+			expires_at TIMESTAMPTZ,
+			access_count BIGINT NOT NULL DEFAULT 0,
+			last_access_at TIMESTAMPTZ,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_doc_shares_token ON api_doc_shares(token)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_doc_shares_tenant_namespace ON api_doc_shares(tenant_id, namespace, created_at DESC)`,
+
 		// pg_trgm GIN index for ILIKE text search on function names
 		`CREATE EXTENSION IF NOT EXISTS pg_trgm`,
 		`CREATE INDEX IF NOT EXISTS idx_functions_name_trgm ON functions USING gin(name gin_trgm_ops)`,
@@ -783,4 +801,58 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		return fmt.Errorf("commit schema transaction: %w", err)
 	}
 	return nil
+}
+
+// --- API Doc Shares ---
+
+func (s *PostgresStore) SaveAPIDocShare(ctx context.Context, share *APIDocShare) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO api_doc_shares (id, tenant_id, namespace, function_name, title, token, doc_content, created_by, expires_at, access_count, last_access_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		share.ID, share.TenantID, share.Namespace, share.FunctionName, share.Title, share.Token, share.DocContent, share.CreatedBy, share.ExpiresAt, share.AccessCount, share.LastAccessAt, share.CreatedAt)
+	return err
+}
+
+func (s *PostgresStore) GetAPIDocShareByToken(ctx context.Context, token string) (*APIDocShare, error) {
+	var share APIDocShare
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, tenant_id, namespace, function_name, title, token, doc_content, created_by, expires_at, access_count, last_access_at, created_at
+		FROM api_doc_shares WHERE token = $1`, token).Scan(
+		&share.ID, &share.TenantID, &share.Namespace, &share.FunctionName, &share.Title, &share.Token, &share.DocContent, &share.CreatedBy, &share.ExpiresAt, &share.AccessCount, &share.LastAccessAt, &share.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &share, nil
+}
+
+func (s *PostgresStore) ListAPIDocShares(ctx context.Context, tenantID, namespace string, limit, offset int) ([]*APIDocShare, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, tenant_id, namespace, function_name, title, token, doc_content, created_by, expires_at, access_count, last_access_at, created_at
+		FROM api_doc_shares WHERE tenant_id = $1 AND namespace = $2
+		ORDER BY created_at DESC LIMIT $3 OFFSET $4`, tenantID, namespace, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var shares []*APIDocShare
+	for rows.Next() {
+		var share APIDocShare
+		if err := rows.Scan(&share.ID, &share.TenantID, &share.Namespace, &share.FunctionName, &share.Title, &share.Token, &share.DocContent, &share.CreatedBy, &share.ExpiresAt, &share.AccessCount, &share.LastAccessAt, &share.CreatedAt); err != nil {
+			return nil, err
+		}
+		shares = append(shares, &share)
+	}
+	return shares, nil
+}
+
+func (s *PostgresStore) DeleteAPIDocShare(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM api_doc_shares WHERE id = $1`, id)
+	return err
+}
+
+func (s *PostgresStore) IncrementAPIDocShareAccess(ctx context.Context, token string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE api_doc_shares SET access_count = access_count + 1, last_access_at = NOW()
+		WHERE token = $1`, token)
+	return err
 }

@@ -186,6 +186,12 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		aiHandler := &AIHandler{Service: h.AIService, Store: h.Store}
 		aiHandler.RegisterRoutes(mux)
 	}
+
+	// API Documentation handler (requires AI service)
+	if h.AIService != nil {
+		apiDocHandler := &APIDocHandler{AIService: h.AIService, Store: h.Store}
+		apiDocHandler.RegisterRoutes(mux)
+	}
 }
 
 // ListFunctionVersions returns all versions of a function.

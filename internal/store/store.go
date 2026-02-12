@@ -253,6 +253,13 @@ type MetadataStore interface {
 	UpsertTenantButtonPermission(ctx context.Context, tenantID, permissionKey string, enabled bool) (*ButtonPermissionRecord, error)
 	DeleteTenantButtonPermission(ctx context.Context, tenantID, permissionKey string) error
 	SeedDefaultButtonPermissions(ctx context.Context, tenantID string) error
+
+	// API Doc Shares
+	SaveAPIDocShare(ctx context.Context, share *APIDocShare) error
+	GetAPIDocShareByToken(ctx context.Context, token string) (*APIDocShare, error)
+	ListAPIDocShares(ctx context.Context, tenantID, namespace string, limit, offset int) ([]*APIDocShare, error)
+	DeleteAPIDocShare(ctx context.Context, id string) error
+	IncrementAPIDocShareAccess(ctx context.Context, token string) error
 }
 
 // Store wraps the MetadataStore, WorkflowStore, and ScheduleStore (Postgres) for all persistence.
@@ -292,4 +299,20 @@ func (s *Store) Close() error {
 		return s.MetadataStore.Close()
 	}
 	return nil
+}
+
+// APIDocShare represents a shared API documentation link.
+type APIDocShare struct {
+	ID           string          `json:"id"`
+	TenantID     string          `json:"tenant_id"`
+	Namespace    string          `json:"namespace"`
+	FunctionName string          `json:"function_name"`
+	Title        string          `json:"title"`
+	Token        string          `json:"token"`
+	DocContent   json.RawMessage `json:"doc_content"`
+	CreatedBy    string          `json:"created_by"`
+	ExpiresAt    *time.Time      `json:"expires_at,omitempty"`
+	AccessCount  int64           `json:"access_count"`
+	LastAccessAt *time.Time      `json:"last_access_at,omitempty"`
+	CreatedAt    time.Time       `json:"created_at"`
 }
