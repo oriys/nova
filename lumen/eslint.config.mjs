@@ -1,5 +1,6 @@
 import tseslint from "typescript-eslint";
 import js from "@eslint/js";
+import i18next from "eslint-plugin-i18next";
 
 export default tseslint.config(
   js.configs.recommended,
@@ -14,6 +15,14 @@ export default tseslint.config(
       "@typescript-eslint/no-empty-object-type": "off",
       "prefer-const": "warn",
       "no-console": ["warn", { allow: ["error", "warn"] }],
+    },
+  },
+  {
+    files: ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}"],
+    ignores: ["components/ui/**"],
+    plugins: { i18next },
+    rules: {
+      "i18next/no-literal-string": "warn",
     },
   },
 );
