@@ -72,6 +72,7 @@ type Pool struct {
 	healthCheckInterval time.Duration
 	maxPreWarmWorkers   int
 	maxGlobalVMs        atomic.Int32 // system-wide max VM count (0 = unlimited)
+	totalVMs            atomic.Int32 // current total VM count across all pools
 	ctx                 context.Context
 	cancel              context.CancelFunc
 	snapshotCallback    SnapshotCallback
@@ -129,15 +130,7 @@ func (p *Pool) SetMaxGlobalVMs(n int) {
 
 // TotalVMCount returns the total number of active VMs across all function pools.
 func (p *Pool) TotalVMCount() int {
-	total := 0
-	p.pools.Range(func(_, value interface{}) bool {
-		fp := value.(*functionPool)
-		fp.mu.Lock()
-		total += len(fp.vms)
-		fp.mu.Unlock()
-		return true
-	})
-	return total
+	return int(p.totalVMs.Load())
 }
 
 // InvalidateSnapshotCache removes the cached snapshot status for a function
@@ -190,6 +183,7 @@ func (p *Pool) cleanupExpired() {
 
 		activeCount := len(fp.vms)
 		var kept []*PooledVM
+		removed := 0
 
 		for _, pvm := range fp.vms {
 			if pvm.inflight > 0 {
@@ -204,11 +198,15 @@ func (p *Pool) cleanupExpired() {
 					"idle", now.Sub(pvm.LastUsed).Round(time.Second).String())
 				toStop = append(toStop, expiredVM{client: pvm.Client, vmID: pvm.VM.ID})
 				activeCount--
+				removed++
 				continue
 			}
 			kept = append(kept, pvm)
 		}
 		fp.vms = kept
+		if removed > 0 {
+			p.totalVMs.Add(int32(-removed))
+		}
 		fp.mu.Unlock()
 		return true
 	})
@@ -260,6 +258,7 @@ func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function, codeContent
 			fp.mu.Lock()
 			fp.vms = append(fp.vms, pvm)
 			fp.mu.Unlock()
+			p.totalVMs.Add(1)
 		}()
 	}
 	wg.Wait()
@@ -293,9 +292,13 @@ func (p *Pool) preparePoolForFunction(fn *domain.Function) *functionPool {
 					"old_hash", storedHash2[:8],
 					"new_hash", fn.CodeHash[:8])
 				vmsToStop := fp.vms
+				evictedCount := int32(len(vmsToStop))
 				fp.vms = nil
 				fp.codeHash.Store(fn.CodeHash)
 				fp.mu.Unlock()
+				if evictedCount > 0 {
+					p.totalVMs.Add(-evictedCount)
+				}
 
 				// Stop all old VMs in background
 				go func() {
@@ -499,6 +502,7 @@ func (p *Pool) acquireGeneric(
 	fp.mu.Lock()
 	fp.vms = append(fp.vms, pvm)
 	fp.mu.Unlock()
+	p.totalVMs.Add(1)
 	recordQueueWait()
 	return pvm, nil
 }
@@ -670,8 +674,12 @@ func (p *Pool) Evict(funcID string) {
 
 	fp.mu.Lock()
 	vms := fp.vms
+	evictedCount := int32(len(vms))
 	fp.vms = nil
 	fp.mu.Unlock()
+	if evictedCount > 0 {
+		p.totalVMs.Add(-evictedCount)
+	}
 
 	// Stop VMs in parallel
 	var wg sync.WaitGroup
@@ -694,6 +702,7 @@ func (p *Pool) EvictVM(funcID string, target *PooledVM) {
 	fp := p.getOrCreatePool(funcID)
 
 	fp.mu.Lock()
+	prevLen := len(fp.vms)
 	newList := make([]*PooledVM, 0, len(fp.vms))
 	for _, pvm := range fp.vms {
 		if pvm != target {
@@ -701,7 +710,11 @@ func (p *Pool) EvictVM(funcID string, target *PooledVM) {
 		}
 	}
 	fp.vms = newList
+	removed := int32(prevLen - len(newList))
 	fp.mu.Unlock()
+	if removed > 0 {
+		p.totalVMs.Add(-removed)
+	}
 
 	// Stop VM asynchronously — it is already removed from the pool
 	go func() {
@@ -837,6 +850,7 @@ func (p *Pool) Shutdown() {
 		fp.mu.Unlock()
 		return true
 	})
+	p.totalVMs.Store(0)
 
 	// Stop all VMs in parallel with a 10s timeout
 	done := make(chan struct{})
