@@ -315,7 +315,8 @@ func (e *Engine) pollSubWorkflow(ctx context.Context, scopedCtx context.Context,
 				maxAttempts = wfNode.RetryPolicy.MaxAttempts
 			}
 			if node.Attempt < maxAttempts {
-				// Clear child run ID so a new one is created on retry
+				// Clear child run ID so a fresh child workflow run is created on retry.
+				// The previous child run is in a terminal state (failed/cancelled) and cannot be reused.
 				node.ChildRunID = ""
 				e.retryNode(ctx, node, wfNode, errMsg)
 				return
