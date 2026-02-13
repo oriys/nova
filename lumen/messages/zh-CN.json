@@ -282,6 +282,10 @@
       "title": "密钥",
       "description": "管理函数的加密密钥"
     },
+    "snapshots": {
+      "title": "快照",
+      "description": "查看和管理函数虚拟机快照"
+    },
     "apiKeys": {
       "title": "API 密钥",
       "description": "管理用于身份验证的 API 密钥"
@@ -880,6 +884,17 @@
     "colCreated": "创建时间",
     "colActions": "操作",
     "noSecrets": "暂无密钥"
+  },
+  "snapshotsPage": {
+    "failedToLoad": "加载快照失败",
+    "failedToDelete": "删除快照失败",
+    "colFunctionName": "函数名称",
+    "colSnapSize": "快照大小",
+    "colMemSize": "内存大小",
+    "colTotalSize": "总大小",
+    "colCreated": "创建时间",
+    "colActions": "操作",
+    "noSnapshots": "暂无快照"
   },
   "asyncInvocationsPage": {
     "enterJobId": "请输入任务 ID。",

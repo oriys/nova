@@ -282,6 +282,10 @@
       "title": "シークレット",
       "description": "関数の暗号化シークレットの管理"
     },
+    "snapshots": {
+      "title": "スナップショット",
+      "description": "関数VMスナップショットの表示と管理"
+    },
     "apiKeys": {
       "title": "APIキー",
       "description": "認証用APIキーの管理"
@@ -880,6 +884,17 @@
     "colCreated": "作成日",
     "colActions": "操作",
     "noSecrets": "シークレットはまだありません"
+  },
+  "snapshotsPage": {
+    "failedToLoad": "スナップショットの読み込みに失敗",
+    "failedToDelete": "スナップショットの削除に失敗",
+    "colFunctionName": "関数名",
+    "colSnapSize": "スナップショットサイズ",
+    "colMemSize": "メモリサイズ",
+    "colTotalSize": "合計サイズ",
+    "colCreated": "作成日",
+    "colActions": "操作",
+    "noSnapshots": "スナップショットはまだありません"
   },
   "asyncInvocationsPage": {
     "enterJobId": "ジョブ ID を入力してください。",

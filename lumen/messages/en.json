@@ -282,6 +282,10 @@
       "title": "Secrets",
       "description": "Manage encrypted secrets for functions"
     },
+    "snapshots": {
+      "title": "Snapshots",
+      "description": "View and manage function VM snapshots"
+    },
     "apiKeys": {
       "title": "API Keys",
       "description": "Manage API keys for authentication"
@@ -880,6 +884,17 @@
     "colCreated": "Created",
     "colActions": "Actions",
     "noSecrets": "No secrets yet"
+  },
+  "snapshotsPage": {
+    "failedToLoad": "Failed to load snapshots",
+    "failedToDelete": "Failed to delete snapshot",
+    "colFunctionName": "Function Name",
+    "colSnapSize": "Snapshot Size",
+    "colMemSize": "Memory Size",
+    "colTotalSize": "Total Size",
+    "colCreated": "Created",
+    "colActions": "Actions",
+    "noSnapshots": "No snapshots yet"
   },
   "asyncInvocationsPage": {
     "enterJobId": "Please enter a job ID.",

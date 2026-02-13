@@ -282,6 +282,10 @@
       "title": "Secrets",
       "description": "Gérer les secrets chiffrés pour les fonctions"
     },
+    "snapshots": {
+      "title": "Snapshots",
+      "description": "Afficher et gérer les snapshots de VM de fonctions"
+    },
     "apiKeys": {
       "title": "Clés API",
       "description": "Gérer les clés API pour l'authentification"
@@ -880,6 +884,17 @@
     "colCreated": "Créé le",
     "colActions": "Actions",
     "noSecrets": "Aucun secret"
+  },
+  "snapshotsPage": {
+    "failedToLoad": "Échec du chargement des snapshots",
+    "failedToDelete": "Échec de la suppression du snapshot",
+    "colFunctionName": "Nom de la fonction",
+    "colSnapSize": "Taille du snapshot",
+    "colMemSize": "Taille mémoire",
+    "colTotalSize": "Taille totale",
+    "colCreated": "Créé le",
+    "colActions": "Actions",
+    "noSnapshots": "Aucun snapshot"
   },
   "asyncInvocationsPage": {
     "enterJobId": "Veuillez entrer un ID de tâche.",

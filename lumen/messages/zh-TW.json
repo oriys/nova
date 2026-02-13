@@ -282,6 +282,10 @@
       "title": "密鑰",
       "description": "管理函數的加密密鑰"
     },
+    "snapshots": {
+      "title": "快照",
+      "description": "查看和管理函式虛擬機快照"
+    },
     "apiKeys": {
       "title": "API 密鑰",
       "description": "管理用於身份驗證的 API 密鑰"
@@ -880,6 +884,17 @@
     "colCreated": "建立時間",
     "colActions": "操作",
     "noSecrets": "尚無金鑰"
+  },
+  "snapshotsPage": {
+    "failedToLoad": "載入快照失敗",
+    "failedToDelete": "刪除快照失敗",
+    "colFunctionName": "函式名稱",
+    "colSnapSize": "快照大小",
+    "colMemSize": "記憶體大小",
+    "colTotalSize": "總大小",
+    "colCreated": "建立時間",
+    "colActions": "操作",
+    "noSnapshots": "尚無快照"
   },
   "asyncInvocationsPage": {
     "enterJobId": "請輸入任務 ID。",
