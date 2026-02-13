@@ -120,7 +120,7 @@ func (b *invocationLogBatcher) run() {
 			}
 			b.logger.Warn("failed to persist invocation logs, retrying",
 				"error", lastErr, "count", len(batch), "attempt", attempt+1)
-			time.Sleep(time.Duration(attempt+1) * b.retryInterval)
+			time.Sleep(time.Duration(1<<uint(attempt)) * b.retryInterval)
 		}
 		if lastErr != nil {
 			b.logger.Error("permanently failed to persist invocation logs after retries",

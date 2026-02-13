@@ -539,7 +539,9 @@ func (p *Pool) createVM(ctx context.Context, fn *domain.Function, codeContent []
 				defer lock.Unlock()
 				if _, hasSnapshot := p.snapshotCache.Load(funcID); !hasSnapshot {
 					logging.Op().Info("creating snapshot after cold start", "function", funcName, "vm_id", vmID)
-					if err := snapshotCb(context.Background(), vmID, funcID); err != nil {
+					snapshotCtx, snapshotCancel := context.WithTimeout(context.Background(), 60*time.Second)
+				defer snapshotCancel()
+				if err := snapshotCb(snapshotCtx, vmID, funcID); err != nil {
 						logging.Op().Error("snapshot creation failed", "function", funcName, "error", err)
 					} else {
 						p.snapshotCache.Store(funcID, true)

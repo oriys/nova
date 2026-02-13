@@ -46,9 +46,10 @@ type Metrics struct {
 	funcMetrics sync.Map // funcID -> *FunctionMetrics
 
 	// Time-series data (minute buckets for last 24 hours)
-	timeSeriesMu sync.RWMutex
-	timeSeries   []*TimeSeriesBucket
-	tsChan       chan timeSeriesEvent
+	timeSeriesMu      sync.RWMutex
+	timeSeries        []*TimeSeriesBucket
+	tsChan            chan timeSeriesEvent
+	tsDroppedEvents   atomic.Int64
 
 	startTime time.Time
 }
@@ -160,7 +161,7 @@ func (m *Metrics) recordTimeSeries(durationMs int64, isError bool) {
 	select {
 	case m.tsChan <- timeSeriesEvent{durationMs: durationMs, isError: isError}:
 	default:
-		// buffer full — drop this monitoring data point to avoid blocking callers
+		m.tsDroppedEvents.Add(1)
 	}
 }
 
@@ -291,6 +292,7 @@ func (m *Metrics) Snapshot() map[string]interface{} {
 			"crashed":       m.VMsCrashed.Load(),
 			"snapshots_hit": m.SnapshotsHit.Load(),
 		},
+		"ts_dropped_events": m.tsDroppedEvents.Load(),
 	}
 
 	return result
