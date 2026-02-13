@@ -5,9 +5,9 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { CodeEditor } from "@/components/code-editor"
 import { FunctionData } from "@/lib/types"
-import { functionsApi, aiApi, CompileStatus, AsyncInvocationJob, AsyncInvocationStatus } from "@/lib/api"
+import { functionsApi, aiApi, apiDocsApi, CompileStatus, AsyncInvocationJob, AsyncInvocationStatus } from "@/lib/api"
 import { Textarea } from "@/components/ui/textarea"
-import { Copy, Check, Download, Save, Loader2, AlertCircle, Play, RefreshCw, RotateCcw, Sparkles, MessageSquare, Wand2 } from "lucide-react"
+import { Copy, Check, Download, Save, Loader2, AlertCircle, Play, RefreshCw, RotateCcw, Sparkles, MessageSquare, Wand2, Terminal } from "lucide-react"
 
 interface FunctionCodeProps {
   func: FunctionData
@@ -116,6 +116,9 @@ export function FunctionCode({
   const [aiReview, setAiReview] = useState<string | null>(null)
   const [aiReviewScore, setAiReviewScore] = useState<number | undefined>()
   const [aiReviewSuggestions, setAiReviewSuggestions] = useState<string[]>([])
+  const [aiCurlGenerating, setAiCurlGenerating] = useState(false)
+  const [aiCurl, setAiCurl] = useState<string | null>(null)
+  const [aiCurlCopied, setAiCurlCopied] = useState(false)
 
   const runtimeId = func.runtimeId || getRuntimeId(func.runtime)
   const hasChanges = code !== originalCode
@@ -251,6 +254,32 @@ export function FunctionCode({
     }
   }
 
+  const handleAiCurl = async () => {
+    if (!code.trim()) return
+    try {
+      setAiCurlGenerating(true)
+      setError(null)
+      const response = await apiDocsApi.generateDocs({
+        function_name: func.name,
+        runtime: runtimeId,
+        code,
+        handler: func.handler,
+      })
+      setAiCurl(response.curl_example || null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "AI curl generation failed")
+    } finally {
+      setAiCurlGenerating(false)
+    }
+  }
+
+  const handleCopyAiCurl = async () => {
+    if (!aiCurl) return
+    await navigator.clipboard.writeText(aiCurl)
+    setAiCurlCopied(true)
+    setTimeout(() => setAiCurlCopied(false), 2000)
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -318,6 +347,14 @@ export function FunctionCode({
                 )}
                 AI Rewrite
               </Button>
+              <Button variant="outline" size="sm" onClick={handleAiCurl} disabled={aiCurlGenerating || !code.trim()}>
+                {aiCurlGenerating ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Terminal className="mr-2 h-4 w-4" />
+                )}
+                AI Curl
+              </Button>
             </>
           )}
         </div>
@@ -368,6 +405,32 @@ export function FunctionCode({
               </ul>
             </div>
           )}
+        </div>
+      )}
+
+      {/* AI Curl display */}
+      {aiCurl && (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Terminal className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              <span className="text-sm font-medium text-emerald-900 dark:text-emerald-200">AI Generated cURL</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={handleCopyAiCurl} className="h-7 px-2 text-emerald-700 dark:text-emerald-300">
+                {aiCurlCopied ? (
+                  <Check className="mr-1 h-3 w-3" />
+                ) : (
+                  <Copy className="mr-1 h-3 w-3" />
+                )}
+                {aiCurlCopied ? "Copied" : "Copy"}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setAiCurl(null)} className="h-6 w-6 p-0 text-muted-foreground" aria-label="Dismiss AI curl">
+                ×
+              </Button>
+            </div>
+          </div>
+          <pre className="text-sm text-emerald-800 dark:text-emerald-200 whitespace-pre-wrap font-mono bg-emerald-100/50 dark:bg-emerald-900/30 rounded p-3">{aiCurl}</pre>
         </div>
       )}
 

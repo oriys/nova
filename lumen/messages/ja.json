@@ -662,8 +662,13 @@
       "versionPublished": "Workflow version published",
       "publishFailed": "Failed to publish",
       "runTriggered": "Workflow run triggered",
-      "triggerFailed": "Failed to trigger"
-    }
+      "triggerFailed": "Failed to trigger",
+      "aiCurlFailed": "cURL の生成に失敗しました"
+    },
+    "aiCurl": "AI Curl",
+    "aiCurlTitle": "AI 生成 cURL",
+    "copy": "コピー",
+    "copied": "コピー済み"
   },
   "workflowRunPage": {
     "headerTitle": "Run: {runId}...",
