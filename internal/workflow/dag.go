@@ -22,9 +22,26 @@ func ValidateDAG(def *domain.WorkflowDefinition) ([]string, error) {
 		if n.NodeKey == "" {
 			return nil, fmt.Errorf("node_key cannot be empty")
 		}
-		if n.FunctionName == "" {
-			return nil, fmt.Errorf("node %q: function_name is required", n.NodeKey)
+
+		// Determine effective node type (default to "function")
+		nodeType := n.NodeType
+		if nodeType == "" {
+			nodeType = domain.NodeTypeFunction
 		}
+
+		switch nodeType {
+		case domain.NodeTypeFunction:
+			if n.FunctionName == "" {
+				return nil, fmt.Errorf("node %q: function_name is required for function nodes", n.NodeKey)
+			}
+		case domain.NodeTypeSubWorkflow:
+			if n.WorkflowName == "" {
+				return nil, fmt.Errorf("node %q: workflow_name is required for sub_workflow nodes", n.NodeKey)
+			}
+		default:
+			return nil, fmt.Errorf("node %q: unknown node_type %q", n.NodeKey, nodeType)
+		}
+
 		if nodeSet[n.NodeKey] {
 			return nil, fmt.Errorf("duplicate node_key: %q", n.NodeKey)
 		}
