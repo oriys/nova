@@ -70,6 +70,25 @@ type AsyncInvocation struct {
 	UpdatedAt     time.Time             `json:"updated_at"`
 }
 
+// AsyncInvocationSummary describes queue backlog and consume throughput in the current scope.
+type AsyncInvocationSummary struct {
+	Total                   int64     `json:"total"`
+	Queued                  int64     `json:"queued"`
+	Running                 int64     `json:"running"`
+	Paused                  int64     `json:"paused"`
+	Succeeded               int64     `json:"succeeded"`
+	DLQ                     int64     `json:"dlq"`
+	Backlog                 int64     `json:"backlog"`
+	Pending                 int64     `json:"pending"`
+	ConsumedLast1m          int64     `json:"consumed_last_1m"`
+	ConsumedLast5m          int64     `json:"consumed_last_5m"`
+	ConsumeRatePerSec1m     float64   `json:"consume_rate_per_sec_1m"`
+	ConsumeRatePerSec5m     float64   `json:"consume_rate_per_sec_5m"`
+	ConsumeRatePerMinute1m  float64   `json:"consume_rate_per_minute_1m"`
+	ConsumeRatePerMinute5m  float64   `json:"consume_rate_per_minute_5m"`
+	UpdatedAt               time.Time `json:"updated_at"`
+}
+
 // NewAsyncInvocation builds a queued async invocation request with defaults.
 func NewAsyncInvocation(functionID, functionName string, payload json.RawMessage) *AsyncInvocation {
 	now := time.Now().UTC()
@@ -89,6 +108,44 @@ func NewAsyncInvocation(functionID, functionName string, payload json.RawMessage
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
+}
+
+func (s *PostgresStore) GetAsyncInvocationSummary(ctx context.Context) (*AsyncInvocationSummary, error) {
+	scope := tenantScopeFromContext(ctx)
+	var summary AsyncInvocationSummary
+	if err := s.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*)::bigint AS total,
+			COUNT(*) FILTER (WHERE status = 'queued')::bigint AS queued,
+			COUNT(*) FILTER (WHERE status = 'running')::bigint AS running,
+			COUNT(*) FILTER (WHERE status = 'paused')::bigint AS paused,
+			COUNT(*) FILTER (WHERE status = 'succeeded')::bigint AS succeeded,
+			COUNT(*) FILTER (WHERE status = 'dlq')::bigint AS dlq,
+			COUNT(*) FILTER (WHERE status = 'succeeded' AND completed_at >= NOW() - INTERVAL '1 minute')::bigint AS consumed_last_1m,
+			COUNT(*) FILTER (WHERE status = 'succeeded' AND completed_at >= NOW() - INTERVAL '5 minutes')::bigint AS consumed_last_5m
+		FROM async_invocations
+		WHERE tenant_id = $1 AND namespace = $2
+	`, scope.TenantID, scope.Namespace).Scan(
+		&summary.Total,
+		&summary.Queued,
+		&summary.Running,
+		&summary.Paused,
+		&summary.Succeeded,
+		&summary.DLQ,
+		&summary.ConsumedLast1m,
+		&summary.ConsumedLast5m,
+	); err != nil {
+		return nil, fmt.Errorf("get async invocation summary: %w", err)
+	}
+
+	summary.Backlog = summary.Queued + summary.Running
+	summary.Pending = summary.Backlog + summary.Paused
+	summary.ConsumeRatePerSec1m = float64(summary.ConsumedLast1m) / 60.0
+	summary.ConsumeRatePerSec5m = float64(summary.ConsumedLast5m) / 300.0
+	summary.ConsumeRatePerMinute1m = float64(summary.ConsumedLast1m)
+	summary.ConsumeRatePerMinute5m = float64(summary.ConsumedLast5m) / 5.0
+	summary.UpdatedAt = time.Now().UTC()
+	return &summary, nil
 }
 
 func (s *PostgresStore) EnqueueAsyncInvocation(ctx context.Context, inv *AsyncInvocation) error {
@@ -278,6 +335,27 @@ func (s *PostgresStore) ListAsyncInvocations(ctx context.Context, limit, offset 
 	return out, nil
 }
 
+func (s *PostgresStore) CountAsyncInvocations(ctx context.Context, statuses []AsyncInvocationStatus) (int64, error) {
+	scope := tenantScopeFromContext(ctx)
+	query := `
+		SELECT COUNT(*)
+		FROM async_invocations
+		WHERE tenant_id = $1 AND namespace = $2
+	`
+	args := []any{scope.TenantID, scope.Namespace}
+
+	if len(statuses) > 0 {
+		args = append(args, statusesToStrings(statuses))
+		query += " AND status = ANY($" + strconv.Itoa(len(args)) + ")"
+	}
+
+	var total int64
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("count async invocations: %w", err)
+	}
+	return total, nil
+}
+
 func (s *PostgresStore) ListFunctionAsyncInvocations(ctx context.Context, functionID string, limit, offset int, statuses []AsyncInvocationStatus) ([]*AsyncInvocation, error) {
 	limit = normalizeAsyncListLimit(limit)
 	if offset < 0 {
@@ -322,6 +400,27 @@ func (s *PostgresStore) ListFunctionAsyncInvocations(ctx context.Context, functi
 		return nil, fmt.Errorf("list function async invocations rows: %w", err)
 	}
 	return out, nil
+}
+
+func (s *PostgresStore) CountFunctionAsyncInvocations(ctx context.Context, functionID string, statuses []AsyncInvocationStatus) (int64, error) {
+	scope := tenantScopeFromContext(ctx)
+	query := `
+		SELECT COUNT(*)
+		FROM async_invocations
+		WHERE tenant_id = $1 AND namespace = $2 AND function_id = $3
+	`
+	args := []any{scope.TenantID, scope.Namespace, functionID}
+
+	if len(statuses) > 0 {
+		args = append(args, statusesToStrings(statuses))
+		query += " AND status = ANY($" + strconv.Itoa(len(args)) + ")"
+	}
+
+	var total int64
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("count function async invocations: %w", err)
+	}
+	return total, nil
 }
 
 // AcquireDueAsyncInvocation atomically leases one queued async invocation that is due.

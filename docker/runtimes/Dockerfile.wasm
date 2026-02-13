@@ -1,11 +1,11 @@
 # WASM runtime image (with Wasmtime)
 FROM debian:bookworm-slim
 
-# Install wasmtime
-RUN apt-get update && apt-get install -y curl ca-certificates && \
+# Install wasmtime (.tar.xz archive requires xz-utils)
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates xz-utils && \
     curl https://wasmtime.dev/install.sh -sSf | bash && \
     mv /root/.wasmtime/bin/wasmtime /usr/local/bin/ && \
-    apt-get remove -y curl && apt-get autoremove -y && \
+    apt-get remove -y curl xz-utils && apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* /root/.wasmtime
 
 # Install nova-agent

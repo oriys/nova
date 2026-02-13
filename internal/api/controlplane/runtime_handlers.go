@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,10 @@ import (
 
 	"github.com/oriys/nova/internal/store"
 )
+
+type runtimePaginationStore interface {
+	CountRuntimes(ctx context.Context) (int64, error)
+}
 
 // ListRuntimes handles GET /runtimes
 func (h *Handler) ListRuntimes(w http.ResponseWriter, r *http.Request) {
@@ -29,8 +34,13 @@ func (h *Handler) ListRuntimes(w http.ResponseWriter, r *http.Request) {
 		runtimes = []*store.RuntimeRecord{}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(runtimes)
+	total := int64(len(runtimes))
+	if pagedStore, ok := h.Store.MetadataStore.(runtimePaginationStore); ok {
+		if counted, countErr := pagedStore.CountRuntimes(r.Context()); countErr == nil {
+			total = counted
+		}
+	}
+	writePaginatedList(w, limit, offset, len(runtimes), total, runtimes)
 }
 
 // CreateRuntime handles POST /runtimes

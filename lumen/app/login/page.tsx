@@ -43,7 +43,7 @@ export default function LoginPage() {
         <section className="rounded-2xl border border-border bg-card p-6 shadow-sm lg:p-8">
           <div className="inline-flex items-center gap-2 rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
             <ShieldCheck className="h-3.5 w-3.5" />
-            Nova Console
+            {t("brand")}
           </div>
           <h1 className="mt-4 text-2xl font-semibold text-foreground">{t("title")}</h1>
           <p className="mt-2 text-sm text-muted-foreground">

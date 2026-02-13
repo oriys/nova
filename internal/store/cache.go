@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -48,6 +49,21 @@ type CachedMetadataStore struct {
 // DefaultCacheTTL is the default time-to-live for cache entries.
 const DefaultCacheTTL = 5 * time.Second
 
+type invocationPaginationDelegate interface {
+	CountInvocationLogs(ctx context.Context, functionID string) (int64, error)
+	CountAllInvocationLogs(ctx context.Context) (int64, error)
+	ListAllInvocationLogsFiltered(ctx context.Context, limit, offset int, search, functionName string, success *bool) ([]*InvocationLog, error)
+	CountAllInvocationLogsFiltered(ctx context.Context, search, functionName string, success *bool) (int64, error)
+	GetAllInvocationLogsSummary(ctx context.Context) (*InvocationLogSummary, error)
+	GetAllInvocationLogsSummaryFiltered(ctx context.Context, search, functionName string, success *bool) (*InvocationLogSummary, error)
+}
+
+type asyncInvocationPaginationDelegate interface {
+	CountAsyncInvocations(ctx context.Context, statuses []AsyncInvocationStatus) (int64, error)
+	CountFunctionAsyncInvocations(ctx context.Context, functionID string, statuses []AsyncInvocationStatus) (int64, error)
+	GetAsyncInvocationSummary(ctx context.Context) (*AsyncInvocationSummary, error)
+}
+
 // NewCachedMetadataStore returns a MetadataStore that caches hot-path reads.
 // Pass ttl <= 0 to use the default (5 s).
 func NewCachedMetadataStore(underlying MetadataStore, ttl time.Duration) *CachedMetadataStore {
@@ -58,6 +74,15 @@ func NewCachedMetadataStore(underlying MetadataStore, ttl time.Duration) *Cached
 		MetadataStore: underlying,
 		ttl:           ttl,
 	}
+}
+
+// UnderlyingMetadataStore exposes the wrapped metadata store so callers can
+// recover optional capability interfaces (e.g. workflow/schedule stores).
+func (c *CachedMetadataStore) UnderlyingMetadataStore() MetadataStore {
+	if c == nil {
+		return nil
+	}
+	return c.MetadataStore
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -184,6 +209,97 @@ func (c *CachedMetadataStore) GetFunctionLayers(ctx context.Context, funcID stri
 	}
 	cachePut(&c.fnLayers, funcID, layers, c.ttl)
 	return layers, nil
+}
+
+// ─── uncached pagination delegates ──────────────────────────────────────────
+
+func (c *CachedMetadataStore) CountInvocationLogs(ctx context.Context, functionID string) (int64, error) {
+	store, ok := c.MetadataStore.(invocationPaginationDelegate)
+	if !ok {
+		return 0, fmt.Errorf("count invocation logs not supported")
+	}
+	return store.CountInvocationLogs(ctx, functionID)
+}
+
+func (c *CachedMetadataStore) CountAllInvocationLogs(ctx context.Context) (int64, error) {
+	store, ok := c.MetadataStore.(invocationPaginationDelegate)
+	if !ok {
+		return 0, fmt.Errorf("count all invocation logs not supported")
+	}
+	return store.CountAllInvocationLogs(ctx)
+}
+
+func (c *CachedMetadataStore) ListAllInvocationLogsFiltered(
+	ctx context.Context,
+	limit,
+	offset int,
+	search,
+	functionName string,
+	success *bool,
+) ([]*InvocationLog, error) {
+	store, ok := c.MetadataStore.(invocationPaginationDelegate)
+	if !ok {
+		return nil, fmt.Errorf("list all invocation logs filtered not supported")
+	}
+	return store.ListAllInvocationLogsFiltered(ctx, limit, offset, search, functionName, success)
+}
+
+func (c *CachedMetadataStore) CountAllInvocationLogsFiltered(
+	ctx context.Context,
+	search,
+	functionName string,
+	success *bool,
+) (int64, error) {
+	store, ok := c.MetadataStore.(invocationPaginationDelegate)
+	if !ok {
+		return 0, fmt.Errorf("count all invocation logs filtered not supported")
+	}
+	return store.CountAllInvocationLogsFiltered(ctx, search, functionName, success)
+}
+
+func (c *CachedMetadataStore) GetAllInvocationLogsSummary(ctx context.Context) (*InvocationLogSummary, error) {
+	store, ok := c.MetadataStore.(invocationPaginationDelegate)
+	if !ok {
+		return nil, fmt.Errorf("get all invocation logs summary not supported")
+	}
+	return store.GetAllInvocationLogsSummary(ctx)
+}
+
+func (c *CachedMetadataStore) GetAllInvocationLogsSummaryFiltered(
+	ctx context.Context,
+	search,
+	functionName string,
+	success *bool,
+) (*InvocationLogSummary, error) {
+	store, ok := c.MetadataStore.(invocationPaginationDelegate)
+	if !ok {
+		return nil, fmt.Errorf("get all invocation logs summary filtered not supported")
+	}
+	return store.GetAllInvocationLogsSummaryFiltered(ctx, search, functionName, success)
+}
+
+func (c *CachedMetadataStore) CountAsyncInvocations(ctx context.Context, statuses []AsyncInvocationStatus) (int64, error) {
+	store, ok := c.MetadataStore.(asyncInvocationPaginationDelegate)
+	if !ok {
+		return 0, fmt.Errorf("count async invocations not supported")
+	}
+	return store.CountAsyncInvocations(ctx, statuses)
+}
+
+func (c *CachedMetadataStore) CountFunctionAsyncInvocations(ctx context.Context, functionID string, statuses []AsyncInvocationStatus) (int64, error) {
+	store, ok := c.MetadataStore.(asyncInvocationPaginationDelegate)
+	if !ok {
+		return 0, fmt.Errorf("count function async invocations not supported")
+	}
+	return store.CountFunctionAsyncInvocations(ctx, functionID, statuses)
+}
+
+func (c *CachedMetadataStore) GetAsyncInvocationSummary(ctx context.Context) (*AsyncInvocationSummary, error) {
+	store, ok := c.MetadataStore.(asyncInvocationPaginationDelegate)
+	if !ok {
+		return nil, fmt.Errorf("get async invocation summary not supported")
+	}
+	return store.GetAsyncInvocationSummary(ctx)
 }
 
 // ─── write-through invalidation ──────────────────────────────────────────────

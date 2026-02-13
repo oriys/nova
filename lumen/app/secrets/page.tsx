@@ -21,6 +21,8 @@ import { cn } from "@/lib/utils"
 
 export default function SecretsPage() {
   const t = useTranslations("pages")
+  const ts = useTranslations("secretsPage")
+  const tc = useTranslations("common")
   const [secrets, setSecrets] = useState<SecretEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -36,11 +38,11 @@ export default function SecretsPage() {
       const data = await secretsApi.list()
       setSecrets(data || [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load secrets")
+      setError(err instanceof Error ? err.message : ts("failedToLoad"))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [ts])
 
   useEffect(() => {
     fetchSecrets()
@@ -56,7 +58,7 @@ export default function SecretsPage() {
       setNewSecretValue("")
       fetchSecrets()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create secret")
+      setError(err instanceof Error ? err.message : ts("failedToCreate"))
     } finally {
       setCreating(false)
     }
@@ -67,7 +69,7 @@ export default function SecretsPage() {
       await secretsApi.delete(name)
       fetchSecrets()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete secret")
+      setError(err instanceof Error ? err.message : ts("failedToDelete"))
     }
   }
 
@@ -87,41 +89,41 @@ export default function SecretsPage() {
             <DialogTrigger asChild>
               <Button size="sm">
                 <Plus className="mr-2 h-4 w-4" />
-                Create Secret
+                {ts("createSecret")}
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Create Secret</DialogTitle>
+                <DialogTitle>{ts("createSecret")}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Name</label>
+                  <label className="text-sm font-medium">{ts("name")}</label>
                   <Input
                     value={newSecretName}
                     onChange={(e) => setNewSecretName(e.target.value)}
-                    placeholder="DATABASE_URL"
+                    placeholder={ts("namePlaceholder")}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Value</label>
+                  <label className="text-sm font-medium">{ts("value")}</label>
                   <Textarea
                     value={newSecretValue}
                     onChange={(e) => setNewSecretValue(e.target.value)}
-                    placeholder="Enter secret value..."
+                    placeholder={ts("valuePlaceholder")}
                     className="min-h-[100px] font-mono text-sm"
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Values are encrypted at rest. Reference in function env vars
-                  as <code className="bg-muted px-1 rounded">$SECRET:name</code>
+                  {ts("encryptionNote")}{" "}
+                  <code className="bg-muted px-1 rounded">{ts("referenceFormat")}</code>
                 </p>
                 <Button
                   className="w-full"
                   onClick={handleCreate}
                   disabled={creating || !newSecretName.trim() || !newSecretValue.trim()}
                 >
-                  {creating ? "Creating..." : "Create"}
+                  {creating ? ts("creating") : tc("create")}
                 </Button>
               </div>
             </DialogContent>
@@ -129,7 +131,7 @@ export default function SecretsPage() {
 
           <Button variant="outline" size="sm" onClick={fetchSecrets} disabled={loading}>
             <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
-            Refresh
+            {tc("refresh")}
           </Button>
         </div>
 
@@ -137,9 +139,9 @@ export default function SecretsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Name</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Created</th>
-                <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Actions</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{ts("colName")}</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{ts("colCreated")}</th>
+                <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">{ts("colActions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -155,7 +157,7 @@ export default function SecretsPage() {
                 <tr>
                   <td colSpan={3} className="px-4 py-8 text-center text-muted-foreground">
                     <Lock className="mx-auto h-8 w-8 mb-2 opacity-50" />
-                    No secrets yet
+                    {ts("noSecrets")}
                   </td>
                 </tr>
               ) : (

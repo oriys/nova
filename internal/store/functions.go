@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -282,6 +283,84 @@ func (s *PostgresStore) SearchFunctions(ctx context.Context, query string, limit
 		return nil, fmt.Errorf("search functions rows: %w", err)
 	}
 	return functions, nil
+}
+
+func normalizeContainsPattern(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	return "%" + trimmed + "%"
+}
+
+func (s *PostgresStore) ListFunctionsFiltered(ctx context.Context, query, runtime string, limit, offset int) ([]*domain.Function, error) {
+	scope := tenantScopeFromContext(ctx)
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	queryPattern := normalizeContainsPattern(query)
+	runtimePattern := normalizeContainsPattern(runtime)
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT data
+		FROM functions
+		WHERE tenant_id = $1
+		  AND namespace = $2
+		  AND ($3 = '' OR name ILIKE $3)
+		  AND ($4 = '' OR data->>'runtime' ILIKE $4)
+		ORDER BY name
+		LIMIT $5 OFFSET $6
+	`, scope.TenantID, scope.Namespace, queryPattern, runtimePattern, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list functions filtered: %w", err)
+	}
+	defer rows.Close()
+
+	var functions []*domain.Function
+	for rows.Next() {
+		var data []byte
+		if err := rows.Scan(&data); err != nil {
+			return nil, fmt.Errorf("list functions filtered scan: %w", err)
+		}
+		var fn domain.Function
+		if err := json.Unmarshal(data, &fn); err != nil {
+			continue
+		}
+		if fn.TenantID == "" {
+			fn.TenantID = scope.TenantID
+		}
+		if fn.Namespace == "" {
+			fn.Namespace = scope.Namespace
+		}
+		functions = append(functions, &fn)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list functions filtered rows: %w", err)
+	}
+	return functions, nil
+}
+
+func (s *PostgresStore) CountFunctionsFiltered(ctx context.Context, query, runtime string) (int64, error) {
+	scope := tenantScopeFromContext(ctx)
+	queryPattern := normalizeContainsPattern(query)
+	runtimePattern := normalizeContainsPattern(runtime)
+
+	var total int64
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM functions
+		WHERE tenant_id = $1
+		  AND namespace = $2
+		  AND ($3 = '' OR name ILIKE $3)
+		  AND ($4 = '' OR data->>'runtime' ILIKE $4)
+	`, scope.TenantID, scope.Namespace, queryPattern, runtimePattern).Scan(&total); err != nil {
+		return 0, fmt.Errorf("count functions filtered: %w", err)
+	}
+	return total, nil
 }
 
 func (s *PostgresStore) UpdateFunction(ctx context.Context, name string, update *FunctionUpdate) (*domain.Function, error) {

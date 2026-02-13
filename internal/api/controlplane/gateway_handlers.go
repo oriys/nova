@@ -42,15 +42,15 @@ func (h *GatewayHandler) RegisterRoutes(mux *http.ServeMux) {
 
 func (h *GatewayHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Domain        string            `json:"domain"`
-		Path          string            `json:"path"`
-		Methods       []string          `json:"methods,omitempty"`
-		FunctionName  string            `json:"function_name"`
-		AuthStrategy  string            `json:"auth_strategy"`
-		AuthConfig    map[string]string `json:"auth_config,omitempty"`
-		RequestSchema json.RawMessage   `json:"request_schema,omitempty"`
+		Domain        string                 `json:"domain"`
+		Path          string                 `json:"path"`
+		Methods       []string               `json:"methods,omitempty"`
+		FunctionName  string                 `json:"function_name"`
+		AuthStrategy  string                 `json:"auth_strategy"`
+		AuthConfig    map[string]string      `json:"auth_config,omitempty"`
+		RequestSchema json.RawMessage        `json:"request_schema,omitempty"`
 		RateLimit     *domain.RouteRateLimit `json:"rate_limit,omitempty"`
-		Enabled       *bool             `json:"enabled"`
+		Enabled       *bool                  `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -134,9 +134,8 @@ func (h *GatewayHandler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 	if routes == nil {
 		routes = []*domain.GatewayRoute{}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(routes)
+	total := estimatePaginatedTotal(limit, offset, len(routes))
+	writePaginatedList(w, limit, offset, len(routes), total, routes)
 }
 
 func (h *GatewayHandler) GetRoute(w http.ResponseWriter, r *http.Request) {
@@ -160,15 +159,15 @@ func (h *GatewayHandler) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Domain        *string            `json:"domain"`
-		Path          *string            `json:"path"`
-		Methods       []string           `json:"methods"`
-		FunctionName  *string            `json:"function_name"`
-		AuthStrategy  *string            `json:"auth_strategy"`
-		AuthConfig    map[string]string  `json:"auth_config"`
-		RequestSchema json.RawMessage    `json:"request_schema"`
+		Domain        *string                `json:"domain"`
+		Path          *string                `json:"path"`
+		Methods       []string               `json:"methods"`
+		FunctionName  *string                `json:"function_name"`
+		AuthStrategy  *string                `json:"auth_strategy"`
+		AuthConfig    map[string]string      `json:"auth_config"`
+		RequestSchema json.RawMessage        `json:"request_schema"`
 		RateLimit     *domain.RouteRateLimit `json:"rate_limit"`
-		Enabled       *bool              `json:"enabled"`
+		Enabled       *bool                  `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)

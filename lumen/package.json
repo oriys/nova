@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "i18n:check": "i18n-check -s en --locales messages -u . -f next-intl -o missingKeys invalidKeys unused undefined"
+    "i18n:check": "i18n-check -s en --locales messages -u . -f next-intl -o missingKeys invalidKeys unused undefined",
+    "i18n:scan-hardcoded": "node scripts/check-unlocalized-strings.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -69,7 +70,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.3",
-    "@eslint/js": "^10.0.1",
+    "@eslint/js": "^9.39.2",
     "@lingual/i18n-check": "^0.8.19",
     "@playwright/test": "^1.58.1",
     "@tailwindcss/postcss": "^4.1.9",

@@ -85,9 +85,11 @@ func (h *ScheduleHandler) ListSchedules(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(schedules)
+	if schedules == nil {
+		schedules = []*store.Schedule{}
+	}
+	total := estimatePaginatedTotal(limit, offset, len(schedules))
+	writePaginatedList(w, limit, offset, len(schedules), total, schedules)
 }
 
 func (h *ScheduleHandler) DeleteSchedule(w http.ResponseWriter, r *http.Request) {

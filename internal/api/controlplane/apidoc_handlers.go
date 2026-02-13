@@ -205,9 +205,8 @@ func (h *APIDocHandler) ListShares(w http.ResponseWriter, r *http.Request) {
 	if shares == nil {
 		shares = []*store.APIDocShare{}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(shares)
+	total := estimatePaginatedTotal(limit, offset, len(shares))
+	writePaginatedList(w, limit, offset, len(shares), total, shares)
 }
 
 func (h *APIDocHandler) DeleteShare(w http.ResponseWriter, r *http.Request) {

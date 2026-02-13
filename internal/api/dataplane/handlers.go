@@ -160,6 +160,21 @@ type Handler struct {
 	Advisor   interface{} // Optional: for performance recommendations (type advisor.PerformanceAdvisor)
 }
 
+type invocationPaginationStore interface {
+	CountInvocationLogs(ctx context.Context, functionID string) (int64, error)
+	CountAllInvocationLogs(ctx context.Context) (int64, error)
+	ListAllInvocationLogsFiltered(ctx context.Context, limit, offset int, search, functionName string, success *bool) ([]*store.InvocationLog, error)
+	CountAllInvocationLogsFiltered(ctx context.Context, search, functionName string, success *bool) (int64, error)
+	GetAllInvocationLogsSummary(ctx context.Context) (*store.InvocationLogSummary, error)
+	GetAllInvocationLogsSummaryFiltered(ctx context.Context, search, functionName string, success *bool) (*store.InvocationLogSummary, error)
+}
+
+type asyncInvocationPaginationStore interface {
+	CountAsyncInvocations(ctx context.Context, statuses []store.AsyncInvocationStatus) (int64, error)
+	CountFunctionAsyncInvocations(ctx context.Context, functionID string, statuses []store.AsyncInvocationStatus) (int64, error)
+	GetAsyncInvocationSummary(ctx context.Context) (*store.AsyncInvocationSummary, error)
+}
+
 type enqueueAsyncInvokeRequest struct {
 	Payload         json.RawMessage `json:"payload"`
 	MaxAttempts     int             `json:"max_attempts"`
@@ -201,6 +216,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /functions/{name}/invoke-stream", h.InvokeFunctionStream)
 	mux.HandleFunc("POST /functions/{name}/invoke-async", h.EnqueueAsyncFunction)
 	mux.HandleFunc("GET /functions/{name}/async-invocations", h.ListFunctionAsyncInvocations)
+	mux.HandleFunc("GET /async-invocations/summary", h.AsyncInvocationsSummary)
 	mux.HandleFunc("GET /async-invocations/{id}", h.GetAsyncInvocation)
 	mux.HandleFunc("GET /async-invocations", h.ListAsyncInvocations)
 	mux.HandleFunc("POST /async-invocations/{id}/retry", h.RetryAsyncInvocation)
@@ -556,6 +572,27 @@ func (h *Handler) GetAsyncInvocation(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(inv)
 }
 
+// AsyncInvocationsSummary handles GET /async-invocations/summary
+func (h *Handler) AsyncInvocationsSummary(w http.ResponseWriter, r *http.Request) {
+	pagedStore, ok := h.Store.MetadataStore.(asyncInvocationPaginationStore)
+	if !ok {
+		http.Error(w, "async invocation summary not supported", http.StatusNotImplemented)
+		return
+	}
+
+	summary, err := pagedStore.GetAsyncInvocationSummary(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if summary == nil {
+		summary = &store.AsyncInvocationSummary{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(summary)
+}
+
 // ListAsyncInvocations handles GET /async-invocations
 func (h *Handler) ListAsyncInvocations(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimitQuery(r.URL.Query().Get("limit"), store.DefaultAsyncListLimit, store.MaxAsyncListLimit)
@@ -574,9 +611,13 @@ func (h *Handler) ListAsyncInvocations(w http.ResponseWriter, r *http.Request) {
 	if invs == nil {
 		invs = []*store.AsyncInvocation{}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(invs)
+	total := estimatePaginatedTotal(limit, offset, len(invs))
+	if pagedStore, ok := h.Store.MetadataStore.(asyncInvocationPaginationStore); ok {
+		if counted, countErr := pagedStore.CountAsyncInvocations(r.Context(), statuses); countErr == nil {
+			total = counted
+		}
+	}
+	writePaginatedList(w, limit, offset, len(invs), total, invs)
 }
 
 // ListFunctionAsyncInvocations handles GET /functions/{name}/async-invocations
@@ -604,9 +645,13 @@ func (h *Handler) ListFunctionAsyncInvocations(w http.ResponseWriter, r *http.Re
 	if invs == nil {
 		invs = []*store.AsyncInvocation{}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(invs)
+	total := estimatePaginatedTotal(limit, offset, len(invs))
+	if pagedStore, ok := h.Store.MetadataStore.(asyncInvocationPaginationStore); ok {
+		if counted, countErr := pagedStore.CountFunctionAsyncInvocations(r.Context(), fn.ID, statuses); countErr == nil {
+			total = counted
+		}
+	}
+	writePaginatedList(w, limit, offset, len(invs), total, invs)
 }
 
 // RetryAsyncInvocation handles POST /async-invocations/{id}/retry
@@ -881,25 +926,69 @@ func (h *Handler) Logs(w http.ResponseWriter, r *http.Request) {
 		entries = []*store.InvocationLog{}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(entries)
+	total := int64(len(entries))
+	if pagedStore, ok := h.Store.MetadataStore.(invocationPaginationStore); ok {
+		if counted, countErr := pagedStore.CountInvocationLogs(r.Context(), fn.ID); countErr == nil {
+			total = counted
+		}
+	}
+	writePaginatedList(w, tail, offset, len(entries), total, entries)
 }
 
 // ListAllInvocations handles GET /invocations
 func (h *Handler) ListAllInvocations(w http.ResponseWriter, r *http.Request) {
-	limitStr := r.URL.Query().Get("limit")
-	limit := 100
-	if limitStr != "" {
-		if n, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil || n != 1 {
-			limit = 100
+	limit := parseLimitQuery(r.URL.Query().Get("limit"), 100, 500)
+	offset := parseLimitQuery(r.URL.Query().Get("offset"), 0, 0)
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	if search == "" {
+		search = strings.TrimSpace(r.URL.Query().Get("q"))
+	}
+	functionName := strings.TrimSpace(r.URL.Query().Get("function"))
+	status := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("status")))
+	var successFilter *bool
+	switch status {
+	case "", "all":
+	case "success", "succeeded":
+		v := true
+		successFilter = &v
+	case "failed", "error", "errors":
+		v := false
+		successFilter = &v
+	default:
+		http.Error(w, "invalid status", http.StatusBadRequest)
+		return
+	}
+
+	var (
+		entries []*store.InvocationLog
+		err     error
+		total   int64
+		summary *store.InvocationLogSummary
+	)
+	if pagedStore, ok := h.Store.MetadataStore.(invocationPaginationStore); ok {
+		if search != "" || functionName != "" || successFilter != nil {
+			entries, err = pagedStore.ListAllInvocationLogsFiltered(r.Context(), limit, offset, search, functionName, successFilter)
+			if err == nil {
+				total, err = pagedStore.CountAllInvocationLogsFiltered(r.Context(), search, functionName, successFilter)
+			}
+			if err == nil {
+				summary, _ = pagedStore.GetAllInvocationLogsSummaryFiltered(r.Context(), search, functionName, successFilter)
+			}
+		} else {
+			entries, err = h.Store.ListAllInvocationLogs(r.Context(), limit, offset)
+			if err == nil {
+				total, err = pagedStore.CountAllInvocationLogs(r.Context())
+			}
+			if err == nil {
+				summary, _ = pagedStore.GetAllInvocationLogsSummary(r.Context())
+			}
+		}
+	} else {
+		entries, err = h.Store.ListAllInvocationLogs(r.Context(), limit, offset)
+		if err == nil {
+			total = int64(len(entries))
 		}
 	}
-	if limit > 500 {
-		limit = 500
-	}
-	offset := parseLimitQuery(r.URL.Query().Get("offset"), 0, 0)
-
-	entries, err := h.Store.ListAllInvocationLogs(r.Context(), limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -909,9 +998,41 @@ func (h *Handler) ListAllInvocations(w http.ResponseWriter, r *http.Request) {
 	if entries == nil {
 		entries = []*store.InvocationLog{}
 	}
+	if summary == nil {
+		summary = summarizeInvocations(entries)
+	}
+	// Keep pagination total and summary counters consistent when writes are concurrent.
+	// Both values are shown together on the history page.
+	total = summary.TotalInvocations
+	writePaginatedListWithSummary(w, limit, offset, len(entries), total, entries, summary)
+}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(entries)
+func summarizeInvocations(entries []*store.InvocationLog) *store.InvocationLogSummary {
+	summary := &store.InvocationLogSummary{}
+	if len(entries) == 0 {
+		return summary
+	}
+
+	summary.TotalInvocations = int64(len(entries))
+	var totalDuration int64
+	for _, entry := range entries {
+		if entry == nil {
+			continue
+		}
+		if entry.Success {
+			summary.Successes++
+		} else {
+			summary.Failures++
+		}
+		if entry.ColdStart {
+			summary.ColdStarts++
+		}
+		totalDuration += entry.DurationMs
+	}
+	if summary.TotalInvocations > 0 {
+		summary.AvgDurationMs = totalDuration / summary.TotalInvocations
+	}
+	return summary
 }
 
 // FunctionMetrics handles GET /functions/{name}/metrics

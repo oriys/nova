@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { functionsApi, invocationsApi } from "@/lib/api"
+import { functionsApi, invocationsApi, InvocationListSummary } from "@/lib/api"
 import { transformFunction, FunctionData } from "@/lib/types"
 import {
   RefreshCw,
@@ -62,6 +62,14 @@ export default function HistoryPage() {
   const [functionFilter, setFunctionFilter] = useState<string>("all")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  const [totalInvocations, setTotalInvocations] = useState(0)
+  const [invocationSummary, setInvocationSummary] = useState<InvocationListSummary>({
+    total_invocations: 0,
+    successes: 0,
+    failures: 0,
+    cold_starts: 0,
+    avg_duration_ms: 0,
+  })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [replayingId, setReplayingId] = useState<string | null>(null)
@@ -72,13 +80,18 @@ export default function HistoryPage() {
       setLoading(true)
       setError(null)
 
-      const [funcs, logs] = await Promise.all([
-        functionsApi.list(),
-        invocationsApi.list(200),
+      const offset = (page - 1) * pageSize
+      const [funcPage, logsPage] = await Promise.all([
+        functionsApi.listPage(undefined, 500, 0),
+        invocationsApi.listPage(pageSize, offset, {
+          search: searchQuery || undefined,
+          functionName: functionFilter === "all" ? undefined : functionFilter,
+          status: statusFilter === "all" ? undefined : (statusFilter as "success" | "failed"),
+        }),
       ])
 
       // Transform functions
-      const transformedFuncs = funcs.map((fn) => transformFunction(fn))
+      const transformedFuncs = funcPage.items.map((fn) => transformFunction(fn))
       setFunctions(transformedFuncs)
 
       // Transform logs to invocation records
@@ -100,7 +113,7 @@ export default function HistoryPage() {
         }
       }
 
-      const records: InvocationRecord[] = logs.map((log) => {
+      const records: InvocationRecord[] = logsPage.items.map((log) => {
         const input = formatPayload(log.input)
         const output = formatPayload(log.output)
 
@@ -120,13 +133,15 @@ export default function HistoryPage() {
       })
 
       setInvocations(records)
+      setTotalInvocations(logsPage.total)
+      setInvocationSummary(logsPage.summary)
     } catch (err) {
       console.error("Failed to fetch history:", err)
       setError(toUserErrorMessage(err))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [functionFilter, page, pageSize, searchQuery, statusFilter, th])
 
   useEffect(() => {
     fetchData()
@@ -146,55 +161,37 @@ export default function HistoryPage() {
       const result = await functionsApi.invoke(inv.functionName, payload)
       setReplayResult((prev) => ({
         ...prev,
-        [inv.id]: `OK ${result.duration_ms}ms`,
+        [inv.id]: th("replayOk", { duration: result.duration_ms }),
       }))
       fetchData()
     } catch (err) {
       setReplayResult((prev) => ({
         ...prev,
-        [inv.id]: err instanceof Error ? err.message : "Failed",
+        [inv.id]: err instanceof Error ? err.message : th("replayFailed"),
       }))
     } finally {
       setReplayingId(null)
     }
   }
 
-  const filteredInvocations = invocations.filter((inv) => {
-    const matchesSearch =
-      inv.functionName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      inv.id.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesStatus = statusFilter === "all" || inv.status === statusFilter
-    const matchesFunction =
-      functionFilter === "all" || inv.functionName === functionFilter
-    return matchesSearch && matchesStatus && matchesFunction
-  })
-
   useEffect(() => {
     setPage(1)
   }, [searchQuery, statusFilter, functionFilter])
 
-  const totalPages = Math.max(1, Math.ceil(filteredInvocations.length / pageSize))
+  const totalPages = Math.max(1, Math.ceil(totalInvocations / pageSize))
   useEffect(() => {
     if (page > totalPages) setPage(totalPages)
   }, [page, totalPages])
-
-  const pagedInvocations = filteredInvocations.slice((page - 1) * pageSize, page * pageSize)
 
   const formatTimestamp = (ts: string) => {
     const date = new Date(ts)
     return date.toLocaleString()
   }
 
-  const totalInvocations = invocations.length
-  const successCount = invocations.filter((i) => i.status === "success").length
-  const failedCount = invocations.filter((i) => i.status === "failed").length
-  const coldStartCount = invocations.filter((i) => i.coldStart).length
-  const avgDuration =
-    invocations.length > 0
-      ? Math.round(
-          invocations.reduce((sum, i) => sum + i.duration, 0) / invocations.length
-        )
-      : 0
+  const successCount = invocationSummary.successes
+  const failedCount = invocationSummary.failures
+  const coldStartCount = invocationSummary.cold_starts
+  const avgDuration = invocationSummary.avg_duration_ms
 
   if (error) {
     return (
@@ -229,7 +226,7 @@ export default function HistoryPage() {
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-32">
                 <Filter className="mr-2 h-4 w-4" />
-                <SelectValue placeholder="Status" />
+                <SelectValue placeholder={th("statusPlaceholder")} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{th("allStatus")}</SelectItem>
@@ -240,7 +237,7 @@ export default function HistoryPage() {
 
             <Select value={functionFilter} onValueChange={setFunctionFilter}>
               <SelectTrigger className="w-40">
-                <SelectValue placeholder="Function" />
+                <SelectValue placeholder={th("functionPlaceholder")} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{th("allFunctions")}</SelectItem>
@@ -267,7 +264,7 @@ export default function HistoryPage() {
               <p className="text-sm text-muted-foreground">{th("totalInvocations")}</p>
             </div>
             <p className="text-2xl font-semibold text-foreground mt-1">
-              {loading ? "..." : totalInvocations}
+              {loading ? "..." : invocationSummary.total_invocations}
             </p>
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
@@ -309,7 +306,7 @@ export default function HistoryPage() {
         </div>
 
         {/* Invocations Table */}
-        {!loading && invocations.length === 0 ? (
+        {!loading && totalInvocations === 0 ? (
           <EmptyState
             title={th("noRecords")}
             description={th("noRecordsDesc")}
@@ -359,7 +356,7 @@ export default function HistoryPage() {
                       </td>
                     </tr>
                   ))
-                ) : filteredInvocations.length === 0 ? (
+                ) : invocations.length === 0 ? (
                   <tr>
                     <td
                       colSpan={9}
@@ -369,7 +366,7 @@ export default function HistoryPage() {
                     </td>
                   </tr>
                 ) : (
-                  pagedInvocations.map((inv) => (
+                  invocations.map((inv) => (
                     <tr
                       key={inv.id}
                       className="border-b border-border hover:bg-muted/50"
@@ -390,7 +387,7 @@ export default function HistoryPage() {
                                 : "bg-destructive/10 text-destructive border-0"
                             )}
                           >
-                            {inv.status}
+                            {inv.status === "success" ? th("success") : th("failed")}
                           </Badge>
                         </div>
                       </td>
@@ -449,7 +446,7 @@ export default function HistoryPage() {
                             size="sm"
                             onClick={() => handleReplay(inv)}
                             disabled={replayingId === inv.id}
-                            title="Replay invocation"
+                            title={th("replayInvocation")}
                           >
                             {replayingId === inv.id ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
@@ -476,10 +473,10 @@ export default function HistoryPage() {
             </table>
           </div>
 
-          {!loading && filteredInvocations.length > 0 && (
+          {!loading && totalInvocations > 0 && (
             <div className="border-t border-border p-4">
               <Pagination
-                totalItems={filteredInvocations.length}
+                totalItems={totalInvocations}
                 page={page}
                 pageSize={pageSize}
                 onPageChange={setPage}
@@ -487,7 +484,7 @@ export default function HistoryPage() {
                   setPageSize(size)
                   setPage(1)
                 }}
-                itemLabel="invocations"
+                itemLabel={th("invocationsLabel")}
               />
             </div>
           )}

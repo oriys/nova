@@ -97,8 +97,8 @@ func (h *RBACHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
 	if roles == nil {
 		roles = []*store.RoleRecord{}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(roles)
+	total := estimatePaginatedTotal(limit, offset, len(roles))
+	writePaginatedList(w, limit, offset, len(roles), total, roles)
 }
 
 func (h *RBACHandler) DeleteRole(w http.ResponseWriter, r *http.Request) {
@@ -169,8 +169,8 @@ func (h *RBACHandler) ListPermissions(w http.ResponseWriter, r *http.Request) {
 	if perms == nil {
 		perms = []*store.PermissionRecord{}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(perms)
+	total := estimatePaginatedTotal(limit, offset, len(perms))
+	writePaginatedList(w, limit, offset, len(perms), total, perms)
 }
 
 func (h *RBACHandler) DeletePermission(w http.ResponseWriter, r *http.Request) {
@@ -187,6 +187,8 @@ func (h *RBACHandler) DeletePermission(w http.ResponseWriter, r *http.Request) {
 
 func (h *RBACHandler) ListRolePermissions(w http.ResponseWriter, r *http.Request) {
 	roleID := r.PathValue("id")
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
 	perms, err := h.Store.ListRolePermissions(r.Context(), roleID)
 	if err != nil {
 		http.Error(w, err.Error(), rbacHTTPStatus(err))
@@ -195,8 +197,8 @@ func (h *RBACHandler) ListRolePermissions(w http.ResponseWriter, r *http.Request
 	if perms == nil {
 		perms = []*store.PermissionRecord{}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(perms)
+	pagedPerms, total := paginateSliceWindow(perms, limit, offset)
+	writePaginatedList(w, limit, offset, len(pagedPerms), int64(total), pagedPerms)
 }
 
 func (h *RBACHandler) AssignPermissionToRole(w http.ResponseWriter, r *http.Request) {
@@ -311,8 +313,8 @@ func (h *RBACHandler) ListRoleAssignments(w http.ResponseWriter, r *http.Request
 		if assignments == nil {
 			assignments = []*store.RoleAssignmentRecord{}
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(assignments)
+		pagedAssignments, total := paginateSliceWindow(assignments, limit, offset)
+		writePaginatedList(w, limit, offset, len(pagedAssignments), int64(total), pagedAssignments)
 		return
 	}
 
@@ -324,8 +326,8 @@ func (h *RBACHandler) ListRoleAssignments(w http.ResponseWriter, r *http.Request
 	if assignments == nil {
 		assignments = []*store.RoleAssignmentRecord{}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(assignments)
+	total := estimatePaginatedTotal(limit, offset, len(assignments))
+	writePaginatedList(w, limit, offset, len(assignments), total, assignments)
 }
 
 func (h *RBACHandler) DeleteRoleAssignment(w http.ResponseWriter, r *http.Request) {

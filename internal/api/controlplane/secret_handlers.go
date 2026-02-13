@@ -3,6 +3,7 @@ package controlplane
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 
 	"github.com/oriys/nova/internal/secrets"
 )
@@ -50,6 +51,9 @@ func (h *SecretHandler) CreateSecret(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SecretHandler) ListSecrets(w http.ResponseWriter, r *http.Request) {
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+
 	secretsMap, err := h.Store.List(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -68,9 +72,11 @@ func (h *SecretHandler) ListSecrets(w http.ResponseWriter, r *http.Request) {
 			CreatedAt: createdAt,
 		})
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name < result[j].Name
+	})
+	pagedResult, total := paginateSliceWindow(result, limit, offset)
+	writePaginatedList(w, limit, offset, len(pagedResult), int64(total), pagedResult)
 }
 
 func (h *SecretHandler) DeleteSecret(w http.ResponseWriter, r *http.Request) {

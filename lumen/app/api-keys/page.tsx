@@ -37,6 +37,8 @@ import { cn } from "@/lib/utils"
 
 export default function APIKeysPage() {
   const t = useTranslations("pages")
+  const tk = useTranslations("apiKeysPage")
+  const tc = useTranslations("common")
   const [keys, setKeys] = useState<APIKeyEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -54,11 +56,11 @@ export default function APIKeysPage() {
       const data = await apiKeysApi.list()
       setKeys(data || [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load API keys")
+      setError(err instanceof Error ? err.message : tk("failedToLoad"))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [tk])
 
   useEffect(() => {
     fetchKeys()
@@ -74,7 +76,7 @@ export default function APIKeysPage() {
       setNewKeyTier("default")
       fetchKeys()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create API key")
+      setError(err instanceof Error ? err.message : tk("failedToCreate"))
     } finally {
       setCreating(false)
     }
@@ -85,7 +87,7 @@ export default function APIKeysPage() {
       await apiKeysApi.delete(name)
       fetchKeys()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete API key")
+      setError(err instanceof Error ? err.message : tk("failedToDelete"))
     }
   }
 
@@ -94,7 +96,7 @@ export default function APIKeysPage() {
       await apiKeysApi.toggle(name, !currentEnabled)
       fetchKeys()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to toggle API key")
+      setError(err instanceof Error ? err.message : tk("failedToToggle"))
     }
   }
 
@@ -129,17 +131,17 @@ export default function APIKeysPage() {
             <DialogTrigger asChild>
               <Button size="sm">
                 <Plus className="mr-2 h-4 w-4" />
-                Create API Key
+                {tk("createApiKey")}
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Create API Key</DialogTitle>
+                <DialogTitle>{tk("createApiKey")}</DialogTitle>
               </DialogHeader>
               {createdKey ? (
                 <div className="space-y-4">
                   <p className="text-sm text-muted-foreground">
-                    Copy your API key now. It will not be shown again.
+                    {tk("copyKeyNow")}
                   </p>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 rounded-md border bg-muted p-3 text-sm font-mono break-all">
@@ -164,28 +166,28 @@ export default function APIKeysPage() {
                       setCreatedKey(null)
                     }}
                   >
-                    Done
+                    {tk("done")}
                   </Button>
                 </div>
               ) : (
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Name</label>
+                    <label className="text-sm font-medium">{tk("name")}</label>
                     <Input
                       value={newKeyName}
                       onChange={(e) => setNewKeyName(e.target.value)}
-                      placeholder="my-api-key"
+                      placeholder={tk("namePlaceholder")}
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Tier</label>
+                    <label className="text-sm font-medium">{tk("tier")}</label>
                     <Select value={newKeyTier} onValueChange={setNewKeyTier}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="default">Default</SelectItem>
-                        <SelectItem value="premium">Premium</SelectItem>
+                        <SelectItem value="default">{tk("tierDefault")}</SelectItem>
+                        <SelectItem value="premium">{tk("tierPremium")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -194,7 +196,7 @@ export default function APIKeysPage() {
                     onClick={handleCreate}
                     disabled={creating || !newKeyName.trim()}
                   >
-                    {creating ? "Creating..." : "Create"}
+                    {creating ? tk("creating") : tc("create")}
                   </Button>
                 </div>
               )}
@@ -203,7 +205,7 @@ export default function APIKeysPage() {
 
           <Button variant="outline" size="sm" onClick={fetchKeys} disabled={loading}>
             <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
-            Refresh
+            {tc("refresh")}
           </Button>
         </div>
 
@@ -211,11 +213,11 @@ export default function APIKeysPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Name</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Tier</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Status</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Created</th>
-                <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Actions</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tk("colName")}</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tk("colTier")}</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tk("colStatus")}</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tk("colCreated")}</th>
+                <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">{tk("colActions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -231,7 +233,7 @@ export default function APIKeysPage() {
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
                     <KeyRound className="mx-auto h-8 w-8 mb-2 opacity-50" />
-                    No API keys yet
+                    {tk("noKeys")}
                   </td>
                 </tr>
               ) : (
@@ -255,7 +257,7 @@ export default function APIKeysPage() {
                             : "bg-destructive/10 text-destructive border-0"
                         )}
                       >
-                        {key.enabled ? "Active" : "Disabled"}
+                        {key.enabled ? tk("active") : tk("disabled")}
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-sm text-muted-foreground">
@@ -267,7 +269,7 @@ export default function APIKeysPage() {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleToggle(key.name, key.enabled)}
-                          title={key.enabled ? "Disable" : "Enable"}
+                          title={key.enabled ? tk("disableAction") : tk("enableAction")}
                         >
                           {key.enabled ? (
                             <ToggleRight className="h-4 w-4 text-success" />

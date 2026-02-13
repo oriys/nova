@@ -133,9 +133,8 @@ func (h *Handler) ListEventTopics(w http.ResponseWriter, r *http.Request) {
 	if topics == nil {
 		topics = []*store.EventTopic{}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(topics)
+	total := estimatePaginatedTotal(limit, offset, len(topics))
+	writePaginatedList(w, limit, offset, len(topics), total, topics)
 }
 
 func (h *Handler) GetEventTopic(w http.ResponseWriter, r *http.Request) {
@@ -297,8 +296,8 @@ func (h *Handler) ListEventOutbox(w http.ResponseWriter, r *http.Request) {
 	if jobs == nil {
 		jobs = []*store.EventOutbox{}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(jobs)
+	total := estimatePaginatedTotal(limit, offset, len(jobs))
+	writePaginatedList(w, limit, offset, len(jobs), total, jobs)
 }
 
 func (h *Handler) ListTopicMessages(w http.ResponseWriter, r *http.Request) {
@@ -323,9 +322,8 @@ func (h *Handler) ListTopicMessages(w http.ResponseWriter, r *http.Request) {
 	if messages == nil {
 		messages = []*store.EventMessage{}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(messages)
+	total := estimatePaginatedTotal(limit, offset, len(messages))
+	writePaginatedList(w, limit, offset, len(messages), total, messages)
 }
 
 func (h *Handler) CreateEventSubscription(w http.ResponseWriter, r *http.Request) {
@@ -451,9 +449,8 @@ func (h *Handler) ListEventSubscriptions(w http.ResponseWriter, r *http.Request)
 	if subs == nil {
 		subs = []*store.EventSubscription{}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(subs)
+	total := estimatePaginatedTotal(limit, offset, len(subs))
+	writePaginatedList(w, limit, offset, len(subs), total, subs)
 }
 
 func (h *Handler) GetEventSubscription(w http.ResponseWriter, r *http.Request) {
@@ -597,9 +594,8 @@ func (h *Handler) ListEventDeliveries(w http.ResponseWriter, r *http.Request) {
 	if deliveries == nil {
 		deliveries = []*store.EventDelivery{}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(deliveries)
+	total := estimatePaginatedTotal(limit, offset, len(deliveries))
+	writePaginatedList(w, limit, offset, len(deliveries), total, deliveries)
 }
 
 func (h *Handler) ReplayEventSubscription(w http.ResponseWriter, r *http.Request) {

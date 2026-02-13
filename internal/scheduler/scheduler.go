@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -33,6 +34,10 @@ func New(s *store.Store, exec executor.Invoker) *Scheduler {
 
 // Start loads all enabled schedules from the store and starts the cron scheduler.
 func (s *Scheduler) Start() error {
+	if s == nil || s.store == nil || s.store.ScheduleStore == nil {
+		return fmt.Errorf("schedule store not configured")
+	}
+
 	ctx := context.Background()
 	schedules, err := s.store.ListAllSchedules(ctx, 0, 0)
 	if err != nil {

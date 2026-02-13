@@ -9,6 +9,7 @@ import (
 	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/backend"
 	"github.com/oriys/nova/internal/compiler"
+	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/firecracker"
 	"github.com/oriys/nova/internal/layer"
 	"github.com/oriys/nova/internal/pool"
@@ -215,9 +216,11 @@ func (h *Handler) ListFunctionVersions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(versions)
+	if versions == nil {
+		versions = []*domain.FunctionVersion{}
+	}
+	total := estimatePaginatedTotal(limit, offset, len(versions))
+	writePaginatedList(w, limit, offset, len(versions), total, versions)
 }
 
 // GetFunctionVersion returns a specific version of a function.

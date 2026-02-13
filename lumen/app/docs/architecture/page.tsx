@@ -1,3 +1,4 @@
+/* eslint-disable i18next/no-literal-string */
 import { getTranslations } from "next-intl/server"
 import { DocsShell } from "@/components/docs/docs-shell"
 import { CodeBlock } from "@/components/docs/code-block"
@@ -108,6 +109,7 @@ export default async function DocsArchitecturePage() {
       <section id="tenancy-isolation" className="scroll-mt-24">
         <h2 className="text-3xl font-semibold tracking-tight">{t("sections.tenancyIsolation.title")}</h2>
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
+          {/* i18n-ignore-next-line */}
           <li>{t("sections.tenancyIsolation.items.item1")} <code>X-Nova-Tenant</code> {t("sections.tenancyIsolation.items.item1Middle")} <code>X-Nova-Namespace</code>.</li>
           <li>{t("sections.tenancyIsolation.items.item2")}</li>
           <li>{t("sections.tenancyIsolation.items.item3")}</li>
@@ -140,9 +142,13 @@ export default async function DocsArchitecturePage() {
       <section id="observability" className="scroll-mt-24">
         <h2 className="text-3xl font-semibold tracking-tight">{t("sections.observability.title")}</h2>
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
+          {/* i18n-ignore-next-line */}
           <li>{t("sections.observability.items.item1")} <code>/health</code>, <code>/health/live</code>, <code>/health/ready</code>, <code>/health/startup</code>.</li>
+          {/* i18n-ignore-next-line */}
           <li>{t("sections.observability.items.item2")} <code>/metrics</code>, <code>/metrics/timeseries</code>, <code>/metrics/heatmap</code>.</li>
+          {/* i18n-ignore-next-line */}
           <li>{t("sections.observability.items.item3")} <code>/functions/{"{"}name{"}"}/logs</code>, <code>/functions/{"{"}name{"}"}/metrics</code>.</li>
+          {/* i18n-ignore-next-line */}
           <li>{t("sections.observability.items.item4")} <code>/stats</code>, {t("sections.observability.items.item4Suffix")} <code>/invocations</code>.</li>
         </ul>
       </section>

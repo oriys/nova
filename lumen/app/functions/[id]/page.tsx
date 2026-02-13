@@ -85,6 +85,9 @@ export default function FunctionDetailPage({
   const [func, setFunc] = useState<FunctionData | null>(null)
   const [metrics, setMetrics] = useState<FunctionMetricsType | null>(null)
   const [logs, setLogs] = useState<LogEntry[]>([])
+  const [logsPage, setLogsPage] = useState(1)
+  const [logsPageSize, setLogsPageSize] = useState(20)
+  const [logsTotal, setLogsTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [invoking, setInvoking] = useState(false)
@@ -128,9 +131,10 @@ export default function FunctionDetailPage({
 
       // id could be function ID or name, try to get by name first
       const fn = await functionsApi.get(id)
+      const logOffset = (logsPage - 1) * logsPageSize
       const [fnMetrics, fnLogs, requestedLog] = await Promise.all([
         functionsApi.metrics(fn.name).catch(() => null),
-        functionsApi.logs(fn.name, 20).catch(() => []),
+        functionsApi.logsPage(fn.name, logsPageSize, logOffset).catch(() => ({ items: [], total: 0 })),
         requestedLogID
           ? functionsApi.logsByRequest(fn.name, requestedLogID).catch(() => null)
           : Promise.resolve(null),
@@ -143,9 +147,10 @@ export default function FunctionDetailPage({
 
       setMetrics(fnMetrics)
       setFunc(transformFunction(fn, fnMetrics ?? undefined))
+      setLogsTotal(fnLogs.total || 0)
       const mergedLogs = requestedLog
-        ? [requestedLog, ...fnLogs.filter((entry) => entry.id !== requestedLog.id)]
-        : fnLogs
+        ? [requestedLog, ...fnLogs.items.filter((entry) => entry.id !== requestedLog.id)]
+        : fnLogs.items
       setLogs(mergedLogs.map(transformLog))
     } catch (err) {
       console.error("Failed to fetch function:", err)
@@ -153,7 +158,7 @@ export default function FunctionDetailPage({
     } finally {
       setLoading(false)
     }
-  }, [id, refreshAsyncJobs, requestedLogID, t])
+  }, [id, logsPage, logsPageSize, refreshAsyncJobs, requestedLogID, t])
 
   useEffect(() => {
     fetchData()
@@ -420,7 +425,20 @@ export default function FunctionDetailPage({
           </TabsContent>
 
           <TabsContent value="logs" className="mt-0">
-            <FunctionLogs logs={logs} onRefresh={fetchData} highlightedRequestId={requestedLogID || undefined} />
+            <FunctionLogs
+              logs={logs}
+              onRefresh={fetchData}
+              loading={loading}
+              highlightedRequestId={requestedLogID || undefined}
+              page={logsPage}
+              pageSize={logsPageSize}
+              totalItems={logsTotal}
+              onPageChange={setLogsPage}
+              onPageSizeChange={(size) => {
+                setLogsPageSize(size)
+                setLogsPage(1)
+              }}
+            />
           </TabsContent>
 
           <TabsContent value="diagnostics" className="mt-0 space-y-4">

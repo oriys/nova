@@ -214,11 +214,15 @@ function EnvVariableEditor({
   onChange,
   hint,
   addLabel,
+  keyPlaceholder,
+  valuePlaceholder,
 }: {
   variables: EnvVariable[]
   onChange: (vars: EnvVariable[]) => void
   hint: string
   addLabel: string
+  keyPlaceholder: string
+  valuePlaceholder: string
 }) {
   const update = (id: string, field: "key" | "value", val: string) => {
     onChange(variables.map((v) => (v.id === id ? { ...v, [field]: val } : v)))
@@ -239,13 +243,13 @@ function EnvVariableEditor({
           <Input
             value={v.key}
             onChange={(e) => update(v.id, "key", e.target.value)}
-            placeholder="variable_name"
+            placeholder={keyPlaceholder}
             className="flex-1 h-8 text-sm font-mono"
           />
           <Input
             value={v.value}
             onChange={(e) => update(v.id, "value", e.target.value)}
-            placeholder="value"
+            placeholder={valuePlaceholder}
             className="flex-1 h-8 text-sm font-mono"
           />
           <Button
@@ -654,6 +658,8 @@ export default function ApiClientPage() {
                     onChange={setEnvVars}
                     hint={t("envHint")}
                     addLabel={t("addVariable")}
+                    keyPlaceholder={t("paramKey")}
+                    valuePlaceholder={t("paramValue")}
                   />
                 </TabsContent>
               </Tabs>

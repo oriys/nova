@@ -20,6 +20,11 @@ interface FunctionLogsProps {
   onRefresh?: () => void
   loading?: boolean
   highlightedRequestId?: string
+  page: number
+  pageSize: number
+  totalItems: number
+  onPageChange: (page: number) => void
+  onPageSizeChange: (size: number) => void
 }
 
 const levelConfig = {
@@ -29,29 +34,26 @@ const levelConfig = {
   debug: { icon: Bug, color: "text-muted-foreground", bg: "bg-muted", label: "DEBUG" },
 }
 
-export function FunctionLogs({ logs, onRefresh, loading, highlightedRequestId }: FunctionLogsProps) {
+export function FunctionLogs({
+  logs,
+  onRefresh,
+  loading,
+  highlightedRequestId,
+  page,
+  pageSize,
+  totalItems,
+  onPageChange,
+  onPageSizeChange,
+}: FunctionLogsProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [levelFilter, setLevelFilter] = useState("all")
   const [isLive, setIsLive] = useState(false)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
 
   const filteredLogs = logs.filter((log) => {
     const matchesSearch = log.message.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesLevel = levelFilter === "all" || log.level === levelFilter
     return matchesSearch && matchesLevel
   })
-
-  useEffect(() => {
-    setPage(1)
-  }, [searchQuery, levelFilter])
-
-  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / pageSize))
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages)
-  }, [page, totalPages])
-
-  const pagedLogs = filteredLogs.slice((page - 1) * pageSize, page * pageSize)
 
   // Auto-refresh when live mode is enabled
   useEffect(() => {
@@ -154,7 +156,7 @@ export function FunctionLogs({ logs, onRefresh, loading, highlightedRequestId }:
               </p>
             </div>
           ) : (
-            pagedLogs.map((log) => {
+            filteredLogs.map((log) => {
               const config = levelConfig[log.level]
               const timestamp = new Date(log.timestamp)
               const formattedTime = timestamp.toLocaleTimeString("en-US", {
@@ -201,19 +203,16 @@ export function FunctionLogs({ logs, onRefresh, loading, highlightedRequestId }:
               )
             })
           )}
-        </div>
+      </div>
 
-        {filteredLogs.length > 0 && (
+        {(totalItems > 0 || filteredLogs.length > 0) && (
           <div className="border-t border-border p-4">
             <Pagination
-              totalItems={filteredLogs.length}
+              totalItems={searchQuery.trim() || levelFilter !== "all" ? filteredLogs.length : totalItems}
               page={page}
               pageSize={pageSize}
-              onPageChange={setPage}
-              onPageSizeChange={(size) => {
-                setPageSize(size)
-                setPage(1)
-              }}
+              onPageChange={onPageChange}
+              onPageSizeChange={onPageSizeChange}
               itemLabel="logs"
             />
           </div>

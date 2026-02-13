@@ -29,6 +29,7 @@ export default function RuntimesPage() {
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(12)
+  const [totalRuntimes, setTotalRuntimes] = useState(0)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -51,26 +52,26 @@ export default function RuntimesPage() {
     try {
       setLoading(true)
       setError(null)
-      const data = await runtimesApi.list()
-      setRuntimes(data.map(transformRuntime))
+      const offset = (page - 1) * pageSize
+      const result = await runtimesApi.listPage(pageSize, offset)
+      setRuntimes(result.items.map(transformRuntime))
+      setTotalRuntimes(result.total)
     } catch (err) {
       console.error("Failed to fetch runtimes:", err)
-      setError(err instanceof Error ? err.message : "Failed to load runtimes")
+      setError(err instanceof Error ? err.message : t("runtimes.failedToLoad"))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [page, pageSize, t])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
 
-  const totalPages = Math.max(1, Math.ceil(runtimes.length / pageSize))
+  const totalPages = Math.max(1, Math.ceil(totalRuntimes / pageSize))
   useEffect(() => {
     if (page > totalPages) setPage(totalPages)
   }, [page, totalPages])
-
-  const pagedRuntimes = runtimes.slice((page - 1) * pageSize, page * pageSize)
 
   const resetForm = () => {
     setFormData({ id: "", name: "", version: "", status: "available", image_name: "", entrypoint: [], file_extension: "" })
@@ -84,13 +85,13 @@ export default function RuntimesPage() {
     if (!file) return
 
     if (!file.name.endsWith(".ext4")) {
-      setError("File must have .ext4 extension")
+      setError(t("runtimes.fileExtensionError"))
       return
     }
 
     const maxSize = 2 * 1024 * 1024 * 1024 // 2GB
     if (file.size > maxSize) {
-      setError("File size must be less than 2GB")
+      setError(t("runtimes.fileSizeError"))
       return
     }
 
@@ -109,15 +110,15 @@ export default function RuntimesPage() {
 
       if (createMode === "upload") {
         if (!uploadFile) {
-          setError("Please select a file to upload")
+          setError(t("runtimes.selectFileToUpload"))
           return
         }
         if (!formData.id || !formData.name || !formData.entrypoint.length || !formData.file_extension) {
-          setError("Please fill in all required fields")
+          setError(t("runtimes.fillRequiredFields"))
           return
         }
 
-        setUploadProgress("Uploading...")
+        setUploadProgress(t("runtimes.uploading"))
         const metadata: UploadRuntimeRequest = {
           id: formData.id,
           name: formData.name,
@@ -129,7 +130,7 @@ export default function RuntimesPage() {
         setUploadProgress(null)
       } else {
         if (!formData.id || !formData.name || !formData.version || !formData.image_name || !formData.entrypoint.length || !formData.file_extension) {
-          setError("Please fill in all required fields")
+          setError(t("runtimes.fillRequiredFields"))
           return
         }
         await runtimesApi.create(formData)
@@ -140,7 +141,7 @@ export default function RuntimesPage() {
       fetchData()
     } catch (err) {
       console.error("Failed to create runtime:", err)
-      setError(err instanceof Error ? err.message : "Failed to create runtime")
+      setError(err instanceof Error ? err.message : t("runtimes.failedToCreate"))
       setUploadProgress(null)
     } finally {
       setCreating(false)
@@ -155,9 +156,21 @@ export default function RuntimesPage() {
       fetchData()
     } catch (err) {
       console.error("Failed to delete runtime:", err)
-      setError(err instanceof Error ? err.message : "Failed to delete runtime")
+      setError(err instanceof Error ? err.message : t("runtimes.failedToDelete"))
     } finally {
       setDeleting(false)
+    }
+  }
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "available":
+        return t("runtimes.status.available")
+      case "deprecated":
+        return t("runtimes.status.deprecated")
+      case "maintenance":
+        return t("runtimes.status.maintenance")
+      default:
+        return status
     }
   }
 
@@ -184,10 +197,10 @@ export default function RuntimesPage() {
         <Header title={t("runtimes.title")} description={t("runtimes.description")} />
         <div className="p-6">
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
-            <p className="font-medium">Failed to load runtimes</p>
+            <p className="font-medium">{t("runtimes.failedToLoad")}</p>
             <p className="text-sm mt-1">{error}</p>
             <Button variant="outline" size="sm" className="mt-2" onClick={() => { setError(null); fetchData(); }}>
-              Retry
+              {t("runtimes.retry")}
             </Button>
           </div>
         </div>
@@ -203,17 +216,17 @@ export default function RuntimesPage() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm text-muted-foreground">
-              {loading ? "Loading..." : `${runtimes.length} runtimes available`}
+              {loading ? t("runtimes.loading") : t("runtimes.availableCount", { count: totalRuntimes })}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => setShowCreateDialog(true)}>
               <Plus className="mr-2 h-4 w-4" />
-              Add Runtime
+              {t("runtimes.addRuntime")}
             </Button>
             <Button variant="outline" onClick={fetchData} disabled={loading}>
               <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
-              Refresh
+              {t("runtimes.refresh")}
             </Button>
           </div>
         </div>
@@ -222,7 +235,7 @@ export default function RuntimesPage() {
         {showCreateDialog && (
           <div className="rounded-xl border border-border bg-card p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-card-foreground">Add Custom Runtime</h3>
+              <h3 className="text-sm font-semibold text-card-foreground">{t("runtimes.addCustomRuntime")}</h3>
               <Button variant="ghost" size="sm" onClick={() => { setShowCreateDialog(false); resetForm(); }}>
                 <X className="h-4 w-4" />
               </Button>
@@ -236,7 +249,7 @@ export default function RuntimesPage() {
                 onClick={() => setCreateMode("reference")}
               >
                 <FileText className="mr-2 h-4 w-4" />
-                Reference Existing
+                {t("runtimes.referenceExisting")}
               </Button>
               <Button
                 variant={createMode === "upload" ? "default" : "outline"}
@@ -244,7 +257,7 @@ export default function RuntimesPage() {
                 onClick={() => setCreateMode("upload")}
               >
                 <Upload className="mr-2 h-4 w-4" />
-                Upload New Image
+                {t("runtimes.uploadNewImage")}
               </Button>
             </div>
 
@@ -258,7 +271,7 @@ export default function RuntimesPage() {
             {/* Upload mode: file picker */}
             {createMode === "upload" && (
               <div className="mb-4">
-                <label className="text-xs font-medium text-muted-foreground">Rootfs Image (.ext4) *</label>
+                <label className="text-xs font-medium text-muted-foreground">{t("runtimes.rootfsImage")}</label>
                 <div
                   className={cn(
                     "mt-1 border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors",
@@ -282,7 +295,7 @@ export default function RuntimesPage() {
                   ) : (
                     <div>
                       <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
-                      <p className="text-sm text-muted-foreground">Click to select .ext4 file (max 2GB)</p>
+                      <p className="text-sm text-muted-foreground">{t("runtimes.clickToSelectFile")}</p>
                     </div>
                   )}
                 </div>
@@ -294,20 +307,20 @@ export default function RuntimesPage() {
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
-                <label className="text-xs font-medium text-muted-foreground">ID *</label>
+                <label className="text-xs font-medium text-muted-foreground">{t("runtimes.idLabel")}</label>
                 <input
                   type="text"
-                  placeholder="e.g. bash-custom"
+                  placeholder={t("runtimes.idPlaceholder")}
                   className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                   value={formData.id}
                   onChange={(e) => setFormData({ ...formData, id: e.target.value })}
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground">Name *</label>
+                <label className="text-xs font-medium text-muted-foreground">{t("runtimes.nameLabel")}</label>
                 <input
                   type="text"
-                  placeholder="e.g. Bash"
+                  placeholder={t("runtimes.namePlaceholder")}
                   className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -315,11 +328,11 @@ export default function RuntimesPage() {
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground">
-                  Version {createMode === "reference" ? "*" : "(optional)"}
+                  {createMode === "reference" ? t("runtimes.versionRequiredLabel") : t("runtimes.versionOptionalLabel")}
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. 5.2"
+                  placeholder={t("runtimes.versionPlaceholder")}
                   className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                   value={formData.version}
                   onChange={(e) => setFormData({ ...formData, version: e.target.value })}
@@ -327,10 +340,10 @@ export default function RuntimesPage() {
               </div>
               {createMode === "reference" && (
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground">Image Name *</label>
+                  <label className="text-xs font-medium text-muted-foreground">{t("runtimes.imageNameLabel")}</label>
                   <input
                     type="text"
-                    placeholder="e.g. bash.ext4"
+                    placeholder={t("runtimes.imageNamePlaceholder")}
                     className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                     value={formData.image_name}
                     onChange={(e) => setFormData({ ...formData, image_name: e.target.value })}
@@ -338,20 +351,20 @@ export default function RuntimesPage() {
                 </div>
               )}
               <div>
-                <label className="text-xs font-medium text-muted-foreground">Entrypoint * (comma-separated)</label>
+                <label className="text-xs font-medium text-muted-foreground">{t("runtimes.entrypointLabel")}</label>
                 <input
                   type="text"
-                  placeholder="e.g. /bin/bash"
+                  placeholder={t("runtimes.entrypointPlaceholder")}
                   className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                   value={formData.entrypoint.join(", ")}
                   onChange={(e) => setFormData({ ...formData, entrypoint: e.target.value.split(",").map(s => s.trim()).filter(Boolean) })}
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground">File Extension *</label>
+                <label className="text-xs font-medium text-muted-foreground">{t("runtimes.fileExtensionLabel")}</label>
                 <input
                   type="text"
-                  placeholder="e.g. .sh"
+                  placeholder={t("runtimes.fileExtensionPlaceholder")}
                   className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                   value={formData.file_extension}
                   onChange={(e) => setFormData({ ...formData, file_extension: e.target.value })}
@@ -363,7 +376,7 @@ export default function RuntimesPage() {
                 onClick={handleCreate}
                 disabled={creating || !isFormValid}
               >
-                {creating ? (uploadProgress || "Creating...") : (createMode === "upload" ? "Upload & Create" : "Create Runtime")}
+                {creating ? (uploadProgress || t("runtimes.creating")) : (createMode === "upload" ? t("runtimes.uploadAndCreate") : t("runtimes.createRuntime"))}
               </Button>
             </div>
           </div>
@@ -385,7 +398,7 @@ export default function RuntimesPage() {
                   </div>
                 </div>
               ))
-            : pagedRuntimes.map((runtime) => {
+            : runtimes.map((runtime) => {
                 const bgColor = getRuntimeColor(runtime.id)
 
                 return (
@@ -411,7 +424,7 @@ export default function RuntimesPage() {
                           {getStatusIcon(runtime.status)}
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          v{runtime.version}
+                          {t("runtimes.versionValue", { version: runtime.version })}
                         </p>
                         {runtime.imageName && (
                           <p className="text-xs text-muted-foreground mt-1">
@@ -432,14 +445,14 @@ export default function RuntimesPage() {
                     {/* Delete confirmation */}
                     {deleteConfirmId === runtime.id && (
                       <div className="mt-4 flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3">
-                        <p className="text-xs text-destructive flex-1">Delete this runtime?</p>
+                        <p className="text-xs text-destructive flex-1">{t("runtimes.deleteRuntimeConfirm")}</p>
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => setDeleteConfirmId(null)}
                           disabled={deleting}
                         >
-                          Cancel
+                          {t("runtimes.cancel")}
                         </Button>
                         <Button
                           variant="destructive"
@@ -447,7 +460,7 @@ export default function RuntimesPage() {
                           onClick={() => handleDelete(runtime.id)}
                           disabled={deleting}
                         >
-                          {deleting ? "Deleting..." : "Delete"}
+                          {deleting ? t("runtimes.deleting") : t("runtimes.delete")}
                         </Button>
                       </div>
                     )}
@@ -466,11 +479,10 @@ export default function RuntimesPage() {
                               "bg-muted text-muted-foreground border-0"
                           )}
                         >
-                          {runtime.status}
+                          {getStatusLabel(runtime.status)}
                         </Badge>
                         <span className="text-sm text-muted-foreground">
-                          {runtime.functionsCount} function
-                          {runtime.functionsCount !== 1 ? "s" : ""}
+                          {t("runtimes.functionsCount", { count: runtime.functionsCount })}
                         </span>
                       </div>
                     )}
@@ -479,10 +491,10 @@ export default function RuntimesPage() {
               })}
         </div>
 
-        {!loading && runtimes.length > 0 && (
+        {!loading && totalRuntimes > 0 && (
           <div className="rounded-xl border border-border bg-card p-4">
             <Pagination
-              totalItems={runtimes.length}
+              totalItems={totalRuntimes}
               page={page}
               pageSize={pageSize}
               onPageChange={setPage}
@@ -491,7 +503,7 @@ export default function RuntimesPage() {
                 setPage(1)
               }}
               pageSizeOptions={[6, 12, 24, 48]}
-              itemLabel="runtimes"
+              itemLabel={t("runtimes.itemLabel")}
             />
           </div>
         )}

@@ -18,6 +18,7 @@ func (h *Handler) ListTenants(w http.ResponseWriter, r *http.Request) {
 	var (
 		tenants []*store.TenantRecord
 		err     error
+		total   int64
 	)
 	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
 	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
@@ -28,6 +29,7 @@ func (h *Handler) ListTenants(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		total = estimatePaginatedTotal(limit, offset, len(tenants))
 	} else {
 		tenants = make([]*store.TenantRecord, 0, len(tenantIDs))
 		for _, tenantID := range tenantIDs {
@@ -41,14 +43,15 @@ func (h *Handler) ListTenants(w http.ResponseWriter, r *http.Request) {
 			}
 			tenants = append(tenants, tenant)
 		}
+		paged, exactTotal := paginateSliceWindow(tenants, limit, offset)
+		tenants = paged
+		total = int64(exactTotal)
 	}
 
 	if tenants == nil {
 		tenants = []*store.TenantRecord{}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tenants)
+	writePaginatedList(w, limit, offset, len(tenants), total, tenants)
 }
 
 // CreateTenant handles POST /tenants
@@ -144,9 +147,8 @@ func (h *Handler) ListNamespaces(w http.ResponseWriter, r *http.Request) {
 	if namespaces == nil {
 		namespaces = []*store.NamespaceRecord{}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(namespaces)
+	total := estimatePaginatedTotal(limit, offset, len(namespaces))
+	writePaginatedList(w, limit, offset, len(namespaces), total, namespaces)
 }
 
 // CreateNamespace handles POST /tenants/{tenantID}/namespaces
@@ -232,6 +234,8 @@ func (h *Handler) ListTenantQuotas(w http.ResponseWriter, r *http.Request) {
 	if !enforceTenantAccess(w, r, tenantID) {
 		return
 	}
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
 
 	quotas, err := h.Store.ListTenantQuotas(r.Context(), tenantID)
 	if err != nil {
@@ -241,9 +245,8 @@ func (h *Handler) ListTenantQuotas(w http.ResponseWriter, r *http.Request) {
 	if quotas == nil {
 		quotas = []*store.TenantQuotaRecord{}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(quotas)
+	pagedQuotas, total := paginateSliceWindow(quotas, limit, offset)
+	writePaginatedList(w, limit, offset, len(pagedQuotas), int64(total), pagedQuotas)
 }
 
 // UpsertTenantQuota handles PUT /tenants/{tenantID}/quotas/{dimension}
@@ -309,6 +312,8 @@ func (h *Handler) GetTenantUsage(w http.ResponseWriter, r *http.Request) {
 	if !enforceTenantAccess(w, r, tenantID) {
 		return
 	}
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
 	refresh := true
 	if raw := strings.TrimSpace(r.URL.Query().Get("refresh")); raw != "" {
 		if parsed, err := strconv.ParseBool(raw); err == nil {
@@ -332,9 +337,8 @@ func (h *Handler) GetTenantUsage(w http.ResponseWriter, r *http.Request) {
 	if usage == nil {
 		usage = []*store.TenantUsageRecord{}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(usage)
+	pagedUsage, total := paginateSliceWindow(usage, limit, offset)
+	writePaginatedList(w, limit, offset, len(pagedUsage), int64(total), pagedUsage)
 }
 
 // ─── Tenant Menu Permissions ────────────────────────────────────────────────
@@ -345,6 +349,8 @@ func (h *Handler) ListTenantMenuPermissions(w http.ResponseWriter, r *http.Reque
 	if !enforceTenantAccess(w, r, tenantID) {
 		return
 	}
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
 
 	perms, err := h.Store.ListTenantMenuPermissions(r.Context(), tenantID)
 	if err != nil {
@@ -354,9 +360,8 @@ func (h *Handler) ListTenantMenuPermissions(w http.ResponseWriter, r *http.Reque
 	if perms == nil {
 		perms = []*store.MenuPermissionRecord{}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(perms)
+	pagedPerms, total := paginateSliceWindow(perms, limit, offset)
+	writePaginatedList(w, limit, offset, len(pagedPerms), int64(total), pagedPerms)
 }
 
 // UpsertTenantMenuPermission handles PUT /tenants/{tenantID}/menu-permissions/{menuKey}
@@ -414,6 +419,8 @@ func (h *Handler) ListTenantButtonPermissions(w http.ResponseWriter, r *http.Req
 	if !enforceTenantAccess(w, r, tenantID) {
 		return
 	}
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
 
 	perms, err := h.Store.ListTenantButtonPermissions(r.Context(), tenantID)
 	if err != nil {
@@ -423,9 +430,8 @@ func (h *Handler) ListTenantButtonPermissions(w http.ResponseWriter, r *http.Req
 	if perms == nil {
 		perms = []*store.ButtonPermissionRecord{}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(perms)
+	pagedPerms, total := paginateSliceWindow(perms, limit, offset)
+	writePaginatedList(w, limit, offset, len(pagedPerms), int64(total), pagedPerms)
 }
 
 // UpsertTenantButtonPermission handles PUT /tenants/{tenantID}/button-permissions/{permissionKey}

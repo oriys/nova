@@ -8,15 +8,31 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
 )
 
 // ListSnapshots handles GET /snapshots
 func (h *Handler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
-	funcs, err := h.Store.ListFunctions(r.Context(), 0, 0)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+
+	// Scan all functions in pages, then filter to snapshot-backed ones.
+	funcs := make([]*domain.Function, 0)
+	const functionPageSize = 500
+	for baseOffset := 0; ; baseOffset += functionPageSize {
+		chunk, err := h.Store.ListFunctions(r.Context(), functionPageSize, baseOffset)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if len(chunk) == 0 {
+			break
+		}
+		funcs = append(funcs, chunk...)
+		if len(chunk) < functionPageSize {
+			break
+		}
 	}
 
 	type snapshotInfo struct {
@@ -62,8 +78,18 @@ func (h *Handler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 		snapshots = []snapshotInfo{}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(snapshots)
+	total := len(snapshots)
+	if offset >= total {
+		snapshots = []snapshotInfo{}
+	} else {
+		end := total
+		if limit > 0 && offset+limit < end {
+			end = offset + limit
+		}
+		snapshots = snapshots[offset:end]
+	}
+
+	writePaginatedList(w, limit, offset, len(snapshots), int64(total), snapshots)
 }
 
 // CreateSnapshot handles POST /functions/{name}/snapshot

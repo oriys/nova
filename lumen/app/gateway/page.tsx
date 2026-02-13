@@ -47,9 +47,9 @@ function parseMethods(raw: string): string[] {
   return Array.from(new Set(methods))
 }
 
-function methodsDisplay(methods?: string[]): string {
+function methodsDisplay(methods: string[] | undefined, allLabel: string): string {
   if (!methods || methods.length === 0) {
-    return "ALL"
+    return allLabel
   }
   return methods.join(", ")
 }
@@ -191,6 +191,7 @@ function downloadJSON(filename: string, payload: unknown) {
 
 export default function GatewayPage() {
   const t = useTranslations("pages")
+  const g = useTranslations("gatewayPage")
   const router = useRouter()
   const createOpenedByQueryRef = useRef(false)
   const importInputRef = useRef<HTMLInputElement | null>(null)
@@ -343,11 +344,11 @@ export default function GatewayPage() {
 
     if (enabled) {
       if (!Number.isFinite(rps) || rps <= 0) {
-        setError("Default template RPS must be > 0 when enabled.")
+        setError(g("errors.defaultTemplateRps"))
         return
       }
       if (!Number.isFinite(burst) || burst <= 0) {
-        setError("Default template burst must be > 0 when enabled.")
+        setError(g("errors.defaultTemplateBurst"))
         return
       }
     }
@@ -364,7 +365,7 @@ export default function GatewayPage() {
       setTemplateEnabled(updated.enabled ? "true" : "false")
       setTemplateRps(updated.requests_per_second > 0 ? String(updated.requests_per_second) : "")
       setTemplateBurst(updated.burst_size > 0 ? String(updated.burst_size) : "")
-      setNotice({ kind: "success", text: "Gateway default rate-limit template saved" })
+      setNotice({ kind: "success", text: g("notices.templateSaved") })
     } catch (err) {
       setNotice({ kind: "error", text: toUserErrorMessage(err) })
       setError(toUserErrorMessage(err))
@@ -375,11 +376,11 @@ export default function GatewayPage() {
 
   const handleCreateRoute = async () => {
     if (!createPath.trim()) {
-      setError("Path is required.")
+      setError(g("errors.pathRequired"))
       return
     }
     if (!createFunctionName.trim()) {
-      setError("Function is required.")
+      setError(g("errors.functionRequired"))
       return
     }
 
@@ -401,7 +402,7 @@ export default function GatewayPage() {
       setCreateOpen(false)
       resetCreateForm()
       await loadData()
-      setNotice({ kind: "success", text: "Gateway route created" })
+      setNotice({ kind: "success", text: g("notices.routeCreated") })
     } catch (err) {
       setNotice({ kind: "error", text: toUserErrorMessage(err) })
       setError(toUserErrorMessage(err))
@@ -413,11 +414,11 @@ export default function GatewayPage() {
   const handleUpdateRoute = async () => {
     if (!editingRoute) return
     if (!editPath.trim()) {
-      setError("Path is required.")
+      setError(g("errors.pathRequired"))
       return
     }
     if (!editFunctionName.trim()) {
-      setError("Function is required.")
+      setError(g("errors.functionRequired"))
       return
     }
 
@@ -438,7 +439,7 @@ export default function GatewayPage() {
       setEditOpen(false)
       setEditingRoute(null)
       await loadData()
-      setNotice({ kind: "success", text: "Gateway route updated" })
+      setNotice({ kind: "success", text: g("notices.routeUpdated") })
     } catch (err) {
       setNotice({ kind: "error", text: toUserErrorMessage(err) })
       setError(toUserErrorMessage(err))
@@ -450,7 +451,7 @@ export default function GatewayPage() {
   const handleDelete = async (id: string) => {
     if (pendingDeleteRouteID !== id) {
       setPendingDeleteRouteID(id)
-      setNotice({ kind: "info", text: `Click delete again to confirm route "${id}" deletion` })
+      setNotice({ kind: "info", text: g("notices.confirmDelete", { id }) })
       return
     }
     try {
@@ -459,7 +460,7 @@ export default function GatewayPage() {
       await gatewayApi.deleteRoute(id)
       await loadData()
       setPendingDeleteRouteID(null)
-      setNotice({ kind: "success", text: `Route "${id}" deleted` })
+      setNotice({ kind: "success", text: g("notices.routeDeleted", { id }) })
     } catch (err) {
       setNotice({ kind: "error", text: toUserErrorMessage(err) })
       setError(toUserErrorMessage(err))
@@ -474,7 +475,13 @@ export default function GatewayPage() {
       setError(null)
       await gatewayApi.updateRoute(route.id, { enabled: !route.enabled })
       await loadData()
-      setNotice({ kind: "success", text: `Route "${route.id}" ${route.enabled ? "disabled" : "enabled"}` })
+      setNotice({
+        kind: "success",
+        text: g("notices.routeToggled", {
+          id: route.id,
+          status: route.enabled ? g("labels.disabled") : g("labels.enabled"),
+        }),
+      })
     } catch (err) {
       setNotice({ kind: "error", text: toUserErrorMessage(err) })
       setError(toUserErrorMessage(err))
@@ -526,12 +533,15 @@ export default function GatewayPage() {
       if (failed.length > 0) {
         setNotice({
           kind: "error",
-          text: `Bulk update completed with ${failed.length} failed route(s).`,
+          text: g("notices.bulkUpdateFailures", { count: failed.length }),
         })
       } else {
         setNotice({
           kind: "success",
-          text: `Bulk ${enabled ? "enabled" : "disabled"} ${targets.length} route(s).`,
+          text: g("notices.bulkUpdated", {
+            status: enabled ? g("labels.enabled") : g("labels.disabled"),
+            count: targets.length,
+          }),
         })
       }
       await loadData()
@@ -555,12 +565,12 @@ export default function GatewayPage() {
       if (failed.length > 0) {
         setNotice({
           kind: "error",
-          text: `Bulk delete completed with ${failed.length} failed route(s).`,
+          text: g("notices.bulkDeleteFailures", { count: failed.length }),
         })
       } else {
         setNotice({
           kind: "success",
-          text: `Deleted ${targets.length} route(s).`,
+          text: g("notices.bulkDeleted", { count: targets.length }),
         })
       }
       setSelectedRouteIDs(new Set())
@@ -576,7 +586,7 @@ export default function GatewayPage() {
       ? routes.filter((route) => selectedRouteIDs.has(route.id))
       : filteredRoutes
     if (selectedTargets.length === 0) {
-      setNotice({ kind: "info", text: "No routes available for export." })
+      setNotice({ kind: "info", text: g("errors.noRoutesExport") })
       return
     }
 
@@ -599,7 +609,7 @@ export default function GatewayPage() {
       count: rows.length,
       routes: rows,
     })
-    setNotice({ kind: "success", text: `Exported ${rows.length} route(s).` })
+    setNotice({ kind: "success", text: g("notices.exportedCount", { count: rows.length }) })
   }
 
   const handleImportRoutes = async (input: HTMLInputElement) => {
@@ -619,15 +629,15 @@ export default function GatewayPage() {
       const { items, invalid } = parseRouteImportPayload(parsed)
 
       if (items.length === 0) {
-        setError("No valid route definitions were found in the import file.")
-        setNotice({ kind: "error", text: "Import failed: invalid file format or missing required fields." })
+        setError(g("errors.importNoValid"))
+        setNotice({ kind: "error", text: g("errors.importInvalidFields") })
         return
       }
 
       const results = await Promise.allSettled(items.map((item) => gatewayApi.createRoute(item)))
       const failed = results.filter((result) => result.status === "rejected").length
       const succeeded = results.length - failed
-      const invalidSuffix = invalid > 0 ? `, skipped ${invalid} invalid record(s)` : ""
+      const invalidSuffix = invalid > 0 ? g("labels.importInvalidSuffix", { count: invalid }) : ""
 
       setSelectedRouteIDs(new Set())
       setConfirmBulkDelete(false)
@@ -640,18 +650,18 @@ export default function GatewayPage() {
       if (failed > 0) {
         setNotice({
           kind: "error",
-          text: `Import finished: ${succeeded} succeeded, ${failed} failed${invalidSuffix}.`,
+          text: g("notices.importResult", { succeeded, failed, suffix: invalidSuffix }),
         })
       } else {
         setNotice({
           kind: "success",
-          text: `Import succeeded: ${succeeded} route(s)${invalidSuffix}.`,
+          text: g("notices.importSuccess", { count: succeeded, suffix: invalidSuffix }),
         })
       }
     } catch (err) {
       const message = toUserErrorMessage(err)
       setError(message)
-      setNotice({ kind: "error", text: `Import failed: ${message}` })
+      setNotice({ kind: "error", text: g("errors.importFailed", { message }) })
     } finally {
       setIoBusy(false)
     }
@@ -671,7 +681,7 @@ export default function GatewayPage() {
         />
 
         {error && (
-          <ErrorBanner error={error} title="Failed to Load Gateway Configuration" onRetry={loadData} />
+          <ErrorBanner error={error} title={g("titles.loadError")} onRetry={loadData} />
         )}
 
         {notice && (
@@ -687,7 +697,7 @@ export default function GatewayPage() {
             <div className="flex items-center justify-between gap-3">
               <p>{notice.text}</p>
               <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
-                Dismiss
+                {g("buttons.dismiss")}
               </Button>
             </div>
           </div>
@@ -696,54 +706,57 @@ export default function GatewayPage() {
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
-              <Label>Default Rate Limit Template</Label>
+              <Label>{g("fields.defaultRateLimitTemplate")}</Label>
               <Select value={templateEnabled} onValueChange={setTemplateEnabled}>
                 <SelectTrigger className="w-[140px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="true">enabled</SelectItem>
-                  <SelectItem value="false">disabled</SelectItem>
+                  <SelectItem value="true">{g("labels.enabled")}</SelectItem>
+                  <SelectItem value="false">{g("labels.disabled")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="template-rps">RPS</Label>
+              <Label htmlFor="template-rps">{g("fields.rps")}</Label>
               <Input
                 id="template-rps"
                 type="number"
                 min="0"
                 value={templateRps}
                 onChange={(e) => setTemplateRps(e.target.value)}
-                placeholder="20"
+                placeholder={g("placeholders.rps")}
                 className="w-[140px]"
               />
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="template-burst">Burst</Label>
+              <Label htmlFor="template-burst">{g("fields.burst")}</Label>
               <Input
                 id="template-burst"
                 type="number"
                 min="0"
                 value={templateBurst}
                 onChange={(e) => setTemplateBurst(e.target.value)}
-                placeholder="40"
+                placeholder={g("placeholders.burst")}
                 className="w-[140px]"
               />
             </div>
 
             <Button onClick={handleSaveTemplate} disabled={templateSaving || busy}>
-              {templateSaving ? "Saving..." : "Save Template"}
+              {templateSaving ? g("buttons.saving") : g("buttons.saveTemplate")}
             </Button>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            New routes without explicit rate limits will inherit this template.
+            {g("hints.defaultTemplate")}
           </p>
           {rateLimitTemplate && rateLimitTemplate.enabled && (
             <p className="mt-1 text-xs text-muted-foreground">
-              Current default: {rateLimitTemplate.requests_per_second}/s, burst {rateLimitTemplate.burst_size}
+              {g("hints.currentDefault", {
+                rps: rateLimitTemplate.requests_per_second,
+                burst: rateLimitTemplate.burst_size,
+              })}
             </p>
           )}
         </div>
@@ -753,7 +766,7 @@ export default function GatewayPage() {
             <Input
               value={domainFilter}
               onChange={(e) => setDomainFilter(e.target.value)}
-              placeholder="Filter by domain..."
+              placeholder={g("placeholders.filterByDomain")}
               className="w-[240px]"
             />
           </div>
@@ -774,7 +787,9 @@ export default function GatewayPage() {
               disabled={loading || busy || bulkBusy || ioBusy || filteredRoutes.length === 0}
             >
               <Download className="mr-2 h-4 w-4" />
-              {selectedRouteIDs.size > 0 ? `Export Selected (${selectedRouteIDs.size})` : "Export Filtered"}
+              {selectedRouteIDs.size > 0
+                ? g("buttons.exportSelected", { count: selectedRouteIDs.size })
+                : g("buttons.exportFiltered")}
             </Button>
             <Button
               variant="outline"
@@ -783,7 +798,7 @@ export default function GatewayPage() {
               disabled={loading || busy || bulkBusy || ioBusy}
             >
               <Upload className="mr-2 h-4 w-4" />
-              Import JSON
+              {g("buttons.importJson")}
             </Button>
             <Dialog
               open={createOpen}
@@ -797,46 +812,46 @@ export default function GatewayPage() {
               <DialogTrigger asChild>
                 <Button size="sm" disabled={busy || bulkBusy || ioBusy}>
                   <Plus className="mr-2 h-4 w-4" />
-                  Add Route
+                  {g("buttons.addRoute")}
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-2xl">
                 <DialogHeader>
-                  <DialogTitle>Create Gateway Route</DialogTitle>
+                  <DialogTitle>{g("titles.createRoute")}</DialogTitle>
                 </DialogHeader>
                 <div className="grid gap-4 py-2 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="create-domain">Domain</Label>
+                    <Label htmlFor="create-domain">{g("fields.domain")}</Label>
                     <Input
                       id="create-domain"
                       value={createDomain}
                       onChange={(e) => setCreateDomain(e.target.value)}
-                      placeholder="api.example.com (optional)"
+                      placeholder={g("placeholders.domainOptional")}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="create-path">Path</Label>
+                    <Label htmlFor="create-path">{g("fields.path")}</Label>
                     <Input
                       id="create-path"
                       value={createPath}
                       onChange={(e) => setCreatePath(e.target.value)}
-                      placeholder="/v1/orders"
+                      placeholder={g("placeholders.path")}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="create-methods">Methods (comma-separated)</Label>
+                    <Label htmlFor="create-methods">{g("fields.methodsCsv")}</Label>
                     <Input
                       id="create-methods"
                       value={createMethods}
                       onChange={(e) => setCreateMethods(e.target.value)}
-                      placeholder="GET,POST"
+                      placeholder={g("placeholders.methods")}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Function</Label>
+                    <Label>{g("fields.function")}</Label>
                     <Select value={createFunctionName} onValueChange={setCreateFunctionName}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select function" />
+                        <SelectValue placeholder={g("placeholders.selectFunction")} />
                       </SelectTrigger>
                       <SelectContent>
                         {functions.map((fn) => (
@@ -848,21 +863,21 @@ export default function GatewayPage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Auth Strategy</Label>
+                    <Label>{g("fields.authStrategy")}</Label>
                     <Select value={createAuth} onValueChange={(v: AuthStrategy) => setCreateAuth(v)}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">none</SelectItem>
-                        <SelectItem value="inherit">inherit</SelectItem>
-                        <SelectItem value="apikey">apikey</SelectItem>
-                        <SelectItem value="jwt">jwt</SelectItem>
+                        <SelectItem value="none">{g("authStrategies.none")}</SelectItem>
+                        <SelectItem value="inherit">{g("authStrategies.inherit")}</SelectItem>
+                        <SelectItem value="apikey">{g("authStrategies.apikey")}</SelectItem>
+                        <SelectItem value="jwt">{g("authStrategies.jwt")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Enabled</Label>
+                    <Label>{g("fields.enabled")}</Label>
                     <Select
                       value={createEnabled ? "true" : "false"}
                       onValueChange={(v) => setCreateEnabled(v === "true")}
@@ -871,31 +886,31 @@ export default function GatewayPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="true">enabled</SelectItem>
-                        <SelectItem value="false">disabled</SelectItem>
+                        <SelectItem value="true">{g("labels.enabled")}</SelectItem>
+                        <SelectItem value="false">{g("labels.disabled")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="create-rps">Rate Limit RPS (optional)</Label>
+                    <Label htmlFor="create-rps">{g("fields.rateLimitRpsOptional")}</Label>
                     <Input
                       id="create-rps"
                       type="number"
                       min="0"
                       value={createRps}
                       onChange={(e) => setCreateRps(e.target.value)}
-                      placeholder="e.g. 20"
+                      placeholder={g("placeholders.rpsExample")}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="create-burst">Rate Limit Burst (optional)</Label>
+                    <Label htmlFor="create-burst">{g("fields.rateLimitBurstOptional")}</Label>
                     <Input
                       id="create-burst"
                       type="number"
                       min="0"
                       value={createBurst}
                       onChange={(e) => setCreateBurst(e.target.value)}
-                      placeholder="e.g. 40"
+                      placeholder={g("placeholders.burstExample")}
                     />
                   </div>
                 </div>
@@ -908,10 +923,10 @@ export default function GatewayPage() {
                     }}
                     disabled={busy}
                   >
-                    Cancel
+                    {g("buttons.cancel")}
                   </Button>
                   <Button onClick={handleCreateRoute} disabled={busy || !createPath.trim() || !createFunctionName}>
-                    Create
+                    {g("buttons.create")}
                   </Button>
                 </div>
               </DialogContent>
@@ -924,7 +939,7 @@ export default function GatewayPage() {
               disabled={loading || busy || bulkBusy || ioBusy}
             >
               <RefreshCw className={cn("mr-2 h-4 w-4", (loading || busy) && "animate-spin")} />
-              Refresh
+              {g("buttons.refresh")}
             </Button>
           </div>
         </div>
@@ -933,7 +948,7 @@ export default function GatewayPage() {
           <div className="rounded-lg border border-border bg-card p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm text-muted-foreground">
-                Selected <span className="font-medium text-foreground">{selectedRoutes.length}</span> route(s)
+                {g("labels.selectedCount", { count: selectedRoutes.length })}
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
@@ -942,7 +957,7 @@ export default function GatewayPage() {
                   onClick={() => applyBulkEnableState(true)}
                   disabled={busy || bulkBusy}
                 >
-                  Bulk Enable
+                  {g("buttons.bulkEnable")}
                 </Button>
                 <Button
                   size="sm"
@@ -950,7 +965,7 @@ export default function GatewayPage() {
                   onClick={() => applyBulkEnableState(false)}
                   disabled={busy || bulkBusy}
                 >
-                  Bulk Disable
+                  {g("buttons.bulkDisable")}
                 </Button>
                 {confirmBulkDelete ? (
                   <>
@@ -960,7 +975,7 @@ export default function GatewayPage() {
                       onClick={handleBulkDelete}
                       disabled={busy || bulkBusy}
                     >
-                      Confirm Bulk Delete
+                      {g("buttons.confirmBulkDelete")}
                     </Button>
                     <Button
                       size="sm"
@@ -968,7 +983,7 @@ export default function GatewayPage() {
                       onClick={() => setConfirmBulkDelete(false)}
                       disabled={busy || bulkBusy}
                     >
-                      Cancel
+                      {g("buttons.cancel")}
                     </Button>
                   </>
                 ) : (
@@ -978,7 +993,7 @@ export default function GatewayPage() {
                     onClick={handleBulkDelete}
                     disabled={busy || bulkBusy}
                   >
-                    Bulk Delete
+                    {g("buttons.bulkDelete")}
                   </Button>
                 )}
                 <Button
@@ -987,7 +1002,7 @@ export default function GatewayPage() {
                   onClick={() => setSelectedRouteIDs(new Set())}
                   disabled={busy || bulkBusy}
                 >
-                  Clear Selection
+                  {g("buttons.clearSelection")}
                 </Button>
               </div>
             </div>
@@ -996,10 +1011,10 @@ export default function GatewayPage() {
 
         {!loading && routes.length === 0 ? (
           <EmptyState
-            title="No Gateway Routes Yet"
-            description="Create a route so UI / CLI / MCP can call through Zenith."
+            title={g("empty.noRoutesTitle")}
+            description={g("empty.noRoutesDescription")}
             primaryAction={{
-              label: functions.length > 0 ? "Add Route" : "Create Function First",
+              label: functions.length > 0 ? g("buttons.addRoute") : g("buttons.createFunctionFirst"),
               onClick: () => {
                 if (functions.length > 0) {
                   setCreateOpen(true)
@@ -1011,9 +1026,9 @@ export default function GatewayPage() {
           />
         ) : !loading && routes.length > 0 && filteredRoutes.length === 0 ? (
           <EmptyState
-            title="No Matching Routes"
-            description="No routes match the current domain filter."
-            primaryAction={{ label: "Clear Filter", onClick: () => setDomainFilter("") }}
+            title={g("empty.noMatchingTitle")}
+            description={g("empty.noMatchingDescription")}
+            primaryAction={{ label: g("buttons.clearFilter"), onClick: () => setDomainFilter("") }}
             compact
           />
         ) : (
@@ -1029,16 +1044,16 @@ export default function GatewayPage() {
                       className="h-4 w-4 rounded border-border"
                     />
                   </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">ID</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Domain</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Path</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Methods</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Function</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Auth</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Rate Limit</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Status</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Updated</th>
-                  <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Actions</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.id")}</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.domain")}</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.path")}</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.methods")}</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.function")}</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.auth")}</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.rateLimit")}</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.status")}</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.updated")}</th>
+                  <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">{g("table.actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1070,12 +1085,15 @@ export default function GatewayPage() {
                     <td className="px-4 py-3 text-sm font-mono">{route.id}</td>
                     <td className="px-4 py-3 text-sm">{route.domain || "-"}</td>
                     <td className="px-4 py-3 text-sm font-mono">{route.path}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{methodsDisplay(route.methods)}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{methodsDisplay(route.methods, g("labels.allMethods"))}</td>
                     <td className="px-4 py-3 text-sm">{route.function_name}</td>
-                    <td className="px-4 py-3 text-sm">{route.auth_strategy || "none"}</td>
+                    <td className="px-4 py-3 text-sm">{g(`authStrategies.${route.auth_strategy || "none"}`)}</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
                       {route.rate_limit
-                        ? `${route.rate_limit.requests_per_second}/s · burst ${route.rate_limit.burst_size}`
+                        ? g("labels.rateLimitValue", {
+                          rps: route.rate_limit.requests_per_second,
+                          burst: route.rate_limit.burst_size,
+                        })
                         : "-"}
                     </td>
                     <td className="px-4 py-3">
@@ -1088,7 +1106,7 @@ export default function GatewayPage() {
                             : "border-0 bg-muted text-muted-foreground"
                         )}
                       >
-                        {route.enabled ? "enabled" : "disabled"}
+                        {route.enabled ? g("labels.enabled") : g("labels.disabled")}
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(route.updated_at)}</td>
@@ -1097,7 +1115,7 @@ export default function GatewayPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          title={route.enabled ? "Disable route" : "Enable route"}
+                          title={route.enabled ? g("buttons.disableRoute") : g("buttons.enableRoute")}
                           onClick={() => void handleToggleEnabled(route)}
                           disabled={busy || bulkBusy}
                         >
@@ -1110,7 +1128,7 @@ export default function GatewayPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          title="Edit route"
+                          title={g("buttons.editRoute")}
                           onClick={() => {
                             setEditFromRoute(route)
                             setEditOpen(true)
@@ -1124,30 +1142,30 @@ export default function GatewayPage() {
                             <Button
                               variant="destructive"
                               size="sm"
-                              title="Confirm delete route"
+                              title={g("buttons.confirmDeleteRoute")}
                               onClick={() => void handleDelete(route.id)}
                               disabled={busy || bulkBusy}
                             >
-                              Confirm
+                              {g("buttons.confirm")}
                             </Button>
                             <Button
                               variant="outline"
                               size="sm"
-                              title="Cancel delete route"
+                              title={g("buttons.cancelDeleteRoute")}
                               onClick={() => {
                                 setPendingDeleteRouteID(null)
                                 setNotice(null)
                               }}
                               disabled={busy || bulkBusy}
                             >
-                              Cancel
+                              {g("buttons.cancel")}
                             </Button>
                           </div>
                         ) : (
                           <Button
                             variant="ghost"
                             size="sm"
-                            title="Delete route"
+                            title={g("buttons.deleteRoute")}
                             onClick={() => void handleDelete(route.id)}
                             disabled={busy || bulkBusy}
                           >
@@ -1168,41 +1186,41 @@ export default function GatewayPage() {
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Edit Gateway Route</DialogTitle>
+            <DialogTitle>{g("titles.editRoute")}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-2 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="edit-domain">Domain</Label>
+              <Label htmlFor="edit-domain">{g("fields.domain")}</Label>
               <Input
                 id="edit-domain"
                 value={editDomain}
                 onChange={(e) => setEditDomain(e.target.value)}
-                placeholder="api.example.com (optional)"
+                placeholder={g("placeholders.domainOptional")}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-path">Path</Label>
+              <Label htmlFor="edit-path">{g("fields.path")}</Label>
               <Input
                 id="edit-path"
                 value={editPath}
                 onChange={(e) => setEditPath(e.target.value)}
-                placeholder="/v1/orders"
+                placeholder={g("placeholders.path")}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-methods">Methods (comma-separated)</Label>
+              <Label htmlFor="edit-methods">{g("fields.methodsCsv")}</Label>
               <Input
                 id="edit-methods"
                 value={editMethods}
                 onChange={(e) => setEditMethods(e.target.value)}
-                placeholder="GET,POST"
+                placeholder={g("placeholders.methods")}
               />
             </div>
             <div className="space-y-2">
-              <Label>Function</Label>
+              <Label>{g("fields.function")}</Label>
               <Select value={editFunctionName} onValueChange={setEditFunctionName}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select function" />
+                  <SelectValue placeholder={g("placeholders.selectFunction")} />
                 </SelectTrigger>
                 <SelectContent>
                   {functions.map((fn) => (
@@ -1214,51 +1232,51 @@ export default function GatewayPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Auth Strategy</Label>
+              <Label>{g("fields.authStrategy")}</Label>
               <Select value={editAuth} onValueChange={(v: AuthStrategy) => setEditAuth(v)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">none</SelectItem>
-                  <SelectItem value="inherit">inherit</SelectItem>
-                  <SelectItem value="apikey">apikey</SelectItem>
-                  <SelectItem value="jwt">jwt</SelectItem>
+                  <SelectItem value="none">{g("authStrategies.none")}</SelectItem>
+                  <SelectItem value="inherit">{g("authStrategies.inherit")}</SelectItem>
+                  <SelectItem value="apikey">{g("authStrategies.apikey")}</SelectItem>
+                  <SelectItem value="jwt">{g("authStrategies.jwt")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Enabled</Label>
+              <Label>{g("fields.enabled")}</Label>
               <Select value={editEnabled ? "true" : "false"} onValueChange={(v) => setEditEnabled(v === "true")}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="true">enabled</SelectItem>
-                  <SelectItem value="false">disabled</SelectItem>
+                  <SelectItem value="true">{g("labels.enabled")}</SelectItem>
+                  <SelectItem value="false">{g("labels.disabled")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-rps">Rate Limit RPS (optional)</Label>
+              <Label htmlFor="edit-rps">{g("fields.rateLimitRpsOptional")}</Label>
               <Input
                 id="edit-rps"
                 type="number"
                 min="0"
                 value={editRps}
                 onChange={(e) => setEditRps(e.target.value)}
-                placeholder="e.g. 20"
+                placeholder={g("placeholders.rpsExample")}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-burst">Rate Limit Burst (optional)</Label>
+              <Label htmlFor="edit-burst">{g("fields.rateLimitBurstOptional")}</Label>
               <Input
                 id="edit-burst"
                 type="number"
                 min="0"
                 value={editBurst}
                 onChange={(e) => setEditBurst(e.target.value)}
-                placeholder="e.g. 40"
+                placeholder={g("placeholders.burstExample")}
               />
             </div>
           </div>
@@ -1271,10 +1289,10 @@ export default function GatewayPage() {
               }}
               disabled={busy}
             >
-              Cancel
+              {g("buttons.cancel")}
             </Button>
             <Button onClick={handleUpdateRoute} disabled={busy || !editingRoute || !editPath.trim() || !editFunctionName}>
-              Save
+              {g("buttons.save")}
             </Button>
           </div>
         </DialogContent>

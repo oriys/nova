@@ -22,6 +22,7 @@ import { GlobalHeatmap } from "@/components/global-heatmap"
 
 export default function DashboardPage() {
   const t = useTranslations("pages")
+  const td = useTranslations("dashboard")
   const router = useRouter()
   const [functions, setFunctions] = useState<FunctionData[]>([])
   const [logs, setLogs] = useState<LogEntry[]>([])
@@ -107,12 +108,12 @@ export default function DashboardPage() {
       setLogs(flatLogs.slice(0, 8))
     } catch (err) {
       console.error("Failed to fetch dashboard data:", err)
-      setError(err instanceof Error ? err.message : "Failed to load dashboard")
+      setError(err instanceof Error ? err.message : td("failedToLoad"))
     } finally {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [timeRange])
+  }, [td, timeRange])
 
   useEffect(() => {
     fetchData(false)
@@ -136,7 +137,7 @@ export default function DashboardPage() {
       <DashboardLayout>
         <Header title={t("dashboard.title")} description={t("dashboard.description")} />
         <div className="p-6">
-          <ErrorBanner error={error} title="Failed to Load Dashboard" onRetry={() => fetchData(false)} />
+          <ErrorBanner error={error} title={td("failedToLoad")} onRetry={() => fetchData(false)} />
         </div>
       </DashboardLayout>
     )
@@ -158,7 +159,7 @@ export default function DashboardPage() {
               "mr-2 h-2 w-2 rounded-full",
               autoRefresh ? "bg-success animate-pulse" : "bg-muted-foreground"
             )} />
-            {autoRefresh ? "Auto" : "Auto"}
+            {td("auto")}
           </Button>
           <Button variant="outline" size="sm" onClick={() => fetchData(true)} disabled={refreshing}>
             <RefreshCw className={cn("mr-2 h-4 w-4", refreshing && "animate-spin")} />
@@ -176,30 +177,30 @@ export default function DashboardPage() {
         {/* Stats Grid */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatsCard
-            title="Total Invocations"
+            title={td("totalInvocations")}
             value={totalInvocations.toLocaleString()}
-            change={`${globalMetrics.success} successful`}
+            change={td("successful", { count: globalMetrics.success })}
             changeType="neutral"
             icon={Activity}
           />
           <StatsCard
-            title="Active Functions"
+            title={td("activeFunctions")}
             value={activeFunctions}
-            change={`${functions.length} total`}
+            change={td("totalCount", { count: functions.length })}
             changeType="neutral"
             icon={Zap}
           />
           <StatsCard
-            title="Error Rate"
+            title={td("errorRate")}
             value={`${errorRate}%`}
-            change={`${totalErrors} errors`}
+            change={td("errorsCount", { count: totalErrors })}
             changeType={totalErrors > 0 ? "negative" : "positive"}
             icon={AlertTriangle}
           />
           <StatsCard
-            title="Avg Duration"
+            title={td("avgDuration")}
             value={`${avgDuration}ms`}
-            change="per invocation"
+            change={td("perInvocation")}
             changeType="neutral"
             icon={Clock}
           />

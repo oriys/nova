@@ -55,7 +55,8 @@ func (h *Handler) ListWorkflows(w http.ResponseWriter, r *http.Request) {
 	if wfs == nil {
 		wfs = []*domain.Workflow{}
 	}
-	wfWriteJSON(w, http.StatusOK, wfs)
+	total := estimatePaginatedTotal(limit, offset, len(wfs))
+	writePaginatedList(w, limit, offset, len(wfs), total, wfs)
 }
 
 func (h *Handler) GetWorkflow(w http.ResponseWriter, r *http.Request) {
@@ -109,7 +110,8 @@ func (h *Handler) ListWorkflowVersions(w http.ResponseWriter, r *http.Request) {
 	if versions == nil {
 		versions = []*domain.WorkflowVersion{}
 	}
-	wfWriteJSON(w, http.StatusOK, versions)
+	total := estimatePaginatedTotal(limit, offset, len(versions))
+	writePaginatedList(w, limit, offset, len(versions), total, versions)
 }
 
 func (h *Handler) GetWorkflowVersion(w http.ResponseWriter, r *http.Request) {
@@ -159,7 +161,8 @@ func (h *Handler) ListWorkflowRuns(w http.ResponseWriter, r *http.Request) {
 	if runs == nil {
 		runs = []*domain.WorkflowRun{}
 	}
-	wfWriteJSON(w, http.StatusOK, runs)
+	total := estimatePaginatedTotal(limit, offset, len(runs))
+	writePaginatedList(w, limit, offset, len(runs), total, runs)
 }
 
 func (h *Handler) GetWorkflowRun(w http.ResponseWriter, r *http.Request) {

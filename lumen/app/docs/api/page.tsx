@@ -1,3 +1,4 @@
+/* eslint-disable i18next/no-literal-string */
 import Link from "next/link"
 import { getTranslations } from "next-intl/server"
 import { DocsShell } from "@/components/docs/docs-shell"
@@ -95,6 +96,7 @@ invalid JSON payload
       <section id="pagination-retries" className="scroll-mt-24">
         <h2 className="text-3xl font-semibold tracking-tight">{t("sections.paginationRetries.title")}</h2>
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
+          {/* i18n-ignore-next-line */}
           <li>{t("sections.paginationRetries.items.limitAndFilters")} <code>limit</code> {t("sections.paginationRetries.items.limitAndFiltersSuffix")}</li>
           <li>{t("sections.paginationRetries.items.asyncIdempotencyPrefix")} <code>idempotency_key</code> {t("sections.paginationRetries.items.asyncIdempotencySuffix")}</li>
           <li>{t("sections.paginationRetries.items.subscriptionReplay")}</li>

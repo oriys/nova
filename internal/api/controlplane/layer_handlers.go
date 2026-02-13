@@ -73,9 +73,8 @@ func (h *Handler) ListLayers(w http.ResponseWriter, r *http.Request) {
 	if layers == nil {
 		layers = []*domain.Layer{}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(layers)
+	total := estimatePaginatedTotal(limit, offset, len(layers))
+	writePaginatedList(w, limit, offset, len(layers), total, layers)
 }
 
 // GetLayer returns a single layer by name
@@ -201,7 +200,8 @@ func (h *Handler) GetFunctionLayers(w http.ResponseWriter, r *http.Request) {
 	if layers == nil {
 		layers = []*domain.Layer{}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(layers)
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+	pagedLayers, total := paginateSliceWindow(layers, limit, offset)
+	writePaginatedList(w, limit, offset, len(pagedLayers), int64(total), pagedLayers)
 }

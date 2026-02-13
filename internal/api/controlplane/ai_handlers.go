@@ -235,13 +235,20 @@ func (h *AIHandler) Rewrite(w http.ResponseWriter, r *http.Request) {
 
 // ListModels fetches available models from the configured AI provider.
 func (h *AIHandler) ListModels(w http.ResponseWriter, r *http.Request) {
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+
 	models, err := h.Service.ListModels(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(models)
+	items := models.Data
+	if items == nil {
+		items = []ai.ModelEntry{}
+	}
+	pagedItems, total := paginateSliceWindow(items, limit, offset)
+	writePaginatedList(w, limit, offset, len(pagedItems), int64(total), pagedItems)
 }
 
 // AnalyzeDiagnostics analyzes function performance diagnostics.
@@ -268,15 +275,19 @@ func (h *AIHandler) AnalyzeDiagnostics(w http.ResponseWriter, r *http.Request) {
 
 // ListPrompts returns supported AI prompt templates.
 func (h *AIHandler) ListPrompts(w http.ResponseWriter, r *http.Request) {
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+
 	items, err := h.Service.ListPromptTemplates()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"items": items,
-	})
+	if items == nil {
+		items = []ai.PromptTemplateMeta{}
+	}
+	pagedItems, total := paginateSliceWindow(items, limit, offset)
+	writePaginatedList(w, limit, offset, len(pagedItems), int64(total), pagedItems)
 }
 
 // GetPrompt returns one AI prompt template by name.

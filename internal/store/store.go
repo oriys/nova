@@ -287,16 +287,52 @@ type Store struct {
 	ScheduleStore
 }
 
+type metadataStoreUnwrapper interface {
+	UnderlyingMetadataStore() MetadataStore
+}
+
+func unwrapMetadataStore(meta MetadataStore) MetadataStore {
+	seen := map[MetadataStore]struct{}{}
+	current := meta
+	for current != nil {
+		if _, ok := seen[current]; ok {
+			break
+		}
+		seen[current] = struct{}{}
+
+		unwrapper, ok := current.(metadataStoreUnwrapper)
+		if !ok {
+			break
+		}
+		next := unwrapper.UnderlyingMetadataStore()
+		if next == nil || next == current {
+			break
+		}
+		current = next
+	}
+	return current
+}
+
 func NewStore(meta MetadataStore) *Store {
 	s := &Store{
 		MetadataStore: meta,
 	}
-	// PostgresStore implements both interfaces
-	if ws, ok := meta.(WorkflowStore); ok {
+	// Recover optional stores from the wrapped metadata store chain.
+	workflowProvider := meta
+	if ws, ok := workflowProvider.(WorkflowStore); ok {
 		s.WorkflowStore = ws
+	} else if unwrapped := unwrapMetadataStore(meta); unwrapped != nil {
+		if ws, ok := unwrapped.(WorkflowStore); ok {
+			s.WorkflowStore = ws
+		}
 	}
-	if ss, ok := meta.(ScheduleStore); ok {
+	scheduleProvider := meta
+	if ss, ok := scheduleProvider.(ScheduleStore); ok {
 		s.ScheduleStore = ss
+	} else if unwrapped := unwrapMetadataStore(meta); unwrapped != nil {
+		if ss, ok := unwrapped.(ScheduleStore); ok {
+			s.ScheduleStore = ss
+		}
 	}
 	return s
 }

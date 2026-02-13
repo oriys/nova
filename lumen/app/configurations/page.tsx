@@ -62,8 +62,8 @@ function componentBadgeClass(value: unknown): string {
   return "bg-destructive/10 text-destructive border-0"
 }
 
-function formatComponentLabel(name: string): string {
-  if (!name) return "Unknown"
+function formatComponentLabel(name: string, fallbackLabel: string): string {
+  if (!name) return fallbackLabel
   return name
     .replace(/[_-]+/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase())
@@ -71,12 +71,14 @@ function formatComponentLabel(name: string): string {
 
 export default function ConfigurationsPage() {
   const t = useTranslations("pages")
+  const tc = useTranslations("configurations")
   const [health, setHealth] = useState<HealthStatus | null>(null)
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [snapshotsPage, setSnapshotsPage] = useState(1)
   const [snapshotsPageSize, setSnapshotsPageSize] = useState(10)
+  const [snapshotsTotal, setSnapshotsTotal] = useState(0)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -110,8 +112,8 @@ export default function ConfigurationsPage() {
   const fetchModels = useCallback(async () => {
     try {
       setAiModelsLoading(true)
-      const resp = await aiApi.listModels()
-      setAiModels(resp.data || [])
+      const items = await aiApi.listModels(500)
+      setAiModels(items || [])
     } catch {
       setAiModels([])
     } finally {
@@ -121,8 +123,7 @@ export default function ConfigurationsPage() {
 
   const fetchPromptTemplates = useCallback(async () => {
     try {
-      const resp = await aiApi.listPromptTemplates()
-      const items = resp.items || []
+      const items = await aiApi.listPromptTemplates(500)
       setPromptTemplates(items)
       setSelectedPrompt((prev) => (
         prev && items.some((item) => item.name === prev) ? prev : (items[0]?.name || "")
@@ -147,24 +148,26 @@ export default function ConfigurationsPage() {
       setPromptSaved(false)
     } catch (err) {
       console.error("Failed to load prompt template:", err)
-      setError(err instanceof Error ? err.message : "Failed to load prompt template")
+      setError(err instanceof Error ? err.message : tc("failedToLoadPromptTemplate"))
     } finally {
       setPromptLoading(false)
     }
-  }, [])
+  }, [tc])
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
+      const snapshotOffset = (snapshotsPage - 1) * snapshotsPageSize
       const [healthData, snapshotsData, configData, aiConfigData] = await Promise.all([
         healthApi.check(),
-        snapshotsApi.list().catch(() => []),
+        snapshotsApi.listPage(snapshotsPageSize, snapshotOffset).catch(() => ({ items: [], total: 0 })),
         configApi.get().catch(() => ({} as Record<string, string>)),
         aiApi.getConfig().catch(() => null),
       ])
       setHealth(healthData)
-      setSnapshots(snapshotsData)
+      setSnapshots(snapshotsData.items || [])
+      setSnapshotsTotal(snapshotsData.total || 0)
 
       // Apply config from backend
       if (configData["pool_ttl"]) setPoolTTL(configData["pool_ttl"])
@@ -185,11 +188,11 @@ export default function ConfigurationsPage() {
       }
     } catch (err) {
       console.error("Failed to fetch config data:", err)
-      setError(err instanceof Error ? err.message : "Failed to load configuration")
+      setError(err instanceof Error ? err.message : tc("failedToLoad"))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [snapshotsPage, snapshotsPageSize, tc])
 
   useEffect(() => {
     fetchData()
@@ -203,15 +206,11 @@ export default function ConfigurationsPage() {
 
   const { enabled: autoRefresh, toggle: toggleAutoRefresh } = useAutoRefresh("configurations", fetchData, 30000)
 
-  const snapshotsTotalPages = Math.max(1, Math.ceil(snapshots.length / snapshotsPageSize))
+  const snapshotsTotalPages = Math.max(1, Math.ceil(snapshotsTotal / snapshotsPageSize))
   useEffect(() => {
     if (snapshotsPage > snapshotsTotalPages) setSnapshotsPage(snapshotsTotalPages)
   }, [snapshotsPage, snapshotsTotalPages])
 
-  const pagedSnapshots = snapshots.slice(
-    (snapshotsPage - 1) * snapshotsPageSize,
-    snapshotsPage * snapshotsPageSize
-  )
   const selectedPromptMeta = promptTemplates.find((item) => item.name === selectedPrompt)
   const healthComponents = health?.components ?? {}
   const knownComponentConfig = [
@@ -227,6 +226,22 @@ export default function ConfigurationsPage() {
   const extraComponentKeys = Object.keys(healthComponents)
     .filter((name) => name !== "pool" && !knownKeys.has(name))
     .sort()
+  const formatStatusLabel = (value: unknown) => {
+    const status = componentStatusText(value)
+    const normalized = status.toLowerCase()
+    if (normalized === "healthy") return tc("healthy")
+    if (normalized === "unhealthy") return tc("unhealthy")
+    if (normalized === "unknown") return tc("unknown")
+    if (normalized === "ok") return tc("ok")
+    return status
+  }
+  const formatHealthStatusLabel = (status?: string) => {
+    if (!status) return tc("unknown")
+    const normalized = status.toLowerCase()
+    if (normalized === "ok") return tc("ok")
+    if (normalized === "unknown") return tc("unknown")
+    return status
+  }
 
   const handleSave = async () => {
     try {
@@ -242,7 +257,7 @@ export default function ConfigurationsPage() {
       setTimeout(() => setSaved(false), 3000)
     } catch (err) {
       console.error("Failed to save config:", err)
-      setError(err instanceof Error ? err.message : "Failed to save configuration")
+      setError(err instanceof Error ? err.message : tc("failedToSaveConfiguration"))
     } finally {
       setSaving(false)
     }
@@ -285,7 +300,7 @@ export default function ConfigurationsPage() {
       setTimeout(() => setAiSaved(false), 3000)
     } catch (err) {
       console.error("Failed to save AI config:", err)
-      setError(err instanceof Error ? err.message : "Failed to save AI configuration")
+      setError(err instanceof Error ? err.message : tc("failedToSaveAiConfiguration"))
     } finally {
       setAiSaving(false)
     }
@@ -313,7 +328,7 @@ export default function ConfigurationsPage() {
       setTimeout(() => setPromptSaved(false), 3000)
     } catch (err) {
       console.error("Failed to save prompt template:", err)
-      setError(err instanceof Error ? err.message : "Failed to save prompt template")
+      setError(err instanceof Error ? err.message : tc("failedToSavePromptTemplate"))
     } finally {
       setPromptSaving(false)
     }
@@ -325,10 +340,10 @@ export default function ConfigurationsPage() {
         <Header title={t("configurations.title")} description={t("configurations.description")} />
         <div className="p-6">
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
-            <p className="font-medium">Failed to load configuration</p>
+            <p className="font-medium">{tc("failedToLoad")}</p>
             <p className="text-sm mt-1">{error}</p>
             <Button variant="outline" size="sm" className="mt-2" onClick={() => { setError(null); fetchData(); }}>
-              Retry
+              {tc("retry")}
             </Button>
           </div>
         </div>
@@ -351,24 +366,24 @@ export default function ConfigurationsPage() {
               "mr-2 h-2 w-2 rounded-full",
               autoRefresh ? "bg-success animate-pulse" : "bg-muted-foreground"
             )} />
-            Auto
+            {tc("auto")}
           </Button>
           <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
             <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
-            Refresh
+            {tc("refresh")}
           </Button>
         </div>
 
         {/* System Health */}
         <div className="rounded-xl border border-border bg-card p-6">
           <h3 className="text-lg font-semibold text-card-foreground mb-4">
-            System Health
+            {tc("systemHealth")}
           </h3>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
               <Server className="h-8 w-8 text-primary" />
               <div>
-                <p className="text-sm text-muted-foreground">Status</p>
+                <p className="text-sm text-muted-foreground">{tc("status")}</p>
                 <Badge
                   variant="secondary"
                   className={cn(
@@ -377,7 +392,7 @@ export default function ConfigurationsPage() {
                       : "bg-warning/10 text-warning border-0"
                   )}
                 >
-                  {loading ? "..." : health?.status || "unknown"}
+                  {loading ? "..." : formatHealthStatusLabel(health?.status)}
                 </Badge>
               </div>
             </div>
@@ -394,7 +409,7 @@ export default function ConfigurationsPage() {
                       variant="secondary"
                       className={cn(componentBadgeClass(value))}
                     >
-                      {loading ? "..." : componentStatusText(value)}
+                      {loading ? "..." : formatStatusLabel(value)}
                     </Badge>
                   </div>
                 </div>
@@ -405,12 +420,12 @@ export default function ConfigurationsPage() {
               <div key={name} className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
                 <Server className="h-8 w-8 text-primary" />
                 <div>
-                  <p className="text-sm text-muted-foreground">{formatComponentLabel(name)}</p>
+                  <p className="text-sm text-muted-foreground">{formatComponentLabel(name, tc("unknownComponent"))}</p>
                   <Badge
                     variant="secondary"
                     className={cn(componentBadgeClass(healthComponents[name]))}
                   >
-                    {loading ? "..." : componentStatusText(healthComponents[name])}
+                    {loading ? "..." : formatStatusLabel(healthComponents[name])}
                   </Badge>
                 </div>
               </div>
@@ -419,7 +434,7 @@ export default function ConfigurationsPage() {
             <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
               <Server className="h-8 w-8 text-primary" />
               <div>
-                <p className="text-sm text-muted-foreground">Active VMs</p>
+                <p className="text-sm text-muted-foreground">{tc("activeVMs")}</p>
                 <p className="text-lg font-semibold">
                   {loading ? "..." : healthComponents.pool?.active_vms ?? 0}
                 </p>
@@ -429,7 +444,7 @@ export default function ConfigurationsPage() {
             <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
               <Server className="h-8 w-8 text-primary" />
               <div>
-                <p className="text-sm text-muted-foreground">Pool Count</p>
+                <p className="text-sm text-muted-foreground">{tc("poolCount")}</p>
                 <p className="text-lg font-semibold">
                   {loading ? "..." : healthComponents.pool?.total_pools ?? 0}
                 </p>
@@ -441,11 +456,11 @@ export default function ConfigurationsPage() {
         {/* Pool Settings */}
         <div className="rounded-xl border border-border bg-card p-6">
           <h3 className="text-lg font-semibold text-card-foreground mb-4">
-            Pool Settings
+            {tc("poolSettings")}
           </h3>
           <div className="grid gap-4 sm:grid-cols-2 max-w-2xl">
             <div className="space-y-2">
-              <Label htmlFor="poolTTL">Idle VM TTL (seconds)</Label>
+              <Label htmlFor="poolTTL">{tc("idleVmTTL")}</Label>
               <Input
                 id="poolTTL"
                 type="number"
@@ -455,30 +470,30 @@ export default function ConfigurationsPage() {
                 max="3600"
               />
               <p className="text-xs text-muted-foreground">
-                Time before idle VMs are terminated
+                {tc("idleVmTTLHelp")}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="logLevel">Log Level</Label>
+              <Label htmlFor="logLevel">{tc("logLevel")}</Label>
               <Select value={logLevel} onValueChange={(v) => { setLogLevel(v); setDirty(true); }}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="debug">Debug</SelectItem>
-                  <SelectItem value="info">Info</SelectItem>
-                  <SelectItem value="warn">Warn</SelectItem>
-                  <SelectItem value="error">Error</SelectItem>
+                  <SelectItem value="debug">{tc("logLevelDebug")}</SelectItem>
+                  <SelectItem value="info">{tc("logLevelInfo")}</SelectItem>
+                  <SelectItem value="warn">{tc("logLevelWarn")}</SelectItem>
+                  <SelectItem value="error">{tc("logLevelError")}</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Minimum log level to capture
+                {tc("logLevelHelp")}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="maxGlobalVMs">Max Global VMs</Label>
+              <Label htmlFor="maxGlobalVMs">{tc("maxGlobalVMs")}</Label>
               <Input
                 id="maxGlobalVMs"
                 type="number"
@@ -487,7 +502,7 @@ export default function ConfigurationsPage() {
                 min="0"
               />
               <p className="text-xs text-muted-foreground">
-                System-wide maximum number of VMs (0 = unlimited)
+                {tc("maxGlobalVMsHelp")}
               </p>
             </div>
           </div>
@@ -500,19 +515,19 @@ export default function ConfigurationsPage() {
               {saving ? (
                 <>
                   <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                  Saving...
+                  {tc("saving")}
                 </>
               ) : (
                 <>
                   <Save className="mr-2 h-4 w-4" />
-                  Save Settings
+                  {tc("saveSettings")}
                 </>
               )}
             </Button>
             {saved && (
               <span className="flex items-center gap-1 text-sm text-success">
                 <CheckCircle className="h-4 w-4" />
-                Saved
+                {tc("saved")}
               </span>
             )}
           </div>
@@ -523,7 +538,7 @@ export default function ConfigurationsPage() {
           <div className="flex items-center gap-2 mb-4">
             <Sparkles className="h-5 w-5 text-purple-500" />
             <h3 className="text-lg font-semibold text-card-foreground">
-              AI Settings
+              {tc("aiSettings")}
             </h3>
             <Badge
               variant="secondary"
@@ -533,49 +548,49 @@ export default function ConfigurationsPage() {
                   : "bg-muted text-muted-foreground border-0"
               )}
             >
-              {aiEnabled ? "Enabled" : "Disabled"}
+              {aiEnabled ? tc("enabled") : tc("disabled")}
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground mb-4">
-            Configure the OpenAI-compatible API for AI-powered code generation, review, and rewriting.
+            {tc("aiDescription")}
           </p>
           <div className="grid gap-4 sm:grid-cols-2 max-w-2xl">
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="aiBaseUrl">API Base URL</Label>
+              <Label htmlFor="aiBaseUrl">{tc("apiBaseUrl")}</Label>
               <Input
                 id="aiBaseUrl"
                 type="url"
                 value={aiBaseUrl}
                 onChange={(e) => { setAiBaseUrl(e.target.value); setAiDirty(true); }}
-                placeholder="https://api.openai.com/v1"
+                placeholder={tc("apiBaseUrlPlaceholder")}
               />
               <p className="text-xs text-muted-foreground">
-                OpenAI API endpoint. Change this to use a compatible provider (e.g., Azure OpenAI, local LLM).
+                {tc("apiBaseUrlHelp")}
               </p>
             </div>
 
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="aiPromptDir">Prompt Directory</Label>
+              <Label htmlFor="aiPromptDir">{tc("promptDirectory")}</Label>
               <Input
                 id="aiPromptDir"
                 value={aiPromptDir}
                 onChange={(e) => { setAiPromptDir(e.target.value); setAiDirty(true); }}
-                placeholder="configs/prompts/ai"
+                placeholder={tc("promptDirectoryPlaceholder")}
               />
               <p className="text-xs text-muted-foreground">
-                Directory used for editable AI prompt templates.
+                {tc("promptDirectoryHelp")}
               </p>
             </div>
 
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="aiApiKey">API Key</Label>
+              <Label htmlFor="aiApiKey">{tc("apiKey")}</Label>
               <div className="relative">
                 <Input
                   id="aiApiKey"
                   type={showApiKey ? "text" : "password"}
                   value={aiApiKey}
                   onChange={(e) => { setAiApiKey(e.target.value); setAiDirty(true); }}
-                  placeholder="sk-..."
+                  placeholder={tc("apiKeyPlaceholder")}
                   className="pr-10"
                 />
                 <Button
@@ -584,19 +599,19 @@ export default function ConfigurationsPage() {
                   size="icon"
                   className="absolute right-0 top-0 h-full px-3 text-muted-foreground hover:text-foreground"
                   onClick={() => setShowApiKey(!showApiKey)}
-                  aria-label={showApiKey ? "Hide API key" : "Show API key"}
+                  aria-label={showApiKey ? tc("hideApiKey") : tc("showApiKey")}
                 >
                   {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Your OpenAI API key. The key is stored encrypted and shown masked after saving.
+                {tc("apiKeyHelp")}
               </p>
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <Label htmlFor="aiModel">Model</Label>
+                <Label htmlFor="aiModel">{tc("model")}</Label>
                 <Button
                   type="button"
                   variant="ghost"
@@ -604,7 +619,7 @@ export default function ConfigurationsPage() {
                   className="h-6 w-6"
                   onClick={fetchModels}
                   disabled={aiModelsLoading}
-                  aria-label="Refresh models"
+                  aria-label={tc("refreshModels")}
                 >
                   {aiModelsLoading ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -615,7 +630,7 @@ export default function ConfigurationsPage() {
               </div>
               <Select value={aiModel} onValueChange={(v) => { setAiModel(v); setAiDirty(true); }}>
                 <SelectTrigger>
-                  <SelectValue placeholder={aiModelsLoading ? "Loading models..." : "Select a model"} />
+                  <SelectValue placeholder={aiModelsLoading ? tc("loadingModels") : tc("selectModel")} />
                 </SelectTrigger>
                 <SelectContent>
                   {aiModels.length > 0 ? (
@@ -628,30 +643,30 @@ export default function ConfigurationsPage() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                AI model for code generation. Click refresh to load available models from the API.
+                {tc("modelHelp")}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label>Enable AI Features</Label>
+              <Label>{tc("enableAiFeatures")}</Label>
               <div className="flex items-center gap-3 pt-1">
                 <Button
                   variant={aiEnabled ? "default" : "outline"}
                   size="sm"
                   onClick={() => { setAiEnabled(true); setAiDirty(true); }}
                 >
-                  Enabled
+                  {tc("enabled")}
                 </Button>
                 <Button
                   variant={!aiEnabled ? "default" : "outline"}
                   size="sm"
                   onClick={() => { setAiEnabled(false); setAiDirty(true); }}
                 >
-                  Disabled
+                  {tc("disabled")}
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Toggle AI-powered features (generate, review, rewrite)
+                {tc("toggleAiHelp")}
               </p>
             </div>
           </div>
@@ -664,19 +679,19 @@ export default function ConfigurationsPage() {
               {aiSaving ? (
                 <>
                   <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                  Saving...
+                  {tc("saving")}
                 </>
               ) : (
                 <>
                   <Save className="mr-2 h-4 w-4" />
-                  Save AI Settings
+                  {tc("saveAiSettings")}
                 </>
               )}
             </Button>
             {aiSaved && (
               <span className="flex items-center gap-1 text-sm text-success">
                 <CheckCircle className="h-4 w-4" />
-                Saved
+                {tc("saved")}
               </span>
             )}
           </div>
@@ -688,7 +703,7 @@ export default function ConfigurationsPage() {
             <div className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-primary" />
               <h3 className="text-lg font-semibold text-card-foreground">
-                Prompt Templates
+                {tc("promptTemplates")}
               </h3>
             </div>
             <Button
@@ -699,18 +714,18 @@ export default function ConfigurationsPage() {
               disabled={promptLoading}
             >
               <RefreshCw className={cn("mr-2 h-4 w-4", promptLoading && "animate-spin")} />
-              Refresh Templates
+              {tc("refreshTemplates")}
             </Button>
           </div>
           <p className="text-sm text-muted-foreground mb-4">
-            Manage centralized AI prompts. Changes apply to subsequent AI requests immediately.
+            {tc("promptTemplatesDesc")}
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="promptTemplate">Template</Label>
+              <Label htmlFor="promptTemplate">{tc("template")}</Label>
               <Select value={selectedPrompt} onValueChange={(value) => { setSelectedPrompt(value); setPromptSaved(false); }}>
                 <SelectTrigger id="promptTemplate">
-                  <SelectValue placeholder="Select a prompt template" />
+                  <SelectValue placeholder={tc("selectPromptTemplate")} />
                 </SelectTrigger>
                 <SelectContent>
                   {promptTemplates.map((tpl) => (
@@ -728,7 +743,7 @@ export default function ConfigurationsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Template Status</Label>
+              <Label>{tc("templateStatus")}</Label>
               <div className="flex items-center gap-2 pt-2">
                 <Badge
                   variant="secondary"
@@ -738,7 +753,7 @@ export default function ConfigurationsPage() {
                       : "bg-muted text-muted-foreground border-0"
                   )}
                 >
-                  {selectedPromptMeta?.customized ? "Customized" : "Default"}
+                  {selectedPromptMeta?.customized ? tc("customized") : tc("default")}
                 </Badge>
                 {selectedPromptMeta?.file && (
                   <Badge variant="outline" className="font-mono">
@@ -749,7 +764,7 @@ export default function ConfigurationsPage() {
             </div>
 
             <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="promptContent">Template Content</Label>
+              <Label htmlFor="promptContent">{tc("templateContent")}</Label>
               <Textarea
                 id="promptContent"
                 rows={20}
@@ -757,7 +772,7 @@ export default function ConfigurationsPage() {
                 onChange={(e) => { setPromptContent(e.target.value); setPromptDirty(true); }}
                 disabled={promptLoading || !selectedPrompt}
                 className="font-mono text-xs"
-                placeholder={selectedPrompt ? "Prompt template content..." : "Select a template first"}
+                placeholder={selectedPrompt ? tc("promptPlaceholder") : tc("selectFirst")}
               />
             </div>
           </div>
@@ -770,19 +785,19 @@ export default function ConfigurationsPage() {
               {promptSaving ? (
                 <>
                   <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                  Saving...
+                  {tc("saving")}
                 </>
               ) : (
                 <>
                   <Save className="mr-2 h-4 w-4" />
-                  Save Prompt Template
+                  {tc("savePromptTemplate")}
                 </>
               )}
             </Button>
             {promptSaved && (
               <span className="flex items-center gap-1 text-sm text-success">
                 <CheckCircle className="h-4 w-4" />
-                Saved
+                {tc("saved")}
               </span>
             )}
           </div>
@@ -791,15 +806,15 @@ export default function ConfigurationsPage() {
         {/* Snapshots */}
         <div className="rounded-xl border border-border bg-card p-6">
           <h3 className="text-lg font-semibold text-card-foreground mb-4">
-            VM Snapshots
+            {tc("vmSnapshots")}
           </h3>
-          {snapshots.length === 0 ? (
+          {snapshotsTotal === 0 ? (
             <p className="text-sm text-muted-foreground py-4">
-              No snapshots created yet. Create snapshots from the function detail page.
+              {tc("noSnapshots")}
             </p>
           ) : (
             <div className="space-y-3">
-              {pagedSnapshots.map((snap) => (
+              {snapshots.map((snap) => (
                 <div
                   key={snap.function_id}
                   className="flex items-center justify-between p-4 rounded-lg bg-muted/50"
@@ -826,7 +841,7 @@ export default function ConfigurationsPage() {
 
               <div className="pt-2">
                 <Pagination
-                  totalItems={snapshots.length}
+                  totalItems={snapshotsTotal}
                   page={snapshotsPage}
                   pageSize={snapshotsPageSize}
                   onPageChange={setSnapshotsPage}
@@ -835,7 +850,7 @@ export default function ConfigurationsPage() {
                     setSnapshotsPage(1)
                   }}
                   pageSizeOptions={[5, 10, 20, 50]}
-                  itemLabel="snapshots"
+                  itemLabel={tc("snapshotsLabel")}
                 />
               </div>
             </div>

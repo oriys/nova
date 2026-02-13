@@ -314,6 +314,14 @@ export interface LogEntry {
   output_size?: number;
 }
 
+export interface InvocationListSummary {
+  total_invocations: number;
+  successes: number;
+  failures: number;
+  cold_starts: number;
+  avg_duration_ms: number;
+}
+
 export interface InvokeResponse {
   request_id: string;
   output: unknown;
@@ -346,6 +354,24 @@ export interface AsyncInvocationJob {
   started_at?: string;
   completed_at?: string;
   created_at: string;
+  updated_at: string;
+}
+
+export interface AsyncInvocationSummary {
+  total: number;
+  queued: number;
+  running: number;
+  paused: number;
+  succeeded: number;
+  dlq: number;
+  backlog: number;
+  pending: number;
+  consumed_last_1m: number;
+  consumed_last_5m: number;
+  consume_rate_per_sec_1m: number;
+  consume_rate_per_sec_5m: number;
+  consume_rate_per_minute_1m: number;
+  consume_rate_per_minute_5m: number;
   updated_at: string;
 }
 
@@ -691,10 +717,33 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(
-  path: string,
-  options?: RequestInit
-): Promise<T> {
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+}
+
+interface ApiPaginationMetadata {
+  limit?: number;
+  offset?: number;
+  returned?: number;
+  total?: number;
+  has_more?: boolean;
+  next_offset?: number;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function toNonNegativeInteger(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const normalized = Math.floor(value);
+  return normalized >= 0 ? normalized : undefined;
+}
+
+function buildNovaHeaders(options?: RequestInit): Headers {
   const headers = new Headers(options?.headers);
   if (!(options?.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -702,49 +751,57 @@ async function request<T>(
   const tenantHeaders = getTenantScopeHeaders();
   headers.set("X-Nova-Tenant", tenantHeaders["X-Nova-Tenant"]);
   headers.set("X-Nova-Namespace", tenantHeaders["X-Nova-Namespace"]);
+  return headers;
+}
 
-  const response = await fetch(`${API_BASE}${path}`, {
+async function requestRaw(
+  path: string,
+  options?: RequestInit
+): Promise<Response> {
+  const headers = buildNovaHeaders(options);
+
+  return fetch(`${API_BASE}${path}`, {
     ...options,
     headers,
   });
+}
 
-  if (!response.ok) {
-    const contentType = response.headers.get("content-type") || "";
-    const rawBody = await response.text();
-    let message = response.statusText || "Request failed";
-    let code: string | undefined;
-    let hint: string | undefined;
-    let details: unknown;
+async function parseApiError(response: Response): Promise<never> {
+  const contentType = response.headers.get("content-type") || "";
+  const rawBody = await response.text();
+  let message = response.statusText || "Request failed";
+  let code: string | undefined;
+  let hint: string | undefined;
+  let details: unknown;
 
-    if (contentType.includes("application/json") && rawBody.trim()) {
-      try {
-        const payload = JSON.parse(rawBody) as Record<string, unknown>;
-        details = payload;
-        if (typeof payload.error === "string" && payload.error.trim()) {
-          message = payload.error.trim();
-        } else if (typeof payload.message === "string" && payload.message.trim()) {
-          message = payload.message.trim();
-        }
-        if (typeof payload.code === "string" && payload.code.trim()) {
-          code = payload.code.trim();
-        }
-        if (typeof payload.hint === "string" && payload.hint.trim()) {
-          hint = payload.hint.trim();
-        }
-      } catch {
-        if (rawBody.trim()) {
-          message = rawBody.trim();
-        }
+  if (contentType.includes("application/json") && rawBody.trim()) {
+    try {
+      const payload = JSON.parse(rawBody) as Record<string, unknown>;
+      details = payload;
+      if (typeof payload.error === "string" && payload.error.trim()) {
+        message = payload.error.trim();
+      } else if (typeof payload.message === "string" && payload.message.trim()) {
+        message = payload.message.trim();
       }
-    } else {
+      if (typeof payload.code === "string" && payload.code.trim()) {
+        code = payload.code.trim();
+      }
+      if (typeof payload.hint === "string" && payload.hint.trim()) {
+        hint = payload.hint.trim();
+      }
+    } catch {
       if (rawBody.trim()) {
         message = rawBody.trim();
       }
     }
-
-    throw new ApiError(response.status, message, code, hint, details);
+  } else if (rawBody.trim()) {
+    message = rawBody.trim();
   }
 
+  throw new ApiError(response.status, message, code, hint, details);
+}
+
+async function parseResponseBody<T>(response: Response): Promise<T> {
   if (response.status === 204 || response.status === 205) {
     return undefined as T;
   }
@@ -764,6 +821,43 @@ async function request<T>(
   } catch {
     return rawBody as unknown as T;
   }
+}
+
+async function request<T>(
+  path: string,
+  options?: RequestInit
+): Promise<T> {
+  const response = await requestRaw(path, options);
+  if (!response.ok) {
+    return parseApiError(response);
+  }
+  return parseResponseBody<T>(response);
+}
+
+async function requestPaged<T>(
+  path: string,
+  options?: RequestInit
+): Promise<PaginatedResult<T>> {
+  const response = await requestRaw(path, options);
+  if (!response.ok) {
+    return parseApiError(response);
+  }
+
+  const payload = await parseResponseBody<unknown>(response);
+  if (isObjectRecord(payload) && Array.isArray(payload.items)) {
+    const envelope = payload as { items: unknown; pagination?: unknown };
+    const items = envelope.items as T[];
+    const pagination = isObjectRecord(envelope.pagination)
+      ? (envelope.pagination as ApiPaginationMetadata)
+      : undefined;
+    const total = toNonNegativeInteger(pagination?.total);
+    if (total === undefined) {
+      throw new ApiError(response.status, "Invalid paginated response: missing pagination.total");
+    }
+    return { items, total };
+  }
+
+  throw new ApiError(response.status, "Invalid paginated response");
 }
 
 // Cost Intelligence types
@@ -790,17 +884,31 @@ export interface TenantCostSummary {
 
 // Functions API
 export const functionsApi = {
-  list: (search?: string, limit?: number, offset?: number) => {
+  list: async (search?: string, limit?: number, offset?: number, runtime?: string) => {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
-    if (typeof limit === "number" && Number.isFinite(limit) && limit > 0) {
-      params.set("limit", String(Math.floor(limit)));
-    }
+    if (runtime) params.set("runtime", runtime);
+    const resolvedLimit =
+      typeof limit === "number" && Number.isFinite(limit) && limit > 0
+        ? Math.floor(limit)
+        : 100;
+    params.set("limit", String(resolvedLimit));
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    const qs = params.toString();
-    return request<NovaFunction[]>(`/functions${qs ? `?${qs}` : ""}`);
+    const result = await requestPaged<NovaFunction>(`/functions?${params.toString()}`);
+    return result.items;
+  },
+
+  listPage: (search?: string, limit: number = 20, offset: number = 0, runtime?: string) => {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (runtime) params.set("runtime", runtime);
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    return requestPaged<NovaFunction>(`/functions?${params.toString()}`);
   },
 
   get: (name: string) => request<NovaFunction>(`/functions/${encodeURIComponent(name)}`),
@@ -847,18 +955,33 @@ export const functionsApi = {
       }),
     }),
 
-  listAsyncInvocations: (name: string, limit: number = 50, status?: AsyncInvocationStatus | AsyncInvocationStatus[], offset?: number) => {
+  listAsyncInvocationsPage: (
+    name: string,
+    limit: number = 50,
+    status?: AsyncInvocationStatus | AsyncInvocationStatus[],
+    offset?: number
+  ) => {
     const params = new URLSearchParams();
-    params.set("limit", String(limit));
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
     if (status) {
       params.set("status", Array.isArray(status) ? status.join(",") : status);
     }
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    return request<AsyncInvocationJob[]>(
+    return requestPaged<AsyncInvocationJob>(
       `/functions/${encodeURIComponent(name)}/async-invocations?${params.toString()}`
     );
+  },
+
+  listAsyncInvocations: async (
+    name: string,
+    limit: number = 50,
+    status?: AsyncInvocationStatus | AsyncInvocationStatus[],
+    offset?: number
+  ) => {
+    const result = await functionsApi.listAsyncInvocationsPage(name, limit, status, offset);
+    return result.items;
   },
 
   getAsyncInvocation: (id: string) =>
@@ -873,7 +996,16 @@ export const functionsApi = {
     }),
 
   logs: (name: string, tail: number = 10) =>
-    request<LogEntry[]>(`/functions/${encodeURIComponent(name)}/logs?tail=${tail}`),
+    functionsApi.logsPage(name, tail, 0).then((result) => result.items),
+
+  logsPage: (name: string, limit: number = 20, offset: number = 0) => {
+    const params = new URLSearchParams();
+    params.set("tail", String(Math.max(1, Math.floor(limit))));
+    if (offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    return requestPaged<LogEntry>(`/functions/${encodeURIComponent(name)}/logs?${params.toString()}`);
+  },
 
   logsByRequest: (name: string, requestID: string) =>
     request<LogEntry>(`/functions/${encodeURIComponent(name)}/logs?request_id=${encodeURIComponent(requestID)}`),
@@ -905,16 +1037,20 @@ export const functionsApi = {
       }),
     }),
 
-  listVersions: (name: string, limit?: number, offset?: number) => {
+  listVersions: async (name: string, limit?: number, offset?: number) => {
     const params = new URLSearchParams();
-    if (typeof limit === "number" && Number.isFinite(limit) && limit > 0) {
-      params.set("limit", String(Math.floor(limit)));
-    }
+    const resolvedLimit =
+      typeof limit === "number" && Number.isFinite(limit) && limit > 0
+        ? Math.floor(limit)
+        : 100;
+    params.set("limit", String(resolvedLimit));
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    const qs = params.toString();
-    return request<FunctionVersionEntry[]>(`/functions/${encodeURIComponent(name)}/versions${qs ? `?${qs}` : ""}`);
+    const result = await requestPaged<FunctionVersionEntry>(
+      `/functions/${encodeURIComponent(name)}/versions?${params.toString()}`
+    );
+    return result.items;
   },
 
   getVersion: (name: string, version: number) =>
@@ -992,14 +1128,16 @@ export const functionsApi = {
 export const tenantsApi = {
   list: async (limit?: number, offset?: number) => {
     const params = new URLSearchParams();
-    if (typeof limit === "number" && Number.isFinite(limit) && limit > 0) {
-      params.set("limit", String(Math.floor(limit)));
-    }
+    const resolvedLimit =
+      typeof limit === "number" && Number.isFinite(limit) && limit > 0
+        ? Math.floor(limit)
+        : 100;
+    params.set("limit", String(resolvedLimit));
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    const qs = params.toString();
-    const tenantList = await request<TenantEntry[]>(`/tenants${qs ? `?${qs}` : ""}`);
+    const result = await requestPaged<TenantEntry>(`/tenants?${params.toString()}`);
+    const tenantList = result.items;
     return filterTenantsForSession(tenantList);
   },
 
@@ -1020,16 +1158,20 @@ export const tenantsApi = {
       method: "DELETE",
     }),
 
-  listNamespaces: (tenantID: string, limit?: number, offset?: number) => {
+  listNamespaces: async (tenantID: string, limit?: number, offset?: number) => {
     const params = new URLSearchParams();
-    if (typeof limit === "number" && Number.isFinite(limit) && limit > 0) {
-      params.set("limit", String(Math.floor(limit)));
-    }
+    const resolvedLimit =
+      typeof limit === "number" && Number.isFinite(limit) && limit > 0
+        ? Math.floor(limit)
+        : 100;
+    params.set("limit", String(resolvedLimit));
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    const qs = params.toString();
-    return request<NamespaceEntry[]>(`/tenants/${encodeURIComponent(tenantID)}/namespaces${qs ? `?${qs}` : ""}`);
+    const result = await requestPaged<NamespaceEntry>(
+      `/tenants/${encodeURIComponent(tenantID)}/namespaces?${params.toString()}`
+    );
+    return result.items;
   },
 
   createNamespace: (tenantID: string, data: { name: string }) =>
@@ -1055,16 +1197,20 @@ export const tenantsApi = {
       }
     ),
 
-  listQuotas: (tenantID: string, limit?: number, offset?: number) => {
+  listQuotas: async (tenantID: string, limit?: number, offset?: number) => {
     const params = new URLSearchParams();
-    if (typeof limit === "number" && Number.isFinite(limit) && limit > 0) {
-      params.set("limit", String(Math.floor(limit)));
-    }
+    const resolvedLimit =
+      typeof limit === "number" && Number.isFinite(limit) && limit > 0
+        ? Math.floor(limit)
+        : 100;
+    params.set("limit", String(resolvedLimit));
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    const qs = params.toString();
-    return request<TenantQuotaEntry[]>(`/tenants/${encodeURIComponent(tenantID)}/quotas${qs ? `?${qs}` : ""}`);
+    const result = await requestPaged<TenantQuotaEntry>(
+      `/tenants/${encodeURIComponent(tenantID)}/quotas?${params.toString()}`
+    );
+    return result.items;
   },
 
   upsertQuota: (
@@ -1093,15 +1239,30 @@ export const tenantsApi = {
       }
     ),
 
-  usage: (tenantID: string, refresh: boolean = true) =>
-    request<TenantUsageEntry[]>(
-      `/tenants/${encodeURIComponent(tenantID)}/usage?refresh=${refresh ? "true" : "false"}`
-    ),
+  usage: async (tenantID: string, refresh: boolean = true, limit: number = 100, offset?: number) => {
+    const params = new URLSearchParams();
+    params.set("refresh", refresh ? "true" : "false");
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    const result = await requestPaged<TenantUsageEntry>(
+      `/tenants/${encodeURIComponent(tenantID)}/usage?${params.toString()}`
+    );
+    return result.items;
+  },
 
-  listMenuPermissions: (tenantID: string) =>
-    request<MenuPermission[]>(
-      `/tenants/${encodeURIComponent(tenantID)}/menu-permissions`
-    ),
+  listMenuPermissions: async (tenantID: string, limit: number = 100, offset?: number) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    const result = await requestPaged<MenuPermission>(
+      `/tenants/${encodeURIComponent(tenantID)}/menu-permissions?${params.toString()}`
+    );
+    return result.items;
+  },
 
   upsertMenuPermission: (
     tenantID: string,
@@ -1119,10 +1280,17 @@ export const tenantsApi = {
       { method: "DELETE" }
     ),
 
-  listButtonPermissions: (tenantID: string) =>
-    request<ButtonPermission[]>(
-      `/tenants/${encodeURIComponent(tenantID)}/button-permissions`
-    ),
+  listButtonPermissions: async (tenantID: string, limit: number = 100, offset?: number) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    const result = await requestPaged<ButtonPermission>(
+      `/tenants/${encodeURIComponent(tenantID)}/button-permissions?${params.toString()}`
+    );
+    return result.items;
+  },
 
   upsertButtonPermission: (
     tenantID: string,
@@ -1143,13 +1311,14 @@ export const tenantsApi = {
 
 // Event bus API
 export const eventsApi = {
-  listTopics: (limit: number = 100, offset?: number) => {
+  listTopics: async (limit: number = 100, offset?: number) => {
     const params = new URLSearchParams();
     params.set("limit", String(limit));
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    return request<EventTopic[]>(`/topics?${params.toString()}`);
+    const result = await requestPaged<EventTopic>(`/topics?${params.toString()}`);
+    return result.items;
   },
 
   getTopic: (name: string) =>
@@ -1216,30 +1385,37 @@ export const eventsApi = {
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    return request<EventOutboxJob[]>(
+    return requestPaged<EventOutboxJob>(
       `/topics/${encodeURIComponent(topicName)}/outbox?${params.toString()}`
-    );
+    ).then((result) => result.items);
   },
 
-  listMessages: (topicName: string, limit: number = 50, offset?: number) => {
+  listMessages: async (topicName: string, limit: number = 50, offset?: number) => {
     const params = new URLSearchParams();
     params.set("limit", String(limit));
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    return request<EventMessage[]>(`/topics/${encodeURIComponent(topicName)}/messages?${params.toString()}`);
+    const result = await requestPaged<EventMessage>(
+      `/topics/${encodeURIComponent(topicName)}/messages?${params.toString()}`
+    );
+    return result.items;
   },
 
-  listSubscriptions: (topicName: string, limit?: number, offset?: number) => {
+  listSubscriptions: async (topicName: string, limit?: number, offset?: number) => {
     const params = new URLSearchParams();
-    if (typeof limit === "number" && Number.isFinite(limit) && limit > 0) {
-      params.set("limit", String(Math.floor(limit)));
-    }
+    const resolvedLimit =
+      typeof limit === "number" && Number.isFinite(limit) && limit > 0
+        ? Math.floor(limit)
+        : 100;
+    params.set("limit", String(resolvedLimit));
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    const qs = params.toString();
-    return request<EventSubscription[]>(`/topics/${encodeURIComponent(topicName)}/subscriptions${qs ? `?${qs}` : ""}`);
+    const result = await requestPaged<EventSubscription>(
+      `/topics/${encodeURIComponent(topicName)}/subscriptions?${params.toString()}`
+    );
+    return result.items;
   },
 
   createSubscription: (
@@ -1313,9 +1489,9 @@ export const eventsApi = {
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    return request<EventDelivery[]>(
+    return requestPaged<EventDelivery>(
       `/subscriptions/${encodeURIComponent(subscriptionID)}/deliveries?${params.toString()}`
-    );
+    ).then((result) => result.items);
   },
 
   getDelivery: (id: string) =>
@@ -1371,19 +1547,21 @@ export const eventsApi = {
 
 // Gateway API
 export const gatewayApi = {
-  listRoutes: (domain?: string, limit?: number, offset?: number) => {
+  listRoutes: async (domain?: string, limit?: number, offset?: number) => {
     const params = new URLSearchParams();
     if (domain?.trim()) {
       params.set("domain", domain.trim());
     }
-    if (typeof limit === "number" && Number.isFinite(limit) && limit > 0) {
-      params.set("limit", String(Math.floor(limit)));
-    }
+    const resolvedLimit =
+      typeof limit === "number" && Number.isFinite(limit) && limit > 0
+        ? Math.floor(limit)
+        : 100;
+    params.set("limit", String(resolvedLimit));
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    const qs = params.toString();
-    return request<GatewayRoute[]>(`/gateway/routes${qs ? `?${qs}` : ""}`);
+    const result = await requestPaged<GatewayRoute>(`/gateway/routes?${params.toString()}`);
+    return result.items;
   },
 
   getRoute: (id: string) =>
@@ -1418,16 +1596,18 @@ export const gatewayApi = {
 
 // Shared Layers API
 export const layersApi = {
-  list: (limit?: number, offset?: number) => {
+  list: async (limit?: number, offset?: number) => {
     const params = new URLSearchParams();
-    if (typeof limit === "number" && Number.isFinite(limit) && limit > 0) {
-      params.set("limit", String(Math.floor(limit)));
-    }
+    const resolvedLimit =
+      typeof limit === "number" && Number.isFinite(limit) && limit > 0
+        ? Math.floor(limit)
+        : 100;
+    params.set("limit", String(resolvedLimit));
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    const qs = params.toString();
-    return request<LayerEntry[]>(`/layers${qs ? `?${qs}` : ""}`);
+    const result = await requestPaged<LayerEntry>(`/layers?${params.toString()}`);
+    return result.items;
   },
 
   get: (name: string) =>
@@ -1450,22 +1630,42 @@ export const layersApi = {
       body: JSON.stringify({ layer_ids: layerIDs }),
     }),
 
-  getFunctionLayers: (functionName: string) =>
-    request<LayerEntry[]>(`/functions/${encodeURIComponent(functionName)}/layers`),
+  getFunctionLayers: async (functionName: string, limit: number = 100, offset?: number) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    const result = await requestPaged<LayerEntry>(
+      `/functions/${encodeURIComponent(functionName)}/layers?${params.toString()}`
+    );
+    return result.items;
+  },
 };
 
 // Runtimes API
 export const runtimesApi = {
-  list: (limit?: number, offset?: number) => {
+  list: async (limit?: number, offset?: number) => {
     const params = new URLSearchParams();
-    if (typeof limit === "number" && Number.isFinite(limit) && limit > 0) {
-      params.set("limit", String(Math.floor(limit)));
-    }
+    const resolvedLimit =
+      typeof limit === "number" && Number.isFinite(limit) && limit > 0
+        ? Math.floor(limit)
+        : 100;
+    params.set("limit", String(resolvedLimit));
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    const qs = params.toString();
-    return request<Runtime[]>(`/runtimes${qs ? `?${qs}` : ""}`);
+    const result = await requestPaged<Runtime>(`/runtimes?${params.toString()}`);
+    return result.items;
+  },
+
+  listPage: (limit: number = 20, offset: number = 0) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    return requestPaged<Runtime>(`/runtimes?${params.toString()}`);
   },
 
   create: (data: CreateRuntimeRequest) =>
@@ -1527,28 +1727,120 @@ export const metricsApi = {
 
 // Invocations API (global history)
 export const invocationsApi = {
-  list: (limit: number = 100, offset?: number) => {
+  list: async (limit: number = 100, offset?: number) => {
     const params = new URLSearchParams();
     params.set("limit", String(limit));
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    return request<LogEntry[]>(`/invocations?${params.toString()}`);
+    const result = await requestPaged<LogEntry>(`/invocations?${params.toString()}`);
+    return result.items;
+  },
+
+  listPage: (
+    limit: number = 20,
+    offset: number = 0,
+    options?: {
+      search?: string;
+      functionName?: string;
+      status?: "all" | "success" | "failed";
+    }
+  ) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    if (options?.search) {
+      params.set("search", options.search);
+    }
+    if (options?.functionName && options.functionName !== "all") {
+      params.set("function", options.functionName);
+    }
+    if (options?.status && options.status !== "all") {
+      params.set("status", options.status);
+    }
+    return request<{
+      items?: LogEntry[];
+      pagination?: ApiPaginationMetadata;
+      summary?: Partial<InvocationListSummary>;
+    }>(`/invocations?${params.toString()}`).then((payload) => {
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      const total = toNonNegativeInteger(payload?.pagination?.total) ?? items.length;
+      const fallback = summarizeInvocationEntries(items);
+      const summary = payload?.summary ?? {};
+      return {
+        items,
+        total,
+        summary: {
+          total_invocations: toNonNegativeInteger(summary.total_invocations) ?? total,
+          successes: toNonNegativeInteger(summary.successes) ?? fallback.successes,
+          failures: toNonNegativeInteger(summary.failures) ?? fallback.failures,
+          cold_starts: toNonNegativeInteger(summary.cold_starts) ?? fallback.cold_starts,
+          avg_duration_ms: toNonNegativeInteger(summary.avg_duration_ms) ?? fallback.avg_duration_ms,
+        } as InvocationListSummary,
+      };
+    });
   },
 };
 
+function summarizeInvocationEntries(entries: LogEntry[]): InvocationListSummary {
+  if (entries.length === 0) {
+    return {
+      total_invocations: 0,
+      successes: 0,
+      failures: 0,
+      cold_starts: 0,
+      avg_duration_ms: 0,
+    };
+  }
+
+  let successes = 0;
+  let failures = 0;
+  let coldStarts = 0;
+  let totalDuration = 0;
+  for (const entry of entries) {
+    if (entry.success) {
+      successes += 1;
+    } else {
+      failures += 1;
+    }
+    if (entry.cold_start) {
+      coldStarts += 1;
+    }
+    totalDuration += Number.isFinite(entry.duration_ms) ? entry.duration_ms : 0;
+  }
+
+  return {
+    total_invocations: entries.length,
+    successes,
+    failures,
+    cold_starts: coldStarts,
+    avg_duration_ms: Math.round(totalDuration / entries.length),
+  };
+}
+
 // Async invocations API (global scope)
 export const asyncInvocationsApi = {
-  list: (limit: number = 100, status?: AsyncInvocationStatus | AsyncInvocationStatus[], offset?: number) => {
+  listPage: (
+    limit: number = 100,
+    status?: AsyncInvocationStatus | AsyncInvocationStatus[],
+    offset?: number
+  ) => {
     const params = new URLSearchParams();
-    params.set("limit", String(limit));
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
     if (status) {
       params.set("status", Array.isArray(status) ? status.join(",") : status);
     }
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    return request<AsyncInvocationJob[]>(`/async-invocations?${params.toString()}`);
+    return requestPaged<AsyncInvocationJob>(`/async-invocations?${params.toString()}`);
+  },
+
+  list: async (limit: number = 100, status?: AsyncInvocationStatus | AsyncInvocationStatus[], offset?: number) => {
+    const result = await asyncInvocationsApi.listPage(limit, status, offset);
+    return result.items;
   },
 
   get: (id: string) =>
@@ -1587,14 +1879,15 @@ export const healthApi = {
 
 // Notifications API (for header bell menu)
 export const notificationsApi = {
-  list: (status: NotificationStatus = "all", limit: number = 20, offset?: number) => {
+  list: async (status: NotificationStatus = "all", limit: number = 20, offset?: number) => {
     const params = new URLSearchParams();
     params.set("status", status);
     params.set("limit", String(limit));
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    return request<NotificationEntry[]>(`/notifications?${params.toString()}`);
+    const result = await requestPaged<NotificationEntry>(`/notifications?${params.toString()}`);
+    return result.items;
   },
 
   unreadCount: () => request<{ unread: number }>("/notifications/unread-count"),
@@ -1625,16 +1918,23 @@ export const configApi = {
 // Snapshots API
 export const snapshotsApi = {
   list: () =>
-    request<
-      Array<{
-        function_id: string;
-        function_name: string;
-        snap_size: number;
-        mem_size: number;
-        total_size: number;
-        created_at: string;
-      }>
-    >("/snapshots"),
+    snapshotsApi.listPage(100, 0).then((result) => result.items),
+
+  listPage: (limit: number = 20, offset: number = 0) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    return requestPaged<{
+      function_id: string;
+      function_name: string;
+      snap_size: number;
+      mem_size: number;
+      total_size: number;
+      created_at: string;
+    }>(`/snapshots?${params.toString()}`);
+  },
 
   create: (name: string) =>
     request<{ status: string; message: string }>(`/functions/${encodeURIComponent(name)}/snapshot`, {
@@ -1760,7 +2060,15 @@ export interface PublishVersionRequest {
 
 // Workflows API
 export const workflowsApi = {
-  list: () => request<Workflow[]>("/workflows"),
+  list: async (limit: number = 100, offset?: number) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    const result = await requestPaged<Workflow>(`/workflows?${params.toString()}`);
+    return result.items;
+  },
 
   get: (name: string) => request<Workflow>(`/workflows/${encodeURIComponent(name)}`),
 
@@ -1775,8 +2083,17 @@ export const workflowsApi = {
       method: "DELETE",
     }),
 
-  listVersions: (name: string) =>
-    request<WorkflowVersion[]>(`/workflows/${encodeURIComponent(name)}/versions`),
+  listVersions: async (name: string, limit: number = 100, offset?: number) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    const result = await requestPaged<WorkflowVersion>(
+      `/workflows/${encodeURIComponent(name)}/versions?${params.toString()}`
+    );
+    return result.items;
+  },
 
   getVersion: (name: string, version: number) =>
     request<WorkflowVersion>(`/workflows/${encodeURIComponent(name)}/versions/${version}`),
@@ -1787,8 +2104,17 @@ export const workflowsApi = {
       body: JSON.stringify(def),
     }),
 
-  listRuns: (name: string) =>
-    request<WorkflowRun[]>(`/workflows/${encodeURIComponent(name)}/runs`),
+  listRuns: async (name: string, limit: number = 100, offset?: number) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    const result = await requestPaged<WorkflowRun>(
+      `/workflows/${encodeURIComponent(name)}/runs?${params.toString()}`
+    );
+    return result.items;
+  },
 
   getRun: (name: string, runID: string) =>
     request<WorkflowRun>(`/workflows/${encodeURIComponent(name)}/runs/${encodeURIComponent(runID)}`),
@@ -1816,7 +2142,15 @@ export interface APIKeyCreateResponse {
 }
 
 export const apiKeysApi = {
-  list: () => request<APIKeyEntry[]>("/apikeys"),
+  list: async (limit: number = 100, offset?: number) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    const result = await requestPaged<APIKeyEntry>(`/apikeys?${params.toString()}`);
+    return result.items;
+  },
 
   create: (name: string, tier: string = "default") =>
     request<APIKeyCreateResponse>("/apikeys", {
@@ -1844,7 +2178,15 @@ export interface SecretEntry {
 }
 
 export const secretsApi = {
-  list: () => request<SecretEntry[]>("/secrets"),
+  list: async (limit: number = 100, offset?: number) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    const result = await requestPaged<SecretEntry>(`/secrets?${params.toString()}`);
+    return result.items;
+  },
 
   create: (name: string, value: string) =>
     request<{ name: string; status: string }>("/secrets", {
@@ -1888,8 +2230,17 @@ export interface ScheduleEntry {
 }
 
 export const schedulesApi = {
-  list: (functionName: string) =>
-    request<ScheduleEntry[]>(`/functions/${encodeURIComponent(functionName)}/schedules`),
+  list: async (functionName: string, limit: number = 100, offset?: number) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    const result = await requestPaged<ScheduleEntry>(
+      `/functions/${encodeURIComponent(functionName)}/schedules?${params.toString()}`
+    );
+    return result.items;
+  },
 
   create: (functionName: string, cronExpression: string, input?: unknown) =>
     request<ScheduleEntry>(`/functions/${encodeURIComponent(functionName)}/schedules`, {
@@ -1995,21 +2346,12 @@ export interface AIModelEntry {
   owned_by: string;
 }
 
-export interface AIModelsResponse {
-  object: string;
-  data: AIModelEntry[];
-}
-
 export interface AIPromptTemplateMeta {
   name: string;
   label: string;
   file: string;
   description: string;
   customized: boolean;
-}
-
-export interface AIPromptTemplateListResponse {
-  items: AIPromptTemplateMeta[];
 }
 
 export interface AIPromptTemplate extends AIPromptTemplateMeta {
@@ -2099,9 +2441,33 @@ export const aiApi = {
       body: JSON.stringify(data),
     }),
 
-  listModels: () => request<AIModelsResponse>("/ai/models"),
+  listModelsPage: (limit: number = 100, offset: number = 0) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    return requestPaged<AIModelEntry>(`/ai/models?${params.toString()}`);
+  },
 
-  listPromptTemplates: () => request<AIPromptTemplateListResponse>("/ai/prompts"),
+  listModels: async (limit: number = 100, offset: number = 0) => {
+    const result = await aiApi.listModelsPage(limit, offset);
+    return result.items;
+  },
+
+  listPromptTemplatesPage: (limit: number = 100, offset: number = 0) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    return requestPaged<AIPromptTemplateMeta>(`/ai/prompts?${params.toString()}`);
+  },
+
+  listPromptTemplates: async (limit: number = 100, offset: number = 0) => {
+    const result = await aiApi.listPromptTemplatesPage(limit, offset);
+    return result.items;
+  },
 
   getPromptTemplate: (name: string) =>
     request<AIPromptTemplate>(`/ai/prompts/${encodeURIComponent(name)}`),
@@ -2181,10 +2547,18 @@ export interface RBACRoleAssignment {
 
 export const rbacApi = {
   // Roles
-  listRoles: (params?: { tenant_id?: string; limit?: number; offset?: number }) =>
-    request<RBACRole[]>(
-      `/rbac/roles${params ? `?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])).toString()}` : ""}`
-    ),
+  listRoles: async (params?: { tenant_id?: string; limit?: number; offset?: number }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => [k, String(v)])
+    );
+    if (!query.has("limit")) {
+      query.set("limit", "100");
+    }
+    const result = await requestPaged<RBACRole>(`/rbac/roles?${query.toString()}`);
+    return result.items;
+  },
 
   getRole: (id: string) => request<RBACRole>(`/rbac/roles/${id}`),
 
@@ -2200,10 +2574,18 @@ export const rbacApi = {
     }),
 
   // Permissions
-  listPermissions: (params?: { limit?: number; offset?: number }) =>
-    request<RBACPermission[]>(
-      `/rbac/permissions${params ? `?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])).toString()}` : ""}`
-    ),
+  listPermissions: async (params?: { limit?: number; offset?: number }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => [k, String(v)])
+    );
+    if (!query.has("limit")) {
+      query.set("limit", "100");
+    }
+    const result = await requestPaged<RBACPermission>(`/rbac/permissions?${query.toString()}`);
+    return result.items;
+  },
 
   getPermission: (id: string) => request<RBACPermission>(`/rbac/permissions/${id}`),
 
@@ -2225,8 +2607,15 @@ export const rbacApi = {
     }),
 
   // Role ↔ Permission mapping
-  listRolePermissions: (roleId: string) =>
-    request<RBACPermission[]>(`/rbac/roles/${roleId}/permissions`),
+  listRolePermissions: async (roleId: string, limit: number = 100, offset?: number) => {
+    const query = new URLSearchParams();
+    query.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+      query.set("offset", String(Math.floor(offset)));
+    }
+    const result = await requestPaged<RBACPermission>(`/rbac/roles/${roleId}/permissions?${query.toString()}`);
+    return result.items;
+  },
 
   assignPermissionToRole: (roleId: string, permissionId: string) =>
     request<{ status: string; role_id: string; permission_id: string }>(
@@ -2246,16 +2635,24 @@ export const rbacApi = {
     ),
 
   // Role Assignments
-  listRoleAssignments: (params?: {
+  listRoleAssignments: async (params?: {
     tenant_id?: string;
     principal_type?: string;
     principal_id?: string;
     limit?: number;
     offset?: number;
-  }) =>
-    request<RBACRoleAssignment[]>(
-      `/rbac/assignments${params ? `?${new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])).toString()}` : ""}`
-    ),
+  }) => {
+    const query = new URLSearchParams(
+      Object.entries(params ?? {})
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => [k, String(v)])
+    );
+    if (!query.has("limit")) {
+      query.set("limit", "100");
+    }
+    const result = await requestPaged<RBACRoleAssignment>(`/rbac/assignments?${query.toString()}`);
+    return result.items;
+  },
 
   getRoleAssignment: (id: string) =>
     request<RBACRoleAssignment>(`/rbac/assignments/${id}`),
@@ -2403,7 +2800,15 @@ export const apiDocsApi = {
       body: JSON.stringify(data),
     }),
 
-  listShares: () => request<APIDocShare[]>("/api-docs/shares"),
+  listShares: async (limit: number = 50, offset?: number) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    const result = await requestPaged<APIDocShare>(`/api-docs/shares?${params.toString()}`);
+    return result.items;
+  },
 
   deleteShare: (id: string) =>
     request<{ status: string; id: string }>(`/api-docs/shares/${id}`, {

@@ -30,6 +30,8 @@ type Notice = {
 
 export default function WorkflowsPage() {
   const t = useTranslations("pages")
+  const tw = useTranslations("workflowsPage")
+  const tc = useTranslations("common")
   const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -68,7 +70,7 @@ export default function WorkflowsPage() {
       setCreateName("")
       setCreateDesc("")
       fetchData()
-      setNotice({ kind: "success", text: `Workflow "${workflowName}" created` })
+      setNotice({ kind: "success", text: tw("workflowCreated", { name: workflowName }) })
     } catch (err) {
       console.error("Failed to create workflow:", err)
       setNotice({ kind: "error", text: toUserErrorMessage(err) })
@@ -80,18 +82,22 @@ export default function WorkflowsPage() {
   const handleDelete = async (name: string) => {
     if (pendingDeleteWorkflow !== name) {
       setPendingDeleteWorkflow(name)
-      setNotice({ kind: "info", text: `Click delete again to confirm workflow "${name}" deletion` })
+      setNotice({ kind: "info", text: tw("confirmDeleteNotice", { name }) })
       return
     }
     try {
       await workflowsApi.delete(name)
       fetchData()
       setPendingDeleteWorkflow(null)
-      setNotice({ kind: "success", text: `Workflow "${name}" deleted` })
+      setNotice({ kind: "success", text: tw("workflowDeleted", { name }) })
     } catch (err) {
       console.error("Failed to delete workflow:", err)
       setNotice({ kind: "error", text: toUserErrorMessage(err) })
     }
+  }
+  const getWorkflowStatusLabel = (status: string) => {
+    if (status === "active") return tw("active")
+    return status
   }
 
   if (error) {
@@ -99,7 +105,7 @@ export default function WorkflowsPage() {
       <DashboardLayout>
         <Header title={t("workflows.title")} description={t("workflows.description")} />
         <div className="p-6">
-          <ErrorBanner error={error} title="Failed to Load Workflows" onRetry={fetchData} />
+          <ErrorBanner error={error} title={tw("failedToLoad")} onRetry={fetchData} />
         </div>
       </DashboardLayout>
     )
@@ -123,7 +129,7 @@ export default function WorkflowsPage() {
             <div className="flex items-center justify-between gap-3">
               <p>{notice.text}</p>
               <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
-                Dismiss
+                {tw("dismiss")}
               </Button>
             </div>
           </div>
@@ -133,30 +139,30 @@ export default function WorkflowsPage() {
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={fetchData} disabled={loading}>
               <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-              Refresh
+              {tc("refresh")}
             </Button>
           </div>
           <Button onClick={() => setIsCreateOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
-            Create Workflow
+            {tw("createWorkflow")}
           </Button>
         </div>
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-sm text-muted-foreground">Total Workflows</p>
+            <p className="text-sm text-muted-foreground">{tw("totalWorkflows")}</p>
             <p className="text-2xl font-semibold text-foreground">
               {loading ? "..." : workflows.length}
             </p>
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-sm text-muted-foreground">Active</p>
+            <p className="text-sm text-muted-foreground">{tw("active")}</p>
             <p className="text-2xl font-semibold text-success">
               {loading ? "..." : workflows.filter((w) => w.status === "active").length}
             </p>
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
-            <p className="text-sm text-muted-foreground">With Versions</p>
+            <p className="text-sm text-muted-foreground">{tw("withVersions")}</p>
             <p className="text-2xl font-semibold text-foreground">
               {loading ? "..." : workflows.filter((w) => w.current_version > 0).length}
             </p>
@@ -165,10 +171,10 @@ export default function WorkflowsPage() {
 
         {!loading && workflows.length === 0 ? (
           <EmptyState
-            title="No Workflows Yet"
-            description="Create a workflow to orchestrate multiple functions as a DAG."
+            title={tw("noWorkflows")}
+            description={tw("noWorkflowsDesc")}
             icon={GitBranch}
-            primaryAction={{ label: "Create Workflow", onClick: () => setIsCreateOpen(true) }}
+            primaryAction={{ label: tw("createWorkflow"), onClick: () => setIsCreateOpen(true) }}
           />
         ) : (
           <div className="rounded-lg border border-border bg-card">
@@ -176,19 +182,19 @@ export default function WorkflowsPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Name</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Description</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Status</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Version</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Updated</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Actions</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tw("colName")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tw("colDescription")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tw("colStatus")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tw("colVersion")}</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tw("colUpdated")}</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">{tw("colActions")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
                     <tr>
                       <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                        Loading...
+                        {tc("loading")}
                       </td>
                     </tr>
                   ) : (
@@ -207,11 +213,11 @@ export default function WorkflowsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant={wf.status === "active" ? "default" : "secondary"}>
-                          {wf.status}
+                          {getWorkflowStatusLabel(wf.status)}
                         </Badge>
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">
-                        {wf.current_version > 0 ? `v${wf.current_version}` : "-"}
+                        {wf.current_version > 0 ? tw("versionValue", { version: wf.current_version }) : "-"}
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">
                         {new Date(wf.updated_at).toLocaleDateString()}
@@ -220,7 +226,7 @@ export default function WorkflowsPage() {
                         {pendingDeleteWorkflow === wf.name ? (
                           <div className="flex items-center justify-end gap-1">
                             <Button variant="destructive" size="sm" onClick={() => handleDelete(wf.name)}>
-                              Confirm
+                              {tc("confirm")}
                             </Button>
                             <Button
                               variant="outline"
@@ -230,7 +236,7 @@ export default function WorkflowsPage() {
                                 setNotice(null)
                               }}
                             >
-                              Cancel
+                              {tc("cancel")}
                             </Button>
                           </div>
                         ) : (
@@ -255,32 +261,32 @@ export default function WorkflowsPage() {
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create Workflow</DialogTitle>
+              <DialogTitle>{tw("createWorkflow")}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="wf-name">Name</Label>
+                <Label htmlFor="wf-name">{tw("name")}</Label>
                 <Input
                   id="wf-name"
-                  placeholder="my-workflow"
+                  placeholder={tw("namePlaceholder")}
                   value={createName}
                   onChange={(e) => setCreateName(e.target.value)}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="wf-desc">Description</Label>
+                <Label htmlFor="wf-desc">{tw("description")}</Label>
                 <Textarea
                   id="wf-desc"
-                  placeholder="What does this workflow do?"
+                  placeholder={tw("descPlaceholder")}
                   value={createDesc}
                   onChange={(e) => setCreateDesc(e.target.value)}
                 />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => setIsCreateOpen(false)}>{tc("cancel")}</Button>
               <Button onClick={handleCreate} disabled={creating || !createName.trim()}>
-                {creating ? "Creating..." : "Create"}
+                {creating ? tw("creating") : tc("create")}
               </Button>
             </DialogFooter>
           </DialogContent>

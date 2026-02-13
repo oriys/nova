@@ -177,6 +177,8 @@ function downloadJSON(filename: string, payload: unknown) {
 
 export default function FunctionsPage() {
   const t = useTranslations("pages")
+  const tf = useTranslations("functionsPage")
+  const tc = useTranslations("common")
   const router = useRouter()
   const createOpenedByQueryRef = useRef(false)
   const importInputRef = useRef<HTMLInputElement | null>(null)
@@ -189,6 +191,7 @@ export default function FunctionsPage() {
   const [runtimeFilter, setRuntimeFilter] = useState<string>("all")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  const [totalFunctions, setTotalFunctions] = useState(0)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -263,13 +266,20 @@ export default function FunctionsPage() {
       setLoading(true)
       setError(null)
 
-      const [funcs, metrics, rts, routes] = await Promise.all([
-        functionsApi.list(debouncedSearchQuery),
+      const offset = (page - 1) * pageSize
+      const [funcPage, metrics, rts, routes] = await Promise.all([
+        functionsApi.listPage(
+          debouncedSearchQuery || undefined,
+          pageSize,
+          offset,
+          runtimeFilter === "all" ? undefined : runtimeFilter
+        ),
         metricsApi.global(),
         runtimesApi.list(),
         gatewayApi.listRoutes().catch(() => []),
       ])
 
+      const funcs = funcPage.items
       // Transform functions with their metrics
       const transformedFuncs = funcs.map((fn) => {
         const funcMetrics = metrics.functions?.[fn.id]
@@ -283,13 +293,14 @@ export default function FunctionsPage() {
 
       setFunctions(transformedFuncs)
       setRawFunctions(funcs)
+      setTotalFunctions(funcPage.total)
       setRuntimes(rts.map(transformRuntime))
       const nextHasInvocations = (metrics.invocations?.total || 0) > 0
       const nextHasGatewayRoutes = (routes?.length || 0) > 0
       setHasInvocations(nextHasInvocations)
       setHasGatewayRoutes(nextHasGatewayRoutes)
       syncOnboardingStateFromData({
-        hasFunctionCreated: transformedFuncs.length > 0,
+        hasFunctionCreated: funcPage.total > 0,
         hasFunctionInvoked: nextHasInvocations,
         hasGatewayRouteCreated: nextHasGatewayRoutes,
       })
@@ -299,7 +310,7 @@ export default function FunctionsPage() {
     } finally {
       setLoading(false)
     }
-  }, [debouncedSearchQuery])
+  }, [debouncedSearchQuery, page, pageSize, runtimeFilter])
 
   useEffect(() => {
     fetchData()
@@ -309,11 +320,9 @@ export default function FunctionsPage() {
     () =>
       functions.filter((fn) => {
         const matchesStatus = statusFilter === "all" || fn.status === statusFilter
-        const matchesRuntime =
-          runtimeFilter === "all" || fn.runtime.toLowerCase().includes(runtimeFilter.toLowerCase())
-        return matchesStatus && matchesRuntime
+        return matchesStatus
       }),
-    [functions, statusFilter, runtimeFilter]
+    [functions, statusFilter]
   )
 
   const uniqueRuntimes = useMemo(
@@ -350,12 +359,12 @@ export default function FunctionsPage() {
     setPage(1)
   }, [searchQuery, statusFilter, runtimeFilter])
 
-  const totalPages = Math.max(1, Math.ceil(filteredFunctions.length / pageSize))
+  const totalPages = Math.max(1, Math.ceil(totalFunctions / pageSize))
   useEffect(() => {
     if (page > totalPages) setPage(totalPages)
   }, [page, totalPages])
 
-  const pagedFunctions = filteredFunctions.slice((page - 1) * pageSize, page * pageSize)
+  const pagedFunctions = filteredFunctions
 
   const handleCreate = async (
     name: string,
@@ -443,7 +452,7 @@ export default function FunctionsPage() {
       const results = await Promise.allSettled(targets.map((name) => functionsApi.delete(name)))
       const failed = results.filter((result) => result.status === "rejected")
       if (failed.length > 0) {
-        setError(`Bulk delete completed with ${failed.length} failures. Please review and retry.`)
+        setError(tf("bulkDeleteFailures", { count: failed.length }))
       } else {
         setError(null)
       }
@@ -460,7 +469,7 @@ export default function FunctionsPage() {
       ? Array.from(selectedFunctionNames)
       : filteredFunctions.map((fn) => fn.name)
     if (targets.length === 0) {
-      setNotice({ kind: "info", text: "No functions available for export." })
+      setNotice({ kind: "info", text: tf("noFunctionsExport") })
       return
     }
 
@@ -476,7 +485,7 @@ export default function FunctionsPage() {
         .filter(Boolean)
 
       if (failedReads.length > 0) {
-        throw new Error(`Failed to read source code for: ${failedReads.join(", ")}`)
+        throw new Error(tf("failedReadSource", { names: failedReads.join(", ") }))
       }
 
       const rows: CreateFunctionRequest[] = []
@@ -492,7 +501,7 @@ export default function FunctionsPage() {
             ? (codeResult.value.source_code || fn.source_code || "")
             : ""
         if (!code.trim()) {
-          throw new Error(`Function ${name} has no source code and cannot be exported`)
+          throw new Error(tf("noSourceCode", { name }))
         }
 
         rows.push({
@@ -513,7 +522,7 @@ export default function FunctionsPage() {
       }
 
       if (rows.length === 0) {
-        setNotice({ kind: "info", text: "No functions available for export." })
+        setNotice({ kind: "info", text: tf("noFunctionsExport") })
         return
       }
 
@@ -525,7 +534,7 @@ export default function FunctionsPage() {
         count: rows.length,
         functions: rows,
       })
-      setNotice({ kind: "success", text: `Exported ${rows.length} function(s).` })
+      setNotice({ kind: "success", text: tf("exportedCount", { count: rows.length }) })
     } catch (err) {
       const message = toUserErrorMessage(err)
       setError(message)
@@ -552,15 +561,15 @@ export default function FunctionsPage() {
       const { items, invalid } = parseFunctionImportPayload(parsed)
 
       if (items.length === 0) {
-        setError("No valid function definitions were found in the import file.")
-        setNotice({ kind: "error", text: "Import failed: invalid file format or missing required fields." })
+        setError(tf("importInvalidFormat"))
+        setNotice({ kind: "error", text: tf("importInvalidFields") })
         return
       }
 
       const results = await Promise.allSettled(items.map((item) => functionsApi.create(item)))
       const failed = results.filter((result) => result.status === "rejected").length
       const succeeded = results.length - failed
-      const invalidSuffix = invalid > 0 ? `, skipped ${invalid} invalid record(s)` : ""
+      const invalidSuffix = invalid > 0 ? tf("importInvalidSuffix", { count: invalid }) : ""
 
       setSelectedFunctionNames(new Set())
       await fetchData()
@@ -568,12 +577,12 @@ export default function FunctionsPage() {
       if (failed > 0) {
         setNotice({
           kind: "error",
-          text: `Import finished: ${succeeded} succeeded, ${failed} failed${invalidSuffix}.`,
+          text: tf("importResult", { succeeded, failed, suffix: invalidSuffix }),
         })
       } else {
         setNotice({
           kind: "success",
-          text: `Import succeeded: ${succeeded} function(s)${invalidSuffix}.`,
+          text: tf("importSuccess", { count: succeeded, suffix: invalidSuffix }),
         })
       }
 
@@ -583,7 +592,7 @@ export default function FunctionsPage() {
     } catch (err) {
       const message = toUserErrorMessage(err)
       setError(message)
-      setNotice({ kind: "error", text: `Import failed: ${message}` })
+      setNotice({ kind: "error", text: tf("importFailed", { message }) })
     } finally {
       setIoBusy(false)
     }
@@ -591,11 +600,10 @@ export default function FunctionsPage() {
 
   const noFunctions =
     !loading &&
-    functions.length === 0 &&
+    totalFunctions === 0 &&
     !searchQuery.trim() &&
-    statusFilter === "all" &&
     runtimeFilter === "all"
-  const noFilterResult = !loading && functions.length > 0 && filteredFunctions.length === 0
+  const noFilterResult = !loading && statusFilter === "all" && totalFunctions === 0
 
   return (
     <DashboardLayout>
@@ -606,14 +614,14 @@ export default function FunctionsPage() {
 
       <div className="p-6 space-y-6">
         <OnboardingFlow
-          hasFunctionCreated={functions.length > 0}
+          hasFunctionCreated={totalFunctions > 0}
           hasFunctionInvoked={hasInvocations}
           hasGatewayRouteCreated={hasGatewayRoutes}
           onCreateFunction={() => setIsCreateOpen(true)}
         />
 
         {error && (
-          <ErrorBanner error={error} title="Operation Result" onRetry={fetchData} />
+          <ErrorBanner error={error} title={tf("operationResult")} onRetry={fetchData} />
         )}
 
         {notice && (
@@ -629,7 +637,7 @@ export default function FunctionsPage() {
             <div className="flex items-center justify-between gap-3">
               <p>{notice.text}</p>
               <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
-                Dismiss
+                {tf("dismiss")}
               </Button>
             </div>
           </div>
@@ -642,7 +650,7 @@ export default function FunctionsPage() {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Search functions..."
+                placeholder={tf("searchPlaceholder")}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
@@ -652,22 +660,22 @@ export default function FunctionsPage() {
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-32">
                 <Filter className="mr-2 h-4 w-4" />
-                <SelectValue placeholder="Status" />
+                <SelectValue placeholder={tf("statusPlaceholder")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
-                <SelectItem value="error">Error</SelectItem>
+                <SelectItem value="all">{tf("allStatus")}</SelectItem>
+                <SelectItem value="active">{tf("active")}</SelectItem>
+                <SelectItem value="inactive">{tf("inactive")}</SelectItem>
+                <SelectItem value="error">{tf("error")}</SelectItem>
               </SelectContent>
             </Select>
 
             <Select value={runtimeFilter} onValueChange={setRuntimeFilter}>
               <SelectTrigger className="w-36">
-                <SelectValue placeholder="Runtime" />
+                <SelectValue placeholder={tf("runtimePlaceholder")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Runtimes</SelectItem>
+                <SelectItem value="all">{tf("allRuntimes")}</SelectItem>
                 {uniqueRuntimes.map((runtime) => (
                   <SelectItem key={runtime} value={runtime}>
                     {runtime}
@@ -693,7 +701,7 @@ export default function FunctionsPage() {
               disabled={loading || ioBusy || filteredFunctions.length === 0}
             >
               <Download className="mr-2 h-4 w-4" />
-              {selectedFunctionNames.size > 0 ? `Export Selected (${selectedFunctionNames.size})` : "Export Filtered"}
+              {selectedFunctionNames.size > 0 ? tf("exportSelected", { count: selectedFunctionNames.size }) : tf("exportFiltered")}
             </Button>
             <Button
               variant="outline"
@@ -701,15 +709,15 @@ export default function FunctionsPage() {
               disabled={loading || ioBusy}
             >
               <Upload className="mr-2 h-4 w-4" />
-              Import JSON
+              {tf("importJson")}
             </Button>
             <Button variant="outline" onClick={fetchData} disabled={loading || ioBusy}>
               <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-              Refresh
+              {tc("refresh")}
             </Button>
             <Button onClick={() => setIsCreateOpen(true)} disabled={ioBusy}>
               <Plus className="mr-2 h-4 w-4" />
-              Create Function
+              {tf("createFunction")}
             </Button>
           </div>
         </div>
@@ -718,7 +726,7 @@ export default function FunctionsPage() {
           <div className="rounded-lg border border-border bg-card p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm text-muted-foreground">
-                Selected <span className="font-medium text-foreground">{selectedFunctionNames.size}</span> function(s)
+                {tf("selectedCount", { count: selectedFunctionNames.size })}
               </p>
               <div className="flex items-center gap-2">
                 {confirmBulkDelete ? (
@@ -729,7 +737,7 @@ export default function FunctionsPage() {
                       onClick={handleBulkDelete}
                       disabled={bulkDeleting}
                     >
-                      {bulkDeleting ? "Deleting..." : "Confirm Bulk Delete"}
+                      {bulkDeleting ? tf("deleting") : tf("confirmBulkDelete")}
                     </Button>
                     <Button
                       size="sm"
@@ -737,7 +745,7 @@ export default function FunctionsPage() {
                       onClick={() => setConfirmBulkDelete(false)}
                       disabled={bulkDeleting}
                     >
-                      Cancel
+                      {tc("cancel")}
                     </Button>
                   </>
                 ) : (
@@ -747,7 +755,7 @@ export default function FunctionsPage() {
                     onClick={handleBulkDelete}
                     disabled={bulkDeleting}
                   >
-                    Bulk Delete
+                    {tf("bulkDelete")}
                   </Button>
                 )}
                 <Button
@@ -756,7 +764,7 @@ export default function FunctionsPage() {
                   onClick={() => setSelectedFunctionNames(new Set())}
                   disabled={bulkDeleting}
                 >
-                  Clear Selection
+                  {tf("clearSelection")}
                 </Button>
               </div>
             </div>
@@ -766,17 +774,17 @@ export default function FunctionsPage() {
         {/* Functions Table */}
         {noFunctions ? (
           <EmptyState
-            title="No Functions Yet"
-            description="Create your first function, then invoke it or bind it to the gateway."
-            primaryAction={{ label: "Create Function", onClick: () => setIsCreateOpen(true) }}
-            secondaryAction={{ label: "View Docs", href: "/docs/installation" }}
+            title={tf("noFunctionsYet")}
+            description={tf("noFunctionsDescription")}
+            primaryAction={{ label: tf("createFunction"), onClick: () => setIsCreateOpen(true) }}
+            secondaryAction={{ label: tf("viewDocs"), href: "/docs/installation" }}
           />
         ) : noFilterResult ? (
           <EmptyState
-            title="No Matching Functions"
-            description="No results match the current filters. Try clearing them."
+            title={tf("noMatchingFunctions")}
+            description={tf("noMatchingDescription")}
             primaryAction={{
-              label: "Clear Filters",
+              label: tf("clearFilters"),
               onClick: () => {
                 setSearchQuery("")
                 setStatusFilter("all")
@@ -797,7 +805,7 @@ export default function FunctionsPage() {
 
         {!loading && filteredFunctions.length > 0 && (
           <Pagination
-            totalItems={filteredFunctions.length}
+            totalItems={totalFunctions}
             page={page}
             pageSize={pageSize}
             onPageChange={setPage}
@@ -805,7 +813,7 @@ export default function FunctionsPage() {
               setPageSize(size)
               setPage(1)
             }}
-            itemLabel="functions"
+            itemLabel={tf("itemLabel")}
             className="rounded-xl border border-border bg-card p-4"
           />
         )}

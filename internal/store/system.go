@@ -114,6 +114,14 @@ func (s *PostgresStore) ListRuntimes(ctx context.Context, limit, offset int) ([]
 	return runtimes, nil
 }
 
+func (s *PostgresStore) CountRuntimes(ctx context.Context) (int64, error) {
+	var total int64
+	if err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM runtimes`).Scan(&total); err != nil {
+		return 0, fmt.Errorf("count runtimes: %w", err)
+	}
+	return total, nil
+}
+
 func toJSON(v map[string]string) []byte {
 	if v == nil {
 		v = map[string]string{}

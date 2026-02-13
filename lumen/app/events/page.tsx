@@ -58,7 +58,7 @@ type Notice = {
 }
 
 export default function EventsPage() {
-  const t = useTranslations("pages")
+  const t = useTranslations("pages.events")
   const [topics, setTopics] = useState<EventTopic[]>([])
   const [functions, setFunctions] = useState<NovaFunction[]>([])
   const [workflows, setWorkflows] = useState<Workflow[]>([])
@@ -249,13 +249,13 @@ export default function EventsPage() {
     try {
       return JSON.parse(text)
     } catch {
-      throw new Error(`${fieldName} must be valid JSON`)
+      throw new Error(t("errors.mustBeValidJson", { fieldName }))
     }
   }
 
   const handleCreateTopic = async () => {
     if (!createTopicName.trim()) {
-      setNotice({ kind: "error", text: "Topic name is required" })
+      setNotice({ kind: "error", text: t("notices.topicNameRequired") })
       return
     }
     try {
@@ -270,7 +270,7 @@ export default function EventsPage() {
       setCreateTopicRetentionHours("168")
       await fetchBaseData()
       setSelectedTopicName(createTopicName.trim())
-      setNotice({ kind: "success", text: `Topic "${createTopicName.trim()}" created` })
+      setNotice({ kind: "success", text: t("notices.topicCreated", { name: createTopicName.trim() }) })
     } catch (err) {
       console.error("Failed to create topic:", err)
       setNotice({ kind: "error", text: toUserErrorMessage(err) })
@@ -282,7 +282,7 @@ export default function EventsPage() {
   const handleDeleteTopic = async (topicName: string) => {
     if (pendingTopicDelete !== topicName) {
       setPendingTopicDelete(topicName)
-      setNotice({ kind: "info", text: `Click delete again to confirm topic "${topicName}" deletion` })
+      setNotice({ kind: "info", text: t("notices.confirmTopicDelete", { name: topicName }) })
       return
     }
     try {
@@ -290,7 +290,7 @@ export default function EventsPage() {
       await eventsApi.deleteTopic(topicName)
       await fetchBaseData()
       setPendingTopicDelete(null)
-      setNotice({ kind: "success", text: `Topic "${topicName}" deleted` })
+      setNotice({ kind: "success", text: t("notices.topicDeleted", { name: topicName }) })
     } catch (err) {
       console.error("Failed to delete topic:", err)
       setNotice({ kind: "error", text: toUserErrorMessage(err) })
@@ -301,19 +301,19 @@ export default function EventsPage() {
 
   const handleCreateSubscription = async () => {
     if (!selectedTopicName) {
-      setNotice({ kind: "error", text: "Select a topic first" })
+      setNotice({ kind: "error", text: t("notices.selectTopicFirst") })
       return
     }
     if (!newSubName.trim()) {
-      setNotice({ kind: "error", text: "Subscription name is required" })
+      setNotice({ kind: "error", text: t("notices.subscriptionNameRequired") })
       return
     }
     if (newSubType === "function" && !newSubFunction) {
-      setNotice({ kind: "error", text: "Select a function" })
+      setNotice({ kind: "error", text: t("notices.selectFunction") })
       return
     }
     if (newSubType === "workflow" && !newSubWorkflow) {
-      setNotice({ kind: "error", text: "Select a workflow" })
+      setNotice({ kind: "error", text: t("notices.selectWorkflow") })
       return
     }
 
@@ -363,10 +363,10 @@ export default function EventsPage() {
       setNewSubMaxInflight("0")
       setNewSubRateLimitPerS("0")
       await fetchTopicDetails(selectedTopicName)
-      setNotice({ kind: "success", text: `Subscription "${newSubName.trim()}" created` })
+      setNotice({ kind: "success", text: t("notices.subscriptionCreated", { name: newSubName.trim() }) })
     } catch (err) {
       console.error("Failed to create subscription:", err)
-      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to create subscription" })
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : t("errors.createSubscriptionFailed") })
     } finally {
       setBusy(false)
     }
@@ -377,10 +377,16 @@ export default function EventsPage() {
       setBusy(true)
       await eventsApi.updateSubscription(sub.id, { enabled: !sub.enabled })
       await fetchTopicDetails(selectedTopicName)
-      setNotice({ kind: "success", text: `Subscription "${sub.name}" ${sub.enabled ? "disabled" : "enabled"}` })
+      setNotice({
+        kind: "success",
+        text: t("notices.subscriptionToggled", {
+          name: sub.name,
+          status: sub.enabled ? t("labels.disabled") : t("labels.enabled"),
+        }),
+      })
     } catch (err) {
       console.error("Failed to update subscription:", err)
-      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to update subscription" })
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : t("errors.updateSubscriptionFailed") })
     } finally {
       setBusy(false)
     }
@@ -389,7 +395,7 @@ export default function EventsPage() {
   const handleDeleteSubscription = async (sub: EventSubscription) => {
     if (pendingSubscriptionDelete !== sub.id) {
       setPendingSubscriptionDelete(sub.id)
-      setNotice({ kind: "info", text: `Click delete again to confirm subscription "${sub.name}" deletion` })
+      setNotice({ kind: "info", text: t("notices.confirmSubscriptionDelete", { name: sub.name }) })
       return
     }
     try {
@@ -397,10 +403,10 @@ export default function EventsPage() {
       await eventsApi.deleteSubscription(sub.id)
       await fetchTopicDetails(selectedTopicName)
       setPendingSubscriptionDelete(null)
-      setNotice({ kind: "success", text: `Subscription "${sub.name}" deleted` })
+      setNotice({ kind: "success", text: t("notices.subscriptionDeleted", { name: sub.name }) })
     } catch (err) {
       console.error("Failed to delete subscription:", err)
-      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to delete subscription" })
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : t("errors.deleteSubscriptionFailed") })
     } finally {
       setBusy(false)
     }
@@ -408,7 +414,7 @@ export default function EventsPage() {
 
   const handleSaveSubscriptionFlow = async () => {
     if (!selectedSubscriptionID) {
-      setNotice({ kind: "error", text: "Select a subscription first" })
+      setNotice({ kind: "error", text: t("notices.selectSubscriptionFirst") })
       return
     }
     try {
@@ -418,10 +424,10 @@ export default function EventsPage() {
         rate_limit_per_sec: Math.max(0, Number(editSubRateLimitPerS) || 0),
       })
       await fetchTopicDetails(selectedTopicName)
-      setNotice({ kind: "success", text: "Subscription flow controls updated" })
+      setNotice({ kind: "success", text: t("notices.subscriptionFlowUpdated") })
     } catch (err) {
       console.error("Failed to update subscription flow controls:", err)
-      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to update subscription flow controls" })
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : t("errors.updateSubscriptionFlowFailed") })
     } finally {
       setBusy(false)
     }
@@ -429,13 +435,13 @@ export default function EventsPage() {
 
   const handlePublish = async () => {
     if (!selectedTopicName) {
-      setNotice({ kind: "error", text: "Select a topic first" })
+      setNotice({ kind: "error", text: t("notices.selectTopicFirst") })
       return
     }
     try {
       setBusy(true)
-      const payload = parseJSONText(publishPayload, "Payload")
-      const headers = parseJSONText(publishHeaders, "Headers")
+      const payload = parseJSONText(publishPayload, t("fields.payloadJson"))
+      const headers = parseJSONText(publishHeaders, t("fields.headersJson"))
       const result = await eventsApi.publish(selectedTopicName, {
         payload,
         headers,
@@ -445,10 +451,13 @@ export default function EventsPage() {
       if (selectedSubscriptionID) {
         await fetchDeliveries(selectedSubscriptionID)
       }
-      setNotice({ kind: "success", text: `Published message #${result.message.sequence} with ${result.deliveries} delivery fanout` })
+      setNotice({
+        kind: "success",
+        text: t("notices.publishSuccess", { sequence: result.message.sequence, deliveries: result.deliveries }),
+      })
     } catch (err) {
       console.error("Failed to publish event:", err)
-      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to publish event" })
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : t("errors.publishFailed") })
     } finally {
       setBusy(false)
     }
@@ -456,13 +465,13 @@ export default function EventsPage() {
 
   const handleEnqueueOutbox = async () => {
     if (!selectedTopicName) {
-      setNotice({ kind: "error", text: "Select a topic first" })
+      setNotice({ kind: "error", text: t("notices.selectTopicFirst") })
       return
     }
     try {
       setBusy(true)
-      const payload = parseJSONText(publishPayload, "Payload")
-      const headers = parseJSONText(publishHeaders, "Headers")
+      const payload = parseJSONText(publishPayload, t("fields.payloadJson"))
+      const headers = parseJSONText(publishHeaders, t("fields.headersJson"))
       const job = await eventsApi.enqueueOutbox(selectedTopicName, {
         payload,
         headers,
@@ -472,10 +481,10 @@ export default function EventsPage() {
         backoff_max_ms: Math.max(1, Number(outboxBackoffMax) || 60000),
       })
       await fetchTopicDetails(selectedTopicName)
-      setNotice({ kind: "success", text: `Outbox enqueued: ${job.id}` })
+      setNotice({ kind: "success", text: t("notices.outboxEnqueued", { id: job.id }) })
     } catch (err) {
       console.error("Failed to enqueue outbox event:", err)
-      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to enqueue outbox event" })
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : t("errors.enqueueOutboxFailed") })
     } finally {
       setBusy(false)
     }
@@ -483,7 +492,7 @@ export default function EventsPage() {
 
   const handleReplay = async () => {
     if (!selectedSubscriptionID) {
-      setNotice({ kind: "error", text: "Select a subscription first" })
+      setNotice({ kind: "error", text: t("notices.selectSubscriptionFirst") })
       return
     }
 
@@ -500,10 +509,10 @@ export default function EventsPage() {
       )
       await fetchTopicDetails(selectedTopicName)
       await fetchDeliveries(selectedSubscriptionID)
-      setNotice({ kind: "success", text: `Replay queued ${response.queued} deliveries` })
+      setNotice({ kind: "success", text: t("notices.replayQueued", { queued: response.queued }) })
     } catch (err) {
       console.error("Failed to replay:", err)
-      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to replay" })
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : t("errors.replayFailed") })
     } finally {
       setBusy(false)
     }
@@ -511,7 +520,7 @@ export default function EventsPage() {
 
   const handleSeek = async () => {
     if (!selectedSubscriptionID) {
-      setNotice({ kind: "error", text: "Select a subscription first" })
+      setNotice({ kind: "error", text: t("notices.selectSubscriptionFirst") })
       return
     }
     try {
@@ -523,10 +532,10 @@ export default function EventsPage() {
       )
       await fetchTopicDetails(selectedTopicName)
       await fetchDeliveries(selectedSubscriptionID)
-      setNotice({ kind: "success", text: `Cursor moved. Next replay/invoke starts from sequence ${result.from_sequence}` })
+      setNotice({ kind: "success", text: t("notices.cursorMoved", { sequence: result.from_sequence }) })
     } catch (err) {
       console.error("Failed to seek subscription cursor:", err)
-      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to seek subscription cursor" })
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : t("errors.seekCursorFailed") })
     } finally {
       setBusy(false)
     }
@@ -537,10 +546,10 @@ export default function EventsPage() {
       setBusy(true)
       await eventsApi.retryDelivery(deliveryID)
       await fetchDeliveries(selectedSubscriptionID)
-      setNotice({ kind: "success", text: "Delivery retry queued" })
+      setNotice({ kind: "success", text: t("notices.deliveryRetryQueued") })
     } catch (err) {
       console.error("Failed to retry delivery:", err)
-      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to retry delivery" })
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : t("errors.retryDeliveryFailed") })
     } finally {
       setBusy(false)
     }
@@ -551,10 +560,10 @@ export default function EventsPage() {
       setBusy(true)
       await eventsApi.retryOutbox(outboxID)
       await fetchTopicDetails(selectedTopicName)
-      setNotice({ kind: "success", text: "Outbox retry queued" })
+      setNotice({ kind: "success", text: t("notices.outboxRetryQueued") })
     } catch (err) {
       console.error("Failed to retry outbox:", err)
-      setNotice({ kind: "error", text: err instanceof Error ? err.message : "Failed to retry outbox" })
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : t("errors.retryOutboxFailed") })
     } finally {
       setBusy(false)
     }
@@ -562,11 +571,11 @@ export default function EventsPage() {
 
   return (
     <DashboardLayout>
-      <Header title={t("events.title")} description={t("events.description")} />
+      <Header title={t("title")} description={t("description")} />
 
       <div className="p-6 space-y-6">
         {error && (
-          <ErrorBanner error={error} title="Failed to Load Event Bus" onRetry={fetchBaseData} />
+          <ErrorBanner error={error} title={t("titles.loadError")} onRetry={fetchBaseData} />
         )}
 
         {notice && (
@@ -582,7 +591,7 @@ export default function EventsPage() {
             <div className="flex items-center justify-between gap-3">
               <p>{notice.text}</p>
               <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
-                Dismiss
+                {t("buttons.dismiss")}
               </Button>
             </div>
           </div>
@@ -591,30 +600,30 @@ export default function EventsPage() {
         <div className="flex items-center justify-between">
           <Button variant="outline" onClick={fetchBaseData} disabled={loading || busy}>
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            Refresh
+            {t("buttons.refresh")}
           </Button>
         </div>
 
         <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-sm font-medium text-foreground mb-3">Create Topic</p>
+          <p className="text-sm font-medium text-foreground mb-3">{t("titles.createTopic")}</p>
           <div className="grid gap-3 md:grid-cols-4">
             <div className="space-y-1">
-              <Label>Topic Name</Label>
+              <Label>{t("fields.topicName")}</Label>
               <Input
-                placeholder="orders.created"
+                placeholder={t("placeholders.topicName")}
                 value={createTopicName}
                 onChange={(e) => setCreateTopicName(e.target.value)}
               />
             </div>
             <div className="space-y-1">
-              <Label>Description</Label>
+              <Label>{t("fields.description")}</Label>
               <Input
                 value={createTopicDesc}
                 onChange={(e) => setCreateTopicDesc(e.target.value)}
               />
             </div>
             <div className="space-y-1">
-              <Label>Retention (hours)</Label>
+              <Label>{t("fields.retentionHours")}</Label>
               <Input
                 type="number"
                 min={1}
@@ -625,7 +634,7 @@ export default function EventsPage() {
             <div className="flex items-end">
               <Button onClick={handleCreateTopic} disabled={busy || !createTopicName.trim()}>
                 <Plus className="mr-2 h-4 w-4" />
-                Create Topic
+                {t("buttons.createTopic")}
               </Button>
             </div>
           </div>
@@ -634,15 +643,15 @@ export default function EventsPage() {
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="rounded-lg border border-border bg-card">
             <div className="border-b border-border px-4 py-3">
-              <p className="text-sm font-medium text-foreground">Topics</p>
+              <p className="text-sm font-medium text-foreground">{t("titles.topics")}</p>
             </div>
             <div className="max-h-[520px] overflow-auto">
               {topics.length === 0 ? (
                 <div className="p-4">
                   <EmptyState
                     compact
-                    title="No Topics Yet"
-                    description="Create a topic first, then configure subscriptions and delivery policies."
+                    title={t("empty.noTopicsTitle")}
+                    description={t("empty.noTopicsDescription")}
                   />
                 </div>
               ) : (
@@ -659,7 +668,9 @@ export default function EventsPage() {
                           <div>
                             <p className="font-medium text-foreground">{topic.name}</p>
                             <p className="text-xs text-muted-foreground mt-1">{topic.description || "-"}</p>
-                            <p className="text-xs text-muted-foreground mt-1">Retention: {topic.retention_hours}h</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {t("texts.retention", { hours: topic.retention_hours })}
+                            </p>
                           </div>
                           {pendingTopicDelete === topic.name ? (
                             <div className="flex items-center gap-1">
@@ -672,7 +683,7 @@ export default function EventsPage() {
                                 }}
                                 disabled={busy}
                               >
-                                Confirm
+                                {t("buttons.confirm")}
                               </Button>
                               <Button
                                 size="sm"
@@ -684,7 +695,7 @@ export default function EventsPage() {
                                 }}
                                 disabled={busy}
                               >
-                                Cancel
+                                {t("buttons.cancel")}
                               </Button>
                             </div>
                           ) : (
@@ -712,43 +723,43 @@ export default function EventsPage() {
           <div className="space-y-6 lg:col-span-2">
             {!selectedTopic ? (
               <EmptyState
-                title="Select a Topic"
-                description="Choose a topic on the left before publishing messages or managing subscriptions."
+                title={t("empty.selectTopicTitle")}
+                description={t("empty.selectTopicDescription")}
                 compact
               />
             ) : (
               <>
                 <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-                  <p className="text-sm font-medium text-foreground">Publish to {selectedTopic.name}</p>
+                  <p className="text-sm font-medium text-foreground">{t("titles.publishTo", { topic: selectedTopic.name })}</p>
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-2 md:col-span-2">
-                      <Label>Payload JSON</Label>
+                      <Label>{t("fields.payloadJson")}</Label>
                       <Textarea
                         rows={6}
                         value={publishPayload}
                         onChange={(e) => setPublishPayload(e.target.value)}
-                        placeholder='{"order_id": "123", "amount": 10.5}'
+                        placeholder={t("placeholders.payloadJson")}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Headers JSON</Label>
+                      <Label>{t("fields.headersJson")}</Label>
                       <Textarea
                         rows={3}
                         value={publishHeaders}
                         onChange={(e) => setPublishHeaders(e.target.value)}
-                        placeholder='{"source": "api"}'
+                        placeholder={t("placeholders.headersJson")}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Ordering Key</Label>
+                      <Label>{t("fields.orderingKey")}</Label>
                       <Input
                         value={publishOrderingKey}
                         onChange={(e) => setPublishOrderingKey(e.target.value)}
-                        placeholder="customer-42"
+                        placeholder={t("placeholders.orderingKey")}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Outbox Max Attempts</Label>
+                      <Label>{t("fields.outboxMaxAttempts")}</Label>
                       <Input
                         type="number"
                         min={1}
@@ -757,7 +768,7 @@ export default function EventsPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Outbox Backoff Base (ms)</Label>
+                      <Label>{t("fields.outboxBackoffBaseMs")}</Label>
                       <Input
                         type="number"
                         min={1}
@@ -766,7 +777,7 @@ export default function EventsPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Outbox Backoff Max (ms)</Label>
+                      <Label>{t("fields.outboxBackoffMaxMs")}</Label>
                       <Input
                         type="number"
                         min={1}
@@ -778,51 +789,51 @@ export default function EventsPage() {
                   <div className="flex flex-wrap gap-2">
                     <Button onClick={handlePublish} disabled={busy}>
                       <Send className="mr-2 h-4 w-4" />
-                      Publish Event
+                      {t("buttons.publishEvent")}
                     </Button>
                     <Button variant="outline" onClick={handleEnqueueOutbox} disabled={busy}>
-                      Enqueue Outbox
+                      {t("buttons.enqueueOutbox")}
                     </Button>
                   </div>
                 </div>
 
                 <div className="rounded-lg border border-border bg-card p-4 space-y-4">
-                  <p className="text-sm font-medium text-foreground">Subscriptions</p>
+                  <p className="text-sm font-medium text-foreground">{t("titles.subscriptions")}</p>
 
                   <div className="space-y-3">
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-12">
                       <div className="space-y-1 xl:col-span-4">
-                        <Label>Name</Label>
+                        <Label>{t("fields.name")}</Label>
                         <Input
                           value={newSubName}
                           onChange={(e) => setNewSubName(e.target.value)}
                         />
                       </div>
                       <div className="space-y-1 xl:col-span-4">
-                        <Label>Consumer Group</Label>
+                        <Label>{t("fields.consumerGroup")}</Label>
                         <Input
                           value={newSubGroup}
                           onChange={(e) => setNewSubGroup(e.target.value)}
                         />
                       </div>
                       <div className="space-y-1 xl:col-span-2">
-                        <Label>Type</Label>
+                        <Label>{t("fields.type")}</Label>
                         <Select value={newSubType} onValueChange={(v) => setNewSubType(v as "function" | "workflow")}>
                           <SelectTrigger className="w-full">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="function">Function</SelectItem>
-                            <SelectItem value="workflow">Workflow</SelectItem>
+                            <SelectItem value="function">{t("fields.function")}</SelectItem>
+                            <SelectItem value="workflow">{t("fields.workflow")}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       {newSubType === "function" ? (
                         <div className="space-y-1 xl:col-span-2">
-                          <Label>Function</Label>
+                          <Label>{t("fields.function")}</Label>
                           <Select value={newSubFunction} onValueChange={setNewSubFunction}>
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select function" />
+                              <SelectValue placeholder={t("placeholders.selectFunction")} />
                             </SelectTrigger>
                             <SelectContent>
                               {functions.map((fn) => (
@@ -835,10 +846,10 @@ export default function EventsPage() {
                         </div>
                       ) : (
                         <div className="space-y-1 xl:col-span-2">
-                          <Label>Workflow</Label>
+                          <Label>{t("fields.workflow")}</Label>
                           <Select value={newSubWorkflow} onValueChange={setNewSubWorkflow}>
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select workflow" />
+                              <SelectValue placeholder={t("placeholders.selectWorkflow")} />
                             </SelectTrigger>
                             <SelectContent>
                               {workflows.map((wf) => (
@@ -854,7 +865,7 @@ export default function EventsPage() {
 
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-12">
                       <div className="space-y-1 xl:col-span-2">
-                        <Label className="flex min-h-[2.5rem] items-end leading-tight">Max Attempts</Label>
+                        <Label className="flex min-h-[2.5rem] items-end leading-tight">{t("fields.maxAttempts")}</Label>
                         <Input
                           type="number"
                           min={1}
@@ -863,7 +874,7 @@ export default function EventsPage() {
                         />
                       </div>
                       <div className="space-y-1 xl:col-span-3">
-                        <Label className="flex min-h-[2.5rem] items-end leading-tight">Backoff Base (ms)</Label>
+                        <Label className="flex min-h-[2.5rem] items-end leading-tight">{t("fields.backoffBaseMs")}</Label>
                         <Input
                           type="number"
                           min={1}
@@ -872,7 +883,7 @@ export default function EventsPage() {
                         />
                       </div>
                       <div className="space-y-1 xl:col-span-3">
-                        <Label className="flex min-h-[2.5rem] items-end leading-tight">Backoff Max (ms)</Label>
+                        <Label className="flex min-h-[2.5rem] items-end leading-tight">{t("fields.backoffMaxMs")}</Label>
                         <Input
                           type="number"
                           min={1}
@@ -881,7 +892,7 @@ export default function EventsPage() {
                         />
                       </div>
                       <div className="space-y-1 xl:col-span-2">
-                        <Label className="flex min-h-[2.5rem] items-end leading-tight">Max Inflight (0=unlimited)</Label>
+                        <Label className="flex min-h-[2.5rem] items-end leading-tight">{t("fields.maxInflightUnlimited")}</Label>
                         <Input
                           type="number"
                           min={0}
@@ -890,7 +901,7 @@ export default function EventsPage() {
                         />
                       </div>
                       <div className="space-y-1 xl:col-span-2">
-                        <Label className="flex min-h-[2.5rem] items-end leading-tight">Rate Limit/s (0=unlimited)</Label>
+                        <Label className="flex min-h-[2.5rem] items-end leading-tight">{t("fields.rateLimitPerSecUnlimited")}</Label>
                         <Input
                           type="number"
                           min={0}
@@ -902,18 +913,18 @@ export default function EventsPage() {
 
                     {newSubType === "workflow" && (
                       <div className="space-y-3 rounded-md border border-dashed border-border bg-muted/20 p-3">
-                        <p className="text-xs font-medium text-muted-foreground">Webhook (optional)</p>
+                        <p className="text-xs font-medium text-muted-foreground">{t("fields.webhookOptional")}</p>
                         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-12">
                           <div className="space-y-1 xl:col-span-5">
-                            <Label>Webhook URL</Label>
+                            <Label>{t("fields.webhookUrl")}</Label>
                             <Input
-                              placeholder="https://..."
+                              placeholder={t("placeholders.webhookUrl")}
                               value={newSubWebhookURL}
                               onChange={(e) => setNewSubWebhookURL(e.target.value)}
                             />
                           </div>
                           <div className="space-y-1 xl:col-span-2">
-                            <Label>Method</Label>
+                            <Label>{t("fields.method")}</Label>
                             <Select value={newSubWebhookMethod} onValueChange={setNewSubWebhookMethod}>
                               <SelectTrigger className="w-full">
                                 <SelectValue />
@@ -926,7 +937,7 @@ export default function EventsPage() {
                             </Select>
                           </div>
                           <div className="space-y-1 xl:col-span-2">
-                            <Label>Timeout (ms)</Label>
+                            <Label>{t("fields.timeoutMs")}</Label>
                             <Input
                               type="number"
                               min={1000}
@@ -935,19 +946,19 @@ export default function EventsPage() {
                             />
                           </div>
                           <div className="space-y-1 xl:col-span-3">
-                            <Label>Signing Secret</Label>
+                            <Label>{t("fields.signingSecret")}</Label>
                             <Input
                               value={newSubWebhookSecret}
                               onChange={(e) => setNewSubWebhookSecret(e.target.value)}
                             />
                           </div>
                           <div className="space-y-1 xl:col-span-12">
-                            <Label>Headers JSON</Label>
+                            <Label>{t("fields.headersJson")}</Label>
                             <Textarea
                               rows={3}
                               value={newSubWebhookHeaders}
                               onChange={(e) => setNewSubWebhookHeaders(e.target.value)}
-                              placeholder='{"X-Source":"nova"}'
+                              placeholder={t("placeholders.webhookHeadersJson")}
                             />
                           </div>
                         </div>
@@ -957,7 +968,7 @@ export default function EventsPage() {
                     <div className="flex justify-end">
                       <Button onClick={handleCreateSubscription} disabled={busy || !newSubName.trim() || (newSubType === "function" ? !newSubFunction : !newSubWorkflow)}>
                         <Plus className="mr-2 h-4 w-4" />
-                        Add Subscription
+                        {t("buttons.addSubscription")}
                       </Button>
                     </div>
                   </div>
@@ -966,21 +977,21 @@ export default function EventsPage() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-border">
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Name</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Type</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Target</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Cursor</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Lag</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Backlog</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Flow</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Status</th>
-                          <th className="px-3 py-2 text-right font-medium text-muted-foreground">Actions</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.name")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.type")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.target")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.cursor")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.lag")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.backlog")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.flow")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.status")}</th>
+                          <th className="px-3 py-2 text-right font-medium text-muted-foreground">{t("fields.actions")}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {subscriptions.length === 0 ? (
                           <tr>
-                            <td colSpan={9} className="px-3 py-4 text-center text-muted-foreground">No subscriptions.</td>
+                            <td colSpan={9} className="px-3 py-4 text-center text-muted-foreground">{t("empty.noSubscriptions")}</td>
                           </tr>
                         ) : (
                           subscriptions.map((sub) => {
@@ -999,7 +1010,7 @@ export default function EventsPage() {
                                   </button>
                                 </td>
                                 <td className="px-3 py-2">
-                                  <Badge variant="outline">{sub.type || "function"}</Badge>
+                                  <Badge variant="outline">{sub.type ? t(`types.${sub.type}`) : t("types.function")}</Badge>
                                 </td>
                                 <td className="px-3 py-2 text-muted-foreground text-xs max-w-[220px] truncate" title={sub.type === "workflow" ? (sub.webhook_url || sub.workflow_name) : sub.function_name}>
                                   {sub.type === "workflow" ? (sub.workflow_name || "-") : sub.function_name}
@@ -1008,14 +1019,17 @@ export default function EventsPage() {
                                 <td className="px-3 py-2 text-muted-foreground">{sub.last_acked_sequence}</td>
                                 <td className="px-3 py-2 text-muted-foreground">{sub.lag}</td>
                                 <td className="px-3 py-2 text-muted-foreground">
-                                  r{sub.inflight} / q{sub.queued} / dlq{sub.dlq}
+                                  {t("texts.subscriptionBacklog", { inflight: sub.inflight, queued: sub.queued, dlq: sub.dlq })}
                                 </td>
                                 <td className="px-3 py-2 text-muted-foreground">
-                                  inflight {sub.max_inflight || "unlimited"} · rate {sub.rate_limit_per_sec || "unlimited"}/s
+                                  {t("texts.subscriptionFlow", {
+                                    inflight: sub.max_inflight || t("labels.unlimited"),
+                                    rate: sub.rate_limit_per_sec || t("labels.unlimited"),
+                                  })}
                                 </td>
                                 <td className="px-3 py-2">
                                   <Badge variant={sub.enabled ? "default" : "secondary"}>
-                                    {sub.enabled ? "enabled" : "disabled"}
+                                    {sub.enabled ? t("labels.enabled") : t("labels.disabled")}
                                   </Badge>
                                 </td>
                                 <td className="px-3 py-2">
@@ -1026,7 +1040,7 @@ export default function EventsPage() {
                                       onClick={() => handleToggleSubscription(sub)}
                                       disabled={busy}
                                     >
-                                      {sub.enabled ? "Disable" : "Enable"}
+                                      {sub.enabled ? t("buttons.disable") : t("buttons.enable")}
                                     </Button>
                                     {pendingSubscriptionDelete === sub.id ? (
                                       <div className="flex items-center gap-1">
@@ -1036,7 +1050,7 @@ export default function EventsPage() {
                                           onClick={() => handleDeleteSubscription(sub)}
                                           disabled={busy}
                                         >
-                                          Confirm
+                                          {t("buttons.confirm")}
                                         </Button>
                                         <Button
                                           size="sm"
@@ -1047,7 +1061,7 @@ export default function EventsPage() {
                                           }}
                                           disabled={busy}
                                         >
-                                          Cancel
+                                          {t("buttons.cancel")}
                                         </Button>
                                       </div>
                                     ) : (
@@ -1074,23 +1088,29 @@ export default function EventsPage() {
                 <div className="rounded-lg border border-border bg-card p-4 space-y-4">
                   <div className="space-y-3">
                     <div>
-                      <p className="text-sm font-medium text-foreground">Deliveries</p>
+                      <p className="text-sm font-medium text-foreground">{t("titles.deliveries")}</p>
                       <p className="text-xs text-muted-foreground">
-                        {selectedSubscription ? `Subscription: ${selectedSubscription.name}` : "Select a subscription"}
+                        {selectedSubscription
+                          ? t("texts.selectedSubscription", { name: selectedSubscription.name })
+                          : t("empty.selectSubscription")}
                       </p>
                       {selectedSubscription && (
                         <p className="text-xs text-muted-foreground mt-1">
-                          Cursor {selectedSubscription.last_acked_sequence} · lag {selectedSubscription.lag} · oldest unacked {selectedSubscription.oldest_unacked_age_s ?? 0}s
+                          {t("texts.deliveryCursorSummary", {
+                            cursor: selectedSubscription.last_acked_sequence,
+                            lag: selectedSubscription.lag,
+                            oldest: selectedSubscription.oldest_unacked_age_s ?? 0,
+                          })}
                         </p>
                       )}
                     </div>
 
                     <div className="grid gap-3 xl:grid-cols-3">
                       <div className="space-y-2 rounded-md border border-border p-3">
-                        <p className="text-xs font-medium text-muted-foreground">Flow Controls</p>
+                        <p className="text-xs font-medium text-muted-foreground">{t("titles.flowControls")}</p>
                         <div className="grid gap-2 sm:grid-cols-2">
                           <div className="space-y-1">
-                            <Label>Max Inflight</Label>
+                            <Label>{t("fields.maxInflight")}</Label>
                             <Input
                               type="number"
                               min={0}
@@ -1100,7 +1120,7 @@ export default function EventsPage() {
                             />
                           </div>
                           <div className="space-y-1">
-                            <Label>Rate/s</Label>
+                            <Label>{t("fields.ratePerSecond")}</Label>
                             <Input
                               type="number"
                               min={0}
@@ -1111,14 +1131,14 @@ export default function EventsPage() {
                           </div>
                         </div>
                         <Button className="w-full" variant="outline" onClick={handleSaveSubscriptionFlow} disabled={busy || !selectedSubscriptionID}>
-                          Save Flow
+                          {t("buttons.saveFlow")}
                         </Button>
                       </div>
 
                       <div className="space-y-2 rounded-md border border-border p-3">
-                        <p className="text-xs font-medium text-muted-foreground">Seek Cursor</p>
+                        <p className="text-xs font-medium text-muted-foreground">{t("titles.seekCursor")}</p>
                         <div className="space-y-1">
-                          <Label>Seek Sequence</Label>
+                          <Label>{t("fields.seekSequence")}</Label>
                           <Input
                             type="number"
                             min={1}
@@ -1128,7 +1148,7 @@ export default function EventsPage() {
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label>Seek Time (RFC3339)</Label>
+                          <Label>{t("fields.seekTimeRfc3339")}</Label>
                           <Input
                             type="text"
                             value={seekFromTime}
@@ -1137,15 +1157,15 @@ export default function EventsPage() {
                           />
                         </div>
                         <Button className="w-full" variant="outline" onClick={handleSeek} disabled={busy || !selectedSubscriptionID}>
-                          Seek Cursor
+                          {t("buttons.seekCursor")}
                         </Button>
                       </div>
 
                       <div className="space-y-2 rounded-md border border-border p-3">
-                        <p className="text-xs font-medium text-muted-foreground">Replay</p>
+                        <p className="text-xs font-medium text-muted-foreground">{t("titles.replay")}</p>
                         <div className="grid gap-2 sm:grid-cols-2">
                           <div className="space-y-1">
-                            <Label>From Sequence</Label>
+                            <Label>{t("fields.fromSequence")}</Label>
                             <Input
                               type="number"
                               min={1}
@@ -1155,7 +1175,7 @@ export default function EventsPage() {
                             />
                           </div>
                           <div className="space-y-1">
-                            <Label>Limit</Label>
+                            <Label>{t("fields.limit")}</Label>
                             <Input
                               type="number"
                               min={1}
@@ -1166,7 +1186,7 @@ export default function EventsPage() {
                           </div>
                         </div>
                         <div className="space-y-1">
-                          <Label>From Time (RFC3339)</Label>
+                          <Label>{t("fields.fromTimeRfc3339")}</Label>
                           <Input
                             type="text"
                             value={replayFromTime}
@@ -1175,20 +1195,20 @@ export default function EventsPage() {
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label>Cursor Reset</Label>
+                          <Label>{t("fields.cursorReset")}</Label>
                           <Select value={replayResetCursor} onValueChange={setReplayResetCursor}>
                             <SelectTrigger className="w-full" disabled={!selectedSubscriptionID}>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="true">Replay + reset cursor</SelectItem>
-                              <SelectItem value="false">Replay only</SelectItem>
+                              <SelectItem value="true">{t("options.replayResetCursor")}</SelectItem>
+                              <SelectItem value="false">{t("options.replayOnly")}</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
                         <Button className="w-full" variant="outline" onClick={handleReplay} disabled={busy || !selectedSubscriptionID}>
                           <RotateCcw className="mr-2 h-4 w-4" />
-                          Replay
+                          {t("buttons.replay")}
                         </Button>
                       </div>
                     </div>
@@ -1198,19 +1218,19 @@ export default function EventsPage() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-border">
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Seq</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Key</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Status</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Attempt</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Updated</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Error</th>
-                          <th className="px-3 py-2 text-right font-medium text-muted-foreground">Actions</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.seq")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.key")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.status")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.attempt")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.updated")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.error")}</th>
+                          <th className="px-3 py-2 text-right font-medium text-muted-foreground">{t("fields.actions")}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {deliveries.length === 0 ? (
                           <tr>
-                            <td colSpan={7} className="px-3 py-4 text-center text-muted-foreground">No deliveries yet.</td>
+                            <td colSpan={7} className="px-3 py-4 text-center text-muted-foreground">{t("empty.noDeliveries")}</td>
                           </tr>
                         ) : (
                           deliveries.map((delivery) => (
@@ -1218,7 +1238,7 @@ export default function EventsPage() {
                               <td className="px-3 py-2 text-muted-foreground">{delivery.message_sequence}</td>
                               <td className="px-3 py-2 text-muted-foreground">{delivery.ordering_key || "-"}</td>
                               <td className="px-3 py-2">
-                                <Badge variant={statusBadgeVariant(delivery.status)}>{delivery.status}</Badge>
+                                <Badge variant={statusBadgeVariant(delivery.status)}>{t(`deliveryStatus.${delivery.status}`)}</Badge>
                               </td>
                               <td className="px-3 py-2 text-muted-foreground">
                                 {delivery.attempt}/{delivery.max_attempts}
@@ -1235,7 +1255,7 @@ export default function EventsPage() {
                                     onClick={() => handleRetryDelivery(delivery.id)}
                                     disabled={busy}
                                   >
-                                    Retry
+                                    {t("buttons.retry")}
                                   </Button>
                                 ) : (
                                   <span className="text-muted-foreground">-</span>
@@ -1250,20 +1270,20 @@ export default function EventsPage() {
                 </div>
 
                 <div className="rounded-lg border border-border bg-card p-4">
-                  <p className="text-sm font-medium text-foreground mb-2">Recent Messages</p>
+                  <p className="text-sm font-medium text-foreground mb-2">{t("titles.recentMessages")}</p>
                   <div className="rounded-md border border-border overflow-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-border">
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Sequence</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Ordering Key</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Published</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.sequence")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.orderingKey")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.published")}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {messages.length === 0 ? (
                           <tr>
-                            <td colSpan={3} className="px-3 py-4 text-center text-muted-foreground">No messages.</td>
+                            <td colSpan={3} className="px-3 py-4 text-center text-muted-foreground">{t("empty.noMessages")}</td>
                           </tr>
                         ) : (
                           messages.map((message) => (
@@ -1280,24 +1300,24 @@ export default function EventsPage() {
                 </div>
 
                 <div className="rounded-lg border border-border bg-card p-4">
-                  <p className="text-sm font-medium text-foreground mb-2">Outbox Jobs</p>
+                  <p className="text-sm font-medium text-foreground mb-2">{t("titles.outboxJobs")}</p>
                   <div className="rounded-md border border-border overflow-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-border">
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">ID</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Status</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Attempt</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Message</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Next Attempt</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Error</th>
-                          <th className="px-3 py-2 text-right font-medium text-muted-foreground">Actions</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.id")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.status")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.attempt")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.message")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.nextAttempt")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.error")}</th>
+                          <th className="px-3 py-2 text-right font-medium text-muted-foreground">{t("fields.actions")}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {outboxJobs.length === 0 ? (
                           <tr>
-                            <td colSpan={7} className="px-3 py-4 text-center text-muted-foreground">No outbox jobs.</td>
+                            <td colSpan={7} className="px-3 py-4 text-center text-muted-foreground">{t("empty.noOutboxJobs")}</td>
                           </tr>
                         ) : (
                           outboxJobs.map((job) => (
@@ -1311,7 +1331,7 @@ export default function EventsPage() {
                                       ? "destructive"
                                       : "secondary"
                                 }>
-                                  {job.status}
+                                  {t(`outboxStatus.${job.status}`)}
                                 </Badge>
                               </td>
                               <td className="px-3 py-2 text-muted-foreground">{job.attempt}/{job.max_attempts}</td>
@@ -1321,7 +1341,7 @@ export default function EventsPage() {
                               <td className="px-3 py-2 text-right">
                                 {job.status === "failed" ? (
                                   <Button variant="outline" size="sm" onClick={() => handleRetryOutbox(job.id)} disabled={busy}>
-                                    Retry
+                                    {t("buttons.retry")}
                                   </Button>
                                 ) : (
                                   <span className="text-muted-foreground">-</span>

@@ -1,3 +1,4 @@
+/* eslint-disable i18next/no-literal-string */
 import { getTranslations } from "next-intl/server"
 import { DocsShell } from "@/components/docs/docs-shell"
 import { CodeBlock } from "@/components/docs/code-block"
@@ -29,14 +30,19 @@ export default async function DocsInstallationPage() {
         </p>
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
           <li>{t("sections.beforeYouBegin.items.item1")}</li>
+          {/* i18n-ignore-next-line */}
           <li>{t("sections.beforeYouBegin.items.item2Prefix")} <code>sudo</code>{t("sections.beforeYouBegin.items.item2Suffix")}</li>
+          {/* i18n-ignore-next-line */}
           <li>{t("sections.beforeYouBegin.items.item3Prefix")} <code>/dev/kvm</code> {t("sections.beforeYouBegin.items.item3Suffix")}</li>
+          {/* i18n-ignore-next-line */}
           <li>{t("sections.beforeYouBegin.items.item4Prefix")} <code>1.24+</code>, make, git, curl, unzip, e2fsprogs</li>
           <li>{t("sections.beforeYouBegin.items.item5Prefix")} <code>9000</code> {t("sections.beforeYouBegin.items.item5Middle")} <code>3000</code> {t("sections.beforeYouBegin.items.item5Middle2")} <code>5432</code> {t("sections.beforeYouBegin.items.item5Suffix")}</li>
         </ul>
         <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-400">
           <p className="font-medium">{t("sections.beforeYouBegin.dataSafetyTitle")}</p>
+          {/* i18n-ignore-next-line */}
           <p className="mt-1">
+            {/* i18n-ignore-next-line */}
             <code>scripts/setup.sh</code> {t("sections.beforeYouBegin.dataSafetyBodyPrefix")} <code>nova</code> {t("sections.beforeYouBegin.dataSafetyBodySuffix")}
           </p>
         </div>
@@ -131,12 +137,17 @@ ssh user@server 'sudo bash /tmp/nova-deploy/scripts/setup.sh'`}
         <ol className="mt-4 list-decimal space-y-3 pl-6 text-lg leading-8">
           <li>{t("sections.whatSetupDoes.items.item1")}</li>
           <li>{t("sections.whatSetupDoes.items.item2")}</li>
+          {/* i18n-ignore-next-line */}
           <li>{t("sections.whatSetupDoes.items.item3Prefix")} <code>/opt/nova</code> {t("sections.whatSetupDoes.items.item3Middle")} <code>/tmp/nova</code>.</li>
+          {/* i18n-ignore-next-line */}
           <li>{t("sections.whatSetupDoes.items.item4Prefix")} <code>nova</code> {t("sections.whatSetupDoes.items.item4Suffix")}</li>
           <li>{t("sections.whatSetupDoes.items.item5Prefix")} <code>scripts/init-db.sql</code> {t("sections.whatSetupDoes.items.item5Suffix")}</li>
           <li>{t("sections.whatSetupDoes.items.item6")}</li>
+          {/* i18n-ignore-next-line */}
           <li>{t("sections.whatSetupDoes.items.item7Prefix")} <code>/opt/nova/configs/nova.json</code>.</li>
+          {/* i18n-ignore-next-line */}
           <li>{t("sections.whatSetupDoes.items.item8Prefix")} <code>.ext4</code>{t("sections.whatSetupDoes.items.item8Middle")} <code>nova-agent</code> {t("sections.whatSetupDoes.items.item8Suffix")} <code>/init</code>.</li>
+          {/* i18n-ignore-next-line */}
           <li>{t("sections.whatSetupDoes.items.item9Prefix")} <code>/opt/nova/lumen</code>.</li>
           <li>{t("sections.whatSetupDoes.items.item10Prefix")} <code>nova.service</code> {t("sections.whatSetupDoes.items.item10Middle")} <code>lumen.service</code>.</li>
           <li>{t("sections.whatSetupDoes.items.item11")}</li>
@@ -159,6 +170,7 @@ ssh user@server 'sudo bash /tmp/nova-deploy/scripts/setup.sh'`}
             </thead>
             <tbody>
               <tr className="border-b border-border">
+                {/* i18n-ignore-next-line */}
                 <td className="px-3 py-2 font-mono text-xs">postgresql</td>
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.postgresql.type")}</td>
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.postgresql.role")}</td>
@@ -169,26 +181,31 @@ ssh user@server 'sudo bash /tmp/nova-deploy/scripts/setup.sh'`}
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.initDb.role")}</td>
               </tr>
               <tr className="border-b border-border">
+                {/* i18n-ignore-next-line */}
                 <td className="px-3 py-2 font-mono text-xs">/opt/nova/bin/nova</td>
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.novaBinary.type")}</td>
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.novaBinary.role")}</td>
               </tr>
               <tr className="border-b border-border">
+                {/* i18n-ignore-next-line */}
                 <td className="px-3 py-2 font-mono text-xs">/opt/nova/bin/nova-agent</td>
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.novaAgent.type")}</td>
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.novaAgent.role")}</td>
               </tr>
               <tr className="border-b border-border">
+                {/* i18n-ignore-next-line */}
                 <td className="px-3 py-2 font-mono text-xs">firecracker + jailer</td>
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.firecracker.type")}</td>
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.firecracker.role")}</td>
               </tr>
               <tr className="border-b border-border">
+                {/* i18n-ignore-next-line */}
                 <td className="px-3 py-2 font-mono text-xs">/opt/nova/kernel/vmlinux</td>
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.kernel.type")}</td>
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.kernel.role")}</td>
               </tr>
               <tr className="border-b border-border">
+                {/* i18n-ignore-next-line */}
                 <td className="px-3 py-2 font-mono text-xs">/opt/nova/rootfs/*.ext4</td>
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.rootfs.type")}</td>
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.rootfs.role")}</td>
@@ -204,11 +221,13 @@ ssh user@server 'sudo bash /tmp/nova-deploy/scripts/setup.sh'`}
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.novaService.role")}</td>
               </tr>
               <tr className="border-b border-border">
+                {/* i18n-ignore-next-line */}
                 <td className="px-3 py-2 font-mono text-xs">/opt/nova</td>
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.installRoot.type")}</td>
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.installRoot.role")}</td>
               </tr>
               <tr>
+                {/* i18n-ignore-next-line */}
                 <td className="px-3 py-2 font-mono text-xs">/tmp/nova</td>
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.runtimeTempDir.type")}</td>
                 <td className="px-3 py-2 text-muted-foreground">{t("sections.componentRoles.rows.runtimeTempDir.role")}</td>
@@ -221,6 +240,7 @@ ssh user@server 'sudo bash /tmp/nova-deploy/scripts/setup.sh'`}
       <section id="verify-installation" className="scroll-mt-24">
         <h2 className="text-3xl font-semibold tracking-tight">{t("sections.verifyInstallation.title")}</h2>
         <ol className="mt-4 list-decimal space-y-3 pl-6 text-lg leading-8">
+          {/* i18n-ignore-next-line */}
           <li>{t("sections.verifyInstallation.items.item1Prefix")} <code>postgresql</code>, <code>nova</code>, {t("sections.verifyInstallation.items.item1Middle")} <code>lumen</code>.</li>
           <li>{t("sections.verifyInstallation.items.item2")}</li>
           <li>{t("sections.verifyInstallation.items.item3")}</li>
@@ -269,6 +289,7 @@ make atlas-linux
           <li>{t("sections.operationsChecklist.items.item1")}</li>
           <li>{t("sections.operationsChecklist.items.item2")}</li>
           <li>{t("sections.operationsChecklist.items.item3")}</li>
+          {/* i18n-ignore-next-line */}
           <li>{t("sections.operationsChecklist.items.item4Prefix")} <code>journalctl -u nova</code> {t("sections.operationsChecklist.items.item4Middle")} <code>journalctl -u lumen</code> {t("sections.operationsChecklist.items.item4Suffix")}</li>
           <li>{t("sections.operationsChecklist.items.item5")}</li>
           <li>{t("sections.operationsChecklist.items.item6Prefix")} <code>setup.sh</code> {t("sections.operationsChecklist.items.item6Suffix")}</li>

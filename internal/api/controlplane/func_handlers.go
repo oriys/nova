@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -15,6 +16,11 @@ import (
 	"github.com/oriys/nova/internal/service"
 	"github.com/oriys/nova/internal/store"
 )
+
+type functionPaginationStore interface {
+	ListFunctionsFiltered(ctx context.Context, query, runtime string, limit, offset int) ([]*domain.Function, error)
+	CountFunctionsFiltered(ctx context.Context, query, runtime string) (int64, error)
+}
 
 // CreateFunction handles POST /functions
 func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
@@ -103,6 +109,7 @@ func (h *Handler) ListFunctions(w http.ResponseWriter, r *http.Request) {
 	if query == "" {
 		query = r.URL.Query().Get("q")
 	}
+	runtimeFilter := strings.TrimSpace(r.URL.Query().Get("runtime"))
 	limitRaw := strings.TrimSpace(r.URL.Query().Get("limit"))
 	limit := 0
 	if limitRaw != "" {
@@ -124,13 +131,26 @@ func (h *Handler) ListFunctions(w http.ResponseWriter, r *http.Request) {
 		offset = n
 	}
 
-	var funcs []*domain.Function
-	var err error
+	var (
+		funcs []*domain.Function
+		err   error
+		total int64
+	)
 
-	if query != "" {
-		funcs, err = h.Store.SearchFunctions(r.Context(), query, limit, offset)
+	if pagedStore, ok := h.Store.MetadataStore.(functionPaginationStore); ok {
+		funcs, err = pagedStore.ListFunctionsFiltered(r.Context(), query, runtimeFilter, limit, offset)
+		if err == nil {
+			total, err = pagedStore.CountFunctionsFiltered(r.Context(), query, runtimeFilter)
+		}
 	} else {
-		funcs, err = h.Store.ListFunctions(r.Context(), limit, offset)
+		if query != "" {
+			funcs, err = h.Store.SearchFunctions(r.Context(), query, limit, offset)
+		} else {
+			funcs, err = h.Store.ListFunctions(r.Context(), limit, offset)
+		}
+		if err == nil {
+			total = int64(len(funcs))
+		}
 	}
 
 	if err != nil {
@@ -140,8 +160,11 @@ func (h *Handler) ListFunctions(w http.ResponseWriter, r *http.Request) {
 	if funcs == nil {
 		funcs = []*domain.Function{}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(funcs)
+	effectiveLimit := limit
+	if effectiveLimit <= 0 {
+		effectiveLimit = 100
+	}
+	writePaginatedList(w, effectiveLimit, offset, len(funcs), total, funcs)
 }
 
 // GetFunction handles GET /functions/{name}
@@ -364,7 +387,7 @@ func (h *Handler) UpdateFunctionCode(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Code            string            `json:"code"`
 			EntryPoint      string            `json:"entry_point,omitempty"`
-			DependencyFiles map[string]string  `json:"dependency_files,omitempty"` // Optional: dependency files like go.mod, requirements.txt
+			DependencyFiles map[string]string `json:"dependency_files,omitempty"` // Optional: dependency files like go.mod, requirements.txt
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -523,6 +546,9 @@ func (h *Handler) UpdateFunctionCode(w http.ResponseWriter, r *http.Request) {
 
 // ListFunctionFiles handles GET /functions/{name}/files
 func (h *Handler) ListFunctionFiles(w http.ResponseWriter, r *http.Request) {
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+
 	name := r.PathValue("name")
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
@@ -552,10 +578,8 @@ func (h *Handler) ListFunctionFiles(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"files": response,
-	})
+	pagedItems, total := paginateSliceWindow(response, limit, offset)
+	writePaginatedList(w, limit, offset, len(pagedItems), int64(total), pagedItems)
 }
 
 // detectEntryPoint tries to find the entry point file based on runtime conventions

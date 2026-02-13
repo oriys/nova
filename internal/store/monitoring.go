@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -48,6 +49,15 @@ type FunctionSLOSnapshot struct {
 	SuccessRatePct   float64 `json:"success_rate_pct"`
 	ColdStartRatePct float64 `json:"cold_start_rate_pct"`
 	P95DurationMs    int64   `json:"p95_duration_ms"`
+}
+
+// InvocationLogSummary represents aggregate stats for invocation logs under a query scope.
+type InvocationLogSummary struct {
+	TotalInvocations int64 `json:"total_invocations"`
+	Successes        int64 `json:"successes"`
+	Failures         int64 `json:"failures"`
+	ColdStarts       int64 `json:"cold_starts"`
+	AvgDurationMs    int64 `json:"avg_duration_ms"`
 }
 
 func (s *PostgresStore) SaveInvocationLog(ctx context.Context, log *InvocationLog) error {
@@ -152,6 +162,19 @@ func (s *PostgresStore) ListInvocationLogs(ctx context.Context, functionID strin
 	return logs, nil
 }
 
+func (s *PostgresStore) CountInvocationLogs(ctx context.Context, functionID string) (int64, error) {
+	scope := tenantScopeFromContext(ctx)
+	var total int64
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM invocation_logs
+		WHERE tenant_id = $1 AND namespace = $2 AND function_id = $3
+	`, scope.TenantID, scope.Namespace, functionID).Scan(&total); err != nil {
+		return 0, fmt.Errorf("count invocation logs: %w", err)
+	}
+	return total, nil
+}
+
 func (s *PostgresStore) ListAllInvocationLogs(ctx context.Context, limit, offset int) ([]*InvocationLog, error) {
 	if limit <= 0 {
 		limit = 100
@@ -197,6 +220,250 @@ func (s *PostgresStore) ListAllInvocationLogs(ctx context.Context, limit, offset
 		return nil, fmt.Errorf("list all invocation logs rows: %w", err)
 	}
 	return logs, nil
+}
+
+func (s *PostgresStore) CountAllInvocationLogs(ctx context.Context) (int64, error) {
+	scope := tenantScopeFromContext(ctx)
+	var total int64
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM invocation_logs l
+		WHERE l.tenant_id = $1
+		  AND l.namespace = $2
+		  AND EXISTS (
+			SELECT 1
+			FROM functions f
+			WHERE f.id = l.function_id
+			  AND f.tenant_id = l.tenant_id
+			  AND f.namespace = l.namespace
+		  )
+	`, scope.TenantID, scope.Namespace).Scan(&total); err != nil {
+		return 0, fmt.Errorf("count all invocation logs: %w", err)
+	}
+	return total, nil
+}
+
+func normalizeLogSearchPattern(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	return "%" + trimmed + "%"
+}
+
+func (s *PostgresStore) ListAllInvocationLogsFiltered(
+	ctx context.Context,
+	limit,
+	offset int,
+	search,
+	functionName string,
+	success *bool,
+) ([]*InvocationLog, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	scope := tenantScopeFromContext(ctx)
+	searchPattern := normalizeLogSearchPattern(search)
+	functionName = strings.TrimSpace(functionName)
+
+	query := `
+		SELECT id, tenant_id, namespace, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, created_at
+		FROM invocation_logs l
+		WHERE l.tenant_id = $1
+		  AND l.namespace = $2
+		  AND EXISTS (
+			SELECT 1
+			FROM functions f
+			WHERE f.id = l.function_id
+			  AND f.tenant_id = l.tenant_id
+			  AND f.namespace = l.namespace
+		  )`
+	args := []any{scope.TenantID, scope.Namespace}
+	nextArg := 3
+
+	if searchPattern != "" {
+		query += fmt.Sprintf(" AND (l.id ILIKE $%d OR l.function_name ILIKE $%d)", nextArg, nextArg)
+		args = append(args, searchPattern)
+		nextArg++
+	}
+	if functionName != "" {
+		query += fmt.Sprintf(" AND l.function_name = $%d", nextArg)
+		args = append(args, functionName)
+		nextArg++
+	}
+	if success != nil {
+		query += fmt.Sprintf(" AND l.success = $%d", nextArg)
+		args = append(args, *success)
+		nextArg++
+	}
+
+	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", nextArg, nextArg+1)
+	args = append(args, limit, offset)
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list all invocation logs filtered: %w", err)
+	}
+	defer rows.Close()
+
+	var logs []*InvocationLog
+	for rows.Next() {
+		var log InvocationLog
+		var errorMessage *string
+		if err := rows.Scan(&log.ID, &log.TenantID, &log.Namespace, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &log.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan invocation log: %w", err)
+		}
+		if errorMessage != nil {
+			log.ErrorMessage = *errorMessage
+		}
+		logs = append(logs, &log)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list all invocation logs filtered rows: %w", err)
+	}
+	return logs, nil
+}
+
+func (s *PostgresStore) CountAllInvocationLogsFiltered(
+	ctx context.Context,
+	search,
+	functionName string,
+	success *bool,
+) (int64, error) {
+	scope := tenantScopeFromContext(ctx)
+	searchPattern := normalizeLogSearchPattern(search)
+	functionName = strings.TrimSpace(functionName)
+
+	query := `
+		SELECT COUNT(*)
+		FROM invocation_logs l
+		WHERE l.tenant_id = $1
+		  AND l.namespace = $2
+		  AND EXISTS (
+			SELECT 1
+			FROM functions f
+			WHERE f.id = l.function_id
+			  AND f.tenant_id = l.tenant_id
+			  AND f.namespace = l.namespace
+		  )`
+	args := []any{scope.TenantID, scope.Namespace}
+	nextArg := 3
+
+	if searchPattern != "" {
+		query += fmt.Sprintf(" AND (l.id ILIKE $%d OR l.function_name ILIKE $%d)", nextArg, nextArg)
+		args = append(args, searchPattern)
+		nextArg++
+	}
+	if functionName != "" {
+		query += fmt.Sprintf(" AND l.function_name = $%d", nextArg)
+		args = append(args, functionName)
+		nextArg++
+	}
+	if success != nil {
+		query += fmt.Sprintf(" AND l.success = $%d", nextArg)
+		args = append(args, *success)
+		nextArg++
+	}
+
+	var total int64
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("count all invocation logs filtered: %w", err)
+	}
+	return total, nil
+}
+
+func (s *PostgresStore) GetAllInvocationLogsSummary(ctx context.Context) (*InvocationLogSummary, error) {
+	scope := tenantScopeFromContext(ctx)
+	var summary InvocationLogSummary
+	if err := s.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*)::bigint AS total_invocations,
+			COUNT(*) FILTER (WHERE l.success)::bigint AS successes,
+			COUNT(*) FILTER (WHERE NOT l.success)::bigint AS failures,
+			COUNT(*) FILTER (WHERE l.cold_start)::bigint AS cold_starts,
+			COALESCE(ROUND(AVG(l.duration_ms)), 0)::bigint AS avg_duration_ms
+		FROM invocation_logs l
+		WHERE l.tenant_id = $1
+		  AND l.namespace = $2
+		  AND EXISTS (
+			SELECT 1
+			FROM functions f
+			WHERE f.id = l.function_id
+			  AND f.tenant_id = l.tenant_id
+			  AND f.namespace = l.namespace
+		  )
+	`, scope.TenantID, scope.Namespace).Scan(
+		&summary.TotalInvocations,
+		&summary.Successes,
+		&summary.Failures,
+		&summary.ColdStarts,
+		&summary.AvgDurationMs,
+	); err != nil {
+		return nil, fmt.Errorf("get all invocation logs summary: %w", err)
+	}
+	return &summary, nil
+}
+
+func (s *PostgresStore) GetAllInvocationLogsSummaryFiltered(
+	ctx context.Context,
+	search,
+	functionName string,
+	success *bool,
+) (*InvocationLogSummary, error) {
+	scope := tenantScopeFromContext(ctx)
+	searchPattern := normalizeLogSearchPattern(search)
+	functionName = strings.TrimSpace(functionName)
+
+	query := `
+		SELECT
+			COUNT(*)::bigint AS total_invocations,
+			COUNT(*) FILTER (WHERE l.success)::bigint AS successes,
+			COUNT(*) FILTER (WHERE NOT l.success)::bigint AS failures,
+			COUNT(*) FILTER (WHERE l.cold_start)::bigint AS cold_starts,
+			COALESCE(ROUND(AVG(l.duration_ms)), 0)::bigint AS avg_duration_ms
+		FROM invocation_logs l
+		WHERE l.tenant_id = $1
+		  AND l.namespace = $2
+		  AND EXISTS (
+			SELECT 1
+			FROM functions f
+			WHERE f.id = l.function_id
+			  AND f.tenant_id = l.tenant_id
+			  AND f.namespace = l.namespace
+		  )`
+	args := []any{scope.TenantID, scope.Namespace}
+	nextArg := 3
+
+	if searchPattern != "" {
+		query += fmt.Sprintf(" AND (l.id ILIKE $%d OR l.function_name ILIKE $%d)", nextArg, nextArg)
+		args = append(args, searchPattern)
+		nextArg++
+	}
+	if functionName != "" {
+		query += fmt.Sprintf(" AND l.function_name = $%d", nextArg)
+		args = append(args, functionName)
+		nextArg++
+	}
+	if success != nil {
+		query += fmt.Sprintf(" AND l.success = $%d", nextArg)
+		args = append(args, *success)
+		nextArg++
+	}
+
+	var summary InvocationLogSummary
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(
+		&summary.TotalInvocations,
+		&summary.Successes,
+		&summary.Failures,
+		&summary.ColdStarts,
+		&summary.AvgDurationMs,
+	); err != nil {
+		return nil, fmt.Errorf("get all invocation logs summary filtered: %w", err)
+	}
+	return &summary, nil
 }
 
 func (s *PostgresStore) GetInvocationLog(ctx context.Context, requestID string) (*InvocationLog, error) {

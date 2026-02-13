@@ -35,9 +35,8 @@ func (h *Handler) ListNotifications(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []*store.NotificationRecord{}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(items)
+	total := estimatePaginatedTotal(limit, offset, len(items))
+	writePaginatedList(w, limit, offset, len(items), total, items)
 }
 
 // GetUnreadNotificationCount handles GET /notifications/unread-count

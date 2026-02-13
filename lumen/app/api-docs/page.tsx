@@ -49,7 +49,6 @@ export default function APIDocsPage() {
   const [selectedFunction, setSelectedFunction] = useState<string>("")
   const [generatedDocs, setGeneratedDocs] = useState<GenerateDocsResponse | null>(null)
   const [shares, setShares] = useState<APIDocShare[]>([])
-  const [loading, setLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [sharesLoading, setSharesLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -100,7 +99,7 @@ export default function APIDocsPage() {
           const codeResp = await functionsApi.getCode(fn.name)
           code = codeResp.source_code || ""
         } catch {
-          code = "// Source code not available"
+          code = `// ${t("apiDocs.sourceCodeNotAvailable")}`
         }
       }
 
@@ -112,7 +111,7 @@ export default function APIDocsPage() {
       })
       setGeneratedDocs(docs)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate docs")
+      setError(err instanceof Error ? err.message : t("apiDocs.generateFailed"))
     } finally {
       setGenerating(false)
     }
@@ -133,7 +132,7 @@ export default function APIDocsPage() {
       setShareExpiry("")
       fetchShares()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create share link")
+      setError(err instanceof Error ? err.message : t("apiDocs.createShareFailed"))
     } finally {
       setCreatingShare(false)
     }
@@ -144,7 +143,7 @@ export default function APIDocsPage() {
       await apiDocsApi.deleteShare(id)
       fetchShares()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete share link")
+      setError(err instanceof Error ? err.message : t("apiDocs.deleteShareFailed"))
     }
   }
 
@@ -242,9 +241,9 @@ export default function APIDocsPage() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="">{t("apiDocs.noExpiration")}</SelectItem>
-                          <SelectItem value="24h">24 hours</SelectItem>
-                          <SelectItem value="168h">7 days</SelectItem>
-                          <SelectItem value="720h">30 days</SelectItem>
+                          <SelectItem value="24h">{t("apiDocs.expiry24Hours")}</SelectItem>
+                          <SelectItem value="168h">{t("apiDocs.expiry7Days")}</SelectItem>
+                          <SelectItem value="720h">{t("apiDocs.expiry30Days")}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -265,26 +264,26 @@ export default function APIDocsPage() {
             {/* Meta Section */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="space-y-1">
-                <span className="text-xs text-muted-foreground">Protocol</span>
+                <span className="text-xs text-muted-foreground">{t("apiDocs.protocol")}</span>
                 <p className="text-sm font-medium">{generatedDocs.protocol}</p>
               </div>
               <div className="space-y-1">
-                <span className="text-xs text-muted-foreground">Auth</span>
+                <span className="text-xs text-muted-foreground">{t("apiDocs.auth")}</span>
                 <p className="text-sm font-medium">{generatedDocs.auth_method}</p>
               </div>
               <div className="space-y-1">
-                <span className="text-xs text-muted-foreground">Rate Limit</span>
+                <span className="text-xs text-muted-foreground">{t("apiDocs.rateLimit")}</span>
                 <p className="text-sm font-medium">{generatedDocs.rate_limit}</p>
               </div>
               <div className="space-y-1">
-                <span className="text-xs text-muted-foreground">Timeout</span>
+                <span className="text-xs text-muted-foreground">{t("apiDocs.timeout")}</span>
                 <p className="text-sm font-medium">{generatedDocs.timeout}</p>
               </div>
             </div>
 
             {/* Endpoint */}
             <div className="space-y-2">
-              <h3 className="font-semibold">Endpoint</h3>
+              <h3 className="font-semibold">{t("apiDocs.endpoint")}</h3>
               <div className="flex items-center gap-2">
                 <Badge>{generatedDocs.method}</Badge>
                 <code className="rounded bg-muted px-2 py-1 text-sm">{generatedDocs.path}</code>
@@ -294,15 +293,15 @@ export default function APIDocsPage() {
             {/* Request Fields */}
             {generatedDocs.request_fields && generatedDocs.request_fields.length > 0 && (
               <div className="space-y-2">
-                <h3 className="font-semibold">Request Fields</h3>
+                <h3 className="font-semibold">{t("apiDocs.requestFields")}</h3>
                 <div className="rounded-lg border overflow-hidden">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b bg-muted/50">
-                        <th className="px-3 py-2 text-left font-medium">Field</th>
-                        <th className="px-3 py-2 text-left font-medium">Type</th>
-                        <th className="px-3 py-2 text-left font-medium">Required</th>
-                        <th className="px-3 py-2 text-left font-medium">Description</th>
+                        <th className="px-3 py-2 text-left font-medium">{t("apiDocs.field")}</th>
+                        <th className="px-3 py-2 text-left font-medium">{t("apiDocs.type")}</th>
+                        <th className="px-3 py-2 text-left font-medium">{t("apiDocs.required")}</th>
+                        <th className="px-3 py-2 text-left font-medium">{t("apiDocs.descriptionLabel")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -310,7 +309,13 @@ export default function APIDocsPage() {
                         <tr key={i} className="border-b">
                           <td className="px-3 py-2 font-mono text-xs">{f.name}</td>
                           <td className="px-3 py-2"><Badge variant="outline" className="text-xs">{f.type}</Badge></td>
-                          <td className="px-3 py-2">{f.required ? <Badge variant="default" className="text-xs">Required</Badge> : <span className="text-muted-foreground text-xs">Optional</span>}</td>
+                          <td className="px-3 py-2">
+                            {f.required ? (
+                              <Badge variant="default" className="text-xs">{t("apiDocs.required")}</Badge>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">{t("apiDocs.optional")}</span>
+                            )}
+                          </td>
                           <td className="px-3 py-2 text-muted-foreground">{f.description}</td>
                         </tr>
                       ))}
@@ -323,14 +328,14 @@ export default function APIDocsPage() {
             {/* Response Fields */}
             {generatedDocs.response_fields && generatedDocs.response_fields.length > 0 && (
               <div className="space-y-2">
-                <h3 className="font-semibold">Response Fields</h3>
+                <h3 className="font-semibold">{t("apiDocs.responseFields")}</h3>
                 <div className="rounded-lg border overflow-hidden">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b bg-muted/50">
-                        <th className="px-3 py-2 text-left font-medium">Field</th>
-                        <th className="px-3 py-2 text-left font-medium">Type</th>
-                        <th className="px-3 py-2 text-left font-medium">Description</th>
+                        <th className="px-3 py-2 text-left font-medium">{t("apiDocs.field")}</th>
+                        <th className="px-3 py-2 text-left font-medium">{t("apiDocs.type")}</th>
+                        <th className="px-3 py-2 text-left font-medium">{t("apiDocs.descriptionLabel")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -351,7 +356,7 @@ export default function APIDocsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {generatedDocs.success_codes && generatedDocs.success_codes.length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="font-semibold">Success Codes</h3>
+                  <h3 className="font-semibold">{t("apiDocs.successCodes")}</h3>
                   <div className="space-y-1">
                     {generatedDocs.success_codes.map((c, i) => (
                       <div key={i} className="flex items-center gap-2">
@@ -364,7 +369,7 @@ export default function APIDocsPage() {
               )}
               {generatedDocs.error_codes && generatedDocs.error_codes.length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="font-semibold">Error Codes</h3>
+                  <h3 className="font-semibold">{t("apiDocs.errorCodes")}</h3>
                   <div className="space-y-1">
                     {generatedDocs.error_codes.map((c, i) => (
                       <div key={i} className="flex items-center gap-2">
@@ -380,11 +385,11 @@ export default function APIDocsPage() {
             {/* Error Model */}
             {generatedDocs.error_model && (
               <div className="space-y-2">
-                <h3 className="font-semibold">Error Model</h3>
+                <h3 className="font-semibold">{t("apiDocs.errorModel")}</h3>
                 <div className="rounded-lg border bg-muted/20 p-4 space-y-2 text-sm">
-                  <p><span className="font-medium">Format:</span> {generatedDocs.error_model.format}</p>
-                  <p><span className="font-medium">Retryable:</span> {generatedDocs.error_model.retryable}</p>
-                  <p><span className="font-medium">Description:</span> {generatedDocs.error_model.description}</p>
+                  <p><span className="font-medium">{t("apiDocs.format")}:</span> {generatedDocs.error_model.format}</p>
+                  <p><span className="font-medium">{t("apiDocs.retryable")}:</span> {generatedDocs.error_model.retryable}</p>
+                  <p><span className="font-medium">{t("apiDocs.descriptionLabel")}:</span> {generatedDocs.error_model.description}</p>
                 </div>
               </div>
             )}
@@ -392,20 +397,20 @@ export default function APIDocsPage() {
             {/* Security & Idempotency */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <h3 className="font-semibold">Authentication & Authorization</h3>
+                <h3 className="font-semibold">{t("apiDocs.authAndAuthorization")}</h3>
                 <div className="rounded-lg border bg-muted/20 p-4 space-y-1 text-sm">
-                  <p><span className="font-medium">Method:</span> {generatedDocs.auth_method}</p>
+                  <p><span className="font-medium">{t("apiDocs.method")}:</span> {generatedDocs.auth_method}</p>
                   {generatedDocs.roles_required && generatedDocs.roles_required.length > 0 && (
-                    <p><span className="font-medium">Roles:</span> {generatedDocs.roles_required.join(", ")}</p>
+                    <p><span className="font-medium">{t("apiDocs.roles")}:</span> {generatedDocs.roles_required.join(", ")}</p>
                   )}
                 </div>
               </div>
               <div className="space-y-2">
-                <h3 className="font-semibold">Idempotency</h3>
+                <h3 className="font-semibold">{t("apiDocs.idempotency")}</h3>
                 <div className="rounded-lg border bg-muted/20 p-4 space-y-1 text-sm">
-                  <p><span className="font-medium">Idempotent:</span> {generatedDocs.idempotent ? "Yes" : "No"}</p>
+                  <p><span className="font-medium">{t("apiDocs.idempotent")}:</span> {generatedDocs.idempotent ? t("apiDocs.yes") : t("apiDocs.no")}</p>
                   {generatedDocs.idempotent_key && (
-                    <p><span className="font-medium">Key:</span> {generatedDocs.idempotent_key}</p>
+                    <p><span className="font-medium">{t("apiDocs.key")}:</span> {generatedDocs.idempotent_key}</p>
                   )}
                 </div>
               </div>
@@ -413,37 +418,37 @@ export default function APIDocsPage() {
 
             {/* Observability */}
             <div className="space-y-2">
-              <h3 className="font-semibold">Observability & Performance</h3>
+              <h3 className="font-semibold">{t("apiDocs.observabilityAndPerformance")}</h3>
               <div className="rounded-lg border bg-muted/20 p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div><span className="font-medium">Tracing:</span> {generatedDocs.supports_tracing ? "Yes" : "No"}</div>
-                <div><span className="font-medium">Rate Limit:</span> {generatedDocs.rate_limit}</div>
-                <div><span className="font-medium">Timeout:</span> {generatedDocs.timeout}</div>
-                <div><span className="font-medium">Pagination:</span> {generatedDocs.pagination || "N/A"}</div>
+                <div><span className="font-medium">{t("apiDocs.tracing")}:</span> {generatedDocs.supports_tracing ? t("apiDocs.yes") : t("apiDocs.no")}</div>
+                <div><span className="font-medium">{t("apiDocs.rateLimit")}:</span> {generatedDocs.rate_limit}</div>
+                <div><span className="font-medium">{t("apiDocs.timeout")}:</span> {generatedDocs.timeout}</div>
+                <div><span className="font-medium">{t("apiDocs.pagination")}:</span> {generatedDocs.pagination || t("apiDocs.na")}</div>
               </div>
             </div>
 
             {/* Examples */}
             {generatedDocs.curl_example && (
               <div className="space-y-2">
-                <h3 className="font-semibold">cURL Example</h3>
+                <h3 className="font-semibold">{t("apiDocs.curlExample")}</h3>
                 <pre className="rounded-lg border bg-muted/30 p-4 text-sm overflow-x-auto"><code>{generatedDocs.curl_example}</code></pre>
               </div>
             )}
             {generatedDocs.request_example && (
               <div className="space-y-2">
-                <h3 className="font-semibold">Request Example</h3>
+                <h3 className="font-semibold">{t("apiDocs.requestExample")}</h3>
                 <pre className="rounded-lg border bg-muted/30 p-4 text-sm overflow-x-auto"><code>{generatedDocs.request_example}</code></pre>
               </div>
             )}
             {generatedDocs.response_example && (
               <div className="space-y-2">
-                <h3 className="font-semibold">Response Example</h3>
+                <h3 className="font-semibold">{t("apiDocs.responseExample")}</h3>
                 <pre className="rounded-lg border bg-muted/30 p-4 text-sm overflow-x-auto"><code>{generatedDocs.response_example}</code></pre>
               </div>
             )}
             {generatedDocs.error_example && (
               <div className="space-y-2">
-                <h3 className="font-semibold">Error Example</h3>
+                <h3 className="font-semibold">{t("apiDocs.errorExample")}</h3>
                 <pre className="rounded-lg border bg-muted/30 p-4 text-sm overflow-x-auto"><code>{generatedDocs.error_example}</code></pre>
               </div>
             )}
@@ -451,7 +456,7 @@ export default function APIDocsPage() {
             {/* Notes */}
             {generatedDocs.notes && generatedDocs.notes.length > 0 && (
               <div className="space-y-2">
-                <h3 className="font-semibold">Notes</h3>
+                <h3 className="font-semibold">{t("apiDocs.notes")}</h3>
                 <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
                   {generatedDocs.notes.map((note, i) => (
                     <li key={i}>{note}</li>
@@ -463,7 +468,7 @@ export default function APIDocsPage() {
             {/* Changelog */}
             {generatedDocs.changelog && generatedDocs.changelog.length > 0 && (
               <div className="space-y-2">
-                <h3 className="font-semibold">Changelog</h3>
+                <h3 className="font-semibold">{t("apiDocs.changelog")}</h3>
                 <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
                   {generatedDocs.changelog.map((entry, i) => (
                     <li key={i}>{entry}</li>
@@ -543,7 +548,7 @@ export default function APIDocsPage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => handleCopy(share.token, share.id)}
-                            title="Copy link"
+                            title={t("apiDocs.copyLink")}
                           >
                             {copied === share.id ? (
                               <Check className="h-4 w-4 text-success" />
@@ -555,7 +560,7 @@ export default function APIDocsPage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => window.open("/api-docs/shared/" + share.token, "_blank")}
-                            title="Open"
+                            title={t("apiDocs.open")}
                           >
                             <ExternalLink className="h-4 w-4" />
                           </Button>

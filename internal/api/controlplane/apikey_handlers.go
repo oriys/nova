@@ -58,6 +58,9 @@ func (h *APIKeyHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *APIKeyHandler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+
 	keys, err := h.Manager.List(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -82,9 +85,8 @@ func (h *APIKeyHandler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 			CreatedAt:   k.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		}
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	pagedResult, total := paginateSliceWindow(result, limit, offset)
+	writePaginatedList(w, limit, offset, len(pagedResult), int64(total), pagedResult)
 }
 
 func (h *APIKeyHandler) DeleteAPIKey(w http.ResponseWriter, r *http.Request) {

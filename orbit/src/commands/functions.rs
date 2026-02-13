@@ -1071,9 +1071,10 @@ pub async fn run(cmd: FunctionsCmd, client: &NovaClient, output_format: &str) ->
         }
         FunctionsCmd::Files { name } => {
             let result = client.get(&format!("/functions/{name}/files")).await?;
+            let render_target = result.get("items").unwrap_or(&result).clone();
             output::render(
-                &result,
-                &[Column::new("File", "name"), Column::new("Size", "size")],
+                &render_target,
+                &[Column::new("File", "path"), Column::new("Size", "size")],
                 output_format,
             );
         }

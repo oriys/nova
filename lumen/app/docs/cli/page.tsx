@@ -1,3 +1,4 @@
+/* eslint-disable i18next/no-literal-string */
 import { getTranslations } from "next-intl/server"
 import { DocsShell } from "@/components/docs/docs-shell"
 import { CodeBlock } from "@/components/docs/code-block"
@@ -24,6 +25,7 @@ export default async function DocsCLIPage() {
         <ul className="mt-4 list-disc space-y-3 pl-6 text-lg leading-8">
           <li>
             <strong>{t("sections.positioning.items.novaBinary.label")}:</strong>{" "}
+            {/* i18n-ignore-next-line */}
             {t("sections.positioning.items.novaBinary.value")} <code>nova daemon</code>.
           </li>
           <li>
@@ -171,6 +173,7 @@ orbit functions pull echo \\
           <li>{t("sections.troubleshooting.items.item1Prefix")} <code>--tenant</code> {t("sections.troubleshooting.items.item1Middle")} <code>--namespace</code> {t("sections.troubleshooting.items.item1Suffix")}</li>
           <li>{t("sections.troubleshooting.items.item2Prefix")} <code>--api-key</code> {t("sections.troubleshooting.items.item2Suffix")}</li>
           <li>{t("sections.troubleshooting.items.item3")}</li>
+          {/* i18n-ignore-next-line */}
           <li>{t("sections.troubleshooting.items.item4Prefix")} <code>--output json</code> {t("sections.troubleshooting.items.item4Suffix")}</li>
         </ul>
       </section>

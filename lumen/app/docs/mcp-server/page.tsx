@@ -1,3 +1,4 @@
+/* eslint-disable i18next/no-literal-string */
 import { getTranslations } from "next-intl/server"
 import { DocsShell } from "@/components/docs/docs-shell"
 import { CodeBlock } from "@/components/docs/code-block"
@@ -22,6 +23,7 @@ export default async function DocsMCPServerPage() {
       <section id="overview" className="scroll-mt-24">
         <h2 className="text-3xl font-semibold tracking-tight">{t("sections.overview.title")}</h2>
         <p className="mt-4 text-lg leading-8 text-muted-foreground">
+          {/* i18n-ignore-next-line */}
           {t("sections.overview.descriptionPrefix")} <code>nova_*</code> {t("sections.overview.descriptionSuffix")}
         </p>
         <CodeBlock
