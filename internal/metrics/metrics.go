@@ -46,10 +46,18 @@ type Metrics struct {
 	funcMetrics sync.Map // funcID -> *FunctionMetrics
 
 	// Time-series data (minute buckets for last 24 hours)
-	timeSeriesMu sync.RWMutex
-	timeSeries   []*TimeSeriesBucket
+	timeSeriesMu      sync.RWMutex
+	timeSeries        []*TimeSeriesBucket
+	tsChan            chan timeSeriesEvent
+	tsDroppedEvents   atomic.Int64
 
 	startTime time.Time
+}
+
+// timeSeriesEvent is sent over a channel to avoid write-lock contention on the hot path
+type timeSeriesEvent struct {
+	durationMs int64
+	isError    bool
 }
 
 // FunctionMetrics tracks metrics for a single function
@@ -69,7 +77,9 @@ var global = &Metrics{startTime: time.Now()}
 
 func init() {
 	global.MinLatencyMs.Store(int64(^uint64(0) >> 1)) // Max int64
+	global.tsChan = make(chan timeSeriesEvent, 8192)
 	global.initTimeSeries()
+	go global.processTimeSeriesLoop()
 }
 
 // initTimeSeries initializes minute-level buckets for the last 24 hours.
@@ -145,8 +155,25 @@ func (m *Metrics) RecordInvocationWithDetails(funcID, funcName, runtime string, 
 	RecordPrometheusInvocation(funcName, runtime, durationMs, coldStart, success)
 }
 
-// recordTimeSeries adds an invocation to the current time bucket
+// recordTimeSeries enqueues a time-series event for async processing,
+// avoiding a write-lock on the hot invocation path.
 func (m *Metrics) recordTimeSeries(durationMs int64, isError bool) {
+	select {
+	case m.tsChan <- timeSeriesEvent{durationMs: durationMs, isError: isError}:
+	default:
+		m.tsDroppedEvents.Add(1)
+	}
+}
+
+// processTimeSeriesLoop drains tsChan and applies events under a write lock.
+func (m *Metrics) processTimeSeriesLoop() {
+	for evt := range m.tsChan {
+		m.applyTimeSeriesEvent(evt.durationMs, evt.isError)
+	}
+}
+
+// applyTimeSeriesEvent updates the time-series buckets (must be called from a single goroutine).
+func (m *Metrics) applyTimeSeriesEvent(durationMs int64, isError bool) {
 	m.timeSeriesMu.Lock()
 	defer m.timeSeriesMu.Unlock()
 
@@ -158,9 +185,7 @@ func (m *Metrics) recordTimeSeries(durationMs int64, isError bool) {
 		bucketsDiff := int(now.Sub(lastBucket.Timestamp) / timeSeriesBucketDuration)
 
 		if bucketsDiff > 0 {
-			// Rotate buckets
 			if bucketsDiff >= timeSeriesBucketCount {
-				// Reset all buckets
 				m.timeSeries = make([]*TimeSeriesBucket, timeSeriesBucketCount)
 				for i := 0; i < timeSeriesBucketCount; i++ {
 					m.timeSeries[i] = &TimeSeriesBucket{
@@ -168,7 +193,6 @@ func (m *Metrics) recordTimeSeries(durationMs int64, isError bool) {
 					}
 				}
 			} else {
-				// Shift and add new buckets
 				m.timeSeries = m.timeSeries[bucketsDiff:]
 				for i := 0; i < bucketsDiff; i++ {
 					m.timeSeries = append(m.timeSeries, &TimeSeriesBucket{
@@ -268,6 +292,7 @@ func (m *Metrics) Snapshot() map[string]interface{} {
 			"crashed":       m.VMsCrashed.Load(),
 			"snapshots_hit": m.SnapshotsHit.Load(),
 		},
+		"ts_dropped_events": m.tsDroppedEvents.Load(),
 	}
 
 	return result

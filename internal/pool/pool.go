@@ -192,18 +192,17 @@ func (p *Pool) cleanupExpired() {
 		return true
 	})
 
-	// Stop VMs in parallel without holding any locks
-	if len(toStop) > 0 {
-		var wg sync.WaitGroup
-		for _, e := range toStop {
-			wg.Add(1)
-			go func(client backend.Client, vmID string) {
-				defer wg.Done()
-				client.Close()
-				p.backend.StopVM(vmID)
-			}(e.client, e.vmID)
-		}
-		wg.Wait()
+	// Stop expired VMs asynchronously — they are already removed from pools
+	for _, e := range toStop {
+		go func(client backend.Client, vmID string) {
+			defer func() {
+				if r := recover(); r != nil {
+					logging.Op().Error("recovered panic in async VM cleanup", "panic", r)
+				}
+			}()
+			client.Close()
+			p.backend.StopVM(vmID)
+		}(e.client, e.vmID)
 	}
 }
 
@@ -522,20 +521,33 @@ func (p *Pool) createVM(ctx context.Context, fn *domain.Function, codeContent []
 		maxConcurrent: p.computeInstanceConcurrency(fn),
 	}
 
-	// Create snapshot if callback is set and no snapshot exists for this function
+	// Create snapshot asynchronously — not needed for the current invocation
 	if p.snapshotCallback != nil {
 		if _, hasSnapshot := p.snapshotCache.Load(fn.ID); !hasSnapshot {
-			lock := p.getSnapshotLock(fn.ID)
-			lock.Lock()
-			if _, hasSnapshot := p.snapshotCache.Load(fn.ID); !hasSnapshot {
-				logging.Op().Info("creating snapshot after cold start", "function", fn.Name, "vm_id", vm.ID)
-				if err := p.snapshotCallback(ctx, vm.ID, fn.ID); err != nil {
-					logging.Op().Error("snapshot creation failed", "function", fn.Name, "error", err)
-				} else {
-					p.snapshotCache.Store(fn.ID, true)
+			snapshotCb := p.snapshotCallback
+			funcName := fn.Name
+			funcID := fn.ID
+			vmID := vm.ID
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						logging.Op().Error("recovered panic in async snapshot creation", "panic", r)
+					}
+				}()
+				lock := p.getSnapshotLock(funcID)
+				lock.Lock()
+				defer lock.Unlock()
+				if _, hasSnapshot := p.snapshotCache.Load(funcID); !hasSnapshot {
+					logging.Op().Info("creating snapshot after cold start", "function", funcName, "vm_id", vmID)
+					snapshotCtx, snapshotCancel := context.WithTimeout(context.Background(), 60*time.Second)
+				defer snapshotCancel()
+				if err := snapshotCb(snapshotCtx, vmID, funcID); err != nil {
+						logging.Op().Error("snapshot creation failed", "function", funcName, "error", err)
+					} else {
+						p.snapshotCache.Store(funcID, true)
+					}
 				}
-			}
-			lock.Unlock()
+			}()
 		}
 	}
 
@@ -663,8 +675,16 @@ func (p *Pool) EvictVM(funcID string, target *PooledVM) {
 	fp.vms = newList
 	fp.mu.Unlock()
 
-	target.Client.Close()
-	p.backend.StopVM(target.VM.ID)
+	// Stop VM asynchronously — it is already removed from the pool
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logging.Op().Error("recovered panic in async VM eviction", "panic", r)
+			}
+		}()
+		target.Client.Close()
+		p.backend.StopVM(target.VM.ID)
+	}()
 }
 
 // ReloadCode sends new code files to all active VMs for a function.

@@ -14,6 +14,8 @@ const (
 	defaultInvocationLogBufferSize    = 1000
 	defaultInvocationLogFlushInterval = 500 * time.Millisecond
 	defaultInvocationLogTimeout       = 5 * time.Second
+	defaultInvocationLogMaxRetries    = 3
+	defaultInvocationLogRetryInterval = 100 * time.Millisecond
 )
 
 // LogBatcherConfig holds configuration for the invocation log batcher
@@ -22,6 +24,8 @@ type LogBatcherConfig struct {
 	BufferSize    int
 	FlushInterval time.Duration
 	Timeout       time.Duration
+	MaxRetries    int
+	RetryInterval time.Duration
 }
 
 type invocationLogBatcher struct {
@@ -31,6 +35,8 @@ type invocationLogBatcher struct {
 	flushInterval time.Duration
 	batchSize     int
 	timeout       time.Duration
+	maxRetries    int
+	retryInterval time.Duration
 	done          chan struct{}
 }
 
@@ -51,6 +57,14 @@ func newInvocationLogBatcher(s *store.Store, cfg LogBatcherConfig) *invocationLo
 	if timeout <= 0 {
 		timeout = defaultInvocationLogTimeout
 	}
+	maxRetries := cfg.MaxRetries
+	if maxRetries <= 0 {
+		maxRetries = defaultInvocationLogMaxRetries
+	}
+	retryInterval := cfg.RetryInterval
+	if retryInterval <= 0 {
+		retryInterval = defaultInvocationLogRetryInterval
+	}
 
 	b := &invocationLogBatcher{
 		store:         s,
@@ -59,6 +73,8 @@ func newInvocationLogBatcher(s *store.Store, cfg LogBatcherConfig) *invocationLo
 		flushInterval: flushInterval,
 		batchSize:     batchSize,
 		timeout:       timeout,
+		maxRetries:    maxRetries,
+		retryInterval: retryInterval,
 		done:          make(chan struct{}),
 	}
 	go b.run()
@@ -94,10 +110,21 @@ func (b *invocationLogBatcher) run() {
 		if len(batch) == 0 {
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
-		defer cancel()
-		if err := b.store.SaveInvocationLogs(ctx, batch); err != nil {
-			b.logger.Warn("failed to persist invocation logs", "error", err, "count", len(batch))
+		var lastErr error
+		for attempt := 0; attempt < b.maxRetries; attempt++ {
+			ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+			lastErr = b.store.SaveInvocationLogs(ctx, batch)
+			cancel()
+			if lastErr == nil {
+				break
+			}
+			b.logger.Warn("failed to persist invocation logs, retrying",
+				"error", lastErr, "count", len(batch), "attempt", attempt+1)
+			time.Sleep(time.Duration(1<<uint(attempt)) * b.retryInterval)
+		}
+		if lastErr != nil {
+			b.logger.Error("permanently failed to persist invocation logs after retries",
+				"error", lastErr, "count", len(batch))
 		}
 		batch = batch[:0]
 	}
