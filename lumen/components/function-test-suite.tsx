@@ -1,14 +1,14 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { functionsApi, type InvokeResponse } from "@/lib/api"
-import { Plus, Play, Trash2, Loader2, CheckCircle2, XCircle, Clock } from "lucide-react"
+import { functionsApi, aiApi, type InvokeResponse, type TestSuiteCase } from "@/lib/api"
+import { Plus, Play, Trash2, Loader2, CheckCircle2, XCircle, Clock, Save, Sparkles } from "lucide-react"
 
 interface TestCase {
   id: string
@@ -25,10 +25,38 @@ interface TestCase {
   running?: boolean
 }
 
-export function FunctionTestSuite({ functionName }: { functionName: string }) {
+interface FunctionTestSuiteProps {
+  functionName: string
+  runtime?: string
+}
+
+export function FunctionTestSuite({ functionName, runtime }: FunctionTestSuiteProps) {
   const t = useTranslations("testSuite")
   const [testCases, setTestCases] = useState<TestCase[]>([])
   const [runningAll, setRunningAll] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [dirty, setDirty] = useState(false)
+
+  // Load saved test suite on mount
+  useEffect(() => {
+    let cancelled = false
+    functionsApi.getTestSuite(functionName).then((ts) => {
+      if (cancelled) return
+      if (ts && ts.test_cases && Array.isArray(ts.test_cases)) {
+        const cases = (ts.test_cases as TestSuiteCase[]).map((tc) => ({
+          id: tc.id || crypto.randomUUID(),
+          name: tc.name,
+          input: tc.input,
+          expectedOutput: tc.expectedOutput,
+        }))
+        setTestCases(cases)
+      }
+    }).catch(() => {
+      // No saved test suite
+    })
+    return () => { cancelled = true }
+  }, [functionName])
 
   const addTestCase = () => {
     setTestCases((prev) => [
@@ -40,16 +68,70 @@ export function FunctionTestSuite({ functionName }: { functionName: string }) {
         expectedOutput: "",
       },
     ])
+    setDirty(true)
   }
 
   const updateTestCase = (id: string, updates: Partial<TestCase>) => {
     setTestCases((prev) =>
       prev.map((tc) => (tc.id === id ? { ...tc, ...updates } : tc))
     )
+    setDirty(true)
   }
 
   const removeTestCase = (id: string) => {
     setTestCases((prev) => prev.filter((tc) => tc.id !== id))
+    setDirty(true)
+  }
+
+  const saveTestSuite = async () => {
+    setSaving(true)
+    try {
+      const casesToSave: TestSuiteCase[] = testCases.map((tc) => ({
+        id: tc.id,
+        name: tc.name,
+        input: tc.input,
+        expectedOutput: tc.expectedOutput,
+      }))
+      await functionsApi.saveTestSuite(functionName, casesToSave)
+      setDirty(false)
+    } catch {
+      // silently fail
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const generateWithAI = async () => {
+    if (!runtime) return
+    setGenerating(true)
+    try {
+      // Fetch source code for AI generation
+      const codeResp = await functionsApi.getCode(functionName)
+      const sourceCode = codeResp?.source_code || ""
+      if (!sourceCode) {
+        setGenerating(false)
+        return
+      }
+      const resp = await aiApi.generateTests({
+        function_name: functionName,
+        runtime,
+        code: sourceCode,
+      })
+      if (resp.test_cases && resp.test_cases.length > 0) {
+        const generated: TestCase[] = resp.test_cases.map((tc) => ({
+          id: crypto.randomUUID(),
+          name: tc.name,
+          input: tc.input,
+          expectedOutput: tc.expected_output,
+        }))
+        setTestCases((prev) => [...prev, ...generated])
+        setDirty(true)
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setGenerating(false)
+    }
   }
 
   const runSingleTest = useCallback(
@@ -185,23 +267,53 @@ export function FunctionTestSuite({ functionName }: { functionName: string }) {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {runtime && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={generateWithAI}
+              disabled={generating || runningAll}
+            >
+              {generating ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="mr-2 h-4 w-4" />
+              )}
+              {t("aiGenerate")}
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={addTestCase}>
             <Plus className="mr-2 h-4 w-4" />
             {t("addTestCase")}
           </Button>
           {testCases.length > 0 && (
-            <Button
-              size="sm"
-              onClick={runAllTests}
-              disabled={runningAll || testCases.length === 0}
-            >
-              {runningAll ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Play className="mr-2 h-4 w-4" />
-              )}
-              {t("runAll")}
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={saveTestSuite}
+                disabled={saving || !dirty}
+              >
+                {saving ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                {t("save")}
+              </Button>
+              <Button
+                size="sm"
+                onClick={runAllTests}
+                disabled={runningAll || testCases.length === 0}
+              >
+                {runningAll ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="mr-2 h-4 w-4" />
+                )}
+                {t("runAll")}
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -210,10 +322,27 @@ export function FunctionTestSuite({ functionName }: { functionName: string }) {
       {testCases.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card py-12 text-muted-foreground">
           <p className="text-sm mb-3">{t("emptyDescription")}</p>
-          <Button variant="outline" size="sm" onClick={addTestCase}>
-            <Plus className="mr-2 h-4 w-4" />
-            {t("addFirstTestCase")}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={addTestCase}>
+              <Plus className="mr-2 h-4 w-4" />
+              {t("addFirstTestCase")}
+            </Button>
+            {runtime && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={generateWithAI}
+                disabled={generating}
+              >
+                {generating ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-2 h-4 w-4" />
+                )}
+                {t("aiGenerate")}
+              </Button>
+            )}
+          </div>
         </div>
       ) : (
         <div className="space-y-3">

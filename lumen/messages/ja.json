@@ -1548,6 +1548,8 @@
     "addTestCase": "テストケースを追加",
     "addFirstTestCase": "最初のテストケースを追加",
     "runAll": "すべて実行",
+    "save": "保存",
+    "aiGenerate": "AI 生成",
     "input": "入力",
     "expectedOutput": "期待される出力",
     "expectedOutputPlaceholder": "空欄の場合、アサーションをスキップします",

@@ -239,6 +239,26 @@ type DocErrorModel struct {
 	Description string `json:"description"`
 }
 
+// GenerateTestsRequest is the request payload for AI test suite generation.
+type GenerateTestsRequest struct {
+	FunctionName string `json:"function_name"`
+	Runtime      string `json:"runtime"`
+	Code         string `json:"code"`
+	Handler      string `json:"handler,omitempty"`
+}
+
+// GenerateTestsResponse is the response for AI test suite generation.
+type GenerateTestsResponse struct {
+	TestCases []GeneratedTestCase `json:"test_cases"`
+}
+
+// GeneratedTestCase represents a single AI-generated test case.
+type GeneratedTestCase struct {
+	Name           string `json:"name"`
+	Input          string `json:"input"`
+	ExpectedOutput string `json:"expected_output"`
+}
+
 // Service provides AI-powered code operations.
 type Service struct {
 	cfg     Config
@@ -845,6 +865,45 @@ var generateDocsTool = map[string]interface{}{
 	},
 }
 
+// generateTestsTool is the OpenAI function tool schema for test suite generation.
+var generateTestsTool = map[string]interface{}{
+	"type": "function",
+	"function": map[string]interface{}{
+		"name":        "generate_test_suite",
+		"description": "Generate a comprehensive test suite for a serverless function deployed on the Nova platform. Include normal cases, edge cases, and error cases.",
+		"parameters": map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"test_cases": map[string]interface{}{
+					"type":        "array",
+					"description": "List of test cases covering normal inputs, edge cases, and error scenarios.",
+					"items": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"name": map[string]interface{}{
+								"type":        "string",
+								"description": "Short descriptive name for the test case.",
+							},
+							"input": map[string]interface{}{
+								"type":        "string",
+								"description": "JSON string of the input payload to send to the function.",
+							},
+							"expected_output": map[string]interface{}{
+								"type":        "string",
+								"description": "JSON string of the expected output from the function. Leave empty if output is non-deterministic.",
+							},
+						},
+						"required": []string{"name", "input", "expected_output"},
+					},
+				},
+			},
+			"required":             []string{"test_cases"},
+			"additionalProperties": false,
+		},
+		"strict": true,
+	},
+}
+
 // --- Service methods ---
 
 // Generate creates function code from a natural language description.
@@ -1052,6 +1111,31 @@ func defaultStr(s, def string) string {
 		return def
 	}
 	return s
+}
+
+// GenerateTests generates a test suite for a function using AI.
+func (s *Service) GenerateTests(ctx context.Context, req GenerateTestsRequest) (*GenerateTestsResponse, error) {
+	if !s.Enabled() {
+		return nil, fmt.Errorf("AI service is not enabled")
+	}
+
+	systemPrompt := "You are a test engineering expert for serverless functions on the Nova platform. Generate comprehensive test suites that cover: normal cases, boundary/edge cases, and error cases. Each test case should have a descriptive name, a valid JSON input string, and an expected JSON output string. For non-deterministic outputs, leave expected_output as an empty string."
+
+	userPrompt := fmt.Sprintf("Generate a comprehensive test suite for the following function:\n\nFunction: %s\nRuntime: %s\nHandler: %s\n\nSource Code:\n```\n%s\n```\n\nGenerate 5-8 test cases covering normal inputs, edge cases, and error scenarios. Each test case input and expected_output must be valid JSON strings.",
+		req.FunctionName, req.Runtime,
+		defaultStr(req.Handler, "handler"),
+		req.Code)
+
+	resp, err := s.chatCompletionWithTools(ctx, systemPrompt, userPrompt, []interface{}{generateTestsTool}, "generate_test_suite", maxGenerateTokens)
+	if err != nil {
+		return nil, fmt.Errorf("generate tests: %w", err)
+	}
+
+	var result GenerateTestsResponse
+	if err := json.Unmarshal([]byte(resp), &result); err != nil {
+		return nil, fmt.Errorf("decode tests response: %w", err)
+	}
+	return &result, nil
 }
 
 // --- OpenAI API types (following the official specification) ---

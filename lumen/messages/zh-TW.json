@@ -1548,6 +1548,8 @@
     "addTestCase": "新增測試案例",
     "addFirstTestCase": "新增第一個測試案例",
     "runAll": "全部執行",
+    "save": "儲存",
+    "aiGenerate": "AI 生成",
     "input": "輸入",
     "expectedOutput": "預期輸出",
     "expectedOutputPlaceholder": "留空則跳過斷言",

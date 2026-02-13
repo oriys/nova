@@ -782,6 +782,13 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 
+		`CREATE TABLE IF NOT EXISTS test_suites (
+			function_name TEXT PRIMARY KEY,
+			test_cases JSONB NOT NULL DEFAULT '[]',
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+
 		// pg_trgm GIN index for ILIKE text search on function names
 		`CREATE EXTENSION IF NOT EXISTS pg_trgm`,
 		`CREATE INDEX IF NOT EXISTS idx_functions_name_trgm ON functions USING gin(name gin_trgm_ops)`,
@@ -926,5 +933,33 @@ func (s *PostgresStore) GetWorkflowDoc(ctx context.Context, workflowName string)
 
 func (s *PostgresStore) DeleteWorkflowDoc(ctx context.Context, workflowName string) error {
 	_, err := s.pool.Exec(ctx, `DELETE FROM workflow_docs WHERE workflow_name = $1`, workflowName)
+	return err
+}
+
+// --- Test Suites ---
+
+func (s *PostgresStore) SaveTestSuite(ctx context.Context, ts *TestSuite) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO test_suites (function_name, test_cases, updated_at, created_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (function_name) DO UPDATE SET test_cases = $2, updated_at = $3`,
+		ts.FunctionName, ts.TestCases, ts.UpdatedAt, ts.CreatedAt)
+	return err
+}
+
+func (s *PostgresStore) GetTestSuite(ctx context.Context, functionName string) (*TestSuite, error) {
+	var ts TestSuite
+	err := s.pool.QueryRow(ctx, `
+		SELECT function_name, test_cases, updated_at, created_at
+		FROM test_suites WHERE function_name = $1`, functionName).Scan(
+		&ts.FunctionName, &ts.TestCases, &ts.UpdatedAt, &ts.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &ts, nil
+}
+
+func (s *PostgresStore) DeleteTestSuite(ctx context.Context, functionName string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM test_suites WHERE function_name = $1`, functionName)
 	return err
 }

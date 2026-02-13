@@ -116,3 +116,11 @@ CREATE INDEX IF NOT EXISTS idx_function_files_function_id ON function_files(func
 -- Grant permissions
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO nova;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO nova;
+
+-- Test suites table (per-function persisted test suites)
+CREATE TABLE IF NOT EXISTS test_suites (
+    function_name TEXT PRIMARY KEY,
+    test_cases JSONB NOT NULL DEFAULT '[]',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

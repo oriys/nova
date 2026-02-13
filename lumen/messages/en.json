@@ -1548,6 +1548,8 @@
     "addTestCase": "Add Test Case",
     "addFirstTestCase": "Add First Test Case",
     "runAll": "Run All",
+    "save": "Save",
+    "aiGenerate": "AI Generate",
     "input": "Input",
     "expectedOutput": "Expected Output",
     "expectedOutputPlaceholder": "Leave empty to skip assertion",

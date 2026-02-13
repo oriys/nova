@@ -192,6 +192,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		apiDocHandler := &APIDocHandler{AIService: h.AIService, Store: h.Store}
 		apiDocHandler.RegisterRoutes(mux)
 	}
+
+	// Test Suite handler (CRUD always available, AI generation requires AI service)
+	tsHandler := &TestSuiteHandler{AIService: h.AIService, Store: h.Store}
+	tsHandler.RegisterRoutes(mux)
 }
 
 // ListFunctionVersions returns all versions of a function.

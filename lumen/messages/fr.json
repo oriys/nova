@@ -1548,6 +1548,8 @@
     "addTestCase": "Ajouter un cas de test",
     "addFirstTestCase": "Ajouter le premier cas de test",
     "runAll": "Tout exécuter",
+    "save": "Enregistrer",
+    "aiGenerate": "Générer par IA",
     "input": "Entrée",
     "expectedOutput": "Sortie attendue",
     "expectedOutputPlaceholder": "Laisser vide pour ignorer la vérification",
