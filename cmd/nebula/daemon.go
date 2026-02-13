@@ -81,7 +81,8 @@ func daemonCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s := store.NewStore(pgStore)
+			cachedStore := store.NewCachedMetadataStore(pgStore, store.DefaultCacheTTL)
+			s := store.NewStore(cachedStore)
 			defer s.Close()
 
 			// Determine the invoker: remote (via Comet gRPC) or local.
