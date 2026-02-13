@@ -734,7 +734,7 @@ export default function FunctionDetailPage({
           </TabsContent>
 
           <TabsContent value="tests" className="mt-0">
-            <FunctionTestSuite functionName={func.name} />
+            <FunctionTestSuite functionName={func.name} runtime={func.runtimeId} />
           </TabsContent>
         </Tabs>
       </div>
