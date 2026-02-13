@@ -10,9 +10,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { asyncInvocationsApi, type AsyncInvocationJob, type AsyncInvocationStatus } from "@/lib/api"
+import { asyncInvocationsApi, type AsyncInvocationJob, type AsyncInvocationStatus, type AsyncInvocationSummary } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import { RefreshCw, Search, RotateCcw, ExternalLink, Loader2, Pause, Play, Trash2 } from "lucide-react"
+import { RefreshCw, Search, RotateCcw, ExternalLink, Loader2, Pause, Play, Trash2, Layers, Zap, CheckCircle2, AlertTriangle, PauseCircle } from "lucide-react"
 
 function toErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error && err.message.trim()) return err.message.trim()
@@ -69,6 +69,16 @@ export default function AsyncInvocationsPage() {
   const [resumingID, setResumingID] = useState("")
   const [deletingID, setDeletingID] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [summary, setSummary] = useState<AsyncInvocationSummary | null>(null)
+
+  const loadSummary = useCallback(async () => {
+    try {
+      const result = await asyncInvocationsApi.summary()
+      setSummary(result)
+    } catch {
+      // Summary is non-critical; silently ignore errors
+    }
+  }, [])
 
   const loadList = useCallback(async () => {
     setLoadingList(true)
@@ -91,9 +101,14 @@ export default function AsyncInvocationsPage() {
     }
   }, [page, pageSize, statusFilter, ta])
 
-  useEffect(() => {
+  const handleRefresh = useCallback(() => {
     void loadList()
-  }, [loadList])
+    void loadSummary()
+  }, [loadList, loadSummary])
+
+  useEffect(() => {
+    handleRefresh()
+  }, [handleRefresh])
 
   useEffect(() => {
     setPage(1)
@@ -198,6 +213,77 @@ export default function AsyncInvocationsPage() {
           </div>
         )}
 
+        {summary && (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">{ta("summaryBacklog")}</p>
+                  <p className="mt-1 text-2xl font-semibold text-card-foreground">{summary.backlog}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {ta("status.queued")} {summary.queued} · {ta("status.running")} {summary.running}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-primary/10 p-2.5">
+                  <Layers className="h-4 w-4 text-primary" />
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">{ta("summaryConsumeSpeed")}</p>
+                  <p className="mt-1 text-2xl font-semibold text-card-foreground">
+                    {ta("summaryPerSec", { rate: summary.consume_rate_per_sec_1m.toFixed(1) })}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {ta("summaryConsumedLast1m", { count: summary.consumed_last_1m })}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-primary/10 p-2.5">
+                  <Zap className="h-4 w-4 text-primary" />
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">{ta("summarySucceeded")}</p>
+                  <p className="mt-1 text-2xl font-semibold text-card-foreground">{summary.succeeded}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {ta("summaryConsumedLast5m", { count: summary.consumed_last_5m })}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-green-500/10 p-2.5">
+                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">{ta("summaryDlq")}</p>
+                  <p className="mt-1 text-2xl font-semibold text-card-foreground">{summary.dlq}</p>
+                </div>
+                <div className="rounded-lg bg-destructive/10 p-2.5">
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">{ta("summaryPaused")}</p>
+                  <p className="mt-1 text-2xl font-semibold text-card-foreground">{summary.paused}</p>
+                </div>
+                <div className="rounded-lg bg-yellow-500/10 p-2.5">
+                  <PauseCircle className="h-4 w-4 text-yellow-600" />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex min-w-[320px] flex-1 items-center gap-2">
@@ -236,7 +322,7 @@ export default function AsyncInvocationsPage() {
               </SelectContent>
             </Select>
 
-            <Button variant="outline" onClick={() => void loadList()} disabled={loadingList}>
+            <Button variant="outline" onClick={handleRefresh} disabled={loadingList}>
               <RefreshCw className={cn("mr-2 h-4 w-4", loadingList && "animate-spin")} />
               {ta("refreshList")}
             </Button>

@@ -11,14 +11,26 @@ import { ActiveFunctionsTable } from "@/components/active-functions-table"
 import { RecentLogs } from "@/components/recent-logs"
 import { OnboardingFlow } from "@/components/onboarding-flow"
 import { ErrorBanner } from "@/components/ui/error-banner"
-import { Activity, Zap, AlertTriangle, Clock, RefreshCw } from "lucide-react"
+import { Activity, Zap, AlertTriangle, Clock, RefreshCw, Snowflake, Server, HeartPulse, Timer, Cpu } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { functionsApi, gatewayApi, metricsApi } from "@/lib/api"
+import { functionsApi, gatewayApi, metricsApi, healthApi, type GlobalMetrics, type HealthStatus } from "@/lib/api"
 import { transformFunction, transformLog, FunctionData, LogEntry } from "@/lib/types"
 import { useAutoRefresh } from "@/lib/use-auto-refresh"
 import { syncOnboardingStateFromData } from "@/lib/onboarding-state"
 import { cn } from "@/lib/utils"
 import { GlobalHeatmap } from "@/components/global-heatmap"
+
+function formatUptime(seconds: number, td: (key: string, values?: Record<string, string | number | Date>) => string): string {
+  if (!seconds || seconds <= 0) return "—"
+  const d = Math.floor(seconds / 86400)
+  const h = Math.floor((seconds % 86400) / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const parts: string[] = []
+  if (d > 0) parts.push(td("days", { count: d }))
+  if (h > 0) parts.push(td("hours", { count: h }))
+  if (d === 0 && m > 0) parts.push(td("minutes", { count: m }))
+  return parts.join(" ") || td("minutes", { count: 0 })
+}
 
 export default function DashboardPage() {
   const t = useTranslations("pages")
@@ -38,6 +50,8 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [timeRange, setTimeRange] = useState<TimeRange>("1h")
   const [gatewayRouteCount, setGatewayRouteCount] = useState(0)
+  const [systemMetrics, setSystemMetrics] = useState<GlobalMetrics | null>(null)
+  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null)
 
   const fetchData = useCallback(async (isRefresh = false, range?: TimeRange) => {
     try {
@@ -51,12 +65,16 @@ export default function DashboardPage() {
       const currentRange = range || timeRange
 
       // Fetch functions, metrics, and time-series in parallel
-      const [funcs, metrics, timeSeriesData, routes] = await Promise.all([
+      const [funcs, metrics, timeSeriesData, routes, health] = await Promise.all([
         functionsApi.list(),
         metricsApi.global(),
         metricsApi.timeseries(currentRange).catch(() => []),
         gatewayApi.listRoutes().catch(() => []),
+        healthApi.check().catch(() => null),
       ])
+
+      setSystemMetrics(metrics)
+      setHealthStatus(health)
 
       // Transform functions with their metrics
       const transformedFuncs = funcs.map((fn) => {
@@ -205,6 +223,112 @@ export default function DashboardPage() {
             icon={Clock}
           />
         </div>
+
+        {/* System Indicators */}
+        {systemMetrics && (
+          <div>
+            <h3 className="mb-3 text-sm font-semibold text-card-foreground">{td("systemIndicators")}</h3>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              <div className="rounded-xl border border-border bg-card p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">{td("uptime")}</p>
+                    <p className="mt-1 text-lg font-semibold text-card-foreground">
+                      {formatUptime(systemMetrics.uptime_seconds, td)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-primary/10 p-2">
+                    <Timer className="h-4 w-4 text-primary" />
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">{td("coldStartRate")}</p>
+                    <p className="mt-1 text-lg font-semibold text-card-foreground">
+                      {systemMetrics.invocations.cold_pct != null ? `${systemMetrics.invocations.cold_pct.toFixed(1)}%` : "—"}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {td("coldWarmRatio", { cold: systemMetrics.invocations.cold, warm: systemMetrics.invocations.warm })}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-blue-500/10 p-2">
+                    <Snowflake className="h-4 w-4 text-blue-600" />
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">{td("vmPool")}</p>
+                    <p className="mt-1 text-lg font-semibold text-card-foreground">
+                      {healthStatus?.components?.pool?.active_vms ?? 0}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {td("activeVms", { count: healthStatus?.components?.pool?.active_vms ?? 0 })}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-primary/10 p-2">
+                    <Server className="h-4 w-4 text-primary" />
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">{td("vmLifecycle")}</p>
+                    <p className="mt-1 text-lg font-semibold text-card-foreground">
+                      {systemMetrics.vms.created}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {td("vmsCreated", { count: systemMetrics.vms.created })}
+                      {systemMetrics.vms.crashed > 0 && ` · ${td("vmsCrashed", { count: systemMetrics.vms.crashed })}`}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-primary/10 p-2">
+                    <Cpu className="h-4 w-4 text-primary" />
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">{td("latencyRange")}</p>
+                    <p className="mt-1 text-lg font-semibold text-card-foreground">
+                      {systemMetrics.latency_ms.max > 0 ? td("latencyMinMax", { min: systemMetrics.latency_ms.min, max: systemMetrics.latency_ms.max }) : "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-primary/10 p-2">
+                    <Clock className="h-4 w-4 text-primary" />
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">{td("systemStatus")}</p>
+                    <p className={cn(
+                      "mt-1 text-lg font-semibold",
+                      healthStatus?.status === "ok" ? "text-green-600" : "text-yellow-600"
+                    )}>
+                      {healthStatus?.status === "ok" ? td("statusOk") : td("statusDegraded")}
+                    </p>
+                  </div>
+                  <div className={cn(
+                    "rounded-lg p-2",
+                    healthStatus?.status === "ok" ? "bg-green-500/10" : "bg-yellow-500/10"
+                  )}>
+                    <HeartPulse className={cn(
+                      "h-4 w-4",
+                      healthStatus?.status === "ok" ? "text-green-600" : "text-yellow-600"
+                    )} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Charts */}
         <DashboardCharts

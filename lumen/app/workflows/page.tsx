@@ -6,6 +6,7 @@ import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { EmptyState } from "@/components/empty-state"
+import { Pagination } from "@/components/pagination"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -41,20 +42,25 @@ export default function WorkflowsPage() {
   const [createDesc, setCreateDesc] = useState("")
   const [creating, setCreating] = useState(false)
   const [pendingDeleteWorkflow, setPendingDeleteWorkflow] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [totalWorkflows, setTotalWorkflows] = useState(0)
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
-      const wfs = await workflowsApi.list()
-      setWorkflows(wfs)
+      const offset = (page - 1) * pageSize
+      const result = await workflowsApi.listPage(pageSize, offset)
+      setWorkflows(result.items)
+      setTotalWorkflows(result.total)
     } catch (err) {
       console.error("Failed to fetch workflows:", err)
       setError(toUserErrorMessage(err))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [page, pageSize])
 
   useEffect(() => {
     fetchData()
@@ -152,7 +158,7 @@ export default function WorkflowsPage() {
           <div className="rounded-lg border border-border bg-card p-4">
             <p className="text-sm text-muted-foreground">{tw("totalWorkflows")}</p>
             <p className="text-2xl font-semibold text-foreground">
-              {loading ? "..." : workflows.length}
+              {loading ? "..." : totalWorkflows}
             </p>
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
@@ -256,6 +262,21 @@ export default function WorkflowsPage() {
               </table>
             </div>
           </div>
+        )}
+
+        {!loading && totalWorkflows > 0 && (
+          <Pagination
+            totalItems={totalWorkflows}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size)
+              setPage(1)
+            }}
+            itemLabel="workflows"
+            className="rounded-xl border border-border bg-card p-4"
+          />
         )}
 
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
