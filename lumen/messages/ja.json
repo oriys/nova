@@ -635,7 +635,8 @@
       "graph": "Graph",
       "runs": "Runs",
       "versions": "Versions",
-      "docs": "Docs"
+      "docs": "Docs",
+      "tests": "テスト"
     },
     "runs": {
       "colRunId": "Run ID",
@@ -780,7 +781,8 @@
       "configuration": "Configuration",
       "versions": "Versions",
       "schedules": "Schedules",
-      "docs": "Docs"
+      "docs": "Docs",
+      "tests": "テスト"
     },
     "versions": {
       "colVersion": "Version",
@@ -1532,5 +1534,25 @@
         }
       }
     }
+  },
+  "testSuite": {
+    "testCase": "テストケース",
+    "passed": "合格",
+    "failed": "不合格",
+    "executed": "実行済み",
+    "addTestCase": "テストケースを追加",
+    "addFirstTestCase": "最初のテストケースを追加",
+    "runAll": "すべて実行",
+    "input": "入力",
+    "expectedOutput": "期待される出力",
+    "expectedOutputPlaceholder": "空欄の場合、アサーションをスキップします",
+    "actualOutput": "実際の出力",
+    "result": "結果",
+    "running": "実行中...",
+    "emptyDescription": "テストケースがまだありません。関数を検証するためにテストケースを追加してください。",
+    "workflowEmptyDescription": "テストケースがまだありません。ワークフローを検証するためにテストケースを追加してください。",
+    "workflowNoVersion": "このワークフローにはまだ公開バージョンがありません。テストを実行する前にバージョンを公開してください。",
+    "workflowRunning": "ワークフロー実行中...",
+    "viewRun": "実行を表示"
   }
 }

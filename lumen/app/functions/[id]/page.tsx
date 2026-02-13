@@ -16,6 +16,7 @@ import { FunctionConfig } from "@/components/function-config"
 import { FunctionDiagnosticsPanel } from "@/components/function-diagnostics"
 import { FunctionSLOPanel } from "@/components/function-slo-panel"
 import { FunctionDocs } from "@/components/function-docs"
+import { FunctionTestSuite } from "@/components/function-test-suite"
 import { InvocationHeatmap } from "@/components/invocation-heatmap"
 import {
   Dialog,
@@ -68,6 +69,7 @@ export default function FunctionDetailPage({
       "config",
       "versions",
       "schedules",
+      "tests",
       "docs",
     ])
     if (validTabs.has(requestedTab)) {
@@ -372,6 +374,12 @@ export default function FunctionDetailPage({
               className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
             >
               {t("tabs.schedules")}
+            </TabsTrigger>
+            <TabsTrigger
+              value="tests"
+              className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
+            >
+              {t("tabs.tests")}
             </TabsTrigger>
             <TabsTrigger
               value="docs"
@@ -723,6 +731,10 @@ export default function FunctionDetailPage({
 
           <TabsContent value="docs" className="mt-0">
             <FunctionDocs func={func} />
+          </TabsContent>
+
+          <TabsContent value="tests" className="mt-0">
+            <FunctionTestSuite functionName={func.name} />
           </TabsContent>
         </Tabs>
       </div>

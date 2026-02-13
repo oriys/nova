@@ -635,7 +635,8 @@
       "graph": "Graph",
       "runs": "Runs",
       "versions": "Versions",
-      "docs": "Docs"
+      "docs": "Docs",
+      "tests": "测试套件"
     },
     "runs": {
       "colRunId": "Run ID",
@@ -780,7 +781,8 @@
       "configuration": "Configuration",
       "versions": "Versions",
       "schedules": "Schedules",
-      "docs": "Docs"
+      "docs": "Docs",
+      "tests": "测试套件"
     },
     "versions": {
       "colVersion": "Version",
@@ -1532,5 +1534,25 @@
         }
       }
     }
+  },
+  "testSuite": {
+    "testCase": "测试用例",
+    "passed": "通过",
+    "failed": "失败",
+    "executed": "已执行",
+    "addTestCase": "添加测试用例",
+    "addFirstTestCase": "添加第一个测试用例",
+    "runAll": "全部运行",
+    "input": "输入",
+    "expectedOutput": "预期输出",
+    "expectedOutputPlaceholder": "留空则跳过断言",
+    "actualOutput": "实际输出",
+    "result": "结果",
+    "running": "运行中...",
+    "emptyDescription": "暂无测试用例。添加测试用例以验证您的函数。",
+    "workflowEmptyDescription": "暂无测试用例。添加测试用例以验证您的工作流。",
+    "workflowNoVersion": "此工作流尚未发布版本。请先发布版本再运行测试。",
+    "workflowRunning": "工作流运行中...",
+    "viewRun": "查看运行"
   }
 }
