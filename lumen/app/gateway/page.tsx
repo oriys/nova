@@ -240,7 +240,7 @@ export default function GatewayPage() {
   const [editRps, setEditRps] = useState("")
   const [editBurst, setEditBurst] = useState("")
 
-  const filteredRoutes = routes
+  // Domain filtering is now handled server-side via the API call
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -296,7 +296,7 @@ export default function GatewayPage() {
 
   useEffect(() => {
     setSelectedRouteIDs((prev) => {
-      const valid = new Set(filteredRoutes.map((route) => route.id))
+      const valid = new Set(routes.map((route) => route.id))
       const next = new Set<string>()
       prev.forEach((id) => {
         if (valid.has(id)) {
@@ -306,7 +306,7 @@ export default function GatewayPage() {
       return next
     })
     setConfirmBulkDelete(false)
-  }, [filteredRoutes])
+  }, [routes])
 
   const resetCreateForm = () => {
     setCreateDomain("")
@@ -509,18 +509,18 @@ export default function GatewayPage() {
     setSelectedRouteIDs((prev) => {
       const next = new Set(prev)
       if (checked) {
-        filteredRoutes.forEach((route) => next.add(route.id))
+        routes.forEach((route) => next.add(route.id))
       } else {
-        filteredRoutes.forEach((route) => next.delete(route.id))
+        routes.forEach((route) => next.delete(route.id))
       }
       return next
     })
     setConfirmBulkDelete(false)
   }
 
-  const selectedRoutes = filteredRoutes.filter((route) => selectedRouteIDs.has(route.id))
+  const selectedRoutes = routes.filter((route) => selectedRouteIDs.has(route.id))
   const allFilteredSelected =
-    filteredRoutes.length > 0 && filteredRoutes.every((route) => selectedRouteIDs.has(route.id))
+    routes.length > 0 && routes.every((route) => selectedRouteIDs.has(route.id))
 
   const applyBulkEnableState = async (enabled: boolean) => {
     const targets = Array.from(selectedRouteIDs)
@@ -586,7 +586,7 @@ export default function GatewayPage() {
   const handleExportRoutes = () => {
     const selectedTargets = selectedRouteIDs.size > 0
       ? routes.filter((route) => selectedRouteIDs.has(route.id))
-      : filteredRoutes
+      : routes
     if (selectedTargets.length === 0) {
       setNotice({ kind: "info", text: g("errors.noRoutesExport") })
       return
@@ -786,7 +786,7 @@ export default function GatewayPage() {
               variant="outline"
               size="sm"
               onClick={handleExportRoutes}
-              disabled={loading || busy || bulkBusy || ioBusy || filteredRoutes.length === 0}
+              disabled={loading || busy || bulkBusy || ioBusy || routes.length === 0}
             >
               <Download className="mr-2 h-4 w-4" />
               {selectedRouteIDs.size > 0
@@ -1026,7 +1026,7 @@ export default function GatewayPage() {
               },
             }}
           />
-        ) : !loading && routes.length > 0 && filteredRoutes.length === 0 ? (
+        ) : !loading && domainFilter.trim() && routes.length === 0 ? (
           <EmptyState
             title={g("empty.noMatchingTitle")}
             description={g("empty.noMatchingDescription")}
@@ -1068,7 +1068,7 @@ export default function GatewayPage() {
                     </tr>
                   ))
                 ) : (
-                  filteredRoutes.map((route) => (
+                  routes.map((route) => (
                   <tr
                     key={route.id}
                     className={cn(
