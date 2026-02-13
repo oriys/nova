@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { asyncInvocationsApi, type AsyncInvocationJob, type AsyncInvocationStatus } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import { RefreshCw, Search, RotateCcw, ExternalLink, Loader2 } from "lucide-react"
+import { RefreshCw, Search, RotateCcw, ExternalLink, Loader2, Pause, Play, Trash2 } from "lucide-react"
 
 function toErrorMessage(err: unknown): string {
   if (err instanceof Error && err.message.trim()) return err.message.trim()
@@ -44,6 +44,8 @@ function getStatusBadge(status: AsyncInvocationStatus) {
       return <Badge variant="outline" className="border-success text-success">succeeded</Badge>
     case "dlq":
       return <Badge variant="destructive">dlq</Badge>
+    case "paused":
+      return <Badge variant="outline" className="border-yellow-600 text-yellow-600">paused</Badge>
     default:
       return <Badge variant="secondary">{status}</Badge>
   }
@@ -58,6 +60,9 @@ export default function AsyncInvocationsPage() {
   const [loadingList, setLoadingList] = useState(true)
   const [loadingLookup, setLoadingLookup] = useState(false)
   const [retryingID, setRetryingID] = useState("")
+  const [pausingID, setPausingID] = useState("")
+  const [resumingID, setResumingID] = useState("")
+  const [deletingID, setDeletingID] = useState("")
   const [error, setError] = useState<string | null>(null)
 
   const loadList = useCallback(async () => {
@@ -111,6 +116,50 @@ export default function AsyncInvocationsPage() {
     }
   }
 
+  const handlePause = async (job: AsyncInvocationJob) => {
+    setPausingID(job.id)
+    setError(null)
+    try {
+      const result = await asyncInvocationsApi.pause(job.id)
+      setSelectedJob(result)
+      await loadList()
+    } catch (err) {
+      setError(toErrorMessage(err))
+    } finally {
+      setPausingID("")
+    }
+  }
+
+  const handleResume = async (job: AsyncInvocationJob) => {
+    setResumingID(job.id)
+    setError(null)
+    try {
+      const result = await asyncInvocationsApi.resume(job.id)
+      setSelectedJob(result)
+      await loadList()
+    } catch (err) {
+      setError(toErrorMessage(err))
+    } finally {
+      setResumingID("")
+    }
+  }
+
+  const handleDelete = async (job: AsyncInvocationJob) => {
+    setDeletingID(job.id)
+    setError(null)
+    try {
+      await asyncInvocationsApi.delete(job.id)
+      if (selectedJob?.id === job.id) {
+        setSelectedJob(null)
+      }
+      await loadList()
+    } catch (err) {
+      setError(toErrorMessage(err))
+    } finally {
+      setDeletingID("")
+    }
+  }
+
   const selectedPayload = useMemo(() => stringifyValue(selectedJob?.payload), [selectedJob])
   const selectedOutput = useMemo(() => stringifyValue(selectedJob?.output), [selectedJob])
 
@@ -158,6 +207,7 @@ export default function AsyncInvocationsPage() {
                 <SelectItem value="queued">queued</SelectItem>
                 <SelectItem value="running">running</SelectItem>
                 <SelectItem value="succeeded">succeeded</SelectItem>
+                <SelectItem value="paused">paused</SelectItem>
                 <SelectItem value="dlq">dlq</SelectItem>
               </SelectContent>
             </Select>
@@ -199,6 +249,52 @@ export default function AsyncInvocationsPage() {
                       <RotateCcw className="mr-2 h-4 w-4" />
                     )}
                     Retry
+                  </Button>
+                )}
+                {selectedJob.status === "queued" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handlePause(selectedJob)}
+                    disabled={pausingID === selectedJob.id}
+                  >
+                    {pausingID === selectedJob.id ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Pause className="mr-2 h-4 w-4" />
+                    )}
+                    Pause
+                  </Button>
+                )}
+                {selectedJob.status === "paused" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleResume(selectedJob)}
+                    disabled={resumingID === selectedJob.id}
+                  >
+                    {resumingID === selectedJob.id ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Play className="mr-2 h-4 w-4" />
+                    )}
+                    Resume
+                  </Button>
+                )}
+                {(selectedJob.status === "queued" || selectedJob.status === "paused") && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => void handleDelete(selectedJob)}
+                    disabled={deletingID === selectedJob.id}
+                  >
+                    {deletingID === selectedJob.id ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="mr-2 h-4 w-4" />
+                    )}
+                    Delete
                   </Button>
                 )}
               </div>
@@ -312,6 +408,49 @@ export default function AsyncInvocationsPage() {
                               <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
                               <RotateCcw className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
+                        {job.status === "queued" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => void handlePause(job)}
+                            disabled={pausingID === job.id}
+                          >
+                            {pausingID === job.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Pause className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
+                        {job.status === "paused" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => void handleResume(job)}
+                            disabled={resumingID === job.id}
+                          >
+                            {resumingID === job.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Play className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
+                        {(job.status === "queued" || job.status === "paused") && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => void handleDelete(job)}
+                            disabled={deletingID === job.id}
+                          >
+                            {deletingID === job.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
                             )}
                           </Button>
                         )}

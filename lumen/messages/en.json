@@ -575,7 +575,11 @@
     "colUpdated": "Updated",
     "colActions": "Actions",
     "noJobs": "No async jobs found.",
-    "view": "View"
+    "view": "View",
+    "pause": "Pause",
+    "resume": "Resume",
+    "delete": "Delete",
+    "retry": "Retry"
   },
   "loginPage": {
     "title": "User Login",
