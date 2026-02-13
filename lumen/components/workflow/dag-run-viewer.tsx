@@ -76,7 +76,9 @@ export function DagRunViewer({ version, run, className, onFunctionClick }: DagRu
         position: layout[n.node_key] || { x: 0, y: 0 },
         data: {
           nodeKey: n.node_key,
+          nodeType: n.node_type || "function",
           functionName: n.function_name,
+          workflowName: n.workflow_name,
           timeoutS: n.timeout_s,
           retryMax: n.retry_policy?.max_attempts,
           status: runNode?.status || "pending",

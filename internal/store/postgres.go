@@ -562,6 +562,13 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			UNIQUE(run_node_id, attempt)
 		)`,
 
+		// Sub-workflow support: add node_type, workflow_name, child_run_id columns
+		`ALTER TABLE dag_workflow_nodes ADD COLUMN IF NOT EXISTS node_type TEXT NOT NULL DEFAULT 'function'`,
+		`ALTER TABLE dag_workflow_nodes ADD COLUMN IF NOT EXISTS workflow_name TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE dag_run_nodes ADD COLUMN IF NOT EXISTS node_type TEXT NOT NULL DEFAULT 'function'`,
+		`ALTER TABLE dag_run_nodes ADD COLUMN IF NOT EXISTS workflow_name TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE dag_run_nodes ADD COLUMN IF NOT EXISTS child_run_id TEXT NOT NULL DEFAULT ''`,
+
 		// Schedules table
 		`CREATE TABLE IF NOT EXISTS schedules (
 			id TEXT PRIMARY KEY,

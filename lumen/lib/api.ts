@@ -1673,11 +1673,15 @@ export interface WorkflowVersion {
   created_at: string;
 }
 
+export type NodeType = "function" | "sub_workflow";
+
 export interface WorkflowNode {
   id: string;
   version_id: string;
   node_key: string;
+  node_type: NodeType;
   function_name: string;
+  workflow_name?: string;
   input_mapping?: unknown;
   retry_policy?: RetryPolicy;
   timeout_s: number;
@@ -1719,7 +1723,10 @@ export interface RunNode {
   run_id: string;
   node_id: string;
   node_key: string;
+  node_type: NodeType;
   function_name: string;
+  workflow_name?: string;
+  child_run_id?: string;
   status: NodeStatus;
   unresolved_deps: number;
   attempt: number;
@@ -1733,7 +1740,9 @@ export interface RunNode {
 
 export interface NodeDefinition {
   node_key: string;
-  function_name: string;
+  node_type?: NodeType;
+  function_name?: string;
+  workflow_name?: string;
   input_mapping?: unknown;
   retry_policy?: RetryPolicy;
   timeout_s?: number;

@@ -90,10 +90,16 @@ func (s *Service) PublishVersion(ctx context.Context, workflowName string, def *
 	nodes := make([]domain.WorkflowNode, len(def.Nodes))
 	nodeKeyToID := make(map[string]string, len(def.Nodes))
 	for i, nd := range def.Nodes {
+		nodeType := nd.NodeType
+		if nodeType == "" {
+			nodeType = domain.NodeTypeFunction
+		}
 		nodes[i] = domain.WorkflowNode{
 			VersionID:    version.ID,
 			NodeKey:      nd.NodeKey,
+			NodeType:     nodeType,
 			FunctionName: nd.FunctionName,
+			WorkflowName: nd.WorkflowName,
 			InputMapping: nd.InputMapping,
 			RetryPolicy:  nd.RetryPolicy,
 			TimeoutS:     nd.TimeoutS,
@@ -227,7 +233,9 @@ func (s *Service) TriggerRun(ctx context.Context, workflowName string, input jso
 			RunID:          run.ID,
 			NodeID:         n.ID,
 			NodeKey:        n.NodeKey,
+			NodeType:       n.NodeType,
 			FunctionName:   n.FunctionName,
+			WorkflowName:   n.WorkflowName,
 			Status:         status,
 			UnresolvedDeps: deps,
 			Input:          nodeInput,

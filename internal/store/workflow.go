@@ -234,12 +234,15 @@ func (s *PostgresStore) CreateWorkflowNodes(ctx context.Context, nodes []domain.
 		if nodes[i].ID == "" {
 			nodes[i].ID = uuid.New().String()
 		}
+		if nodes[i].NodeType == "" {
+			nodes[i].NodeType = domain.NodeTypeFunction
+		}
 		retryJSON, _ := json.Marshal(nodes[i].RetryPolicy)
 		_, err := s.pool.Exec(ctx,
-			`INSERT INTO dag_workflow_nodes (id, version_id, node_key, function_name, input_mapping, retry_policy, timeout_s, position)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-			nodes[i].ID, nodes[i].VersionID, nodes[i].NodeKey, nodes[i].FunctionName,
-			nodes[i].InputMapping, retryJSON, nodes[i].TimeoutS, nodes[i].Position)
+			`INSERT INTO dag_workflow_nodes (id, version_id, node_key, node_type, function_name, workflow_name, input_mapping, retry_policy, timeout_s, position)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+			nodes[i].ID, nodes[i].VersionID, nodes[i].NodeKey, nodes[i].NodeType, nodes[i].FunctionName,
+			nodes[i].WorkflowName, nodes[i].InputMapping, retryJSON, nodes[i].TimeoutS, nodes[i].Position)
 		if err != nil {
 			return err
 		}
@@ -265,7 +268,7 @@ func (s *PostgresStore) CreateWorkflowEdges(ctx context.Context, edges []domain.
 
 func (s *PostgresStore) GetWorkflowNodes(ctx context.Context, versionID string) ([]domain.WorkflowNode, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, version_id, node_key, function_name, input_mapping, retry_policy, timeout_s, position
+		`SELECT id, version_id, node_key, node_type, function_name, workflow_name, input_mapping, retry_policy, timeout_s, position
 		 FROM dag_workflow_nodes WHERE version_id = $1 ORDER BY position`, versionID)
 	if err != nil {
 		return nil, err
@@ -276,8 +279,8 @@ func (s *PostgresStore) GetWorkflowNodes(ctx context.Context, versionID string) 
 	for rows.Next() {
 		n := domain.WorkflowNode{}
 		var retryJSON []byte
-		if err := rows.Scan(&n.ID, &n.VersionID, &n.NodeKey, &n.FunctionName,
-			&n.InputMapping, &retryJSON, &n.TimeoutS, &n.Position); err != nil {
+		if err := rows.Scan(&n.ID, &n.VersionID, &n.NodeKey, &n.NodeType, &n.FunctionName,
+			&n.WorkflowName, &n.InputMapping, &retryJSON, &n.TimeoutS, &n.Position); err != nil {
 			return nil, err
 		}
 		if len(retryJSON) > 0 && string(retryJSON) != "null" {
@@ -293,9 +296,9 @@ func (s *PostgresStore) GetWorkflowNodeByID(ctx context.Context, nodeID string) 
 	n := &domain.WorkflowNode{}
 	var retryJSON []byte
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, version_id, node_key, function_name, input_mapping, retry_policy, timeout_s, position
+		`SELECT id, version_id, node_key, node_type, function_name, workflow_name, input_mapping, retry_policy, timeout_s, position
 		 FROM dag_workflow_nodes WHERE id = $1`, nodeID).
-		Scan(&n.ID, &n.VersionID, &n.NodeKey, &n.FunctionName, &n.InputMapping, &retryJSON, &n.TimeoutS, &n.Position)
+		Scan(&n.ID, &n.VersionID, &n.NodeKey, &n.NodeType, &n.FunctionName, &n.WorkflowName, &n.InputMapping, &retryJSON, &n.TimeoutS, &n.Position)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("workflow node not found: %s", nodeID)
 	}
@@ -421,12 +424,15 @@ func (s *PostgresStore) CreateRunNodes(ctx context.Context, nodes []domain.RunNo
 		if nodes[i].ID == "" {
 			nodes[i].ID = uuid.New().String()
 		}
+		if nodes[i].NodeType == "" {
+			nodes[i].NodeType = domain.NodeTypeFunction
+		}
 		nodes[i].CreatedAt = time.Now().UTC()
 		_, err := s.pool.Exec(ctx,
-			`INSERT INTO dag_run_nodes (id, run_id, node_id, node_key, function_name, status, unresolved_deps, attempt, input, created_at)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-			nodes[i].ID, nodes[i].RunID, nodes[i].NodeID, nodes[i].NodeKey, nodes[i].FunctionName,
-			nodes[i].Status, nodes[i].UnresolvedDeps, nodes[i].Attempt, nodes[i].Input, nodes[i].CreatedAt)
+			`INSERT INTO dag_run_nodes (id, run_id, node_id, node_key, node_type, function_name, workflow_name, status, unresolved_deps, attempt, input, created_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+			nodes[i].ID, nodes[i].RunID, nodes[i].NodeID, nodes[i].NodeKey, nodes[i].NodeType, nodes[i].FunctionName,
+			nodes[i].WorkflowName, nodes[i].Status, nodes[i].UnresolvedDeps, nodes[i].Attempt, nodes[i].Input, nodes[i].CreatedAt)
 		if err != nil {
 			return err
 		}
@@ -436,7 +442,7 @@ func (s *PostgresStore) CreateRunNodes(ctx context.Context, nodes []domain.RunNo
 
 func (s *PostgresStore) GetRunNodes(ctx context.Context, runID string) ([]domain.RunNode, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, run_id, node_id, node_key, function_name, status, unresolved_deps,
+		`SELECT id, run_id, node_id, node_key, node_type, function_name, workflow_name, child_run_id, status, unresolved_deps,
 		        attempt, input, output, COALESCE(error_message, ''), COALESCE(lease_owner, ''), lease_expires_at,
 		        started_at, finished_at, created_at
 		 FROM dag_run_nodes WHERE run_id = $1 ORDER BY created_at`, runID)
@@ -448,8 +454,8 @@ func (s *PostgresStore) GetRunNodes(ctx context.Context, runID string) ([]domain
 	var out []domain.RunNode
 	for rows.Next() {
 		n := domain.RunNode{}
-		if err := rows.Scan(&n.ID, &n.RunID, &n.NodeID, &n.NodeKey, &n.FunctionName,
-			&n.Status, &n.UnresolvedDeps, &n.Attempt, &n.Input, &n.Output, &n.ErrorMessage,
+		if err := rows.Scan(&n.ID, &n.RunID, &n.NodeID, &n.NodeKey, &n.NodeType, &n.FunctionName,
+			&n.WorkflowName, &n.ChildRunID, &n.Status, &n.UnresolvedDeps, &n.Attempt, &n.Input, &n.Output, &n.ErrorMessage,
 			&n.LeaseOwner, &n.LeaseExpiresAt, &n.StartedAt, &n.FinishedAt, &n.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -484,16 +490,18 @@ func (s *PostgresStore) AcquireReadyNode(ctx context.Context, leaseOwner string,
 				attempt = rn.attempt + 1
 			FROM candidate c
 			WHERE rn.id = c.id
-			RETURNING rn.id, c.tenant_id, c.namespace, rn.run_id, rn.node_id, rn.node_key, rn.function_name, rn.status, rn.unresolved_deps,
+			RETURNING rn.id, c.tenant_id, c.namespace, rn.run_id, rn.node_id, rn.node_key, rn.node_type,
+			          rn.function_name, rn.workflow_name, rn.child_run_id, rn.status, rn.unresolved_deps,
 			          rn.attempt, rn.input, rn.output, COALESCE(rn.error_message, '') AS error_message, COALESCE(rn.lease_owner, '') AS lease_owner, rn.lease_expires_at,
 			          rn.started_at, rn.finished_at, rn.created_at
 		)
-		SELECT id, tenant_id, namespace, run_id, node_id, node_key, function_name, status, unresolved_deps,
+		SELECT id, tenant_id, namespace, run_id, node_id, node_key, node_type,
+		       function_name, workflow_name, child_run_id, status, unresolved_deps,
 		       attempt, input, output, error_message, lease_owner, lease_expires_at, started_at, finished_at, created_at
 		FROM updated`,
 		leaseOwner, leaseExpires, now).
-		Scan(&n.ID, &n.TenantID, &n.Namespace, &n.RunID, &n.NodeID, &n.NodeKey, &n.FunctionName,
-			&n.Status, &n.UnresolvedDeps, &n.Attempt, &n.Input, &n.Output, &n.ErrorMessage,
+		Scan(&n.ID, &n.TenantID, &n.Namespace, &n.RunID, &n.NodeID, &n.NodeKey, &n.NodeType,
+			&n.FunctionName, &n.WorkflowName, &n.ChildRunID, &n.Status, &n.UnresolvedDeps, &n.Attempt, &n.Input, &n.Output, &n.ErrorMessage,
 			&n.LeaseOwner, &n.LeaseExpiresAt, &n.StartedAt, &n.FinishedAt, &n.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil // No work available
@@ -505,10 +513,10 @@ func (s *PostgresStore) UpdateRunNode(ctx context.Context, node *domain.RunNode)
 	_, err := s.pool.Exec(ctx,
 		`UPDATE dag_run_nodes SET
 			status = $2, attempt = $3, input = $4, output = $5, error_message = $6,
-			lease_owner = $7, lease_expires_at = $8, started_at = $9, finished_at = $10
+			lease_owner = $7, lease_expires_at = $8, started_at = $9, finished_at = $10, child_run_id = $11
 		 WHERE id = $1`,
 		node.ID, node.Status, node.Attempt, node.Input, node.Output, node.ErrorMessage,
-		node.LeaseOwner, node.LeaseExpiresAt, node.StartedAt, node.FinishedAt)
+		node.LeaseOwner, node.LeaseExpiresAt, node.StartedAt, node.FinishedAt, node.ChildRunID)
 	return err
 }
 

@@ -8,12 +8,15 @@ export interface WorkflowNodeData {
   [key: string]: unknown
   nodeKey: string
   functionName: string
+  workflowName?: string
+  nodeType?: "function" | "sub_workflow"
   timeoutS?: number
   retryMax?: number
   status?: NodeStatus
   mode: "viewer" | "editor" | "run"
   selected?: boolean
   onFunctionClick?: (functionName: string) => void
+  onWorkflowClick?: (workflowName: string) => void
 }
 
 type WFNodeProps = NodeProps & { data: WorkflowNodeData }
@@ -40,19 +43,29 @@ function WorkflowNodeComponent({ data }: WFNodeProps) {
   const status = data.status || "pending"
   const borderStyle = data.mode === "run" ? (statusStyles[status] || statusStyles.pending) : "border-border bg-card"
   const isEditor = data.mode === "editor"
+  const isSubWorkflow = data.nodeType === "sub_workflow"
 
   const handleFnClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
-    if (data.functionName && data.onFunctionClick) {
-      data.onFunctionClick(data.functionName)
+    if (isSubWorkflow) {
+      if (data.workflowName && data.onWorkflowClick) {
+        data.onWorkflowClick(data.workflowName)
+      }
+    } else {
+      if (data.functionName && data.onFunctionClick) {
+        data.onFunctionClick(data.functionName)
+      }
     }
-  }, [data.functionName, data.onFunctionClick])
+  }, [data.functionName, data.workflowName, data.onFunctionClick, data.onWorkflowClick, isSubWorkflow])
+
+  const displayName = isSubWorkflow ? data.workflowName : data.functionName
+  const displayLabel = isSubWorkflow ? "Sub-workflow" : undefined
 
   return (
     <div
       className={`w-[220px] rounded-lg border-2 px-3 py-2.5 shadow-sm transition-colors ${borderStyle} ${
         data.selected ? "ring-2 ring-ring ring-offset-1 ring-offset-background" : ""
-      }`}
+      } ${isSubWorkflow ? "border-dashed" : ""}`}
     >
       <Handle
         type="target"
@@ -69,17 +82,22 @@ function WorkflowNodeComponent({ data }: WFNodeProps) {
             )}
             <p className="font-mono text-sm font-bold truncate text-foreground">{data.nodeKey}</p>
           </div>
-          {data.functionName ? (
+          {isSubWorkflow && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 font-medium inline-block mt-0.5">
+              {displayLabel}
+            </span>
+          )}
+          {displayName ? (
             <button
               type="button"
               onClick={handleFnClick}
               className="text-xs text-primary truncate mt-0.5 block max-w-full hover:underline cursor-pointer text-left"
-              title={`View source: ${data.functionName}`}
+              title={isSubWorkflow ? `View workflow: ${displayName}` : `View source: ${displayName}`}
             >
-              {data.functionName}
+              {displayName}
             </button>
           ) : (
-            <p className="text-xs text-muted-foreground truncate mt-0.5">No function</p>
+            <p className="text-xs text-muted-foreground truncate mt-0.5">{isSubWorkflow ? "No workflow" : "No function"}</p>
           )}
         </div>
       </div>

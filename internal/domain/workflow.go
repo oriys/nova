@@ -5,6 +5,14 @@ import (
 	"time"
 )
 
+// NodeType distinguishes function nodes from sub-workflow nodes.
+type NodeType string
+
+const (
+	NodeTypeFunction    NodeType = "function"
+	NodeTypeSubWorkflow NodeType = "sub_workflow"
+)
+
 // Workflow status
 type WorkflowStatus string
 
@@ -64,7 +72,9 @@ type WorkflowNode struct {
 	ID           string          `json:"id"`
 	VersionID    string          `json:"version_id"`
 	NodeKey      string          `json:"node_key"`
-	FunctionName string          `json:"function_name"`
+	NodeType     NodeType        `json:"node_type"`               // "function" or "sub_workflow"
+	FunctionName string          `json:"function_name,omitempty"` // Set when node_type is "function"
+	WorkflowName string          `json:"workflow_name,omitempty"` // Set when node_type is "sub_workflow"
 	InputMapping json.RawMessage `json:"input_mapping,omitempty"` // Static input template
 	RetryPolicy  *RetryPolicy    `json:"retry_policy,omitempty"`
 	TimeoutS     int             `json:"timeout_s,omitempty"`
@@ -95,7 +105,9 @@ type WorkflowDefinition struct {
 // NodeDefinition is a node in a user-submitted workflow definition.
 type NodeDefinition struct {
 	NodeKey      string          `json:"node_key"`
-	FunctionName string          `json:"function_name"`
+	NodeType     NodeType        `json:"node_type,omitempty"`      // "function" (default) or "sub_workflow"
+	FunctionName string          `json:"function_name,omitempty"`  // Required when node_type is "function"
+	WorkflowName string          `json:"workflow_name,omitempty"`  // Required when node_type is "sub_workflow"
 	InputMapping json.RawMessage `json:"input_mapping,omitempty"`
 	RetryPolicy  *RetryPolicy    `json:"retry_policy,omitempty"`
 	TimeoutS     int             `json:"timeout_s,omitempty"`
@@ -135,7 +147,10 @@ type RunNode struct {
 	RunID          string          `json:"run_id"`
 	NodeID         string          `json:"node_id"` // FK to dag_workflow_nodes
 	NodeKey        string          `json:"node_key"`
-	FunctionName   string          `json:"function_name"`
+	NodeType       NodeType        `json:"node_type"`
+	FunctionName   string          `json:"function_name,omitempty"`
+	WorkflowName   string          `json:"workflow_name,omitempty"`
+	ChildRunID     string          `json:"child_run_id,omitempty"` // Set when node_type is "sub_workflow" and child run is created
 	Status         NodeStatus      `json:"status"`
 	UnresolvedDeps int             `json:"unresolved_deps"`
 	Attempt        int             `json:"attempt"`

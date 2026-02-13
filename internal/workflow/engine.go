@@ -110,6 +110,12 @@ func (e *Engine) executeNode(ctx context.Context, node *domain.RunNode) {
 		return
 	}
 
+	// Dispatch based on node type
+	if node.NodeType == domain.NodeTypeSubWorkflow {
+		e.executeSubWorkflowNode(ctx, node, wfNode)
+		return
+	}
+
 	// Set timeout
 	timeout := time.Duration(wfNode.TimeoutS) * time.Second
 	if timeout <= 0 {
@@ -183,6 +189,150 @@ func (e *Engine) executeNode(ctx context.Context, node *domain.RunNode) {
 	e.store.UpdateNodeAttempt(ctx, attempt)
 
 	e.succeedNode(ctx, node, resp)
+}
+
+// executeSubWorkflowNode triggers a child workflow and polls for its completion.
+func (e *Engine) executeSubWorkflowNode(ctx context.Context, node *domain.RunNode, wfNode *domain.WorkflowNode) {
+	scopedCtx := store.WithTenantScope(ctx, node.TenantID, node.Namespace)
+
+	// Build input
+	payload := node.Input
+	if len(payload) == 0 {
+		payload = json.RawMessage(`{}`)
+	}
+
+	// Record attempt
+	attempt := &domain.NodeAttempt{
+		RunNodeID: node.ID,
+		Attempt:   node.Attempt,
+		Status:    domain.NodeStatusRunning,
+		Input:     payload,
+	}
+	if err := e.store.CreateNodeAttempt(ctx, attempt); err != nil {
+		logging.Op().Error("create sub-workflow attempt", "error", err)
+	}
+
+	start := time.Now()
+
+	// If we already have a child run ID (from a previous attempt or lease expiry), check its status first
+	if node.ChildRunID != "" {
+		childRun, err := e.store.GetRun(scopedCtx, node.ChildRunID)
+		if err == nil && childRun != nil {
+			// Child run exists, poll for completion
+			e.pollSubWorkflow(ctx, scopedCtx, node, wfNode, attempt, childRun.ID, start)
+			return
+		}
+		// If we can't find the child run, create a new one
+	}
+
+	// Trigger the child workflow run
+	svc := NewService(e.store)
+	childRun, err := svc.TriggerRun(scopedCtx, node.WorkflowName, payload, "sub_workflow")
+	if err != nil {
+		now := time.Now().UTC()
+		attempt.Status = domain.NodeStatusFailed
+		attempt.Error = fmt.Sprintf("trigger sub-workflow %q: %v", node.WorkflowName, err)
+		attempt.DurationMs = time.Since(start).Milliseconds()
+		attempt.FinishedAt = &now
+		e.store.UpdateNodeAttempt(ctx, attempt)
+		e.failNode(ctx, node, attempt.Error)
+		return
+	}
+
+	// Store the child run ID on the node
+	node.ChildRunID = childRun.ID
+	e.store.UpdateRunNode(ctx, node)
+
+	logging.Op().Info("triggered sub-workflow", "node_key", node.NodeKey, "workflow", node.WorkflowName, "child_run_id", childRun.ID)
+
+	// Poll for the child workflow completion
+	e.pollSubWorkflow(ctx, scopedCtx, node, wfNode, attempt, childRun.ID, start)
+}
+
+// pollSubWorkflow polls the child workflow run until it completes or times out.
+func (e *Engine) pollSubWorkflow(ctx context.Context, scopedCtx context.Context, node *domain.RunNode, wfNode *domain.WorkflowNode, attempt *domain.NodeAttempt, childRunID string, start time.Time) {
+	timeout := time.Duration(wfNode.TimeoutS) * time.Second
+	if timeout <= 0 {
+		timeout = 5 * time.Minute // Default longer timeout for sub-workflows
+	}
+
+	deadline := start.Add(timeout)
+	pollInterval := 2 * time.Second
+
+	for {
+		select {
+		case <-e.stopCh:
+			return
+		default:
+		}
+
+		if time.Now().After(deadline) {
+			now := time.Now().UTC()
+			attempt.Status = domain.NodeStatusFailed
+			attempt.Error = fmt.Sprintf("sub-workflow %q timed out after %v", node.WorkflowName, timeout)
+			attempt.DurationMs = time.Since(start).Milliseconds()
+			attempt.FinishedAt = &now
+			e.store.UpdateNodeAttempt(ctx, attempt)
+			e.failNode(ctx, node, attempt.Error)
+			return
+		}
+
+		childRun, err := e.store.GetRun(scopedCtx, childRunID)
+		if err != nil {
+			logging.Op().Error("poll sub-workflow", "child_run_id", childRunID, "error", err)
+			time.Sleep(pollInterval)
+			continue
+		}
+
+		switch childRun.Status {
+		case domain.RunStatusSucceeded:
+			now := time.Now().UTC()
+			attempt.Status = domain.NodeStatusSucceeded
+			attempt.Output = childRun.Output
+			attempt.DurationMs = time.Since(start).Milliseconds()
+			attempt.FinishedAt = &now
+			e.store.UpdateNodeAttempt(ctx, attempt)
+
+			resp := &domain.InvokeResponse{Output: childRun.Output}
+			e.succeedNode(ctx, node, resp)
+			return
+
+		case domain.RunStatusFailed, domain.RunStatusCancelled:
+			now := time.Now().UTC()
+			errMsg := fmt.Sprintf("sub-workflow %q %s", node.WorkflowName, childRun.Status)
+			if childRun.ErrorMessage != "" {
+				errMsg += ": " + childRun.ErrorMessage
+			}
+			attempt.Status = domain.NodeStatusFailed
+			attempt.Error = errMsg
+			attempt.DurationMs = time.Since(start).Milliseconds()
+			attempt.FinishedAt = &now
+			e.store.UpdateNodeAttempt(ctx, attempt)
+
+			// Check retry
+			maxAttempts := 1
+			if wfNode.RetryPolicy != nil && wfNode.RetryPolicy.MaxAttempts > 1 {
+				maxAttempts = wfNode.RetryPolicy.MaxAttempts
+			}
+			if node.Attempt < maxAttempts {
+				// Clear child run ID so a fresh child workflow run is created on retry.
+				// The previous child run is in a terminal state (failed/cancelled) and cannot be reused.
+				node.ChildRunID = ""
+				e.retryNode(ctx, node, wfNode, errMsg)
+				return
+			}
+			e.failNode(ctx, node, errMsg)
+			return
+		}
+
+		// Still running/pending, keep polling
+		// Renew lease to prevent other workers from stealing this node
+		now := time.Now().UTC()
+		node.LeaseExpiresAt = ptrTime(now.Add(e.cfg.LeaseDuration))
+		e.store.UpdateRunNode(ctx, node)
+
+		time.Sleep(pollInterval)
+	}
 }
 
 func (e *Engine) succeedNode(ctx context.Context, node *domain.RunNode, resp *domain.InvokeResponse) {
@@ -411,4 +561,8 @@ func (e *Engine) calcBackoff(attempt int, policy *domain.RetryPolicy) time.Durat
 	ms += jitter
 
 	return time.Duration(ms) * time.Millisecond
+}
+
+func ptrTime(t time.Time) *time.Time {
+	return &t
 }

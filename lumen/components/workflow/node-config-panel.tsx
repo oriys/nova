@@ -8,7 +8,9 @@ import { X, Trash2 } from "lucide-react"
 
 export interface NodeConfig {
   nodeKey: string
+  nodeType: "function" | "sub_workflow"
   functionName: string
+  workflowName: string
   timeoutS: number
   retryMax: number
   retryBaseMs: number
@@ -18,15 +20,18 @@ export interface NodeConfig {
 interface NodeConfigPanelProps {
   node: NodeConfig
   functions: string[]
+  workflows: string[]
   onChange: (updated: NodeConfig) => void
   onDelete: () => void
   onClose: () => void
 }
 
-export function NodeConfigPanel({ node, functions, onChange, onDelete, onClose }: NodeConfigPanelProps) {
+export function NodeConfigPanel({ node, functions, workflows, onChange, onDelete, onClose }: NodeConfigPanelProps) {
   const update = (patch: Partial<NodeConfig>) => {
     onChange({ ...node, ...patch })
   }
+
+  const isSubWorkflow = node.nodeType === "sub_workflow"
 
   return (
     <div className="w-72 border-l border-border bg-card h-full overflow-y-auto shrink-0">
@@ -49,15 +54,50 @@ export function NodeConfigPanel({ node, functions, onChange, onDelete, onClose }
         </div>
 
         <div>
-          <Label className="text-xs">Function Name</Label>
-          <div className="mt-1">
-            <FunctionSelector
-              functions={functions}
-              value={node.functionName}
-              onChange={(v) => update({ functionName: v })}
-            />
+          <Label className="text-xs">Node Type</Label>
+          <div className="mt-1 flex gap-2">
+            <Button
+              variant={isSubWorkflow ? "outline" : "default"}
+              size="sm"
+              className="flex-1 text-xs"
+              onClick={() => update({ nodeType: "function" })}
+            >
+              Function
+            </Button>
+            <Button
+              variant={isSubWorkflow ? "default" : "outline"}
+              size="sm"
+              className="flex-1 text-xs"
+              onClick={() => update({ nodeType: "sub_workflow" })}
+            >
+              Sub-workflow
+            </Button>
           </div>
         </div>
+
+        {isSubWorkflow ? (
+          <div>
+            <Label className="text-xs">Workflow Name</Label>
+            <div className="mt-1">
+              <FunctionSelector
+                functions={workflows}
+                value={node.workflowName}
+                onChange={(v) => update({ workflowName: v })}
+              />
+            </div>
+          </div>
+        ) : (
+          <div>
+            <Label className="text-xs">Function Name</Label>
+            <div className="mt-1">
+              <FunctionSelector
+                functions={functions}
+                value={node.functionName}
+                onChange={(v) => update({ functionName: v })}
+              />
+            </div>
+          </div>
+        )}
 
         <div>
           <Label className="text-xs">Timeout (seconds)</Label>

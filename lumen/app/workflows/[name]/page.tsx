@@ -57,6 +57,7 @@ export default function WorkflowDetailPage() {
   const [notice, setNotice] = useState<Notice | null>(null)
 
   const [functionNames, setFunctionNames] = useState<string[]>([])
+  const [workflowNames, setWorkflowNames] = useState<string[]>([])
   const [publishing, setPublishing] = useState(false)
 
   const [isTriggerOpen, setIsTriggerOpen] = useState(false)
@@ -91,7 +92,9 @@ export default function WorkflowDetailPage() {
 
     const nodes: NodeDefinition[] = vNodes.map((n: WFNode) => ({
       node_key: n.node_key,
+      node_type: n.node_type || "function",
       function_name: n.function_name,
+      workflow_name: n.workflow_name,
       timeout_s: n.timeout_s,
       ...(n.retry_policy ? { retry_policy: n.retry_policy } : {}),
       ...(n.input_mapping ? { input_mapping: n.input_mapping } : {}),
@@ -110,16 +113,18 @@ export default function WorkflowDetailPage() {
     try {
       setLoading(true)
       setError(null)
-      const [wf, vers, rns, fns] = await Promise.all([
+      const [wf, vers, rns, fns, wfs] = await Promise.all([
         workflowsApi.get(name),
         workflowsApi.listVersions(name),
         workflowsApi.listRuns(name),
         functionsApi.list().catch(() => []),
+        workflowsApi.list().catch(() => []),
       ])
       setWorkflow(wf)
       setVersions(vers)
       setRuns(rns)
       setFunctionNames(fns.map((f) => f.name))
+      setWorkflowNames(wfs.map((w) => w.name).filter((n) => n !== name))
       if (wf.current_version > 0) {
         try {
           const vd = await workflowsApi.getVersion(name, wf.current_version)
@@ -345,6 +350,7 @@ export default function WorkflowDetailPage() {
                 <DagEditor
                   key={editorKey}
                   functions={functionNames}
+                  workflows={workflowNames}
                   initialDefinition={editorInitialDef}
                   onSave={handlePublish}
                   onCancel={exitEdit}
