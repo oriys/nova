@@ -102,7 +102,7 @@ export default function RBACPage() {
       resetForm()
       fetchData()
     } catch (err) {
-      setError(err instanceof Error ? err.message : tr("failedToLoad"))
+      setError(err instanceof Error ? err.message : tr("failedToCreate"))
     } finally {
       setCreating(false)
     }
@@ -115,7 +115,7 @@ export default function RBACPage() {
       else await rbacApi.deleteRoleAssignment(id)
       fetchData()
     } catch (err) {
-      setError(err instanceof Error ? err.message : tr("failedToLoad"))
+      setError(err instanceof Error ? err.message : tr("failedToDelete"))
     }
   }
 
@@ -217,7 +217,7 @@ export default function RBACPage() {
                   </>
                 )}
                 <Button className="w-full" onClick={handleCreate} disabled={creating}>
-                  {creating ? tc("loading") : tc("create")}
+                  {creating ? tr("creating") : tc("create")}
                 </Button>
               </div>
             </DialogContent>

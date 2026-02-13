@@ -54,8 +54,12 @@ export default function VolumesPage() {
         shared: newShared,
         description: newDescription.trim() || undefined,
       })
-      setDialogOpen(false); setNewName(""); setNewSizeMb(64)
-      setNewShared(false); setNewDescription(""); fetchVolumes()
+      setDialogOpen(false)
+      setNewName("")
+      setNewSizeMb(64)
+      setNewShared(false)
+      setNewDescription("")
+      fetchVolumes()
     } catch (err) {
       setError(err instanceof Error ? err.message : tv("failedToCreate"))
     } finally {
