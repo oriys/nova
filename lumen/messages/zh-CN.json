@@ -17,7 +17,13 @@
     "apiKeys": "API 密钥",
     "apiClient": "API 客户端",
     "apiDocs": "API 文档",
-    "brandName": "Lumen"
+    "brandName": "Lumen",
+    "gateway": "网关",
+    "rbac": "权限控制",
+    "volumes": "存储卷",
+    "layers": "依赖层",
+    "notifications": "通知",
+    "snapshots": "快照"
   },
   "pages": {
     "dashboard": {
@@ -402,6 +408,22 @@
       "envHint": "在 URL、请求头或请求体中使用 '{{variable_name}}' 语法替换变量值。",
       "addVariable": "添加变量",
       "add": "添加"
+    },
+    "rbac": {
+      "title": "访问控制",
+      "description": "管理角色、权限和角色分配"
+    },
+    "volumes": {
+      "title": "存储卷",
+      "description": "管理持久化存储卷"
+    },
+    "layers": {
+      "title": "依赖层",
+      "description": "管理共享依赖层"
+    },
+    "notifications": {
+      "title": "通知中心",
+      "description": "查看和管理系统通知"
     }
   },
   "common": {
@@ -2049,5 +2071,109 @@
       "importInvalidFields": "Import failed: invalid file format or missing required fields.",
       "importFailed": "Import failed: {message}"
     }
+  },
+  "rbacPage": {
+    "roles": "角色",
+    "permissions": "权限",
+    "assignments": "分配",
+    "createRole": "创建角色",
+    "createPermission": "创建权限",
+    "createAssignment": "创建分配",
+    "noRoles": "暂无角色",
+    "noPermissions": "暂无权限",
+    "noAssignments": "暂无分配",
+    "failedToLoad": "加载数据失败",
+    "failedToCreate": "创建失败",
+    "failedToDelete": "删除失败",
+    "name": "名称",
+    "namePlaceholder": "例如 admin",
+    "code": "代码",
+    "codePlaceholder": "例如 functions:read",
+    "resourceType": "资源类型",
+    "resourceTypePlaceholder": "例如 functions",
+    "action": "操作",
+    "actionPlaceholder": "例如 read",
+    "description": "描述",
+    "descriptionPlaceholder": "描述此权限...",
+    "principalType": "主体类型",
+    "principalTypePlaceholder": "例如 user",
+    "principalId": "主体 ID",
+    "principalIdPlaceholder": "例如 user-123",
+    "roleId": "角色 ID",
+    "roleIdPlaceholder": "选择角色...",
+    "scopeType": "范围类型",
+    "scopeTypePlaceholder": "例如 tenant",
+    "scopeId": "范围 ID",
+    "scopeIdPlaceholder": "例如 tenant-123",
+    "creating": "创建中...",
+    "colName": "名称",
+    "colSystem": "系统",
+    "colCreated": "创建时间",
+    "colActions": "操作",
+    "colCode": "代码",
+    "colResource": "资源",
+    "colAction": "操作",
+    "colDescription": "描述",
+    "colPrincipal": "主体",
+    "colRoleId": "角色 ID",
+    "colScope": "范围",
+    "yes": "是",
+    "no": "否"
+  },
+  "volumesPage": {
+    "createVolume": "创建存储卷",
+    "failedToLoad": "加载存储卷失败",
+    "failedToCreate": "创建存储卷失败",
+    "failedToDelete": "删除存储卷失败",
+    "name": "名称",
+    "namePlaceholder": "例如 my-data",
+    "sizeMb": "大小 (MB)",
+    "shared": "共享",
+    "description": "描述",
+    "descriptionPlaceholder": "描述此存储卷...",
+    "creating": "创建中...",
+    "colName": "名称",
+    "colSize": "大小",
+    "colShared": "共享",
+    "colDescription": "描述",
+    "colCreated": "创建时间",
+    "colActions": "操作",
+    "noVolumes": "暂无存储卷",
+    "yes": "是",
+    "no": "否"
+  },
+  "layersPage": {
+    "createLayer": "创建依赖层",
+    "failedToLoad": "加载依赖层失败",
+    "failedToCreate": "创建依赖层失败",
+    "failedToDelete": "删除依赖层失败",
+    "name": "名称",
+    "namePlaceholder": "例如 numpy-layer",
+    "runtime": "运行时",
+    "runtimePlaceholder": "例如 python",
+    "version": "版本",
+    "versionPlaceholder": "例如 1.0.0",
+    "creating": "创建中...",
+    "colName": "名称",
+    "colRuntime": "运行时",
+    "colVersion": "版本",
+    "colSize": "大小",
+    "colFiles": "文件",
+    "colCreated": "创建时间",
+    "colActions": "操作",
+    "noLayers": "暂无依赖层",
+    "filesCount": "{count} 个文件"
+  },
+  "notificationsPage": {
+    "failedToLoad": "加载通知失败",
+    "all": "全部",
+    "unread": "未读",
+    "read": "已读",
+    "markAllRead": "全部标为已读",
+    "markRead": "标为已读",
+    "noNotifications": "暂无通知",
+    "severity": "严重程度",
+    "function": "函数",
+    "source": "来源"
   }
 }

@@ -17,7 +17,13 @@
     "apiKeys": "API Keys",
     "apiClient": "API Client",
     "apiDocs": "API Docs",
-    "brandName": "Lumen"
+    "brandName": "Lumen",
+    "gateway": "Gateway",
+    "rbac": "RBAC",
+    "volumes": "Volumes",
+    "layers": "Layers",
+    "notifications": "Notifications",
+    "snapshots": "Snapshots"
   },
   "pages": {
     "dashboard": {
@@ -402,6 +408,22 @@
       "envHint": "Use '{{variable_name}}' syntax in URL, headers, or body to substitute values.",
       "addVariable": "Add Variable",
       "add": "Add"
+    },
+    "rbac": {
+      "title": "Access Control",
+      "description": "Manage roles, permissions, and role assignments"
+    },
+    "volumes": {
+      "title": "Volumes",
+      "description": "Manage persistent storage volumes"
+    },
+    "layers": {
+      "title": "Layers",
+      "description": "Manage shared dependency layers"
+    },
+    "notifications": {
+      "title": "Notifications",
+      "description": "View and manage system notifications"
     }
   },
   "common": {
@@ -2049,5 +2071,109 @@
       "importInvalidFields": "Import failed: invalid file format or missing required fields.",
       "importFailed": "Import failed: {message}"
     }
+  },
+  "rbacPage": {
+    "roles": "Roles",
+    "permissions": "Permissions",
+    "assignments": "Assignments",
+    "createRole": "Create Role",
+    "createPermission": "Create Permission",
+    "createAssignment": "Create Assignment",
+    "noRoles": "No roles yet",
+    "noPermissions": "No permissions yet",
+    "noAssignments": "No assignments yet",
+    "failedToLoad": "Failed to load data",
+    "failedToCreate": "Failed to create",
+    "failedToDelete": "Failed to delete",
+    "name": "Name",
+    "namePlaceholder": "e.g., admin",
+    "code": "Code",
+    "codePlaceholder": "e.g., functions:read",
+    "resourceType": "Resource Type",
+    "resourceTypePlaceholder": "e.g., functions",
+    "action": "Action",
+    "actionPlaceholder": "e.g., read",
+    "description": "Description",
+    "descriptionPlaceholder": "Describe this permission...",
+    "principalType": "Principal Type",
+    "principalTypePlaceholder": "e.g., user",
+    "principalId": "Principal ID",
+    "principalIdPlaceholder": "e.g., user-123",
+    "roleId": "Role ID",
+    "roleIdPlaceholder": "Select a role...",
+    "scopeType": "Scope Type",
+    "scopeTypePlaceholder": "e.g., tenant",
+    "scopeId": "Scope ID",
+    "scopeIdPlaceholder": "e.g., tenant-123",
+    "creating": "Creating...",
+    "colName": "Name",
+    "colSystem": "System",
+    "colCreated": "Created",
+    "colActions": "Actions",
+    "colCode": "Code",
+    "colResource": "Resource",
+    "colAction": "Action",
+    "colDescription": "Description",
+    "colPrincipal": "Principal",
+    "colRoleId": "Role ID",
+    "colScope": "Scope",
+    "yes": "Yes",
+    "no": "No"
+  },
+  "volumesPage": {
+    "createVolume": "Create Volume",
+    "failedToLoad": "Failed to load volumes",
+    "failedToCreate": "Failed to create volume",
+    "failedToDelete": "Failed to delete volume",
+    "name": "Name",
+    "namePlaceholder": "e.g., my-data",
+    "sizeMb": "Size (MB)",
+    "shared": "Shared",
+    "description": "Description",
+    "descriptionPlaceholder": "Describe this volume...",
+    "creating": "Creating...",
+    "colName": "Name",
+    "colSize": "Size",
+    "colShared": "Shared",
+    "colDescription": "Description",
+    "colCreated": "Created",
+    "colActions": "Actions",
+    "noVolumes": "No volumes yet",
+    "yes": "Yes",
+    "no": "No"
+  },
+  "layersPage": {
+    "createLayer": "Create Layer",
+    "failedToLoad": "Failed to load layers",
+    "failedToCreate": "Failed to create layer",
+    "failedToDelete": "Failed to delete layer",
+    "name": "Name",
+    "namePlaceholder": "e.g., numpy-layer",
+    "runtime": "Runtime",
+    "runtimePlaceholder": "e.g., python",
+    "version": "Version",
+    "versionPlaceholder": "e.g., 1.0.0",
+    "creating": "Creating...",
+    "colName": "Name",
+    "colRuntime": "Runtime",
+    "colVersion": "Version",
+    "colSize": "Size",
+    "colFiles": "Files",
+    "colCreated": "Created",
+    "colActions": "Actions",
+    "noLayers": "No layers yet",
+    "filesCount": "{count} files"
+  },
+  "notificationsPage": {
+    "failedToLoad": "Failed to load notifications",
+    "all": "All",
+    "unread": "Unread",
+    "read": "Read",
+    "markAllRead": "Mark All Read",
+    "markRead": "Mark Read",
+    "noNotifications": "No notifications yet",
+    "severity": "Severity",
+    "function": "Function",
+    "source": "Source"
   }
 }
