@@ -77,6 +77,19 @@ func New(store *store.Store, pool *pool.Pool, opts ...Option) *Executor {
 	return e
 }
 
+// safeGo runs f in a new goroutine with panic recovery so that a failure
+// in fire-and-forget background work never crashes the process.
+func safeGo(f func()) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logging.Op().Error("recovered panic in async task", "panic", r)
+			}
+		}()
+		f()
+	}()
+}
+
 func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.RawMessage) (*domain.InvokeResponse, error) {
 	// Check if executor is shutting down
 	if e.closing.Load() {
@@ -302,13 +315,15 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		e.pool.EvictVM(fn.ID, pvm)
 
 		// Async: metrics recording
-		go metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, false)
+		safeGo(func() {
+			metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, false)
+		})
 
 		logEntry.Success = false
 		logEntry.Error = err.Error()
 
 		// Async: request logging
-		go e.logger.Log(logEntry)
+		safeGo(func() { e.logger.Log(logEntry) })
 
 		observability.SetSpanError(span, err)
 
@@ -327,7 +342,9 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	success := resp.Error == ""
 
 	// Async: metrics recording
-	go metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, success)
+	safeGo(func() {
+		metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, success)
+	})
 
 	// Record circuit breaker outcome
 	if breaker != nil {
@@ -343,12 +360,12 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	logEntry.OutputSize = len(resp.Output)
 
 	// Async: request logging
-	go e.logger.Log(logEntry)
+	safeGo(func() { e.logger.Log(logEntry) })
 
 	// Async: store captured output if available
 	if resp.Stdout != "" || resp.Stderr != "" {
 		if outStore := logging.GetOutputStore(); outStore != nil {
-			go outStore.Store(reqID, fn.ID, resp.Stdout, resp.Stderr)
+			safeGo(func() { outStore.Store(reqID, fn.ID, resp.Stdout, resp.Stderr) })
 		}
 	}
 
@@ -611,13 +628,15 @@ func (e *Executor) InvokeStream(ctx context.Context, funcName string, payload js
 		e.pool.EvictVM(fn.ID, pvm)
 		execErr = err
 		// Async: metrics recording
-		go metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, false)
+		safeGo(func() {
+			metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, false)
+		})
 
 		logEntry.Success = false
 		logEntry.Error = err.Error()
 
 		// Async: request logging
-		go e.logger.Log(logEntry)
+		safeGo(func() { e.logger.Log(logEntry) })
 
 		observability.SetSpanError(span, err)
 
@@ -628,12 +647,14 @@ func (e *Executor) InvokeStream(ctx context.Context, funcName string, payload js
 	}
 
 	// Async: record successful streaming invocation
-	go metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, true)
+	safeGo(func() {
+		metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, true)
+	})
 
 	logEntry.Success = true
 
 	// Async: request logging
-	go e.logger.Log(logEntry)
+	safeGo(func() { e.logger.Log(logEntry) })
 
 	// Async persist invocation log (output is streamed, so we don't have it)
 	e.persistInvocationLog(reqID, fn, durationMs, pvm.ColdStart, true, "", len(payload), 0, payload, nil, "", "")
