@@ -83,6 +83,7 @@ export default function ConfigurationsPage() {
   // Settings from backend
   const [poolTTL, setPoolTTL] = useState("60")
   const [logLevel, setLogLevel] = useState("info")
+  const [maxGlobalVMs, setMaxGlobalVMs] = useState("0")
   const [dirty, setDirty] = useState(false)
 
   // AI Settings
@@ -168,6 +169,7 @@ export default function ConfigurationsPage() {
       // Apply config from backend
       if (configData["pool_ttl"]) setPoolTTL(configData["pool_ttl"])
       if (configData["log_level"]) setLogLevel(configData["log_level"])
+      if (configData["max_global_vms"]) setMaxGlobalVMs(configData["max_global_vms"])
       setDirty(false)
 
       // Apply AI config
@@ -233,6 +235,7 @@ export default function ConfigurationsPage() {
       await configApi.update({
         pool_ttl: poolTTL,
         log_level: logLevel,
+        max_global_vms: maxGlobalVMs,
       })
       setDirty(false)
       setSaved(true)
@@ -471,6 +474,20 @@ export default function ConfigurationsPage() {
               </Select>
               <p className="text-xs text-muted-foreground">
                 Minimum log level to capture
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="maxGlobalVMs">Max Global VMs</Label>
+              <Input
+                id="maxGlobalVMs"
+                type="number"
+                value={maxGlobalVMs}
+                onChange={(e) => { setMaxGlobalVMs(e.target.value); setDirty(true); }}
+                min="0"
+              />
+              <p className="text-xs text-muted-foreground">
+                System-wide maximum number of VMs (0 = unlimited)
               </p>
             </div>
           </div>

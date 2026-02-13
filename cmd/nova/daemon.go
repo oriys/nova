@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -182,6 +183,16 @@ func daemonCmd() *cobra.Command {
 					}
 					return mgr.ResumeVM(ctx, vmID)
 				})
+			}
+
+			// Load max_global_vms from config store
+			if sysConfig, err := s.GetConfig(context.Background()); err == nil {
+				if v, ok := sysConfig["max_global_vms"]; ok {
+					if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+						p.SetMaxGlobalVMs(n)
+						logging.Op().Info("loaded max_global_vms from config", "value", n)
+					}
+				}
 			}
 
 			if cfg.AutoScale.Enabled {

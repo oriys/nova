@@ -120,6 +120,7 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
   const [memory, setMemory] = useState(func.memory.toString())
   const [timeout, setTimeout] = useState(func.timeout.toString())
   const [handler, setHandler] = useState(func.handler)
+  const [maxReplicas, setMaxReplicas] = useState((func.maxReplicas ?? 0).toString())
   const [saving, setSaving] = useState(false)
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({})
 
@@ -386,6 +387,7 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
         handler,
         memory_mb: parseInt(memory),
         timeout_s: parseInt(timeout),
+        max_replicas: parseInt(maxReplicas) || 0,
         limits,
         network_policy: networkPolicy,
         rollout_policy: rolloutPolicy,
@@ -488,6 +490,20 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
             />
             <p className="text-xs text-muted-foreground">
               Maximum execution time
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="maxReplicas">Max VMs</Label>
+            <Input
+              id="maxReplicas"
+              type="number"
+              min="0"
+              value={maxReplicas}
+              onChange={(e) => setMaxReplicas(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Maximum concurrent VMs for this function (0 = unlimited)
             </p>
           </div>
         </div>

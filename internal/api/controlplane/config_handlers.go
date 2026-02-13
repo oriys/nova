@@ -3,6 +3,7 @@ package controlplane
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 )
 
 // GetConfig handles GET /config
@@ -33,6 +34,13 @@ func (h *Handler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		if err := h.Store.SetConfig(r.Context(), key, value); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+	}
+
+	// Apply max_global_vms to the pool if present
+	if v, ok := updates["max_global_vms"]; ok && h.Pool != nil {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			h.Pool.SetMaxGlobalVMs(n)
 		}
 	}
 
