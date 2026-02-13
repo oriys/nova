@@ -124,6 +124,11 @@ export default function AsyncInvocationsPage() {
     }
   }
 
+  const handleRefresh = () => {
+    void loadList()
+    void loadStats()
+  }
+
   const selectedPayload = useMemo(() => stringifyValue(selectedJob?.payload), [selectedJob])
   const selectedOutput = useMemo(() => stringifyValue(selectedJob?.output), [selectedJob])
 
@@ -228,7 +233,7 @@ export default function AsyncInvocationsPage() {
               </SelectContent>
             </Select>
 
-            <Button variant="outline" onClick={() => { void loadList(); void loadStats() }} disabled={loadingList}>
+            <Button variant="outline" onClick={handleRefresh} disabled={loadingList}>
               <RefreshCw className={cn("mr-2 h-4 w-4", loadingList && "animate-spin")} />
               Refresh List
             </Button>

@@ -579,7 +579,7 @@
     "statsQueued": "En file d'attente",
     "statsRunning": "En cours",
     "statsSucceeded": "Terminées",
-    "statsDLQ": "File de lettres mortes",
+    "statsDLQ": "File de messages en échec",
     "statsConsumedLastMinute": "Consommation / min",
     "statsConsumedLast5Min": "Consommation / 5min",
     "statsAvgDuration": "Durée moyenne",

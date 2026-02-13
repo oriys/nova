@@ -713,7 +713,7 @@ func (s *PostgresStore) GetAsyncQueueStats(ctx context.Context) (*AsyncQueueStat
 		WHERE tenant_id = $1 AND namespace = $2
 		  AND status = 'succeeded'
 		  AND completed_at >= $3
-	`, scope.TenantID, scope.Namespace, now.Add(-1*time.Minute)).Scan(&stats.ConsumedLastMinute); err != nil {
+	`, scope.TenantID, scope.Namespace, now.Add(-time.Minute)).Scan(&stats.ConsumedLastMinute); err != nil {
 		return nil, fmt.Errorf("get async consumed last minute: %w", err)
 	}
 
