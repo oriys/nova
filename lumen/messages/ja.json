@@ -443,7 +443,8 @@
     "close": "閉じる",
     "language": "言語",
     "docs": "ドキュメント",
-    "health": "ヘルス"
+    "health": "ヘルス",
+    "actions": "操作"
   },
   "header": {
     "searchPlaceholder": "関数を検索…",
@@ -2118,7 +2119,11 @@
     "colRoleId": "ロール ID",
     "colScope": "スコープ",
     "yes": "はい",
-    "no": "いいえ"
+    "no": "いいえ",
+    "system": "システム",
+    "created": "作成日",
+    "principal": "プリンシパル",
+    "scope": "スコープ"
   },
   "volumesPage": {
     "createVolume": "ボリュームを作成",

@@ -443,7 +443,8 @@
     "close": "关闭",
     "language": "语言",
     "docs": "文档",
-    "health": "健康状态"
+    "health": "健康状态",
+    "actions": "操作"
   },
   "header": {
     "searchPlaceholder": "搜索函数…",
@@ -2118,7 +2119,11 @@
     "colRoleId": "角色 ID",
     "colScope": "范围",
     "yes": "是",
-    "no": "否"
+    "no": "否",
+    "system": "系统",
+    "created": "创建时间",
+    "principal": "主体",
+    "scope": "范围"
   },
   "volumesPage": {
     "createVolume": "创建存储卷",

@@ -443,7 +443,8 @@
     "close": "Close",
     "language": "Language",
     "docs": "Documentation",
-    "health": "Health"
+    "health": "Health",
+    "actions": "Actions"
   },
   "header": {
     "searchPlaceholder": "Search functions...",
@@ -2118,7 +2119,11 @@
     "colRoleId": "Role ID",
     "colScope": "Scope",
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "system": "System",
+    "created": "Created",
+    "principal": "Principal",
+    "scope": "Scope"
   },
   "volumesPage": {
     "createVolume": "Create Volume",

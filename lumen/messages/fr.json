@@ -443,7 +443,8 @@
     "close": "Fermer",
     "language": "Langue",
     "docs": "Documentation",
-    "health": "Santé"
+    "health": "Santé",
+    "actions": "Actions"
   },
   "header": {
     "searchPlaceholder": "Rechercher des fonctions…",
@@ -2118,7 +2119,11 @@
     "colRoleId": "ID du rôle",
     "colScope": "Portée",
     "yes": "Oui",
-    "no": "Non"
+    "no": "Non",
+    "system": "Système",
+    "created": "Créé le",
+    "principal": "Principal",
+    "scope": "Portée"
   },
   "volumesPage": {
     "createVolume": "Créer un volume",
