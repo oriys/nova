@@ -20,9 +20,10 @@ import {
   RadioTower,
   Building2,
   Clock3,
+  Send,
 } from "lucide-react"
 
-type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "asyncJobs" | "history" | "runtimes" | "configurations" | "secrets" | "apiKeys"
+type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "asyncJobs" | "history" | "runtimes" | "configurations" | "secrets" | "apiKeys" | "apiClient"
 
 const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] = [
   { key: "dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -36,6 +37,7 @@ const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] 
   { key: "configurations", href: "/configurations", icon: Settings },
   { key: "secrets", href: "/secrets", icon: Lock },
   { key: "apiKeys", href: "/api-keys", icon: KeyRound },
+  { key: "apiClient", href: "/api-client", icon: Send },
 ]
 
 function LumenLogo({ className }: { className?: string }) {

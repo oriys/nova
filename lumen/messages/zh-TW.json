@@ -15,6 +15,7 @@
     "configurations": "設定",
     "secrets": "密鑰",
     "apiKeys": "API 密鑰",
+    "apiClient": "API 用戶端",
     "apiDocs": "API 文件",
     "brandName": "Lumen"
   },
@@ -101,6 +102,44 @@
       "colActions": "操作",
       "noShares": "尚無分享連結。產生文件後即可分享。",
       "neverExpires": "永不"
+    },
+    "apiClient": {
+      "title": "API 用戶端",
+      "description": "直接在瀏覽器中測試和除錯 HTTP API",
+      "send": "傳送",
+      "sending": "正在傳送請求…",
+      "request": "請求",
+      "response": "回應",
+      "urlPlaceholder": "https://api.example.com/endpoint",
+      "queryParams": "參數",
+      "headers": "標頭",
+      "body": "主體",
+      "variables": "變數",
+      "paramKey": "參數名稱",
+      "paramValue": "值",
+      "headerKey": "標頭名稱",
+      "headerValue": "值",
+      "formKey": "欄位名稱",
+      "formValue": "值",
+      "bodyType": {
+        "none": "無",
+        "json": "JSON",
+        "form": "表單",
+        "raw": "原始"
+      },
+      "noBody": "此請求沒有主體。",
+      "rawBodyPlaceholder": "輸入原始請求主體…",
+      "pretty": "格式化",
+      "raw": "原始",
+      "responseHeaders": "回應標頭",
+      "copy": "複製",
+      "emptyResponse": "輸入 URL 並點擊傳送以發起請求。",
+      "emptyBody": "（空）",
+      "error": "請求錯誤",
+      "elapsed": "{ms} ms",
+      "envHint": "在 URL、標頭或主體中使用 '{{variable_name}}' 語法替換變數值。",
+      "addVariable": "新增變數",
+      "add": "新增"
     }
   },
   "common": {
