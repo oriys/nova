@@ -575,7 +575,17 @@
     "colUpdated": "更新日",
     "colActions": "操作",
     "noJobs": "非同期ジョブが見つかりません。",
-    "view": "表示"
+    "view": "表示",
+    "statsQueued": "キュー待ち",
+    "statsRunning": "実行中",
+    "statsSucceeded": "完了",
+    "statsDLQ": "デッドレターキュー",
+    "statsConsumedLastMinute": "消費速度 / 分",
+    "statsConsumedLast5Min": "消費速度 / 5分",
+    "statsAvgDuration": "平均所要時間",
+    "statsBacklog": "滞留数",
+    "statsConsumptionSpeed": "消費速度",
+    "statsPerMinute": "{count}/分"
   },
   "loginPage": {
     "title": "User Login",

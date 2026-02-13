@@ -575,7 +575,17 @@
     "colUpdated": "更新時間",
     "colActions": "操作",
     "noJobs": "未找到非同步任務。",
-    "view": "檢視"
+    "view": "檢視",
+    "statsQueued": "排隊中",
+    "statsRunning": "執行中",
+    "statsSucceeded": "已完成",
+    "statsDLQ": "死信佇列",
+    "statsConsumedLastMinute": "消費速度 / 分鐘",
+    "statsConsumedLast5Min": "消費速度 / 5分鐘",
+    "statsAvgDuration": "平均耗時",
+    "statsBacklog": "堆積數量",
+    "statsConsumptionSpeed": "消費速度",
+    "statsPerMinute": "{count}/分鐘"
   },
   "loginPage": {
     "title": "User Login",

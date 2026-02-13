@@ -655,3 +655,89 @@ func scanAsyncInvocation(scanner asyncInvocationScanner) (*AsyncInvocation, erro
 	}
 	return &inv, nil
 }
+
+// AsyncQueueStats contains aggregate stats for the async invocation queue.
+type AsyncQueueStats struct {
+	Queued             int64   `json:"queued"`
+	Running            int64   `json:"running"`
+	Succeeded          int64   `json:"succeeded"`
+	DLQ                int64   `json:"dlq"`
+	ConsumedLastMinute int64   `json:"consumed_last_minute"`
+	ConsumedLast5Min   int64   `json:"consumed_last_5min"`
+	AvgDurationMs      float64 `json:"avg_duration_ms"`
+}
+
+// GetAsyncQueueStats returns aggregate counts by status and recent consumption speed.
+func (s *PostgresStore) GetAsyncQueueStats(ctx context.Context) (*AsyncQueueStats, error) {
+	scope := tenantScopeFromContext(ctx)
+	stats := &AsyncQueueStats{}
+
+	// Count by status
+	rows, err := s.pool.Query(ctx, `
+		SELECT status, COUNT(*)::bigint
+		FROM async_invocations
+		WHERE tenant_id = $1 AND namespace = $2
+		GROUP BY status
+	`, scope.TenantID, scope.Namespace)
+	if err != nil {
+		return nil, fmt.Errorf("get async queue stats: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var status string
+		var count int64
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, fmt.Errorf("scan async queue stats: %w", err)
+		}
+		switch AsyncInvocationStatus(status) {
+		case AsyncInvocationStatusQueued:
+			stats.Queued = count
+		case AsyncInvocationStatusRunning:
+			stats.Running = count
+		case AsyncInvocationStatusSucceeded:
+			stats.Succeeded = count
+		case AsyncInvocationStatusDLQ:
+			stats.DLQ = count
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get async queue stats rows: %w", err)
+	}
+
+	// Consumption speed: succeeded in last 1 minute
+	now := time.Now().UTC()
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*)::bigint
+		FROM async_invocations
+		WHERE tenant_id = $1 AND namespace = $2
+		  AND status = 'succeeded'
+		  AND completed_at >= $3
+	`, scope.TenantID, scope.Namespace, now.Add(-1*time.Minute)).Scan(&stats.ConsumedLastMinute); err != nil {
+		return nil, fmt.Errorf("get async consumed last minute: %w", err)
+	}
+
+	// Consumption speed: succeeded in last 5 minutes
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*)::bigint
+		FROM async_invocations
+		WHERE tenant_id = $1 AND namespace = $2
+		  AND status = 'succeeded'
+		  AND completed_at >= $3
+	`, scope.TenantID, scope.Namespace, now.Add(-5*time.Minute)).Scan(&stats.ConsumedLast5Min); err != nil {
+		return nil, fmt.Errorf("get async consumed last 5min: %w", err)
+	}
+
+	// Average duration of recently succeeded invocations
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COALESCE(AVG(duration_ms), 0)
+		FROM async_invocations
+		WHERE tenant_id = $1 AND namespace = $2
+		  AND status = 'succeeded'
+		  AND completed_at >= $3
+	`, scope.TenantID, scope.Namespace, now.Add(-5*time.Minute)).Scan(&stats.AvgDurationMs); err != nil {
+		return nil, fmt.Errorf("get async avg duration: %w", err)
+	}
+
+	return stats, nil
+}

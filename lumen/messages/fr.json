@@ -575,7 +575,17 @@
     "colUpdated": "Mis à jour",
     "colActions": "Actions",
     "noJobs": "Aucune tâche asynchrone trouvée.",
-    "view": "Voir"
+    "view": "Voir",
+    "statsQueued": "En file d'attente",
+    "statsRunning": "En cours",
+    "statsSucceeded": "Terminées",
+    "statsDLQ": "File de lettres mortes",
+    "statsConsumedLastMinute": "Consommation / min",
+    "statsConsumedLast5Min": "Consommation / 5min",
+    "statsAvgDuration": "Durée moyenne",
+    "statsBacklog": "File d'attente",
+    "statsConsumptionSpeed": "Vitesse de consommation",
+    "statsPerMinute": "{count}/min"
   },
   "loginPage": {
     "title": "User Login",

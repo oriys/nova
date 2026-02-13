@@ -575,7 +575,17 @@
     "colUpdated": "更新时间",
     "colActions": "操作",
     "noJobs": "未找到异步任务。",
-    "view": "查看"
+    "view": "查看",
+    "statsQueued": "排队中",
+    "statsRunning": "运行中",
+    "statsSucceeded": "已完成",
+    "statsDLQ": "死信队列",
+    "statsConsumedLastMinute": "消费速度 / 分钟",
+    "statsConsumedLast5Min": "消费速度 / 5分钟",
+    "statsAvgDuration": "平均耗时",
+    "statsBacklog": "堆积数量",
+    "statsConsumptionSpeed": "消费速度",
+    "statsPerMinute": "{count}/分钟"
   },
   "loginPage": {
     "title": "User Login",

@@ -9,9 +9,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { asyncInvocationsApi, type AsyncInvocationJob, type AsyncInvocationStatus } from "@/lib/api"
+import { asyncInvocationsApi, type AsyncInvocationJob, type AsyncInvocationStatus, type AsyncQueueStats } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import { RefreshCw, Search, RotateCcw, ExternalLink, Loader2 } from "lucide-react"
+import { RefreshCw, Search, RotateCcw, ExternalLink, Loader2, Layers, Play, CheckCircle2, AlertTriangle, Gauge, Clock } from "lucide-react"
 
 function toErrorMessage(err: unknown): string {
   if (err instanceof Error && err.message.trim()) return err.message.trim()
@@ -51,6 +51,7 @@ function getStatusBadge(status: AsyncInvocationStatus) {
 
 export default function AsyncInvocationsPage() {
   const t = useTranslations("pages")
+  const tp = useTranslations("asyncInvocationsPage")
   const [jobID, setJobID] = useState("")
   const [statusFilter, setStatusFilter] = useState<"all" | AsyncInvocationStatus>("all")
   const [jobs, setJobs] = useState<AsyncInvocationJob[]>([])
@@ -59,6 +60,16 @@ export default function AsyncInvocationsPage() {
   const [loadingLookup, setLoadingLookup] = useState(false)
   const [retryingID, setRetryingID] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [stats, setStats] = useState<AsyncQueueStats | null>(null)
+
+  const loadStats = useCallback(async () => {
+    try {
+      const result = await asyncInvocationsApi.stats()
+      setStats(result)
+    } catch {
+      // stats are non-critical, don't block the page
+    }
+  }, [])
 
   const loadList = useCallback(async () => {
     setLoadingList(true)
@@ -75,7 +86,8 @@ export default function AsyncInvocationsPage() {
 
   useEffect(() => {
     void loadList()
-  }, [loadList])
+    void loadStats()
+  }, [loadList, loadStats])
 
   const handleLookup = async (id?: string) => {
     const target = (id ?? jobID).trim()
@@ -104,6 +116,7 @@ export default function AsyncInvocationsPage() {
       const result = await asyncInvocationsApi.retry(job.id)
       setSelectedJob(result)
       await loadList()
+      void loadStats()
     } catch (err) {
       setError(toErrorMessage(err))
     } finally {
@@ -122,6 +135,59 @@ export default function AsyncInvocationsPage() {
         {error && (
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
             {error}
+          </div>
+        )}
+
+        {stats && (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                <Layers className="h-4 w-4" />
+                {tp("statsBacklog")}
+              </div>
+              <div className="mt-2 text-2xl font-bold text-foreground">{stats.queued + stats.running}</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {tp("statsQueued")}: {stats.queued} · {tp("statsRunning")}: {stats.running}
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                <Gauge className="h-4 w-4" />
+                {tp("statsConsumptionSpeed")}
+              </div>
+              <div className="mt-2 text-2xl font-bold text-foreground">{tp("statsPerMinute", { count: stats.consumed_last_minute })}</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {tp("statsConsumedLast5Min")}: {stats.consumed_last_5min}
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                <Play className="h-4 w-4" />
+                {tp("statsRunning")}
+              </div>
+              <div className="mt-2 text-2xl font-bold text-blue-600">{stats.running}</div>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                <CheckCircle2 className="h-4 w-4" />
+                {tp("statsSucceeded")}
+              </div>
+              <div className="mt-2 text-2xl font-bold text-green-600">{stats.succeeded}</div>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                <AlertTriangle className="h-4 w-4" />
+                {tp("statsDLQ")}
+              </div>
+              <div className="mt-2 text-2xl font-bold text-destructive">{stats.dlq}</div>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                <Clock className="h-4 w-4" />
+                {tp("statsAvgDuration")}
+              </div>
+              <div className="mt-2 text-2xl font-bold text-foreground">{stats.avg_duration_ms > 0 ? `${Math.round(stats.avg_duration_ms)}ms` : "-"}</div>
+            </div>
           </div>
         )}
 
@@ -162,7 +228,7 @@ export default function AsyncInvocationsPage() {
               </SelectContent>
             </Select>
 
-            <Button variant="outline" onClick={() => void loadList()} disabled={loadingList}>
+            <Button variant="outline" onClick={() => { void loadList(); void loadStats() }} disabled={loadingList}>
               <RefreshCw className={cn("mr-2 h-4 w-4", loadingList && "animate-spin")} />
               Refresh List
             </Button>

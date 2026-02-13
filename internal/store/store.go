@@ -99,6 +99,7 @@ type MetadataStore interface {
 	MarkAsyncInvocationDLQ(ctx context.Context, id, lastError string) error
 	RequeueAsyncInvocation(ctx context.Context, id string, maxAttempts int) (*AsyncInvocation, error)
 	EnqueueAsyncInvocationWithIdempotency(ctx context.Context, inv *AsyncInvocation, idempotencyKey string, ttl time.Duration) (*AsyncInvocation, bool, error)
+	GetAsyncQueueStats(ctx context.Context) (*AsyncQueueStats, error)
 
 	// Event bus (topics / subscriptions / deliveries)
 	CreateEventTopic(ctx context.Context, topic *EventTopic) error

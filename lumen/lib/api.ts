@@ -349,6 +349,16 @@ export interface AsyncInvocationJob {
   updated_at: string;
 }
 
+export interface AsyncQueueStats {
+  queued: number;
+  running: number;
+  succeeded: number;
+  dlq: number;
+  consumed_last_minute: number;
+  consumed_last_5min: number;
+  avg_duration_ms: number;
+}
+
 export interface EventTopic {
   id: string;
   name: string;
@@ -1561,6 +1571,8 @@ export const asyncInvocationsApi = {
         maxAttempts && maxAttempts > 0 ? { max_attempts: maxAttempts } : {}
       ),
     }),
+
+  stats: () => request<AsyncQueueStats>("/async-invocations-stats"),
 };
 
 // Health API

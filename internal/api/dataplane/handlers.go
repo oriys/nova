@@ -203,6 +203,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /functions/{name}/async-invocations", h.ListFunctionAsyncInvocations)
 	mux.HandleFunc("GET /async-invocations/{id}", h.GetAsyncInvocation)
 	mux.HandleFunc("GET /async-invocations", h.ListAsyncInvocations)
+	mux.HandleFunc("GET /async-invocations-stats", h.GetAsyncQueueStats)
 	mux.HandleFunc("POST /async-invocations/{id}/retry", h.RetryAsyncInvocation)
 
 	// Health probes
@@ -633,6 +634,18 @@ func (h *Handler) RetryAsyncInvocation(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(inv)
+}
+
+// GetAsyncQueueStats handles GET /async-invocations-stats
+func (h *Handler) GetAsyncQueueStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.Store.GetAsyncQueueStats(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
 }
 
 func capacityShedStatus(fn *domain.Function) int {

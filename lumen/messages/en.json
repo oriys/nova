@@ -575,7 +575,17 @@
     "colUpdated": "Updated",
     "colActions": "Actions",
     "noJobs": "No async jobs found.",
-    "view": "View"
+    "view": "View",
+    "statsQueued": "Queued",
+    "statsRunning": "Running",
+    "statsSucceeded": "Succeeded",
+    "statsDLQ": "Dead Letter Queue",
+    "statsConsumedLastMinute": "Consumed / min",
+    "statsConsumedLast5Min": "Consumed / 5min",
+    "statsAvgDuration": "Avg Duration",
+    "statsBacklog": "Backlog",
+    "statsConsumptionSpeed": "Consumption Speed",
+    "statsPerMinute": "{count}/min"
   },
   "loginPage": {
     "title": "User Login",
