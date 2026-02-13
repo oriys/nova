@@ -1868,6 +1868,8 @@ export const asyncInvocationsApi = {
     request<void>(`/async-invocations/${encodeURIComponent(id)}`, {
       method: "DELETE",
     }),
+
+  summary: () => request<AsyncInvocationSummary>("/async-invocations/summary"),
 };
 
 // Health API
