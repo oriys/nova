@@ -37,7 +37,6 @@ export function FunctionTestSuite({ functionName, runtime }: FunctionTestSuitePr
   const [saving, setSaving] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [dirty, setDirty] = useState(false)
-  const [loaded, setLoaded] = useState(false)
 
   // Load saved test suite on mount
   useEffect(() => {
@@ -45,17 +44,16 @@ export function FunctionTestSuite({ functionName, runtime }: FunctionTestSuitePr
     functionsApi.getTestSuite(functionName).then((ts) => {
       if (cancelled) return
       if (ts && ts.test_cases && Array.isArray(ts.test_cases)) {
-        const loaded = (ts.test_cases as TestSuiteCase[]).map((tc) => ({
+        const cases = (ts.test_cases as TestSuiteCase[]).map((tc) => ({
           id: tc.id || crypto.randomUUID(),
           name: tc.name,
           input: tc.input,
           expectedOutput: tc.expectedOutput,
         }))
-        setTestCases(loaded)
+        setTestCases(cases)
       }
-      setLoaded(true)
     }).catch(() => {
-      if (!cancelled) setLoaded(true)
+      // No saved test suite
     })
     return () => { cancelled = true }
   }, [functionName])
