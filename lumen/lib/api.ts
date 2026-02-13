@@ -1548,6 +1548,11 @@ export const eventsApi = {
 // Gateway API
 export const gatewayApi = {
   listRoutes: async (domain?: string, limit?: number, offset?: number) => {
+    const result = await gatewayApi.listRoutesPage(domain, limit, offset);
+    return result.items;
+  },
+
+  listRoutesPage: (domain?: string, limit?: number, offset?: number) => {
     const params = new URLSearchParams();
     if (domain?.trim()) {
       params.set("domain", domain.trim());
@@ -1560,8 +1565,7 @@ export const gatewayApi = {
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    const result = await requestPaged<GatewayRoute>(`/gateway/routes?${params.toString()}`);
-    return result.items;
+    return requestPaged<GatewayRoute>(`/gateway/routes?${params.toString()}`);
   },
 
   getRoute: (id: string) =>
@@ -2063,13 +2067,17 @@ export interface PublishVersionRequest {
 // Workflows API
 export const workflowsApi = {
   list: async (limit: number = 100, offset?: number) => {
+    const result = await workflowsApi.listPage(limit, offset);
+    return result.items;
+  },
+
+  listPage: (limit: number = 20, offset?: number) => {
     const params = new URLSearchParams();
     params.set("limit", String(Math.max(1, Math.floor(limit))));
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    const result = await requestPaged<Workflow>(`/workflows?${params.toString()}`);
-    return result.items;
+    return requestPaged<Workflow>(`/workflows?${params.toString()}`);
   },
 
   get: (name: string) => request<Workflow>(`/workflows/${encodeURIComponent(name)}`),

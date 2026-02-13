@@ -208,7 +208,7 @@ export function FunctionLogs({
         {(totalItems > 0 || filteredLogs.length > 0) && (
           <div className="border-t border-border p-4">
             <Pagination
-              totalItems={searchQuery.trim() || levelFilter !== "all" ? filteredLogs.length : totalItems}
+              totalItems={totalItems}
               page={page}
               pageSize={pageSize}
               onPageChange={onPageChange}

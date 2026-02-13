@@ -1,11 +1,12 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { EmptyState } from "@/components/empty-state"
+import { Pagination } from "@/components/pagination"
 import { OnboardingFlow } from "@/components/onboarding-flow"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -213,6 +214,9 @@ export default function GatewayPage() {
   const [selectedRouteIDs, setSelectedRouteIDs] = useState<Set<string>>(new Set())
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
   const [bulkBusy, setBulkBusy] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [totalRoutes, setTotalRoutes] = useState(0)
 
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -236,23 +240,21 @@ export default function GatewayPage() {
   const [editRps, setEditRps] = useState("")
   const [editBurst, setEditBurst] = useState("")
 
-  const filteredRoutes = useMemo(() => {
-    const next = domainFilter.trim()
-    if (!next) return routes
-    return routes.filter((route) => (route.domain || "").includes(next))
-  }, [domainFilter, routes])
+  const filteredRoutes = routes
 
   const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
+      const offset = (page - 1) * pageSize
       const [routeData, functionData, templateData, metrics] = await Promise.all([
-        gatewayApi.listRoutes(),
+        gatewayApi.listRoutesPage(domainFilter.trim() || undefined, pageSize, offset),
         functionsApi.list(),
         gatewayApi.getRateLimitTemplate(),
         metricsApi.global().catch(() => null),
       ])
-      setRoutes(routeData || [])
+      setRoutes(routeData.items || [])
+      setTotalRoutes(routeData.total || 0)
       setFunctions(functionData || [])
       setRateLimitTemplate(templateData)
       setTemplateEnabled(templateData.enabled ? "true" : "false")
@@ -263,7 +265,7 @@ export default function GatewayPage() {
       syncOnboardingStateFromData({
         hasFunctionCreated: (functionData?.length || 0) > 0,
         hasFunctionInvoked: nextHasInvocations,
-        hasGatewayRouteCreated: (routeData?.length || 0) > 0,
+        hasGatewayRouteCreated: (routeData?.total || 0) > 0,
       })
       if (!createFunctionName && functionData?.length) {
         setCreateFunctionName(functionData[0].name)
@@ -273,7 +275,7 @@ export default function GatewayPage() {
     } finally {
       setLoading(false)
     }
-  }, [createFunctionName])
+  }, [createFunctionName, page, pageSize, domainFilter])
 
   useEffect(() => {
     loadData()
@@ -765,7 +767,7 @@ export default function GatewayPage() {
           <div className="flex items-center gap-2">
             <Input
               value={domainFilter}
-              onChange={(e) => setDomainFilter(e.target.value)}
+              onChange={(e) => { setDomainFilter(e.target.value); setPage(1) }}
               placeholder={g("placeholders.filterByDomain")}
               className="w-[240px]"
             />
@@ -1028,7 +1030,7 @@ export default function GatewayPage() {
           <EmptyState
             title={g("empty.noMatchingTitle")}
             description={g("empty.noMatchingDescription")}
-            primaryAction={{ label: g("buttons.clearFilter"), onClick: () => setDomainFilter("") }}
+            primaryAction={{ label: g("buttons.clearFilter"), onClick: () => { setDomainFilter(""); setPage(1) } }}
             compact
           />
         ) : (
@@ -1182,6 +1184,21 @@ export default function GatewayPage() {
           </div>
         )}
       </div>
+
+      {!loading && totalRoutes > 0 && (
+        <Pagination
+          totalItems={totalRoutes}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size)
+            setPage(1)
+          }}
+          itemLabel="routes"
+          className="rounded-xl border border-border bg-card p-4"
+        />
+      )}
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="sm:max-w-2xl">
