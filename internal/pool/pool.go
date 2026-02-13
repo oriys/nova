@@ -24,6 +24,8 @@ var (
 	ErrQueueFull = errors.New("queue depth limit reached")
 	// ErrQueueWaitTimeout is returned when waiting for a VM exceeds queue wait policy.
 	ErrQueueWaitTimeout = errors.New("queue wait timeout")
+	// ErrGlobalVMLimit is returned when the system-wide maximum VM count is reached.
+	ErrGlobalVMLimit = errors.New("global VM limit reached")
 )
 
 const (
@@ -69,6 +71,7 @@ type Pool struct {
 	cleanupInterval     time.Duration
 	healthCheckInterval time.Duration
 	maxPreWarmWorkers   int
+	maxGlobalVMs        atomic.Int32 // system-wide max VM count (0 = unlimited)
 	ctx                 context.Context
 	cancel              context.CancelFunc
 	snapshotCallback    SnapshotCallback
@@ -117,6 +120,24 @@ func NewPool(b backend.Backend, cfg PoolConfig) *Pool {
 // SetSnapshotCallback sets the callback for creating snapshots after cold starts
 func (p *Pool) SetSnapshotCallback(cb SnapshotCallback) {
 	p.snapshotCallback = cb
+}
+
+// SetMaxGlobalVMs sets the system-wide maximum number of VMs (0 = unlimited).
+func (p *Pool) SetMaxGlobalVMs(n int) {
+	p.maxGlobalVMs.Store(int32(n))
+}
+
+// TotalVMCount returns the total number of active VMs across all function pools.
+func (p *Pool) TotalVMCount() int {
+	total := 0
+	p.pools.Range(func(_, value interface{}) bool {
+		fp := value.(*functionPool)
+		fp.mu.Lock()
+		total += len(fp.vms)
+		fp.mu.Unlock()
+		return true
+	})
+	return total
 }
 
 // InvalidateSnapshotCache removes the cached snapshot status for a function
@@ -368,6 +389,13 @@ func (p *Pool) acquireGeneric(
 			return nil, ErrInflightLimit
 		}
 		if canCreate {
+			// Check system-wide VM limit before allowing creation
+			globalMax := p.maxGlobalVMs.Load()
+			if globalMax > 0 && p.TotalVMCount() >= int(globalMax) {
+				fp.mu.Unlock()
+				recordQueueWait()
+				return nil, ErrGlobalVMLimit
+			}
 			fp.mu.Unlock()
 			break
 		}
