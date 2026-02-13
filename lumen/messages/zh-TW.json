@@ -17,7 +17,13 @@
     "apiKeys": "API 密鑰",
     "apiClient": "API 用戶端",
     "apiDocs": "API 文件",
-    "brandName": "Lumen"
+    "brandName": "Lumen",
+    "gateway": "閘道",
+    "rbac": "權限控制",
+    "volumes": "儲存卷",
+    "layers": "依賴層",
+    "notifications": "通知",
+    "snapshots": "快照"
   },
   "pages": {
     "dashboard": {
@@ -282,6 +288,10 @@
       "title": "密鑰",
       "description": "管理函數的加密密鑰"
     },
+    "snapshots": {
+      "title": "快照",
+      "description": "查看和管理函式虛擬機快照"
+    },
     "apiKeys": {
       "title": "API 密鑰",
       "description": "管理用於身份驗證的 API 密鑰"
@@ -398,6 +408,22 @@
       "envHint": "在 URL、標頭或主體中使用 '{{variable_name}}' 語法替換變數值。",
       "addVariable": "新增變數",
       "add": "新增"
+    },
+    "rbac": {
+      "title": "存取控制",
+      "description": "管理角色、權限和角色指派"
+    },
+    "volumes": {
+      "title": "儲存卷",
+      "description": "管理持久化儲存卷"
+    },
+    "layers": {
+      "title": "依賴層",
+      "description": "管理共享依賴層"
+    },
+    "notifications": {
+      "title": "通知中心",
+      "description": "檢視和管理系統通知"
     }
   },
   "common": {
@@ -417,7 +443,8 @@
     "close": "關閉",
     "language": "語言",
     "docs": "文件",
-    "health": "健康狀態"
+    "health": "健康狀態",
+    "actions": "操作"
   },
   "header": {
     "searchPlaceholder": "搜尋函數…",
@@ -880,6 +907,17 @@
     "colCreated": "建立時間",
     "colActions": "操作",
     "noSecrets": "尚無金鑰"
+  },
+  "snapshotsPage": {
+    "failedToLoad": "載入快照失敗",
+    "failedToDelete": "刪除快照失敗",
+    "colFunctionName": "函式名稱",
+    "colSnapSize": "快照大小",
+    "colMemSize": "記憶體大小",
+    "colTotalSize": "總大小",
+    "colCreated": "建立時間",
+    "colActions": "操作",
+    "noSnapshots": "尚無快照"
   },
   "asyncInvocationsPage": {
     "enterJobId": "請輸入任務 ID。",
@@ -2034,5 +2072,113 @@
       "importInvalidFields": "Import failed: invalid file format or missing required fields.",
       "importFailed": "Import failed: {message}"
     }
+  },
+  "rbacPage": {
+    "roles": "角色",
+    "permissions": "權限",
+    "assignments": "指派",
+    "createRole": "建立角色",
+    "createPermission": "建立權限",
+    "createAssignment": "建立指派",
+    "noRoles": "尚無角色",
+    "noPermissions": "尚無權限",
+    "noAssignments": "尚無指派",
+    "failedToLoad": "載入資料失敗",
+    "failedToCreate": "建立失敗",
+    "failedToDelete": "刪除失敗",
+    "name": "名稱",
+    "namePlaceholder": "例如 admin",
+    "code": "代碼",
+    "codePlaceholder": "例如 functions:read",
+    "resourceType": "資源類型",
+    "resourceTypePlaceholder": "例如 functions",
+    "action": "操作",
+    "actionPlaceholder": "例如 read",
+    "description": "描述",
+    "descriptionPlaceholder": "描述此權限...",
+    "principalType": "主體類型",
+    "principalTypePlaceholder": "例如 user",
+    "principalId": "主體 ID",
+    "principalIdPlaceholder": "例如 user-123",
+    "roleId": "角色 ID",
+    "roleIdPlaceholder": "選擇角色...",
+    "scopeType": "範圍類型",
+    "scopeTypePlaceholder": "例如 tenant",
+    "scopeId": "範圍 ID",
+    "scopeIdPlaceholder": "例如 tenant-123",
+    "creating": "建立中...",
+    "colName": "名稱",
+    "colSystem": "系統",
+    "colCreated": "建立時間",
+    "colActions": "操作",
+    "colCode": "代碼",
+    "colResource": "資源",
+    "colAction": "操作",
+    "colDescription": "描述",
+    "colPrincipal": "主體",
+    "colRoleId": "角色 ID",
+    "colScope": "範圍",
+    "yes": "是",
+    "no": "否",
+    "system": "系統",
+    "created": "建立時間",
+    "principal": "主體",
+    "scope": "範圍"
+  },
+  "volumesPage": {
+    "createVolume": "建立儲存卷",
+    "failedToLoad": "載入儲存卷失敗",
+    "failedToCreate": "建立儲存卷失敗",
+    "failedToDelete": "刪除儲存卷失敗",
+    "name": "名稱",
+    "namePlaceholder": "例如 my-data",
+    "sizeMb": "大小 (MB)",
+    "shared": "共享",
+    "description": "描述",
+    "descriptionPlaceholder": "描述此儲存卷...",
+    "creating": "建立中...",
+    "colName": "名稱",
+    "colSize": "大小",
+    "colShared": "共享",
+    "colDescription": "描述",
+    "colCreated": "建立時間",
+    "colActions": "操作",
+    "noVolumes": "尚無儲存卷",
+    "yes": "是",
+    "no": "否"
+  },
+  "layersPage": {
+    "createLayer": "建立依賴層",
+    "failedToLoad": "載入依賴層失敗",
+    "failedToCreate": "建立依賴層失敗",
+    "failedToDelete": "刪除依賴層失敗",
+    "name": "名稱",
+    "namePlaceholder": "例如 numpy-layer",
+    "runtime": "執行環境",
+    "runtimePlaceholder": "例如 python",
+    "version": "版本",
+    "versionPlaceholder": "例如 1.0.0",
+    "creating": "建立中...",
+    "colName": "名稱",
+    "colRuntime": "執行環境",
+    "colVersion": "版本",
+    "colSize": "大小",
+    "colFiles": "檔案",
+    "colCreated": "建立時間",
+    "colActions": "操作",
+    "noLayers": "尚無依賴層",
+    "filesCount": "{count} 個檔案"
+  },
+  "notificationsPage": {
+    "failedToLoad": "載入通知失敗",
+    "all": "全部",
+    "unread": "未讀",
+    "read": "已讀",
+    "markAllRead": "全部標為已讀",
+    "markRead": "標為已讀",
+    "noNotifications": "尚無通知",
+    "severity": "嚴重程度",
+    "function": "函式",
+    "source": "來源"
   }
 }

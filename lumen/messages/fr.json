@@ -17,7 +17,13 @@
     "apiKeys": "Clés API",
     "apiClient": "Client API",
     "apiDocs": "Docs API",
-    "brandName": "Lumen"
+    "brandName": "Lumen",
+    "gateway": "Passerelle",
+    "rbac": "Contrôle d'accès",
+    "volumes": "Volumes",
+    "layers": "Couches",
+    "notifications": "Notifications",
+    "snapshots": "Snapshots"
   },
   "pages": {
     "dashboard": {
@@ -282,6 +288,10 @@
       "title": "Secrets",
       "description": "Gérer les secrets chiffrés pour les fonctions"
     },
+    "snapshots": {
+      "title": "Snapshots",
+      "description": "Afficher et gérer les snapshots de VM de fonctions"
+    },
     "apiKeys": {
       "title": "Clés API",
       "description": "Gérer les clés API pour l'authentification"
@@ -398,6 +408,22 @@
       "envHint": "Utilisez la syntaxe '{{variable_name}}' dans l'URL, les en-têtes ou le corps pour substituer des valeurs.",
       "addVariable": "Ajouter une variable",
       "add": "Ajouter"
+    },
+    "rbac": {
+      "title": "Contrôle d'accès",
+      "description": "Gérer les rôles, permissions et attributions"
+    },
+    "volumes": {
+      "title": "Volumes",
+      "description": "Gérer les volumes de stockage persistant"
+    },
+    "layers": {
+      "title": "Couches",
+      "description": "Gérer les couches de dépendances partagées"
+    },
+    "notifications": {
+      "title": "Notifications",
+      "description": "Afficher et gérer les notifications système"
     }
   },
   "common": {
@@ -417,7 +443,8 @@
     "close": "Fermer",
     "language": "Langue",
     "docs": "Documentation",
-    "health": "Santé"
+    "health": "Santé",
+    "actions": "Actions"
   },
   "header": {
     "searchPlaceholder": "Rechercher des fonctions…",
@@ -880,6 +907,17 @@
     "colCreated": "Créé le",
     "colActions": "Actions",
     "noSecrets": "Aucun secret"
+  },
+  "snapshotsPage": {
+    "failedToLoad": "Échec du chargement des snapshots",
+    "failedToDelete": "Échec de la suppression du snapshot",
+    "colFunctionName": "Nom de la fonction",
+    "colSnapSize": "Taille du snapshot",
+    "colMemSize": "Taille mémoire",
+    "colTotalSize": "Taille totale",
+    "colCreated": "Créé le",
+    "colActions": "Actions",
+    "noSnapshots": "Aucun snapshot"
   },
   "asyncInvocationsPage": {
     "enterJobId": "Veuillez entrer un ID de tâche.",
@@ -2034,5 +2072,113 @@
       "importInvalidFields": "Import failed: invalid file format or missing required fields.",
       "importFailed": "Import failed: {message}"
     }
+  },
+  "rbacPage": {
+    "roles": "Rôles",
+    "permissions": "Permissions",
+    "assignments": "Attributions",
+    "createRole": "Créer un rôle",
+    "createPermission": "Créer une permission",
+    "createAssignment": "Créer une attribution",
+    "noRoles": "Aucun rôle",
+    "noPermissions": "Aucune permission",
+    "noAssignments": "Aucune attribution",
+    "failedToLoad": "Échec du chargement",
+    "failedToCreate": "Échec de la création",
+    "failedToDelete": "Échec de la suppression",
+    "name": "Nom",
+    "namePlaceholder": "ex. admin",
+    "code": "Code",
+    "codePlaceholder": "ex. functions:read",
+    "resourceType": "Type de ressource",
+    "resourceTypePlaceholder": "ex. functions",
+    "action": "Action",
+    "actionPlaceholder": "ex. read",
+    "description": "Description",
+    "descriptionPlaceholder": "Décrivez cette permission...",
+    "principalType": "Type de principal",
+    "principalTypePlaceholder": "ex. user",
+    "principalId": "ID du principal",
+    "principalIdPlaceholder": "ex. user-123",
+    "roleId": "ID du rôle",
+    "roleIdPlaceholder": "Sélectionnez un rôle...",
+    "scopeType": "Type de portée",
+    "scopeTypePlaceholder": "ex. tenant",
+    "scopeId": "ID de portée",
+    "scopeIdPlaceholder": "ex. tenant-123",
+    "creating": "Création...",
+    "colName": "Nom",
+    "colSystem": "Système",
+    "colCreated": "Créé le",
+    "colActions": "Actions",
+    "colCode": "Code",
+    "colResource": "Ressource",
+    "colAction": "Action",
+    "colDescription": "Description",
+    "colPrincipal": "Principal",
+    "colRoleId": "ID du rôle",
+    "colScope": "Portée",
+    "yes": "Oui",
+    "no": "Non",
+    "system": "Système",
+    "created": "Créé le",
+    "principal": "Principal",
+    "scope": "Portée"
+  },
+  "volumesPage": {
+    "createVolume": "Créer un volume",
+    "failedToLoad": "Échec du chargement des volumes",
+    "failedToCreate": "Échec de la création du volume",
+    "failedToDelete": "Échec de la suppression du volume",
+    "name": "Nom",
+    "namePlaceholder": "ex. my-data",
+    "sizeMb": "Taille (Mo)",
+    "shared": "Partagé",
+    "description": "Description",
+    "descriptionPlaceholder": "Décrivez ce volume...",
+    "creating": "Création...",
+    "colName": "Nom",
+    "colSize": "Taille",
+    "colShared": "Partagé",
+    "colDescription": "Description",
+    "colCreated": "Créé le",
+    "colActions": "Actions",
+    "noVolumes": "Aucun volume",
+    "yes": "Oui",
+    "no": "Non"
+  },
+  "layersPage": {
+    "createLayer": "Créer une couche",
+    "failedToLoad": "Échec du chargement des couches",
+    "failedToCreate": "Échec de la création de la couche",
+    "failedToDelete": "Échec de la suppression de la couche",
+    "name": "Nom",
+    "namePlaceholder": "ex. numpy-layer",
+    "runtime": "Runtime",
+    "runtimePlaceholder": "ex. python",
+    "version": "Version",
+    "versionPlaceholder": "ex. 1.0.0",
+    "creating": "Création...",
+    "colName": "Nom",
+    "colRuntime": "Runtime",
+    "colVersion": "Version",
+    "colSize": "Taille",
+    "colFiles": "Fichiers",
+    "colCreated": "Créé le",
+    "colActions": "Actions",
+    "noLayers": "Aucune couche",
+    "filesCount": "{count} fichiers"
+  },
+  "notificationsPage": {
+    "failedToLoad": "Échec du chargement des notifications",
+    "all": "Toutes",
+    "unread": "Non lues",
+    "read": "Lues",
+    "markAllRead": "Tout marquer comme lu",
+    "markRead": "Marquer comme lu",
+    "noNotifications": "Aucune notification",
+    "severity": "Sévérité",
+    "function": "Fonction",
+    "source": "Source"
   }
 }

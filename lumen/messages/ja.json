@@ -17,7 +17,13 @@
     "apiKeys": "APIキー",
     "apiClient": "APIクライアント",
     "apiDocs": "APIドキュメント",
-    "brandName": "Lumen"
+    "brandName": "Lumen",
+    "gateway": "ゲートウェイ",
+    "rbac": "アクセス制御",
+    "volumes": "ボリューム",
+    "layers": "レイヤー",
+    "notifications": "通知",
+    "snapshots": "スナップショット"
   },
   "pages": {
     "dashboard": {
@@ -282,6 +288,10 @@
       "title": "シークレット",
       "description": "関数の暗号化シークレットの管理"
     },
+    "snapshots": {
+      "title": "スナップショット",
+      "description": "関数VMスナップショットの表示と管理"
+    },
     "apiKeys": {
       "title": "APIキー",
       "description": "認証用APIキーの管理"
@@ -398,6 +408,22 @@
       "envHint": "URL、ヘッダー、またはボディで '{{variable_name}}' 構文を使用して値を置換します。",
       "addVariable": "変数を追加",
       "add": "追加"
+    },
+    "rbac": {
+      "title": "アクセス制御",
+      "description": "ロール、権限、ロール割り当てを管理"
+    },
+    "volumes": {
+      "title": "ボリューム",
+      "description": "永続ストレージボリュームを管理"
+    },
+    "layers": {
+      "title": "レイヤー",
+      "description": "共有依存レイヤーを管理"
+    },
+    "notifications": {
+      "title": "通知センター",
+      "description": "システム通知の表示と管理"
     }
   },
   "common": {
@@ -417,7 +443,8 @@
     "close": "閉じる",
     "language": "言語",
     "docs": "ドキュメント",
-    "health": "ヘルス"
+    "health": "ヘルス",
+    "actions": "操作"
   },
   "header": {
     "searchPlaceholder": "関数を検索…",
@@ -880,6 +907,17 @@
     "colCreated": "作成日",
     "colActions": "操作",
     "noSecrets": "シークレットはまだありません"
+  },
+  "snapshotsPage": {
+    "failedToLoad": "スナップショットの読み込みに失敗",
+    "failedToDelete": "スナップショットの削除に失敗",
+    "colFunctionName": "関数名",
+    "colSnapSize": "スナップショットサイズ",
+    "colMemSize": "メモリサイズ",
+    "colTotalSize": "合計サイズ",
+    "colCreated": "作成日",
+    "colActions": "操作",
+    "noSnapshots": "スナップショットはまだありません"
   },
   "asyncInvocationsPage": {
     "enterJobId": "ジョブ ID を入力してください。",
@@ -2034,5 +2072,113 @@
       "importInvalidFields": "Import failed: invalid file format or missing required fields.",
       "importFailed": "Import failed: {message}"
     }
+  },
+  "rbacPage": {
+    "roles": "ロール",
+    "permissions": "権限",
+    "assignments": "割り当て",
+    "createRole": "ロールを作成",
+    "createPermission": "権限を作成",
+    "createAssignment": "割り当てを作成",
+    "noRoles": "ロールはまだありません",
+    "noPermissions": "権限はまだありません",
+    "noAssignments": "割り当てはまだありません",
+    "failedToLoad": "データの読み込みに失敗",
+    "failedToCreate": "作成に失敗",
+    "failedToDelete": "削除に失敗",
+    "name": "名前",
+    "namePlaceholder": "例: admin",
+    "code": "コード",
+    "codePlaceholder": "例: functions:read",
+    "resourceType": "リソースタイプ",
+    "resourceTypePlaceholder": "例: functions",
+    "action": "アクション",
+    "actionPlaceholder": "例: read",
+    "description": "説明",
+    "descriptionPlaceholder": "この権限を説明...",
+    "principalType": "プリンシパルタイプ",
+    "principalTypePlaceholder": "例: user",
+    "principalId": "プリンシパル ID",
+    "principalIdPlaceholder": "例: user-123",
+    "roleId": "ロール ID",
+    "roleIdPlaceholder": "ロールを選択...",
+    "scopeType": "スコープタイプ",
+    "scopeTypePlaceholder": "例: tenant",
+    "scopeId": "スコープ ID",
+    "scopeIdPlaceholder": "例: tenant-123",
+    "creating": "作成中...",
+    "colName": "名前",
+    "colSystem": "システム",
+    "colCreated": "作成日",
+    "colActions": "操作",
+    "colCode": "コード",
+    "colResource": "リソース",
+    "colAction": "アクション",
+    "colDescription": "説明",
+    "colPrincipal": "プリンシパル",
+    "colRoleId": "ロール ID",
+    "colScope": "スコープ",
+    "yes": "はい",
+    "no": "いいえ",
+    "system": "システム",
+    "created": "作成日",
+    "principal": "プリンシパル",
+    "scope": "スコープ"
+  },
+  "volumesPage": {
+    "createVolume": "ボリュームを作成",
+    "failedToLoad": "ボリュームの読み込みに失敗",
+    "failedToCreate": "ボリュームの作成に失敗",
+    "failedToDelete": "ボリュームの削除に失敗",
+    "name": "名前",
+    "namePlaceholder": "例: my-data",
+    "sizeMb": "サイズ (MB)",
+    "shared": "共有",
+    "description": "説明",
+    "descriptionPlaceholder": "このボリュームを説明...",
+    "creating": "作成中...",
+    "colName": "名前",
+    "colSize": "サイズ",
+    "colShared": "共有",
+    "colDescription": "説明",
+    "colCreated": "作成日",
+    "colActions": "操作",
+    "noVolumes": "ボリュームはまだありません",
+    "yes": "はい",
+    "no": "いいえ"
+  },
+  "layersPage": {
+    "createLayer": "レイヤーを作成",
+    "failedToLoad": "レイヤーの読み込みに失敗",
+    "failedToCreate": "レイヤーの作成に失敗",
+    "failedToDelete": "レイヤーの削除に失敗",
+    "name": "名前",
+    "namePlaceholder": "例: numpy-layer",
+    "runtime": "ランタイム",
+    "runtimePlaceholder": "例: python",
+    "version": "バージョン",
+    "versionPlaceholder": "例: 1.0.0",
+    "creating": "作成中...",
+    "colName": "名前",
+    "colRuntime": "ランタイム",
+    "colVersion": "バージョン",
+    "colSize": "サイズ",
+    "colFiles": "ファイル",
+    "colCreated": "作成日",
+    "colActions": "操作",
+    "noLayers": "レイヤーはまだありません",
+    "filesCount": "{count} ファイル"
+  },
+  "notificationsPage": {
+    "failedToLoad": "通知の読み込みに失敗",
+    "all": "すべて",
+    "unread": "未読",
+    "read": "既読",
+    "markAllRead": "すべて既読にする",
+    "markRead": "既読にする",
+    "noNotifications": "通知はまだありません",
+    "severity": "重大度",
+    "function": "関数",
+    "source": "ソース"
   }
 }
