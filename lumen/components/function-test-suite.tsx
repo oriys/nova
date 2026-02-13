@@ -75,7 +75,7 @@ export function FunctionTestSuite({ functionName }: { functionName: string }) {
                       status: "error" as const,
                       output: "",
                       duration_ms: 0,
-                      error: t.name ? "Invalid JSON input" : "Invalid JSON input",
+                      error: "Invalid JSON input",
                     },
                   }
                 : t
