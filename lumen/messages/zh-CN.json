@@ -575,7 +575,11 @@
     "colUpdated": "更新时间",
     "colActions": "操作",
     "noJobs": "未找到异步任务。",
-    "view": "查看"
+    "view": "查看",
+    "pause": "暂停",
+    "resume": "恢复",
+    "delete": "删除",
+    "retry": "重试"
   },
   "loginPage": {
     "title": "User Login",

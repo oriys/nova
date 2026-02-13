@@ -575,7 +575,11 @@
     "colUpdated": "更新日",
     "colActions": "操作",
     "noJobs": "非同期ジョブが見つかりません。",
-    "view": "表示"
+    "view": "表示",
+    "pause": "一時停止",
+    "resume": "再開",
+    "delete": "削除",
+    "retry": "リトライ"
   },
   "loginPage": {
     "title": "User Login",

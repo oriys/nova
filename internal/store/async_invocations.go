@@ -22,6 +22,7 @@ const (
 	AsyncInvocationStatusRunning   AsyncInvocationStatus = "running"
 	AsyncInvocationStatusSucceeded AsyncInvocationStatus = "succeeded"
 	AsyncInvocationStatusDLQ       AsyncInvocationStatus = "dlq"
+	AsyncInvocationStatusPaused    AsyncInvocationStatus = "paused"
 )
 
 const (
@@ -37,6 +38,9 @@ const (
 
 var ErrAsyncInvocationNotFound = errors.New("async invocation not found")
 var ErrAsyncInvocationNotDLQ = errors.New("async invocation is not in dlq")
+var ErrAsyncInvocationNotQueued = errors.New("async invocation is not in queued status")
+var ErrAsyncInvocationNotPaused = errors.New("async invocation is not in paused status")
+var ErrAsyncInvocationNotDeletable = errors.New("async invocation cannot be deleted in current status")
 var ErrInvalidIdempotencyKey = errors.New("invalid idempotency key")
 
 // AsyncInvocation is a durable async function execution request.
@@ -473,6 +477,98 @@ func (s *PostgresStore) RequeueAsyncInvocation(ctx context.Context, id string, m
 		return nil, fmt.Errorf("requeue async invocation: %w", err)
 	}
 	return inv, nil
+}
+
+// PauseAsyncInvocation transitions a queued async invocation to paused status.
+func (s *PostgresStore) PauseAsyncInvocation(ctx context.Context, id string) (*AsyncInvocation, error) {
+	now := time.Now().UTC()
+	scope := tenantScopeFromContext(ctx)
+
+	inv, err := scanAsyncInvocation(s.pool.QueryRow(ctx, `
+		UPDATE async_invocations SET
+			status = 'paused',
+			locked_by = NULL,
+			locked_until = NULL,
+			updated_at = $2
+		WHERE id = $1 AND tenant_id = $3 AND namespace = $4 AND status = 'queued'
+		RETURNING id, tenant_id, namespace, function_id, function_name, payload, status, attempt, max_attempts,
+		          backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
+		          request_id, output, duration_ms, cold_start, last_error, started_at,
+		          completed_at, created_at, updated_at
+	`, id, now, scope.TenantID, scope.Namespace))
+	if err == pgx.ErrNoRows {
+		var status string
+		statusErr := s.pool.QueryRow(ctx, `SELECT status FROM async_invocations WHERE id = $1 AND tenant_id = $2 AND namespace = $3`, id, scope.TenantID, scope.Namespace).Scan(&status)
+		if statusErr == pgx.ErrNoRows {
+			return nil, fmt.Errorf("%w: %s", ErrAsyncInvocationNotFound, id)
+		}
+		if statusErr != nil {
+			return nil, fmt.Errorf("pause async invocation lookup: %w", statusErr)
+		}
+		return nil, fmt.Errorf("%w: %s (%s)", ErrAsyncInvocationNotQueued, id, status)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("pause async invocation: %w", err)
+	}
+	return inv, nil
+}
+
+// ResumeAsyncInvocation transitions a paused async invocation back to queued status.
+func (s *PostgresStore) ResumeAsyncInvocation(ctx context.Context, id string) (*AsyncInvocation, error) {
+	now := time.Now().UTC()
+	scope := tenantScopeFromContext(ctx)
+
+	inv, err := scanAsyncInvocation(s.pool.QueryRow(ctx, `
+		UPDATE async_invocations SET
+			status = 'queued',
+			next_run_at = $2,
+			updated_at = $2
+		WHERE id = $1 AND tenant_id = $3 AND namespace = $4 AND status = 'paused'
+		RETURNING id, tenant_id, namespace, function_id, function_name, payload, status, attempt, max_attempts,
+		          backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
+		          request_id, output, duration_ms, cold_start, last_error, started_at,
+		          completed_at, created_at, updated_at
+	`, id, now, scope.TenantID, scope.Namespace))
+	if err == pgx.ErrNoRows {
+		var status string
+		statusErr := s.pool.QueryRow(ctx, `SELECT status FROM async_invocations WHERE id = $1 AND tenant_id = $2 AND namespace = $3`, id, scope.TenantID, scope.Namespace).Scan(&status)
+		if statusErr == pgx.ErrNoRows {
+			return nil, fmt.Errorf("%w: %s", ErrAsyncInvocationNotFound, id)
+		}
+		if statusErr != nil {
+			return nil, fmt.Errorf("resume async invocation lookup: %w", statusErr)
+		}
+		return nil, fmt.Errorf("%w: %s (%s)", ErrAsyncInvocationNotPaused, id, status)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("resume async invocation: %w", err)
+	}
+	return inv, nil
+}
+
+// DeleteAsyncInvocation deletes an async invocation that has not been consumed (queued or paused).
+func (s *PostgresStore) DeleteAsyncInvocation(ctx context.Context, id string) error {
+	scope := tenantScopeFromContext(ctx)
+
+	ct, err := s.pool.Exec(ctx, `
+		DELETE FROM async_invocations
+		WHERE id = $1 AND tenant_id = $2 AND namespace = $3 AND status IN ('queued', 'paused')
+	`, id, scope.TenantID, scope.Namespace)
+	if err != nil {
+		return fmt.Errorf("delete async invocation: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		var status string
+		statusErr := s.pool.QueryRow(ctx, `SELECT status FROM async_invocations WHERE id = $1 AND tenant_id = $2 AND namespace = $3`, id, scope.TenantID, scope.Namespace).Scan(&status)
+		if statusErr == pgx.ErrNoRows {
+			return fmt.Errorf("%w: %s", ErrAsyncInvocationNotFound, id)
+		}
+		if statusErr != nil {
+			return fmt.Errorf("delete async invocation lookup: %w", statusErr)
+		}
+		return fmt.Errorf("%w: %s (%s)", ErrAsyncInvocationNotDeletable, id, status)
+	}
+	return nil
 }
 
 func claimIdempotencyKey(ctx context.Context, tx pgx.Tx, scope, scopeID, key, resourceID string, now, expiresAt time.Time) (string, bool, error) {

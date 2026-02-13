@@ -204,6 +204,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /async-invocations/{id}", h.GetAsyncInvocation)
 	mux.HandleFunc("GET /async-invocations", h.ListAsyncInvocations)
 	mux.HandleFunc("POST /async-invocations/{id}/retry", h.RetryAsyncInvocation)
+	mux.HandleFunc("POST /async-invocations/{id}/pause", h.PauseAsyncInvocation)
+	mux.HandleFunc("POST /async-invocations/{id}/resume", h.ResumeAsyncInvocation)
+	mux.HandleFunc("DELETE /async-invocations/{id}", h.DeleteAsyncInvocation)
 
 	// Health probes
 	mux.HandleFunc("GET /health", h.Health)
@@ -635,6 +638,68 @@ func (h *Handler) RetryAsyncInvocation(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(inv)
 }
 
+// PauseAsyncInvocation handles POST /async-invocations/{id}/pause
+func (h *Handler) PauseAsyncInvocation(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	inv, err := h.Store.PauseAsyncInvocation(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, store.ErrAsyncInvocationNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, store.ErrAsyncInvocationNotQueued) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(inv)
+}
+
+// ResumeAsyncInvocation handles POST /async-invocations/{id}/resume
+func (h *Handler) ResumeAsyncInvocation(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	inv, err := h.Store.ResumeAsyncInvocation(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, store.ErrAsyncInvocationNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, store.ErrAsyncInvocationNotPaused) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(inv)
+}
+
+// DeleteAsyncInvocation handles DELETE /async-invocations/{id}
+func (h *Handler) DeleteAsyncInvocation(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	err := h.Store.DeleteAsyncInvocation(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, store.ErrAsyncInvocationNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, store.ErrAsyncInvocationNotDeletable) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func capacityShedStatus(fn *domain.Function) int {
 	if fn != nil && fn.CapacityPolicy != nil && fn.CapacityPolicy.ShedStatusCode != 0 {
 		return fn.CapacityPolicy.ShedStatusCode
@@ -681,7 +746,8 @@ func parseAsyncStatuses(raw string) ([]store.AsyncInvocationStatus, error) {
 		case store.AsyncInvocationStatusQueued,
 			store.AsyncInvocationStatusRunning,
 			store.AsyncInvocationStatusSucceeded,
-			store.AsyncInvocationStatusDLQ:
+			store.AsyncInvocationStatusDLQ,
+			store.AsyncInvocationStatusPaused:
 			statuses = append(statuses, status)
 		default:
 			return nil, fmt.Errorf("invalid status: %s", status)

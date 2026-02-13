@@ -323,7 +323,7 @@ export interface InvokeResponse {
   version?: number;
 }
 
-export type AsyncInvocationStatus = "queued" | "running" | "succeeded" | "dlq";
+export type AsyncInvocationStatus = "queued" | "running" | "succeeded" | "dlq" | "paused";
 
 export interface AsyncInvocationJob {
   id: string;
@@ -1560,6 +1560,21 @@ export const asyncInvocationsApi = {
       body: JSON.stringify(
         maxAttempts && maxAttempts > 0 ? { max_attempts: maxAttempts } : {}
       ),
+    }),
+
+  pause: (id: string) =>
+    request<AsyncInvocationJob>(`/async-invocations/${encodeURIComponent(id)}/pause`, {
+      method: "POST",
+    }),
+
+  resume: (id: string) =>
+    request<AsyncInvocationJob>(`/async-invocations/${encodeURIComponent(id)}/resume`, {
+      method: "POST",
+    }),
+
+  delete: (id: string) =>
+    request<void>(`/async-invocations/${encodeURIComponent(id)}`, {
+      method: "DELETE",
     }),
 };
 

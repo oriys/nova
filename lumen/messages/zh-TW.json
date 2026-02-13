@@ -575,7 +575,11 @@
     "colUpdated": "更新時間",
     "colActions": "操作",
     "noJobs": "未找到非同步任務。",
-    "view": "檢視"
+    "view": "檢視",
+    "pause": "暫停",
+    "resume": "恢復",
+    "delete": "刪除",
+    "retry": "重試"
   },
   "loginPage": {
     "title": "User Login",

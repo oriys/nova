@@ -575,7 +575,11 @@
     "colUpdated": "Mis à jour",
     "colActions": "Actions",
     "noJobs": "Aucune tâche asynchrone trouvée.",
-    "view": "Voir"
+    "view": "Voir",
+    "pause": "Pause",
+    "resume": "Reprendre",
+    "delete": "Supprimer",
+    "retry": "Réessayer"
   },
   "loginPage": {
     "title": "User Login",
