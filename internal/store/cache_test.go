@@ -342,10 +342,7 @@ func TestCachedStore_TenantIsolation(t *testing.T) {
 	fn1 := &domain.Function{ID: "f1", Name: "hello", TenantID: "t1", Namespace: "ns1"}
 	fn2 := &domain.Function{ID: "f2", Name: "hello", TenantID: "t2", Namespace: "ns1"}
 
-	callCount := atomic.Int64{}
 	stub := &stubMetadataStore{}
-	// We need a custom stub that returns different functions based on tenant scope
-	// For simplicity, we test key isolation by verifying separate cache entries
 
 	cached := NewCachedMetadataStore(stub, 10*time.Second)
 
@@ -355,7 +352,6 @@ func TestCachedStore_TenantIsolation(t *testing.T) {
 
 	stub.fn = fn1
 	_, _ = cached.GetFunctionByName(ctx1, "hello")
-	callCount.Store(stub.fnByNameCalls.Load())
 
 	stub.fn = fn2
 	_, _ = cached.GetFunctionByName(ctx2, "hello")

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -210,10 +211,12 @@ func (c *CachedMetadataStore) invalidateFunctionByID(funcID string) {
 		c.fnByName.Delete(nameKeyVal.(string))
 	}
 	// Delete all ID-keyed entries; we iterate fnByID because we may not know tenant/ns.
+	// The key format is "tenant\x00ns\x00id" – extract ID after the second null byte.
+	sep := "\x00"
 	c.fnByID.Range(func(key, _ any) bool {
 		k := key.(string)
-		// The key format is "tenant\x00ns\x00id" – check if it ends with the funcID.
-		if len(k) > len(funcID) && k[len(k)-len(funcID):] == funcID {
+		// Find the ID portion: everything after the second separator.
+		if idx := strings.LastIndex(k, sep); idx >= 0 && k[idx+1:] == funcID {
 			c.fnByID.Delete(key)
 		}
 		return true
