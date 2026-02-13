@@ -2877,6 +2877,50 @@ export const workflowDocsApi = {
     }),
 };
 
+// Volumes API
+export interface VolumeEntry {
+  id: string;
+  tenant_id?: string;
+  namespace?: string;
+  name: string;
+  size_mb: number;
+  image_path: string;
+  shared: boolean;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export const volumesApi = {
+  list: async (limit?: number, offset?: number) => {
+    const params = new URLSearchParams();
+    const resolvedLimit =
+      typeof limit === "number" && Number.isFinite(limit) && limit > 0
+        ? Math.floor(limit)
+        : 100;
+    params.set("limit", String(resolvedLimit));
+    if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    const result = await requestPaged<VolumeEntry>(`/volumes?${params.toString()}`);
+    return result.items;
+  },
+
+  get: (name: string) =>
+    request<VolumeEntry>(`/volumes/${encodeURIComponent(name)}`),
+
+  create: (data: { name: string; size_mb: number; shared?: boolean; description?: string }) =>
+    request<VolumeEntry>("/volumes", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  delete: (name: string) =>
+    request<void>(`/volumes/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    }),
+};
+
 // Cost Intelligence API
 export const costApi = {
   functionCost: (name: string, windowSeconds?: number) => {
