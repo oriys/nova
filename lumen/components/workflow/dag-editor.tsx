@@ -31,41 +31,48 @@ const edgeTypes = { workflow: WorkflowEdge }
 
 interface DagEditorProps {
   functions: string[]
+  workflows: string[]
   title?: string
   initialDefinition?: PublishVersionRequest & { layout?: LayoutMap }
   onSave: (def: PublishVersionRequest & { layout?: LayoutMap }) => void
   onCancel: () => void
   onFunctionClick?: (functionName: string) => void
+  onWorkflowClick?: (workflowName: string) => void
   saving?: boolean
 }
 
 interface EditorNodeData {
   nodeKey: string
+  nodeType: "function" | "sub_workflow"
   functionName: string
+  workflowName: string
   timeoutS: number
   retryMax: number
   retryBaseMs: number
   retryMaxBackoffMs: number
 }
 
-function editorToFlowNodes(editorNodes: EditorNodeData[], layout: LayoutMap, selectedId?: string, onFunctionClick?: (fn: string) => void): Node<WorkflowNodeData>[] {
+function editorToFlowNodes(editorNodes: EditorNodeData[], layout: LayoutMap, selectedId?: string, onFunctionClick?: (fn: string) => void, onWorkflowClick?: (wn: string) => void): Node<WorkflowNodeData>[] {
   return editorNodes.map((n) => ({
     id: n.nodeKey,
     type: "workflow",
     position: layout[n.nodeKey] || { x: 0, y: 0 },
     data: {
       nodeKey: n.nodeKey,
+      nodeType: n.nodeType,
       functionName: n.functionName,
+      workflowName: n.workflowName,
       timeoutS: n.timeoutS,
       retryMax: n.retryMax > 1 ? n.retryMax : undefined,
       mode: "editor" as const,
       selected: n.nodeKey === selectedId,
       onFunctionClick,
+      onWorkflowClick,
     },
   }))
 }
 
-export function DagEditor({ functions, title, initialDefinition, onSave, onCancel, onFunctionClick, saving }: DagEditorProps) {
+export function DagEditor({ functions, workflows, title, initialDefinition, onSave, onCancel, onFunctionClick, onWorkflowClick, saving }: DagEditorProps) {
   const [jsonMode, setJsonMode] = useState(false)
   const [jsonText, setJsonText] = useState("")
   const [jsonError, setJsonError] = useState<string | null>(null)
@@ -77,7 +84,9 @@ export function DagEditor({ functions, title, initialDefinition, onSave, onCance
     if (!initialDefinition?.nodes?.length) return []
     return initialDefinition.nodes.map((n) => ({
       nodeKey: n.node_key,
-      functionName: n.function_name,
+      nodeType: (n.node_type || "function") as "function" | "sub_workflow",
+      functionName: n.function_name || "",
+      workflowName: n.workflow_name || "",
       timeoutS: n.timeout_s || 30,
       retryMax: n.retry_policy?.max_attempts || 1,
       retryBaseMs: n.retry_policy?.base_ms || 100,
@@ -93,7 +102,7 @@ export function DagEditor({ functions, title, initialDefinition, onSave, onCance
   })
 
   const [nodes, setNodes, onNodesChange] = useNodesState(
-    editorToFlowNodes(editorNodes, initialLayout, undefined, onFunctionClick)
+    editorToFlowNodes(editorNodes, initialLayout, undefined, onFunctionClick, onWorkflowClick)
   )
 
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(
@@ -166,7 +175,9 @@ export function DagEditor({ functions, title, initialDefinition, onSave, onCance
     const key = `step${editorNodes.length + 1}`
     const newNode: EditorNodeData = {
       nodeKey: key,
+      nodeType: "function",
       functionName: "",
+      workflowName: "",
       timeoutS: 30,
       retryMax: 1,
       retryBaseMs: 100,
@@ -188,16 +199,19 @@ export function DagEditor({ functions, title, initialDefinition, onSave, onCance
         position: { x: 200, y: maxY + 40 },
         data: {
           nodeKey: key,
+          nodeType: "function" as const,
           functionName: "",
+          workflowName: "",
           timeoutS: 30,
           mode: "editor" as const,
           selected: true,
           onFunctionClick,
+          onWorkflowClick,
         },
       },
     ])
     setSelectedNodeKey(key)
-  }, [editorNodes, nodes, setNodes, onFunctionClick])
+  }, [editorNodes, nodes, setNodes, onFunctionClick, onWorkflowClick])
 
   const handleAutoLayout = useCallback(() => {
     const layoutNodes = editorNodes.map((n) => ({ key: n.nodeKey, width: NODE_WIDTH, height: NODE_HEIGHT }))
@@ -221,7 +235,9 @@ export function DagEditor({ functions, title, initialDefinition, onSave, onCance
     setEditorNodes((prev) =>
       prev.map((n) => (n.nodeKey === oldKey ? {
         nodeKey: updated.nodeKey,
+        nodeType: updated.nodeType,
         functionName: updated.functionName,
+        workflowName: updated.workflowName,
         timeoutS: updated.timeoutS,
         retryMax: updated.retryMax,
         retryBaseMs: updated.retryBaseMs,
@@ -238,7 +254,9 @@ export function DagEditor({ functions, title, initialDefinition, onSave, onCance
           data: {
             ...n.data,
             nodeKey: updated.nodeKey,
+            nodeType: updated.nodeType,
             functionName: updated.functionName,
+            workflowName: updated.workflowName,
             timeoutS: updated.timeoutS,
             retryMax: updated.retryMax > 1 ? updated.retryMax : undefined,
           },
@@ -267,15 +285,22 @@ export function DagEditor({ functions, title, initialDefinition, onSave, onCance
   }, [selectedNodeKey, setNodes, setEdges])
 
   const buildDefinition = useCallback((): (PublishVersionRequest & { layout?: LayoutMap }) | null => {
-    // Validate all nodes have keys and function names
+    // Validate all nodes have keys and function/workflow names
     for (const n of editorNodes) {
       if (!n.nodeKey.trim()) {
         setValidationError("All nodes must have a node key")
         return null
       }
-      if (!n.functionName.trim()) {
-        setValidationError(`Node "${n.nodeKey}" must have a function name`)
-        return null
+      if (n.nodeType === "sub_workflow") {
+        if (!n.workflowName.trim()) {
+          setValidationError(`Node "${n.nodeKey}" must have a workflow name`)
+          return null
+        }
+      } else {
+        if (!n.functionName.trim()) {
+          setValidationError(`Node "${n.nodeKey}" must have a function name`)
+          return null
+        }
       }
     }
 
@@ -301,7 +326,13 @@ export function DagEditor({ functions, title, initialDefinition, onSave, onCance
 
     const nodeDefs: NodeDefinition[] = editorNodes.map((n) => ({
       node_key: n.nodeKey,
-      function_name: n.functionName,
+      ...(n.nodeType === "sub_workflow" ? {
+        node_type: "sub_workflow" as const,
+        workflow_name: n.workflowName,
+      } : {
+        node_type: "function" as const,
+        function_name: n.functionName,
+      }),
       timeout_s: n.timeoutS,
       ...(n.retryMax > 1 ? {
         retry_policy: {
@@ -369,7 +400,9 @@ export function DagEditor({ functions, title, initialDefinition, onSave, onCance
   const selectedConfig: NodeConfig | null = selectedEditorNode
     ? {
         nodeKey: selectedEditorNode.nodeKey,
+        nodeType: selectedEditorNode.nodeType,
         functionName: selectedEditorNode.functionName,
+        workflowName: selectedEditorNode.workflowName,
         timeoutS: selectedEditorNode.timeoutS,
         retryMax: selectedEditorNode.retryMax,
         retryBaseMs: selectedEditorNode.retryBaseMs,
@@ -468,6 +501,7 @@ export function DagEditor({ functions, title, initialDefinition, onSave, onCance
               <NodeConfigPanel
                 node={selectedConfig}
                 functions={functions}
+                workflows={workflows}
                 onChange={handleNodeConfigChange}
                 onDelete={handleNodeDelete}
                 onClose={() => {

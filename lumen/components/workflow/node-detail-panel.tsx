@@ -35,10 +35,29 @@ export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
           <p className="font-mono text-sm font-bold">{node.node_key}</p>
         </div>
 
-        <div>
-          <p className="text-xs text-muted-foreground mb-1">Function</p>
-          <p className="text-sm">{node.function_name}</p>
-        </div>
+        {node.node_type === "sub_workflow" ? (
+          <>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Type</p>
+              <Badge variant="outline">Sub-workflow</Badge>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Workflow</p>
+              <p className="text-sm">{node.workflow_name}</p>
+            </div>
+            {node.child_run_id && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Child Run ID</p>
+                <p className="text-xs font-mono break-all">{node.child_run_id}</p>
+              </div>
+            )}
+          </>
+        ) : (
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Function</p>
+            <p className="text-sm">{node.function_name}</p>
+          </div>
+        )}
 
         <div>
           <p className="text-xs text-muted-foreground mb-1">Status</p>

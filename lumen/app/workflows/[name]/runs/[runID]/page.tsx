@@ -223,7 +223,16 @@ export default function RunDetailPage() {
                     run.nodes.map((node: RunNode) => (
                       <tr key={node.id} className="border-b border-border last:border-0">
                         <td className="px-4 py-3 font-mono text-sm">{node.node_key}</td>
-                        <td className="px-4 py-3 text-sm">{node.function_name}</td>
+                        <td className="px-4 py-3 text-sm">
+                          {node.node_type === "sub_workflow" ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="text-[10px] px-1 py-0.5 rounded bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 font-medium">SW</span>
+                              {node.workflow_name}
+                            </span>
+                          ) : (
+                            node.function_name
+                          )}
+                        </td>
                         <td className="px-4 py-3">
                           <Badge variant={nodeStatusColor(node.status)}>
                             {node.status}
