@@ -33,6 +33,7 @@ import { DagViewer } from "@/components/workflow/dag-viewer"
 import { DagEditor } from "@/components/workflow/dag-editor"
 import { CodeDisplay } from "@/components/code-editor"
 import { WorkflowDocs } from "@/components/workflow-docs"
+import { WorkflowTestSuite } from "@/components/workflow-test-suite"
 import type { LayoutMap } from "@/components/workflow/dag-layout"
 import { Play, RefreshCw, ArrowLeft, Pencil, X, ExternalLink, Loader2 } from "lucide-react"
 
@@ -293,6 +294,7 @@ export default function WorkflowDetailPage() {
             <TabsTrigger value="graph">{t("tabs.graph")}</TabsTrigger>
             <TabsTrigger value="runs">{t("tabs.runs")}</TabsTrigger>
             <TabsTrigger value="versions">{t("tabs.versions")}</TabsTrigger>
+            <TabsTrigger value="tests">{t("tabs.tests")}</TabsTrigger>
             <TabsTrigger value="docs">{t("tabs.docs")}</TabsTrigger>
           </TabsList>
 
@@ -431,6 +433,13 @@ export default function WorkflowDetailPage() {
             {workflow && (
               <WorkflowDocs workflow={workflow} currentVersion={currentVersionDetail} />
             )}
+          </TabsContent>
+
+          <TabsContent value="tests" className="mt-4">
+            <WorkflowTestSuite
+              workflowName={name}
+              hasPublishedVersion={!!workflow && workflow.current_version > 0}
+            />
           </TabsContent>
         </Tabs>
 

@@ -635,7 +635,8 @@
       "graph": "Graph",
       "runs": "Runs",
       "versions": "Versions",
-      "docs": "Docs"
+      "docs": "Docs",
+      "tests": "測試套件"
     },
     "runs": {
       "colRunId": "Run ID",
@@ -780,7 +781,8 @@
       "configuration": "Configuration",
       "versions": "Versions",
       "schedules": "Schedules",
-      "docs": "Docs"
+      "docs": "Docs",
+      "tests": "測試套件"
     },
     "versions": {
       "colVersion": "Version",
@@ -1532,5 +1534,25 @@
         }
       }
     }
+  },
+  "testSuite": {
+    "testCase": "測試案例",
+    "passed": "通過",
+    "failed": "失敗",
+    "executed": "已執行",
+    "addTestCase": "新增測試案例",
+    "addFirstTestCase": "新增第一個測試案例",
+    "runAll": "全部執行",
+    "input": "輸入",
+    "expectedOutput": "預期輸出",
+    "expectedOutputPlaceholder": "留空則跳過斷言",
+    "actualOutput": "實際輸出",
+    "result": "結果",
+    "running": "執行中...",
+    "emptyDescription": "尚無測試案例。新增測試案例以驗證您的函數。",
+    "workflowEmptyDescription": "尚無測試案例。新增測試案例以驗證您的工作流程。",
+    "workflowNoVersion": "此工作流程尚未發布版本。請先發布版本再執行測試。",
+    "workflowRunning": "工作流程執行中...",
+    "viewRun": "檢視執行"
   }
 }

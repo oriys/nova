@@ -635,7 +635,8 @@
       "graph": "Graph",
       "runs": "Runs",
       "versions": "Versions",
-      "docs": "Docs"
+      "docs": "Docs",
+      "tests": "Tests"
     },
     "runs": {
       "colRunId": "Run ID",
@@ -780,7 +781,8 @@
       "configuration": "Configuration",
       "versions": "Versions",
       "schedules": "Schedules",
-      "docs": "Docs"
+      "docs": "Docs",
+      "tests": "Tests"
     },
     "versions": {
       "colVersion": "Version",
@@ -1532,5 +1534,25 @@
         }
       }
     }
+  },
+  "testSuite": {
+    "testCase": "Test Case",
+    "passed": "passed",
+    "failed": "failed",
+    "executed": "executed",
+    "addTestCase": "Add Test Case",
+    "addFirstTestCase": "Add First Test Case",
+    "runAll": "Run All",
+    "input": "Input",
+    "expectedOutput": "Expected Output",
+    "expectedOutputPlaceholder": "Leave empty to skip assertion",
+    "actualOutput": "Actual Output",
+    "result": "Result",
+    "running": "Running...",
+    "emptyDescription": "No test cases yet. Add test cases to validate your function.",
+    "workflowEmptyDescription": "No test cases yet. Add test cases to validate your workflow.",
+    "workflowNoVersion": "This workflow has no published version. Publish a version before running tests.",
+    "workflowRunning": "Running workflow...",
+    "viewRun": "View Run"
   }
 }
