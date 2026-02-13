@@ -20,6 +20,8 @@ import {
 import {
   workflowsApi,
   functionsApi,
+  aiApi,
+  apiDocsApi,
   type Workflow,
   type WorkflowVersion,
   type WorkflowRun,
@@ -34,7 +36,7 @@ import { DagEditor } from "@/components/workflow/dag-editor"
 import { CodeDisplay } from "@/components/code-editor"
 import { WorkflowDocs } from "@/components/workflow-docs"
 import type { LayoutMap } from "@/components/workflow/dag-layout"
-import { Play, RefreshCw, ArrowLeft, Pencil, X, ExternalLink, Loader2 } from "lucide-react"
+import { Play, RefreshCw, ArrowLeft, Pencil, X, ExternalLink, Loader2, Terminal, Copy, Check } from "lucide-react"
 
 type Notice = {
   kind: "success" | "error" | "info"
@@ -72,6 +74,12 @@ export default function WorkflowDetailPage() {
   const [codeViewData, setCodeViewData] = useState<{ code: string; runtime: string } | null>(null)
   const [codeViewLoading, setCodeViewLoading] = useState(false)
   const [codeViewError, setCodeViewError] = useState<string | null>(null)
+
+  // AI Curl generation
+  const [aiEnabled, setAiEnabled] = useState(false)
+  const [aiCurlGenerating, setAiCurlGenerating] = useState(false)
+  const [aiCurl, setAiCurl] = useState<string | null>(null)
+  const [aiCurlCopied, setAiCurlCopied] = useState(false)
 
   /** Convert a WorkflowVersion into the format DagEditor expects */
   function versionToEditorDef(v: WorkflowVersion): PublishVersionRequest & { layout?: LayoutMap } {
@@ -130,6 +138,38 @@ export default function WorkflowDetailPage() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // Check AI status on mount
+  useEffect(() => {
+    aiApi.status().then((res) => setAiEnabled(res.enabled)).catch(() => {})
+  }, [])
+
+  const handleAiCurl = async () => {
+    if (!currentVersionDetail) return
+    try {
+      setAiCurlGenerating(true)
+      const vNodes = currentVersionDetail.nodes || []
+      const vEdges = currentVersionDetail.edges || []
+      const response = await apiDocsApi.generateWorkflowDocs({
+        workflow_name: name,
+        description: workflow?.description,
+        nodes: JSON.stringify(vNodes.map((n: WFNode) => ({ node_key: n.node_key, function_name: n.function_name }))),
+        edges: JSON.stringify(vEdges.map((e: WFEdge) => ({ from: e.from_node_id, to: e.to_node_id }))),
+      })
+      setAiCurl(response.curl_example || null)
+    } catch (err) {
+      setNotice({ kind: "error", text: err instanceof Error ? err.message : t("notice.aiCurlFailed") })
+    } finally {
+      setAiCurlGenerating(false)
+    }
+  }
+
+  const handleCopyAiCurl = async () => {
+    if (!aiCurl) return
+    await navigator.clipboard.writeText(aiCurl)
+    setAiCurlCopied(true)
+    setTimeout(() => setAiCurlCopied(false), 2000)
+  }
 
   const handlePublish = async (def: PublishVersionRequest & { layout?: LayoutMap }) => {
     try {
@@ -314,6 +354,16 @@ export default function WorkflowDetailPage() {
               /* ---- View mode ---- */
               <div className="space-y-2">
                 <div className="flex items-center justify-end gap-2">
+                  {aiEnabled && currentVersionDetail && (
+                    <Button variant="outline" size="sm" onClick={handleAiCurl} disabled={aiCurlGenerating}>
+                      {aiCurlGenerating ? (
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Terminal className="mr-1.5 h-3.5 w-3.5" />
+                      )}
+                      {t("aiCurl")}
+                    </Button>
+                  )}
                   {currentVersionDetail && (
                     <Button variant="outline" size="sm" onClick={() => enterEdit(currentVersionDetail)}>
                       <Pencil className="mr-1.5 h-3.5 w-3.5" />
@@ -325,6 +375,30 @@ export default function WorkflowDetailPage() {
                     {t("newVersion")}
                   </Button>
                 </div>
+                {aiCurl && (
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30 p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Terminal className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                        <span className="text-sm font-medium text-emerald-900 dark:text-emerald-200">{t("aiCurlTitle")}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="sm" onClick={handleCopyAiCurl} className="h-7 px-2 text-emerald-700 dark:text-emerald-300">
+                          {aiCurlCopied ? (
+                            <Check className="mr-1 h-3 w-3" />
+                          ) : (
+                            <Copy className="mr-1 h-3 w-3" />
+                          )}
+                          {aiCurlCopied ? t("copied") : t("copy")}
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setAiCurl(null)} className="h-6 w-6 p-0 text-muted-foreground" aria-label={t("dismiss")}>
+                          ×
+                        </Button>
+                      </div>
+                    </div>
+                    <pre className="text-sm text-emerald-800 dark:text-emerald-200 whitespace-pre-wrap font-mono bg-emerald-100/50 dark:bg-emerald-900/30 rounded p-3">{aiCurl}</pre>
+                  </div>
+                )}
                 {currentVersionDetail ? (
                   <DagViewer version={currentVersionDetail} onFunctionClick={handleFunctionClick} />
                 ) : (

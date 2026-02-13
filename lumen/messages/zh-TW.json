@@ -661,8 +661,13 @@
       "versionPublished": "Workflow version published",
       "publishFailed": "Failed to publish",
       "runTriggered": "Workflow run triggered",
-      "triggerFailed": "Failed to trigger"
-    }
+      "triggerFailed": "Failed to trigger",
+      "aiCurlFailed": "生成 cURL 失敗"
+    },
+    "aiCurl": "AI Curl",
+    "aiCurlTitle": "AI 生成的 cURL",
+    "copy": "複製",
+    "copied": "已複製"
   },
   "workflowRunPage": {
     "headerTitle": "Run: {runId}...",
