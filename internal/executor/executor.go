@@ -22,6 +22,7 @@ import (
 	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/store"
 	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/sync/errgroup"
 )
 
 // ErrCircuitOpen is returned when the circuit breaker is open for a function.
@@ -99,12 +100,65 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		)
 	}
 
-	rtCfg, err := e.store.GetRuntime(ctx, string(fn.Runtime))
-	if err != nil {
-		if fn.Runtime != domain.RuntimeCustom && fn.Runtime != domain.RuntimeProvided {
-			return nil, fmt.Errorf("get runtime config: %w", err)
+	// Parallel pre-execution queries: runtime config, layers, code, and multi-file check
+	var (
+		rtCfg        *store.RuntimeRecord
+		layers       []*domain.Layer
+		codeRecord   *domain.FunctionCode
+		hasMultiFiles bool
+	)
+
+	g, gctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		var err error
+		rtCfg, err = e.store.GetRuntime(gctx, string(fn.Runtime))
+		if err != nil {
+			if fn.Runtime != domain.RuntimeCustom && fn.Runtime != domain.RuntimeProvided {
+				return fmt.Errorf("get runtime config: %w", err)
+			}
 		}
-	} else {
+		return nil
+	})
+
+	if len(fn.Layers) > 0 {
+		g.Go(func() error {
+			var err error
+			layers, err = e.store.GetFunctionLayers(gctx, fn.ID)
+			if err != nil {
+				logging.Op().Warn("failed to resolve layers", "function", fn.Name, "error", err)
+			}
+			return nil
+		})
+	}
+
+	g.Go(func() error {
+		var err error
+		codeRecord, err = e.store.GetFunctionCode(gctx, fn.ID)
+		if err != nil {
+			return fmt.Errorf("get function code: %w", err)
+		}
+		if codeRecord == nil {
+			return fmt.Errorf("function code not found: %s", fn.Name)
+		}
+		return nil
+	})
+
+	g.Go(func() error {
+		var err error
+		hasMultiFiles, err = e.store.HasFunctionFiles(gctx, fn.ID)
+		if err != nil {
+			return fmt.Errorf("check function files: %w", err)
+		}
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	// Apply runtime config
+	if rtCfg != nil {
 		fn.RuntimeCommand = append([]string(nil), rtCfg.Entrypoint...)
 		fn.RuntimeExtension = rtCfg.FileExtension
 		fn.RuntimeImageName = rtCfg.ImageName
@@ -118,7 +172,7 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		}
 	}
 
-	// Resolve $SECRET: references in env vars
+	// Resolve $SECRET: references in env vars (depends on runtime config merge above)
 	if e.secretsResolver != nil && len(fn.EnvVars) > 0 {
 		resolved, err := e.secretsResolver.ResolveEnvVars(ctx, fn.EnvVars)
 		if err != nil {
@@ -127,16 +181,9 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		fn.EnvVars = resolved
 	}
 
-	// Resolve layer paths
-	if len(fn.Layers) > 0 {
-		layers, err := e.store.GetFunctionLayers(ctx, fn.ID)
-		if err != nil {
-			logging.Op().Warn("failed to resolve layers", "function", fn.Name, "error", err)
-		} else {
-			for _, l := range layers {
-				fn.LayerPaths = append(fn.LayerPaths, l.ImagePath)
-			}
-		}
+	// Apply resolved layer paths
+	for _, l := range layers {
+		fn.LayerPaths = append(fn.LayerPaths, l.ImagePath)
 	}
 
 	// Circuit breaker check
@@ -144,21 +191,6 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	if breaker != nil && !breaker.Allow() {
 		metrics.RecordShed(fn.Name, "circuit_breaker_open")
 		return nil, ErrCircuitOpen
-	}
-
-	// Fetch code content from store
-	codeRecord, err := e.store.GetFunctionCode(ctx, fn.ID)
-	if err != nil {
-		return nil, fmt.Errorf("get function code: %w", err)
-	}
-	if codeRecord == nil {
-		return nil, fmt.Errorf("function code not found: %s", fn.Name)
-	}
-
-	// Check for multi-file function
-	hasMultiFiles, err := e.store.HasFunctionFiles(ctx, fn.ID)
-	if err != nil {
-		return nil, fmt.Errorf("check function files: %w", err)
 	}
 
 	// For compiled languages, check compilation status before proceeding
@@ -268,10 +300,16 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 
 	if err != nil {
 		e.pool.EvictVM(fn.ID, pvm)
-		metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, false)
+
+		// Async: metrics recording
+		go metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, false)
+
 		logEntry.Success = false
 		logEntry.Error = err.Error()
-		e.logger.Log(logEntry)
+
+		// Async: request logging
+		go e.logger.Log(logEntry)
+
 		observability.SetSpanError(span, err)
 
 		// Record circuit breaker failure
@@ -287,7 +325,9 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 
 	// Record successful invocation
 	success := resp.Error == ""
-	metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, success)
+
+	// Async: metrics recording
+	go metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, success)
 
 	// Record circuit breaker outcome
 	if breaker != nil {
@@ -301,12 +341,14 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	logEntry.Success = success
 	logEntry.Error = resp.Error
 	logEntry.OutputSize = len(resp.Output)
-	e.logger.Log(logEntry)
 
-	// Store captured output if available
+	// Async: request logging
+	go e.logger.Log(logEntry)
+
+	// Async: store captured output if available
 	if resp.Stdout != "" || resp.Stderr != "" {
-		if store := logging.GetOutputStore(); store != nil {
-			store.Store(reqID, fn.ID, resp.Stdout, resp.Stderr)
+		if outStore := logging.GetOutputStore(); outStore != nil {
+			go outStore.Store(reqID, fn.ID, resp.Stdout, resp.Stderr)
 		}
 	}
 
@@ -379,12 +421,65 @@ func (e *Executor) InvokeStream(ctx context.Context, funcName string, payload js
 		return fmt.Errorf("get function: %w", err)
 	}
 
-	rtCfg, err := e.store.GetRuntime(ctx, string(fn.Runtime))
-	if err != nil {
-		if fn.Runtime != domain.RuntimeCustom && fn.Runtime != domain.RuntimeProvided {
-			return fmt.Errorf("get runtime config: %w", err)
+	// Parallel pre-execution queries: runtime config, layers, code, and multi-file check
+	var (
+		rtCfg        *store.RuntimeRecord
+		layers       []*domain.Layer
+		codeRecord   *domain.FunctionCode
+		hasMultiFiles bool
+	)
+
+	g, gctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		var err error
+		rtCfg, err = e.store.GetRuntime(gctx, string(fn.Runtime))
+		if err != nil {
+			if fn.Runtime != domain.RuntimeCustom && fn.Runtime != domain.RuntimeProvided {
+				return fmt.Errorf("get runtime config: %w", err)
+			}
 		}
-	} else {
+		return nil
+	})
+
+	if len(fn.Layers) > 0 {
+		g.Go(func() error {
+			var err error
+			layers, err = e.store.GetFunctionLayers(gctx, fn.ID)
+			if err != nil {
+				logging.Op().Warn("failed to resolve layers", "function", fn.Name, "error", err)
+			}
+			return nil
+		})
+	}
+
+	g.Go(func() error {
+		var err error
+		codeRecord, err = e.store.GetFunctionCode(gctx, fn.ID)
+		if err != nil {
+			return fmt.Errorf("get function code: %w", err)
+		}
+		if codeRecord == nil {
+			return fmt.Errorf("function code not found: %s", fn.Name)
+		}
+		return nil
+	})
+
+	g.Go(func() error {
+		var err error
+		hasMultiFiles, err = e.store.HasFunctionFiles(gctx, fn.ID)
+		if err != nil {
+			return fmt.Errorf("check function files: %w", err)
+		}
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	// Apply runtime config
+	if rtCfg != nil {
 		fn.RuntimeCommand = append([]string(nil), rtCfg.Entrypoint...)
 		fn.RuntimeExtension = rtCfg.FileExtension
 		fn.RuntimeImageName = rtCfg.ImageName
@@ -398,7 +493,7 @@ func (e *Executor) InvokeStream(ctx context.Context, funcName string, payload js
 		}
 	}
 
-	// Resolve $SECRET: references in env vars
+	// Resolve $SECRET: references in env vars (depends on runtime config merge above)
 	if e.secretsResolver != nil && len(fn.EnvVars) > 0 {
 		resolved, err := e.secretsResolver.ResolveEnvVars(ctx, fn.EnvVars)
 		if err != nil {
@@ -407,31 +502,9 @@ func (e *Executor) InvokeStream(ctx context.Context, funcName string, payload js
 		fn.EnvVars = resolved
 	}
 
-	// Resolve layer paths
-	if len(fn.Layers) > 0 {
-		layers, err := e.store.GetFunctionLayers(ctx, fn.ID)
-		if err != nil {
-			logging.Op().Warn("failed to resolve layers", "function", fn.Name, "error", err)
-		} else {
-			for _, l := range layers {
-				fn.LayerPaths = append(fn.LayerPaths, l.ImagePath)
-			}
-		}
-	}
-
-	// Fetch code content from store
-	codeRecord, err := e.store.GetFunctionCode(ctx, fn.ID)
-	if err != nil {
-		return fmt.Errorf("get function code: %w", err)
-	}
-	if codeRecord == nil {
-		return fmt.Errorf("function code not found: %s", fn.Name)
-	}
-
-	// Check for multi-file function
-	hasMultiFiles, err := e.store.HasFunctionFiles(ctx, fn.ID)
-	if err != nil {
-		return fmt.Errorf("check function files: %w", err)
+	// Apply resolved layer paths
+	for _, l := range layers {
+		fn.LayerPaths = append(fn.LayerPaths, l.ImagePath)
 	}
 
 	// For compiled languages, check compilation status
@@ -537,10 +610,15 @@ func (e *Executor) InvokeStream(ctx context.Context, funcName string, payload js
 	if err != nil {
 		e.pool.EvictVM(fn.ID, pvm)
 		execErr = err
-		metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, false)
+		// Async: metrics recording
+		go metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, false)
+
 		logEntry.Success = false
 		logEntry.Error = err.Error()
-		e.logger.Log(logEntry)
+
+		// Async: request logging
+		go e.logger.Log(logEntry)
+
 		observability.SetSpanError(span, err)
 
 		// Async persist invocation log
@@ -549,11 +627,13 @@ func (e *Executor) InvokeStream(ctx context.Context, funcName string, payload js
 		return fmt.Errorf("execute stream: %w", err)
 	}
 
-	// Record successful streaming invocation
-	metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, true)
+	// Async: record successful streaming invocation
+	go metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, true)
 
 	logEntry.Success = true
-	e.logger.Log(logEntry)
+
+	// Async: request logging
+	go e.logger.Log(logEntry)
 
 	// Async persist invocation log (output is streamed, so we don't have it)
 	e.persistInvocationLog(reqID, fn, durationMs, pvm.ColdStart, true, "", len(payload), 0, payload, nil, "", "")
