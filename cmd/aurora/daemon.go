@@ -97,11 +97,15 @@ func daemonCmd() *cobra.Command {
 
 			// Auto-heal: when a latency or cold-start SLO breach is detected,
 			// automatically increase min_replicas to pre-warm more VMs.
+			autoHealMax := cfg.SLO.AutoHealMaxReplicas
+			if autoHealMax <= 0 {
+				autoHealMax = 10
+			}
 			sloService.AutoHealCallback = func(ctx context.Context, fn *domain.Function, breaches []string) {
 				current := fn.MinReplicas
 				desired := current + 1
-				if desired > 10 {
-					desired = 10 // cap to prevent runaway scaling
+				if desired > autoHealMax {
+					desired = autoHealMax
 				}
 				if desired <= current {
 					return

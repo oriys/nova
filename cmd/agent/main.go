@@ -711,7 +711,7 @@ func (a *Agent) handleStreamingExec(conn net.Conn, req *ExecPayload) (*Message, 
 		default:
 			errMsg := fmt.Sprintf("streaming not supported for runtime: %s", a.function.Runtime)
 			sendChunk(nil, true, errMsg)
-			return nil, fmt.Errorf("%s", errMsg)
+			return nil, errors.New(errMsg)
 		}
 	}
 

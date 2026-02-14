@@ -15,25 +15,33 @@ import (
 // automatically degrades to local rate limiting and periodically probes the
 // primary to restore distributed behaviour once connectivity recovers.
 type FallbackBackend struct {
-	primary  Backend
-	local    *LocalTokenBucketBackend
-	degraded atomic.Bool
-	probeMu  sync.Mutex
+	primary       Backend
+	local         *LocalTokenBucketBackend
+	degraded      atomic.Bool
+	probeMu       sync.Mutex
+	lastProbeTime atomic.Value // time.Time — throttle probe frequency
 }
 
 // NewFallbackBackend creates a rate-limit backend that falls back to local
 // in-memory token buckets when the primary backend is unavailable.
 func NewFallbackBackend(primary Backend) *FallbackBackend {
-	return &FallbackBackend{
+	fb := &FallbackBackend{
 		primary: primary,
 		local:   NewLocalTokenBucketBackend(),
 	}
+	fb.lastProbeTime.Store(time.Time{})
+	return fb
 }
+
+// probeInterval is the minimum time between health probes of the primary backend.
+const probeInterval = 5 * time.Second
 
 func (f *FallbackBackend) CheckRateLimit(ctx context.Context, key string, maxTokens int, refillRate float64, requested int) (bool, int, error) {
 	if f.degraded.Load() {
-		// In degraded mode – use local backend, probe primary in background.
-		go f.probeAndRecover(ctx)
+		// In degraded mode – probe primary at most every probeInterval.
+		if last, ok := f.lastProbeTime.Load().(time.Time); ok && time.Since(last) > probeInterval {
+			go f.probeAndRecover(ctx)
+		}
 		return f.local.CheckRateLimit(ctx, key, maxTokens, refillRate, requested)
 	}
 
@@ -41,6 +49,7 @@ func (f *FallbackBackend) CheckRateLimit(ctx context.Context, key string, maxTok
 	if err != nil {
 		logging.Op().Warn("rate-limit primary backend error, degrading to local", "error", err)
 		f.degraded.Store(true)
+		f.lastProbeTime.Store(time.Now())
 		return f.local.CheckRateLimit(ctx, key, maxTokens, refillRate, requested)
 	}
 	return allowed, remaining, nil
@@ -52,6 +61,8 @@ func (f *FallbackBackend) probeAndRecover(ctx context.Context) {
 		return // another goroutine is already probing
 	}
 	defer f.probeMu.Unlock()
+
+	f.lastProbeTime.Store(time.Now())
 
 	// Use a small test check to see if primary is healthy
 	_, _, err := f.primary.CheckRateLimit(ctx, "nova:rl:probe:health", 1000, 1000, 0)

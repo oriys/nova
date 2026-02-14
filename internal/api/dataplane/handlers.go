@@ -1206,9 +1206,7 @@ func (h *Handler) StreamLogs(w http.ResponseWriter, r *http.Request) {
 				if entry.CreatedAt.After(lastSeen) {
 					data, _ := json.Marshal(entry)
 					fmt.Fprintf(w, "data: %s\n\n", data)
-					if entry.CreatedAt.After(lastSeen) {
-						lastSeen = entry.CreatedAt
-					}
+					lastSeen = entry.CreatedAt
 				}
 			}
 			flusher.Flush()

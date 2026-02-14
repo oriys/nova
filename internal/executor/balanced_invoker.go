@@ -123,8 +123,11 @@ func endpointScore(ep *cometEndpoint) float64 {
 		mem = v
 	}
 
-	// Normalize inflight to 0-1 range (assume 100 as a soft cap for scoring)
-	inflightNorm := inflight / 100.0
+	// Normalize inflight to [0, 1] using a reference capacity. Most Comet
+	// instances handle ~100 concurrent invocations comfortably; values above
+	// this are clamped to 1.0 for scoring purposes.
+	const referenceCapacity = 100.0
+	inflightNorm := inflight / referenceCapacity
 	if inflightNorm > 1.0 {
 		inflightNorm = 1.0
 	}
