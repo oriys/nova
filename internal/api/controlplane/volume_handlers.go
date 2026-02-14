@@ -9,6 +9,11 @@ import (
 
 // CreateVolume handles POST /volumes
 func (h *Handler) CreateVolume(w http.ResponseWriter, r *http.Request) {
+	if h.VolumeManager == nil {
+		http.Error(w, "volumes not enabled", http.StatusNotImplemented)
+		return
+	}
+
 	var req struct {
 		Name        string `json:"name"`
 		SizeMB      int    `json:"size_mb"`
@@ -79,6 +84,11 @@ func (h *Handler) ListVolumes(w http.ResponseWriter, r *http.Request) {
 
 // DeleteVolume handles DELETE /volumes/{name}
 func (h *Handler) DeleteVolume(w http.ResponseWriter, r *http.Request) {
+	if h.VolumeManager == nil {
+		http.Error(w, "volumes not enabled", http.StatusNotImplemented)
+		return
+	}
+
 	name := r.PathValue("name")
 
 	vol, err := h.Store.GetVolumeByName(r.Context(), name)
