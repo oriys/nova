@@ -188,7 +188,9 @@ type SLOConfig struct {
 
 // QueueConfig holds async queue notification settings
 type QueueConfig struct {
-	NotifierType string `json:"notifier_type"` // "noop" (default), "channel"
+	NotifierType string `json:"notifier_type"` // "noop" (default), "channel", "redis"
+	RedisAddr    string `json:"redis_addr"`     // Redis address for "redis" notifier (e.g. "localhost:6379")
+	RedisDB      int    `json:"redis_db"`       // Redis database number
 }
 
 // LogSinkConfig holds invocation log sink settings
@@ -833,6 +835,14 @@ func LoadFromEnv(cfg *Config) {
 	// Queue notifier overrides
 	if v := os.Getenv("NOVA_QUEUE_NOTIFIER_TYPE"); v != "" {
 		cfg.Queue.NotifierType = v
+	}
+	if v := os.Getenv("NOVA_QUEUE_REDIS_ADDR"); v != "" {
+		cfg.Queue.RedisAddr = v
+	}
+	if v := os.Getenv("NOVA_QUEUE_REDIS_DB"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Queue.RedisDB = n
+		}
 	}
 
 	// Log sink overrides
