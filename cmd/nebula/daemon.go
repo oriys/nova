@@ -230,6 +230,14 @@ func daemonCmd() *cobra.Command {
 				PollInterval: cfg.Queue.PollInterval,
 				BatchSize:    cfg.Queue.BatchSize,
 				Notifier:     notifier,
+				Adaptive: asyncqueue.AdaptiveConfig{
+					Enabled:       cfg.Queue.AdaptiveEnabled,
+					MinWorkers:    cfg.Queue.AdaptiveMinWorkers,
+					MaxWorkers:    cfg.Queue.AdaptiveMaxWorkers,
+					MinPollInterval: cfg.Queue.AdaptiveMinPoll,
+					MaxPollInterval: cfg.Queue.AdaptiveMaxPoll,
+					ProbeInterval:   cfg.Queue.AdaptiveProbeInterval,
+				},
 			})
 			asyncWorkers.Start()
 			defer asyncWorkers.Stop()

@@ -198,6 +198,15 @@ type QueueConfig struct {
 	Workers      int           `json:"workers"`       // Number of async queue workers (default: 32)
 	PollInterval time.Duration `json:"poll_interval"` // Poll interval for async queue workers (default: 100ms)
 	BatchSize    int           `json:"batch_size"`    // Number of tasks to acquire per poll (default: 8)
+
+	// Adaptive concurrency control: dynamically adjust workers, poll interval,
+	// and batch size based on queue depth and throughput.
+	AdaptiveEnabled     bool          `json:"adaptive_enabled"`      // Enable adaptive scaling (default: false)
+	AdaptiveMinWorkers  int           `json:"adaptive_min_workers"`  // Minimum worker count (default: 4)
+	AdaptiveMaxWorkers  int           `json:"adaptive_max_workers"`  // Maximum worker count (default: 256)
+	AdaptiveMinPoll     time.Duration `json:"adaptive_min_poll"`     // Minimum poll interval (default: 20ms)
+	AdaptiveMaxPoll     time.Duration `json:"adaptive_max_poll"`     // Maximum poll interval (default: 500ms)
+	AdaptiveProbeInterval time.Duration `json:"adaptive_probe_interval"` // How often to re-evaluate parameters (default: 2s)
 }
 
 // CacheConfig holds L1/L2 cache settings
@@ -908,6 +917,34 @@ func LoadFromEnv(cfg *Config) {
 	if v := os.Getenv("NOVA_QUEUE_BATCH_SIZE"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cfg.Queue.BatchSize = n
+		}
+	}
+	if v := os.Getenv("NOVA_QUEUE_ADAPTIVE_ENABLED"); v != "" {
+		cfg.Queue.AdaptiveEnabled = parseBool(v)
+	}
+	if v := os.Getenv("NOVA_QUEUE_ADAPTIVE_MIN_WORKERS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.Queue.AdaptiveMinWorkers = n
+		}
+	}
+	if v := os.Getenv("NOVA_QUEUE_ADAPTIVE_MAX_WORKERS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.Queue.AdaptiveMaxWorkers = n
+		}
+	}
+	if v := os.Getenv("NOVA_QUEUE_ADAPTIVE_MIN_POLL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.Queue.AdaptiveMinPoll = d
+		}
+	}
+	if v := os.Getenv("NOVA_QUEUE_ADAPTIVE_MAX_POLL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.Queue.AdaptiveMaxPoll = d
+		}
+	}
+	if v := os.Getenv("NOVA_QUEUE_ADAPTIVE_PROBE_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.Queue.AdaptiveProbeInterval = d
 		}
 	}
 
