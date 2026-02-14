@@ -27,6 +27,7 @@ import (
 	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/service"
 	"github.com/oriys/nova/internal/store"
+	"github.com/oriys/nova/internal/volume"
 	"github.com/oriys/nova/internal/workflow"
 )
 
@@ -54,6 +55,7 @@ type ServerConfig struct {
 	Scheduler       *scheduler.Scheduler
 	RootfsDir       string
 	LayerManager    *layer.Manager
+	VolumeManager   *volume.Manager
 	AIService       *ai.Service
 	PlaneMode       PlaneMode
 }
@@ -83,6 +85,7 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 			RootfsDir:       cfg.RootfsDir,
 			GatewayEnabled:  gatewayRouteMgmtEnabled,
 			LayerManager:    cfg.LayerManager,
+			VolumeManager:   cfg.VolumeManager,
 			AIService:       cfg.AIService,
 		}
 		cpHandler.RegisterRoutes(mux)

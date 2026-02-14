@@ -168,22 +168,18 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	}
 
 	// Layers
-	if h.LayerManager != nil {
-		mux.HandleFunc("POST /layers", h.CreateLayer)
-		mux.HandleFunc("GET /layers", h.ListLayers)
-		mux.HandleFunc("GET /layers/{name}", h.GetLayer)
-		mux.HandleFunc("DELETE /layers/{name}", h.DeleteLayer)
-		mux.HandleFunc("PUT /functions/{name}/layers", h.SetFunctionLayers)
-		mux.HandleFunc("GET /functions/{name}/layers", h.GetFunctionLayers)
-	}
+	mux.HandleFunc("POST /layers", h.CreateLayer)
+	mux.HandleFunc("GET /layers", h.ListLayers)
+	mux.HandleFunc("GET /layers/{name}", h.GetLayer)
+	mux.HandleFunc("DELETE /layers/{name}", h.DeleteLayer)
+	mux.HandleFunc("PUT /functions/{name}/layers", h.SetFunctionLayers)
+	mux.HandleFunc("GET /functions/{name}/layers", h.GetFunctionLayers)
 
 	// Volumes
-	if h.VolumeManager != nil {
-		mux.HandleFunc("POST /volumes", h.CreateVolume)
-		mux.HandleFunc("GET /volumes", h.ListVolumes)
-		mux.HandleFunc("GET /volumes/{name}", h.GetVolume)
-		mux.HandleFunc("DELETE /volumes/{name}", h.DeleteVolume)
-	}
+	mux.HandleFunc("POST /volumes", h.CreateVolume)
+	mux.HandleFunc("GET /volumes", h.ListVolumes)
+	mux.HandleFunc("GET /volumes/{name}", h.GetVolume)
+	mux.HandleFunc("DELETE /volumes/{name}", h.DeleteVolume)
 
 	// AI-powered code operations
 	if h.AIService != nil {

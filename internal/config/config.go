@@ -165,6 +165,12 @@ type LayerConfig struct {
 	MaxPerFunc int    `json:"max_per_func"` // default 6
 }
 
+// VolumeConfig holds persistent volume settings
+type VolumeConfig struct {
+	Enabled    bool   `json:"enabled"`
+	StorageDir string `json:"storage_dir"` // default /opt/nova/volumes
+}
+
 // AutoScaleConfig holds auto-scaling settings
 type AutoScaleConfig struct {
 	Enabled  bool          `json:"enabled"`
@@ -202,6 +208,7 @@ type Config struct {
 	AutoScale     AutoScaleConfig     `json:"auto_scale"`
 	SLO           SLOConfig           `json:"slo"`
 	Layers        LayerConfig         `json:"layers"`
+	Volumes       VolumeConfig        `json:"volumes"`
 	AI            ai.Config           `json:"ai"`
 }
 
@@ -318,6 +325,10 @@ func DefaultConfig() *Config {
 			Enabled:    false,
 			StorageDir: "/opt/nova/layers",
 			MaxPerFunc: 6,
+		},
+		Volumes: VolumeConfig{
+			Enabled:    false,
+			StorageDir: "/opt/nova/volumes",
 		},
 		AI: ai.DefaultConfig(),
 	}
@@ -538,6 +549,14 @@ func LoadFromEnv(cfg *Config) {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.Layers.MaxPerFunc = n
 		}
+	}
+
+	// Volumes overrides
+	if v := os.Getenv("NOVA_VOLUMES_ENABLED"); v != "" {
+		cfg.Volumes.Enabled = parseBool(v)
+	}
+	if v := os.Getenv("NOVA_VOLUMES_STORAGE_DIR"); v != "" {
+		cfg.Volumes.StorageDir = v
 	}
 
 	// Firecracker VM overrides

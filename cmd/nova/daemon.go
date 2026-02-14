@@ -35,6 +35,7 @@ import (
 	"github.com/oriys/nova/internal/service"
 	"github.com/oriys/nova/internal/slo"
 	"github.com/oriys/nova/internal/store"
+	"github.com/oriys/nova/internal/volume"
 	"github.com/oriys/nova/internal/wasm"
 	"github.com/oriys/nova/internal/workflow"
 	"github.com/spf13/cobra"
@@ -214,6 +215,16 @@ func daemonCmd() *cobra.Command {
 				logging.Op().Info("shared dependency layers enabled", "storage_dir", cfg.Layers.StorageDir)
 			}
 
+			var volumeManager *volume.Manager
+			if cfg.Volumes.Enabled {
+				volumeManager, err = volume.NewManager(s, &volume.Config{VolumeDir: cfg.Volumes.StorageDir})
+				if err != nil {
+					logging.Op().Warn("failed to initialize volume manager", "error", err)
+				} else {
+					logging.Op().Info("persistent volumes enabled", "storage_dir", cfg.Volumes.StorageDir)
+				}
+			}
+
 			var secretsResolver *secrets.Resolver
 			var secretsStore *secrets.Store
 			if cfg.Secrets.Enabled || cfg.Secrets.MasterKey != "" || cfg.Secrets.MasterKeyFile != "" {
@@ -289,6 +300,7 @@ func daemonCmd() *cobra.Command {
 					Scheduler:       sched,
 					RootfsDir:       cfg.Firecracker.RootfsDir,
 					LayerManager:    layerManager,
+					VolumeManager:   volumeManager,
 					AIService:       aiService,
 					PlaneMode:       api.PlaneModeControlPlane,
 				})
