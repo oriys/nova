@@ -2190,6 +2190,6 @@
     "refresh": "Actualiser les permissions de menu",
     "loading": "Chargement des permissions de menu...",
     "loadFailed": "Échec du chargement des permissions de menu.",
-    "saveFailed": "Échec de la sauvegarde de la permission de menu."
+    "saveFailed": "Échec de la sauvegarde des permissions de menu."
   }
 }

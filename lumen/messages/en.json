@@ -2190,6 +2190,6 @@
     "refresh": "Refresh menu permissions",
     "loading": "Loading menu permissions...",
     "loadFailed": "Failed to load menu permissions.",
-    "saveFailed": "Failed to save menu permission."
+    "saveFailed": "Failed to save menu permissions."
   }
 }
