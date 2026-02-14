@@ -10,7 +10,6 @@ bin/
 *.dylib
 
 # Go
-/go.sum
 
 # IDE
 .idea/
