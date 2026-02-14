@@ -391,6 +391,9 @@ func (s *PostgresStore) UpdateFunction(ctx context.Context, name string, update 
 	if update.Mode != nil {
 		fn.Mode = *update.Mode
 	}
+	if update.Backend != nil {
+		fn.Backend = *update.Backend
+	}
 	if update.Limits != nil {
 		fn.Limits = update.Limits
 	}

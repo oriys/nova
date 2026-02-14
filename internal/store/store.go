@@ -19,6 +19,7 @@ type FunctionUpdate struct {
 	MaxReplicas         *int                    `json:"max_replicas,omitempty"`
 	InstanceConcurrency *int                    `json:"instance_concurrency,omitempty"`
 	Mode                *domain.ExecutionMode   `json:"mode,omitempty"`
+	Backend             *domain.BackendType     `json:"backend,omitempty"`
 	Limits              *domain.ResourceLimits  `json:"limits,omitempty"`
 	NetworkPolicy       *domain.NetworkPolicy   `json:"network_policy,omitempty"`
 	RolloutPolicy       *domain.RolloutPolicy   `json:"rollout_policy,omitempty"`
