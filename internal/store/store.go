@@ -279,6 +279,30 @@ type MetadataStore interface {
 	SaveTestSuite(ctx context.Context, ts *TestSuite) error
 	GetTestSuite(ctx context.Context, functionName string) (*TestSuite, error)
 	DeleteTestSuite(ctx context.Context, functionName string) error
+
+	// Database Access (DbResource / DbBinding / CredentialPolicy)
+	CreateDbResource(ctx context.Context, res *DbResourceRecord) (*DbResourceRecord, error)
+	GetDbResource(ctx context.Context, id string) (*DbResourceRecord, error)
+	GetDbResourceByName(ctx context.Context, name string) (*DbResourceRecord, error)
+	ListDbResources(ctx context.Context, limit, offset int) ([]*DbResourceRecord, error)
+	UpdateDbResource(ctx context.Context, id string, update *DbResourceUpdate) (*DbResourceRecord, error)
+	DeleteDbResource(ctx context.Context, id string) error
+
+	CreateDbBinding(ctx context.Context, binding *DbBindingRecord) (*DbBindingRecord, error)
+	GetDbBinding(ctx context.Context, id string) (*DbBindingRecord, error)
+	ListDbBindings(ctx context.Context, dbResourceID string, limit, offset int) ([]*DbBindingRecord, error)
+	ListDbBindingsByFunction(ctx context.Context, functionID string, limit, offset int) ([]*DbBindingRecord, error)
+	UpdateDbBinding(ctx context.Context, id string, update *DbBindingUpdate) (*DbBindingRecord, error)
+	DeleteDbBinding(ctx context.Context, id string) error
+
+	CreateCredentialPolicy(ctx context.Context, policy *CredentialPolicyRecord) (*CredentialPolicyRecord, error)
+	GetCredentialPolicy(ctx context.Context, dbResourceID string) (*CredentialPolicyRecord, error)
+	UpdateCredentialPolicy(ctx context.Context, dbResourceID string, update *CredentialPolicyUpdate) (*CredentialPolicyRecord, error)
+	DeleteCredentialPolicy(ctx context.Context, dbResourceID string) error
+
+	// Database Access audit log
+	SaveDbRequestLog(ctx context.Context, log *domain.DbRequestLog) error
+	ListDbRequestLogs(ctx context.Context, dbResourceID string, limit, offset int) ([]*domain.DbRequestLog, error)
 }
 
 // Store wraps the MetadataStore, WorkflowStore, and ScheduleStore (Postgres) for all persistence.

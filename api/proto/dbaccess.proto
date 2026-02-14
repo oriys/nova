@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package nova.v1;
+
+option go_package = "github.com/oriys/nova/api/proto/novapb";
+
+// DbAccessService is the data-plane gRPC API for function-to-database
+// communication. Functions call this service via the DbAccess Gateway rather
+// than connecting directly to databases.
+service DbAccess {
+  // Query executes a read-only SQL query and returns rows.
+  rpc Query(DbQueryRequest) returns (DbQueryResponse);
+
+  // Execute runs a write/DDL statement and returns affected row count.
+  rpc Execute(DbExecuteRequest) returns (DbExecuteResponse);
+
+  // TxBegin starts a new transaction and returns a transaction handle.
+  rpc TxBegin(DbTxBeginRequest) returns (DbTxBeginResponse);
+
+  // TxCommit commits a previously started transaction.
+  rpc TxCommit(DbTxEndRequest) returns (DbTxEndResponse);
+
+  // TxRollback rolls back a previously started transaction.
+  rpc TxRollback(DbTxEndRequest) returns (DbTxEndResponse);
+
+  // GetDbToken exchanges a function identity for a short-lived DB access token.
+  rpc GetDbToken(GetDbTokenRequest) returns (GetDbTokenResponse);
+}
+
+// ── Query ───────────────────────────────────────────────────────────────────
+
+message DbQueryRequest {
+  string db_token = 1;       // Short-lived access token from GetDbToken
+  string sql = 2;            // SQL query text
+  repeated bytes params = 3; // Positional parameters (JSON-encoded values)
+  int64 timeout_ms = 4;      // Query-level timeout in milliseconds
+  string tx_id = 5;          // Optional: run inside an existing transaction
+}
+
+message DbColumnMeta {
+  string name = 1;
+  string type = 2;
+}
+
+message DbQueryResponse {
+  repeated DbColumnMeta columns = 1;
+  repeated bytes rows = 2;           // Each entry is a JSON-encoded row array
+  int64 rows_returned = 3;
+  int64 latency_ms = 4;
+  string request_id = 5;
+}
+
+// ── Execute ─────────────────────────────────────────────────────────────────
+
+message DbExecuteRequest {
+  string db_token = 1;
+  string sql = 2;
+  repeated bytes params = 3;
+  int64 timeout_ms = 4;
+  string tx_id = 5;
+}
+
+message DbExecuteResponse {
+  int64 rows_affected = 1;
+  int64 latency_ms = 2;
+  string request_id = 3;
+}
+
+// ── Transaction ─────────────────────────────────────────────────────────────
+
+message DbTxBeginRequest {
+  string db_token = 1;
+  bool read_only = 2;
+  string isolation_level = 3; // e.g. "read_committed", "serializable"
+  int64 timeout_ms = 4;       // Max transaction lifetime
+}
+
+message DbTxBeginResponse {
+  string tx_id = 1;
+  string request_id = 2;
+}
+
+message DbTxEndRequest {
+  string db_token = 1;
+  string tx_id = 2;
+}
+
+message DbTxEndResponse {
+  bool success = 1;
+  string request_id = 2;
+}
+
+// ── Token Exchange ──────────────────────────────────────────────────────────
+
+message GetDbTokenRequest {
+  string function_id = 1;
+  int32 version = 2;
+  string tenant_id = 3;
+  string db_resource_id = 4;
+  repeated string scopes = 5; // e.g. ["db:read", "db:write"]
+}
+
+message GetDbTokenResponse {
+  string db_token = 1;
+  int64 expires_in_s = 2; // Token validity in seconds
+}
