@@ -37,6 +37,11 @@ const (
 
 	defaultPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
+	// internalInvokeEndpoint is the vsock endpoint exposed to user functions
+	// for direct function-to-function calls. CID 2 is the host in Firecracker,
+	// port 9090 is the Comet gRPC listener.
+	internalInvokeEndpoint = "vsock://2:9090/invoke"
+
 	pythonPath   = "/usr/bin/python3"
 	wasmtimePath = "/usr/local/bin/wasmtime"
 	nodePath     = "/usr/bin/node"
@@ -558,7 +563,7 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID s
 	}
 	// Expose internal invoke endpoint for function-to-function calls (Feature 4)
 	if internalInvoke || a.function.InternalInvokeEnabled {
-		cmd.Env = append(cmd.Env, "NOVA_INVOKE_ENDPOINT=vsock://2:9090/invoke")
+		cmd.Env = append(cmd.Env, "NOVA_INVOKE_ENDPOINT="+internalInvokeEndpoint)
 	}
 	// Add dependency paths based on runtime
 	cmd.Env = appendDependencyEnv(cmd.Env, a.function.Runtime)
@@ -670,7 +675,7 @@ func (a *Agent) handleStreamingExec(conn net.Conn, req *ExecPayload) (*Message, 
 	}
 	// Expose internal invoke endpoint for function-to-function calls
 	if req.InternalInvoke || a.function.InternalInvokeEnabled {
-		cmd.Env = append(cmd.Env, "NOVA_INVOKE_ENDPOINT=vsock://2:9090/invoke")
+		cmd.Env = append(cmd.Env, "NOVA_INVOKE_ENDPOINT="+internalInvokeEndpoint)
 	}
 	cmd.Env = appendDependencyEnv(cmd.Env, a.function.Runtime)
 	for k, v := range a.function.EnvVars {

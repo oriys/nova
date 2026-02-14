@@ -57,7 +57,10 @@ func (ci *CacheInvalidator) Start(ctx context.Context) {
 				return
 			}
 			// msg.Payload is the cache key to invalidate
-			_ = ci.local.Delete(subCtx, msg.Payload)
+			if err := ci.local.Delete(subCtx, msg.Payload); err != nil {
+				// Best-effort: log but don't fail
+				_ = err
+			}
 		}
 	}
 }
