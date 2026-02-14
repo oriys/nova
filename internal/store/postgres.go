@@ -203,9 +203,12 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		)`,
 		`ALTER TABLE async_invocations ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'`,
 		`ALTER TABLE async_invocations ADD COLUMN IF NOT EXISTS namespace TEXT NOT NULL DEFAULT 'default'`,
+		`ALTER TABLE async_invocations ADD COLUMN IF NOT EXISTS workflow_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE async_invocations ADD COLUMN IF NOT EXISTS workflow_name TEXT NOT NULL DEFAULT ''`,
 		`CREATE INDEX IF NOT EXISTS idx_async_invocations_tenant_namespace_created ON async_invocations(tenant_id, namespace, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_async_invocations_status_next_run ON async_invocations(status, next_run_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_async_invocations_function_created ON async_invocations(function_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_async_invocations_workflow_created ON async_invocations(workflow_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_async_invocations_created ON async_invocations(created_at DESC)`,
 		`CREATE TABLE IF NOT EXISTS idempotency_keys (
 			scope TEXT NOT NULL,
