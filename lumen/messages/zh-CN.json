@@ -555,7 +555,10 @@
     "optional": "可选",
     "addDeps": "添加依赖",
     "removeDeps": "移除",
-    "depsHelp": "通过 {file} 添加外部依赖。它们将在部署时自动安装。"
+    "depsHelp": "通过 {file} 添加外部依赖。它们将在部署时自动安装。",
+    "backend": "执行后端",
+    "backendAuto": "自动检测",
+    "backendHelp": "选择执行后端。自动检测会根据系统环境选择最佳可用选项。"
   },
   "functionsTable": {
     "unlimited": "无限制",

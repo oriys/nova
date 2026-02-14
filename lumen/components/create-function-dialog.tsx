@@ -24,8 +24,8 @@ import {
 import { CodeEditor } from "@/components/code-editor"
 import { Textarea } from "@/components/ui/textarea"
 import { RuntimeInfo } from "@/lib/types"
-import { functionsApi, aiApi, CompileStatus, type NetworkPolicy, type ResourceLimits } from "@/lib/api"
-import { Loader2, Check, AlertCircle, Trash2, Sparkles, Package } from "lucide-react"
+import { functionsApi, aiApi, backendsApi, CompileStatus, type NetworkPolicy, type ResourceLimits, type BackendInfo } from "@/lib/api"
+import { Loader2, Check, AlertCircle, Trash2, Sparkles, Package, Server } from "lucide-react"
 
 // Code templates for each runtime (handler-only style)
 const CODE_TEMPLATES: Record<string, string> = {
@@ -258,7 +258,8 @@ interface CreateFunctionDialogProps {
     code: string,
     limits?: ResourceLimits,
     networkPolicy?: NetworkPolicy,
-    dependencyFiles?: Record<string, string>
+    dependencyFiles?: Record<string, string>,
+    backend?: string
   ) => Promise<void>
   runtimes?: RuntimeInfo[]
 }
@@ -315,6 +316,11 @@ export function CreateFunctionDialog({
   const [depFileEnabled, setDepFileEnabled] = useState(false)
   const [depFileContent, setDepFileContent] = useState("")
 
+  // Backend selection state
+  const [selectedBackend, setSelectedBackend] = useState("auto")
+  const [availableBackends, setAvailableBackends] = useState<BackendInfo[]>([])
+  const [defaultBackend, setDefaultBackend] = useState("docker")
+
   // Update code template when runtime changes
   useEffect(() => {
     const baseRuntime = getBaseRuntime(runtime)
@@ -344,6 +350,14 @@ export function CreateFunctionDialog({
   // Check AI status on mount
   useEffect(() => {
     aiApi.status().then((res) => setAiEnabled(res.enabled)).catch(() => {})
+  }, [])
+
+  // Fetch available backends on mount
+  useEffect(() => {
+    backendsApi.list().then((res) => {
+      setAvailableBackends(res.backends)
+      setDefaultBackend(res.default_backend)
+    }).catch(() => {})
   }, [])
 
   const handleAiGenerate = async () => {
@@ -437,7 +451,8 @@ export function CreateFunctionDialog({
         egress_rules: parsedEgressRules,
       }
       await onCreate(trimmedName, runtime, resolvedHandler, parsedMemory, parsedTimeout, codeValue, limits, networkPolicy,
-        depFileEnabled && depFileContent.trim() ? { [getDepFileName(runtime)]: depFileContent } : undefined
+        depFileEnabled && depFileContent.trim() ? { [getDepFileName(runtime)]: depFileContent } : undefined,
+        selectedBackend !== "auto" ? selectedBackend : undefined
       )
 
       // If it's a compiled language, track compile status
@@ -477,6 +492,7 @@ export function CreateFunctionDialog({
     setCompileError(undefined)
     setDepFileEnabled(false)
     setDepFileContent("")
+    setSelectedBackend("auto")
   }
 
   const addEgressRule = () => {
@@ -631,6 +647,34 @@ export function CreateFunctionDialog({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          {/* Backend selector */}
+          <div className="space-y-2">
+            <Label htmlFor="backend">
+              <span className="flex items-center gap-1.5">
+                <Server className="h-3.5 w-3.5" />
+                {t("backend")}
+              </span>
+            </Label>
+            <Select value={selectedBackend} onValueChange={setSelectedBackend}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">
+                  {t("backendAuto")} ({defaultBackend})
+                </SelectItem>
+                {availableBackends.filter(b => b.available).map((b) => (
+                  <SelectItem key={b.name} value={b.name}>
+                    {b.name.charAt(0).toUpperCase() + b.name.slice(1)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {t("backendHelp")}
+            </p>
           </div>
 
           <div className="space-y-2">

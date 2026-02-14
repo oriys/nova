@@ -36,6 +36,7 @@ type CreateFunctionRequest struct {
 	MinReplicas         int                     `json:"min_replicas,omitempty"`
 	MaxReplicas         int                     `json:"max_replicas,omitempty"`
 	Mode                string                  `json:"mode,omitempty"`
+	Backend             string                  `json:"backend,omitempty"`
 	InstanceConcurrency int                     `json:"instance_concurrency,omitempty"`
 	EnvVars             map[string]string       `json:"env_vars,omitempty"`
 	Limits              *domain.ResourceLimits  `json:"limits,omitempty"`
@@ -78,6 +79,11 @@ func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunction
 		req.Mode = string(domain.ModeProcess)
 	}
 
+	backendType := domain.BackendType(req.Backend)
+	if req.Backend != "" && !domain.IsValidBackendType(backendType) {
+		return nil, "", validationErrorf("invalid backend: %s", req.Backend)
+	}
+
 	codeHash := crypto.HashString(req.Code)
 
 	fn := &domain.Function{
@@ -91,6 +97,7 @@ func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunction
 		MinReplicas:         req.MinReplicas,
 		MaxReplicas:         req.MaxReplicas,
 		Mode:                domain.ExecutionMode(req.Mode),
+		Backend:             backendType,
 		InstanceConcurrency: req.InstanceConcurrency,
 		EnvVars:             req.EnvVars,
 		Limits:              req.Limits,

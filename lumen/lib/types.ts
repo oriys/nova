@@ -24,6 +24,7 @@ export interface FunctionData {
   minReplicas?: number;
   maxReplicas?: number;
   mode?: string;
+  backend?: string;
   envVars?: Record<string, string>;
   compileStatus?: CompileStatus;
   compileError?: string;
@@ -156,6 +157,7 @@ export function transformFunction(
     minReplicas: fn.min_replicas,
     maxReplicas: fn.max_replicas,
     mode: fn.mode,
+    backend: fn.backend,
     envVars: fn.env_vars,
     compileStatus: fn.compile_status,
     compileError: fn.compile_error,

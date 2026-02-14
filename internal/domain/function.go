@@ -41,6 +41,44 @@ const (
 	ModePersistent ExecutionMode = "persistent"
 )
 
+// BackendType determines which execution backend a function uses
+type BackendType string
+
+const (
+	// BackendAuto automatically selects the best available backend
+	BackendAuto BackendType = "auto"
+	// BackendFirecracker uses Firecracker microVMs
+	BackendFirecracker BackendType = "firecracker"
+	// BackendDocker uses Docker containers
+	BackendDocker BackendType = "docker"
+	// BackendWasm uses WebAssembly runtime
+	BackendWasm BackendType = "wasm"
+	// BackendKubernetes uses Kubernetes pods
+	BackendKubernetes BackendType = "kubernetes"
+	// BackendLibKrun uses libkrun lightweight VMs
+	BackendLibKrun BackendType = "libkrun"
+	// BackendKata uses Kata Containers
+	BackendKata BackendType = "kata"
+)
+
+// AllBackendTypes returns all valid backend type values
+func AllBackendTypes() []BackendType {
+	return []BackendType{
+		BackendAuto, BackendFirecracker, BackendDocker, BackendWasm,
+		BackendKubernetes, BackendLibKrun, BackendKata,
+	}
+}
+
+// IsValidBackendType returns true if the backend type is recognized
+func IsValidBackendType(b BackendType) bool {
+	for _, valid := range AllBackendTypes() {
+		if b == valid {
+			return true
+		}
+	}
+	return false
+}
+
 func (r Runtime) IsValid() bool {
 	// Base runtime IDs
 	validRuntimes := map[Runtime]bool{
@@ -216,6 +254,7 @@ type Function struct {
 	MaxReplicas         int               `json:"max_replicas,omitempty"`         // Maximum concurrent VMs (0 = unlimited)
 	InstanceConcurrency int               `json:"instance_concurrency,omitempty"` // Max in-flight requests per instance
 	Mode                ExecutionMode     `json:"mode,omitempty"`                 // "process" or "persistent"
+	Backend             BackendType       `json:"backend,omitempty"`              // "auto", "docker", "firecracker", "wasm", "kubernetes", "libkrun", "kata"
 	Limits              *ResourceLimits   `json:"limits,omitempty"`
 	NetworkPolicy       *NetworkPolicy    `json:"network_policy,omitempty"`
 	RolloutPolicy       *RolloutPolicy    `json:"rollout_policy,omitempty"`
