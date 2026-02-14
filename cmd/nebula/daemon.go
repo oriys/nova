@@ -27,6 +27,7 @@ import (
 	"github.com/oriys/nova/internal/store"
 	"github.com/oriys/nova/internal/wasm"
 	"github.com/oriys/nova/internal/workflow"
+	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 )
 
@@ -92,6 +93,16 @@ func daemonCmd() *cobra.Command {
 			switch cfg.Queue.NotifierType {
 			case "channel":
 				notifier = queue.NewChannelNotifier()
+			case "redis":
+				redisClient := redis.NewClient(&redis.Options{
+					Addr: cfg.Queue.RedisAddr,
+					DB:   cfg.Queue.RedisDB,
+				})
+				if err := redisClient.Ping(context.Background()).Err(); err != nil {
+					return fmt.Errorf("connect to redis for queue notifier: %w", err)
+				}
+				notifier = queue.NewRedisNotifier(redisClient)
+				logging.Op().Info("using Redis queue notifier", "addr", cfg.Queue.RedisAddr)
 			default:
 				notifier = queue.NewNoopNotifier()
 			}

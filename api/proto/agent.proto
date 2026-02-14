@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package nova.agent.v1;
+
+option go_package = "github.com/oriys/nova/api/proto/agentpb";
+
+// VsockMessage is the top-level envelope for all host <-> agent communication
+// over the vsock channel. It replaces the JSON-based VsockMessage struct.
+message VsockMessage {
+  // Message type constants
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    TYPE_INIT   = 1;
+    TYPE_EXEC   = 2;
+    TYPE_RESP   = 3;
+    TYPE_PING   = 4;
+    TYPE_STOP   = 5;
+    TYPE_RELOAD = 6;
+    TYPE_STREAM = 7;
+  }
+
+  Type type = 1;
+
+  oneof payload {
+    InitPayload init = 2;
+    ExecPayload exec = 3;
+    RespPayload resp = 4;
+    ReloadPayload reload = 5;
+    StreamChunkPayload stream_chunk = 6;
+  }
+}
+
+// InitPayload initializes the agent with function configuration
+message InitPayload {
+  string runtime = 1;
+  string handler = 2;
+  map<string, string> env_vars = 3;
+  repeated string command = 4;
+  string extension = 5;
+  string mode = 6;          // "process" or "persistent"
+  string function_name = 7;
+  int32 function_version = 8;
+  int32 memory_mb = 9;
+  int32 timeout_s = 10;
+  int32 layer_count = 11;
+}
+
+// ExecPayload sends a function invocation request
+message ExecPayload {
+  string request_id = 1;
+  bytes input = 2;           // JSON payload as raw bytes
+  int32 timeout_s = 3;
+  string trace_parent = 4;   // W3C TraceContext traceparent
+  string trace_state = 5;    // W3C TraceContext tracestate
+  bool stream = 6;           // Enable streaming response
+}
+
+// RespPayload returns the result of a function invocation
+message RespPayload {
+  string request_id = 1;
+  bytes output = 2;          // JSON response as raw bytes
+  string error = 3;
+  int64 duration_ms = 4;
+  string stdout = 5;         // Captured stdout
+  string stderr = 6;         // Captured stderr
+}
+
+// ReloadPayload hot-reloads function code files
+message ReloadPayload {
+  map<string, bytes> files = 1;  // relative path -> file content
+}
+
+// StreamChunkPayload sends a chunk of streaming response data
+message StreamChunkPayload {
+  string request_id = 1;
+  bytes data = 2;            // Chunk of data
+  bool is_last = 3;          // True if this is the final chunk
+  string error = 4;          // Error message if execution failed
+}

@@ -29,6 +29,7 @@ import (
 	"github.com/oriys/nova/internal/store"
 	"github.com/oriys/nova/internal/volume"
 	"github.com/oriys/nova/internal/workflow"
+	"github.com/redis/go-redis/v9"
 )
 
 type PlaneMode string
@@ -116,7 +117,26 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 				BurstSize:         tier.BurstSize,
 			}
 		}
-		limiter := ratelimit.New(cfg.Store, tiers, ratelimit.TierConfig{
+
+		var rlBackend ratelimit.Backend
+		switch cfg.RateLimitCfg.Backend {
+		case "redis":
+			redisClient := redis.NewClient(&redis.Options{
+				Addr: cfg.RateLimitCfg.RedisAddr,
+				DB:   cfg.RateLimitCfg.RedisDB,
+			})
+			if err := redisClient.Ping(context.Background()).Err(); err != nil {
+				logging.Op().Warn("failed to connect to Redis for rate limiting, falling back to postgres", "error", err)
+				rlBackend = cfg.Store
+			} else {
+				rlBackend = ratelimit.NewRedisBackend(redisClient)
+				logging.Op().Info("rate limiting using Redis backend", "addr", cfg.RateLimitCfg.RedisAddr)
+			}
+		default:
+			rlBackend = cfg.Store
+		}
+
+		limiter := ratelimit.New(rlBackend, tiers, ratelimit.TierConfig{
 			RequestsPerSecond: cfg.RateLimitCfg.Default.RequestsPerSecond,
 			BurstSize:         cfg.RateLimitCfg.Default.BurstSize,
 		})
