@@ -161,7 +161,7 @@ func (p *PersistentVsockStream) Execute(msg interface{}) (interface{}, error) {
 		p.alive = true
 	}
 
-	// Try to send/receive on existing connection
+	// Try to send on existing connection
 	if err := p.sender(msg); err != nil {
 		// Connection broken, try reconnect once
 		p.alive = false
@@ -173,8 +173,10 @@ func (p *PersistentVsockStream) Execute(msg interface{}) (interface{}, error) {
 			p.alive = false
 			return nil, fmt.Errorf("persistent vsock send after redial: %w", err)
 		}
+		// Retry send succeeded; fall through to receive below
 	}
 
+	// Receive the response (reached after either first send or retry send)
 	resp, err := p.recver()
 	if err != nil {
 		p.alive = false

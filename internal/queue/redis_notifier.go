@@ -63,11 +63,19 @@ func (n *RedisNotifier) Subscribe(ctx context.Context, queue QueueType) <-chan s
 
 	go func() {
 		defer pubsub.Close()
+		defer func() {
+			n.removeSub(queue, rs)
+			// Drain and close the channel so subscribers don't hang
+			select {
+			case <-ch:
+			default:
+			}
+			close(ch)
+		}()
 		msgCh := pubsub.Channel()
 		for {
 			select {
 			case <-subCtx.Done():
-				n.removeSub(queue, rs)
 				return
 			case _, ok := <-msgCh:
 				if !ok {
@@ -85,8 +93,8 @@ func (n *RedisNotifier) Subscribe(ctx context.Context, queue QueueType) <-chan s
 	return ch
 }
 
-// Close releases all resources held by the notifier, closing all
-// subscriber channels and cancelling background goroutines.
+// Close releases all resources held by the notifier, cancelling all
+// background goroutines which will close their subscriber channels.
 func (n *RedisNotifier) Close() error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -97,7 +105,6 @@ func (n *RedisNotifier) Close() error {
 	for _, subs := range n.subs {
 		for _, s := range subs {
 			s.cancel()
-			close(s.ch)
 		}
 	}
 	n.subs = nil

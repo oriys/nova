@@ -123,17 +123,20 @@ func TestRedisNotifier_Close(t *testing.T) {
 	ctx := context.Background()
 	ch := n.Subscribe(ctx, QueueAsync)
 
+	// Allow subscription goroutine to start
+	time.Sleep(50 * time.Millisecond)
+
 	if err := n.Close(); err != nil {
 		t.Fatalf("Close failed: %v", err)
 	}
 
-	// Channel should be closed after Close()
+	// Channel should be closed after Close() (goroutine reacts to context cancel)
 	select {
 	case _, ok := <-ch:
 		if ok {
 			t.Fatal("channel should be closed after Close()")
 		}
-	case <-time.After(time.Second):
+	case <-time.After(2 * time.Second):
 		t.Fatal("channel should have been closed")
 	}
 
