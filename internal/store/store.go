@@ -102,6 +102,17 @@ type MetadataStore interface {
 	PauseAsyncInvocation(ctx context.Context, id string) (*AsyncInvocation, error)
 	ResumeAsyncInvocation(ctx context.Context, id string) (*AsyncInvocation, error)
 	DeleteAsyncInvocation(ctx context.Context, id string) error
+	PauseAsyncInvocationsByFunction(ctx context.Context, functionID string) (int, error)
+	ResumeAsyncInvocationsByFunction(ctx context.Context, functionID string) (int, error)
+	PauseAsyncInvocationsByWorkflow(ctx context.Context, workflowID string) (int, error)
+	ResumeAsyncInvocationsByWorkflow(ctx context.Context, workflowID string) (int, error)
+	ListWorkflowAsyncInvocations(ctx context.Context, workflowID string, limit, offset int, statuses []AsyncInvocationStatus) ([]*AsyncInvocation, error)
+	CountAsyncInvocations(ctx context.Context, statuses []AsyncInvocationStatus) (int64, error)
+	CountFunctionAsyncInvocations(ctx context.Context, functionID string, statuses []AsyncInvocationStatus) (int64, error)
+	CountWorkflowAsyncInvocations(ctx context.Context, workflowID string, statuses []AsyncInvocationStatus) (int64, error)
+	GetAsyncInvocationSummary(ctx context.Context) (*AsyncInvocationSummary, error)
+	SetGlobalAsyncPause(ctx context.Context, paused bool) error
+	GetGlobalAsyncPause(ctx context.Context) (bool, error)
 	EnqueueAsyncInvocationWithIdempotency(ctx context.Context, inv *AsyncInvocation, idempotencyKey string, ttl time.Duration) (*AsyncInvocation, bool, error)
 
 	// Event bus (topics / subscriptions / deliveries)

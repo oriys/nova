@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/oriys/nova/internal/domain"
+	"github.com/oriys/nova/internal/store"
 )
 
 // RegisterWorkflowRoutes registers all workflow-related routes.
