@@ -151,6 +151,16 @@ download_kernel() {
 #   deno.ext4   - Alpine + deno (+ glibc compat)
 #   bun.ext4    - Alpine + bun (musl)
 #
+prepare_chroot_dev() {
+    local root="$1"
+    mkdir -p "${root}/dev"
+    mknod -m 666 "${root}/dev/null" c 1 3 2>/dev/null || true
+    mknod -m 666 "${root}/dev/zero" c 1 5 2>/dev/null || true
+    mknod -m 666 "${root}/dev/random" c 1 8 2>/dev/null || true
+    mknod -m 666 "${root}/dev/urandom" c 1 9 2>/dev/null || true
+    mknod -m 666 "${root}/dev/tty" c 5 0 2>/dev/null || true
+}
+
 build_base_rootfs() {
     local output="${INSTALL_DIR}/rootfs/base.ext4"
     local mnt=$(mktemp -d)
@@ -195,6 +205,7 @@ build_python_rootfs() {
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
+    prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
     chroot "${mnt}" /bin/sh -c "apk add --no-cache python3" >/dev/null 2>&1
@@ -219,6 +230,7 @@ build_wasm_rootfs() {
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp,usr/local/bin}
+    prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
     # wasmtime release is glibc-linked; add compatibility layer.
@@ -248,6 +260,7 @@ build_node_rootfs() {
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
+    prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
     chroot "${mnt}" /bin/sh -c "apk add --no-cache nodejs npm" >/dev/null 2>&1
@@ -272,6 +285,7 @@ build_ruby_rootfs() {
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
+    prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
     chroot "${mnt}" /bin/sh -c "apk add --no-cache ruby" >/dev/null 2>&1
@@ -297,6 +311,7 @@ build_java_rootfs() {
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
+    prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
     # Use OpenJDK 21 (LTS) headless for smaller size
@@ -324,6 +339,7 @@ build_php_rootfs() {
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
+    prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
     chroot "${mnt}" /bin/sh -c "apk add --no-cache php" >/dev/null 2>&1
@@ -346,8 +362,8 @@ build_deno_rootfs() {
     # Build in a temp directory instead of a mounted ext4 image.
     # build-base (gcc) temporarily needs more space than the 256MB rootfs allows.
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${rootfs_dir}"
-    mkdir -p "${rootfs_dir}"/{dev,code,tmp,usr/local/bin}
-    mknod -m 666 "${rootfs_dir}/dev/null" c 1 3 2>/dev/null || true
+    mkdir -p "${rootfs_dir}"/{code,tmp,usr/local/bin}
+    prepare_chroot_dev "${rootfs_dir}"
     echo "nameserver 8.8.8.8" > "${rootfs_dir}/etc/resolv.conf"
 
     # deno release is glibc-linked; add compatibility layer.
@@ -392,6 +408,7 @@ build_bun_rootfs() {
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp,usr/local/bin}
+    prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
     # Bun provides musl builds; install runtime deps.

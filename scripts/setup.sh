@@ -583,6 +583,16 @@ download_kernel() {
 }
 
 # ─── Rootfs builders ─────────────────────────────────────
+prepare_chroot_dev() {
+    local root="$1"
+    mkdir -p "${root}/dev"
+    mknod -m 666 "${root}/dev/null" c 1 3 2>/dev/null || true
+    mknod -m 666 "${root}/dev/zero" c 1 5 2>/dev/null || true
+    mknod -m 666 "${root}/dev/random" c 1 8 2>/dev/null || true
+    mknod -m 666 "${root}/dev/urandom" c 1 9 2>/dev/null || true
+    mknod -m 666 "${root}/dev/tty" c 5 0 2>/dev/null || true
+}
+
 build_base_rootfs() {
     local output="${INSTALL_DIR}/rootfs/base.ext4"
     local mnt=$(mktemp -d)
@@ -614,6 +624,7 @@ build_python_rootfs() {
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
+    prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
     chroot "${mnt}" /bin/sh -c "apk add --no-cache python3" >/dev/null 2>&1
@@ -637,6 +648,7 @@ build_wasm_rootfs() {
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp,usr/local/bin}
+    prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
     chroot "${mnt}" /bin/sh -c "apk add --no-cache libstdc++ gcompat" >/dev/null 2>&1
@@ -664,6 +676,7 @@ build_node_rootfs() {
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
+    prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
     chroot "${mnt}" /bin/sh -c "apk add --no-cache nodejs npm" >/dev/null 2>&1
@@ -687,6 +700,7 @@ build_ruby_rootfs() {
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
+    prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
     chroot "${mnt}" /bin/sh -c "apk add --no-cache ruby" >/dev/null 2>&1
@@ -710,6 +724,7 @@ build_java_rootfs() {
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
+    prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
     chroot "${mnt}" /bin/sh -c "apk add --no-cache openjdk21-jre-headless" >/dev/null 2>&1
@@ -735,6 +750,7 @@ build_php_rootfs() {
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
+    prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
     chroot "${mnt}" /bin/sh -c "apk add --no-cache php" >/dev/null 2>&1
@@ -747,6 +763,30 @@ build_php_rootfs() {
     log "php.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
+build_lua_rootfs() {
+    local output="${INSTALL_DIR}/rootfs/lua.ext4"
+    local mnt=$(mktemp -d)
+
+    log "Building lua rootfs (Alpine + lua)..."
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q "${output}"
+    mount -o loop "${output}" "${mnt}"
+
+    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
+    mkdir -p "${mnt}"/{code,tmp}
+    prepare_chroot_dev "${mnt}"
+    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
+
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache lua5.4" >/dev/null 2>&1
+
+    [[ -f "${INSTALL_DIR}/bin/nova-agent" ]] && \
+        cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
+        chmod +x "${mnt}/init"
+
+    umount "${mnt}" && rmdir "${mnt}"
+    log "lua.ext4 ready ($(du -h ${output} | cut -f1))"
+}
+
 build_deno_rootfs() {
     local output="${INSTALL_DIR}/rootfs/deno.ext4"
     local rootfs_dir=$(mktemp -d)
@@ -756,8 +796,8 @@ build_deno_rootfs() {
     # Build in a temp directory instead of a mounted ext4 image.
     # build-base (gcc) temporarily needs more space than the 256MB rootfs allows.
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${rootfs_dir}"
-    mkdir -p "${rootfs_dir}"/{dev,code,tmp,usr/local/bin}
-    mknod -m 666 "${rootfs_dir}/dev/null" c 1 3 2>/dev/null || true
+    mkdir -p "${rootfs_dir}"/{code,tmp,usr/local/bin}
+    prepare_chroot_dev "${rootfs_dir}"
     echo "nameserver 8.8.8.8" > "${rootfs_dir}/etc/resolv.conf"
 
     chroot "${rootfs_dir}" /bin/sh -c "apk add --no-cache libstdc++ gcompat" >/dev/null 2>&1
@@ -802,6 +842,7 @@ build_bun_rootfs() {
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp,usr/local/bin}
+    prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
 
     chroot "${mnt}" /bin/sh -c "apk add --no-cache libgcc libstdc++" >/dev/null 2>&1
@@ -835,7 +876,7 @@ rootfs_build_fingerprint() {
     agent_hash="$(hash_file "${AGENT_BIN}" 2>/dev/null || echo "missing-agent")"
     script_hash="$(hash_file "${SCRIPT_DIR}/setup.sh" 2>/dev/null || echo "missing-script")"
 
-    hash_string "agent=${agent_hash};alpine=${ALPINE_URL};wasmtime=${WASMTIME_VERSION};deno=${DENO_VERSION};bun=${BUN_VERSION};dotnet=${DOTNET_VERSION};rootfs=${ROOTFS_SIZE_MB};rootfs_java=${ROOTFS_SIZE_JAVA_MB};script=${script_hash}"
+    hash_string "agent=${agent_hash};alpine=${ALPINE_URL};wasmtime=${WASMTIME_VERSION};deno=${DENO_VERSION};bun=${BUN_VERSION};rootfs=${ROOTFS_SIZE_MB};rootfs_java=${ROOTFS_SIZE_JAVA_MB};script=${script_hash}"
 }
 
 rootfs_images_exist() {
@@ -847,7 +888,7 @@ rootfs_images_exist() {
         "ruby.ext4"
         "java.ext4"
         "php.ext4"
-        "dotnet.ext4"
+        "lua.ext4"
         "deno.ext4"
         "bun.ext4"
     )
@@ -896,6 +937,7 @@ build_rootfs_images() {
         build_ruby_rootfs
         build_java_rootfs
         build_php_rootfs
+        build_lua_rootfs
         build_deno_rootfs
         build_bun_rootfs
     )
@@ -1103,11 +1145,18 @@ deploy_lumen_frontend() {
 
         # Build Lumen
         log "Building Lumen (this may take a while)..."
+        local npm_log
+        npm_log="$(mktemp -t lumen-build.XXXXXX.log)"
         (
             cd "${lumen_src}" || exit 1
-            npm install --silent 2>/dev/null
-            npm run build 2>/dev/null
-        )
+            npm install --silent 2>&1 | tee -a "${npm_log}"
+            npm run build 2>&1 | tee -a "${npm_log}"
+        ) || {
+            warn "Lumen build failed. Log output:"
+            tail -30 "${npm_log}" >&2
+            err "npm build failed for Lumen frontend"
+        }
+        rm -f "${npm_log}"
 
         # Deploy standalone build
         rm -rf "${INSTALL_DIR}/lumen"
