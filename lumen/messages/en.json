@@ -2183,5 +2183,13 @@
     "severity": "Severity",
     "function": "Function",
     "source": "Source"
+  },
+  "tenantMenuPermissions": {
+    "title": "Menu Permissions",
+    "description": "Configure which menu items are visible for {tenantId}",
+    "refresh": "Refresh menu permissions",
+    "loading": "Loading menu permissions...",
+    "loadFailed": "Failed to load menu permissions.",
+    "saveFailed": "Failed to save menu permissions."
   }
 }

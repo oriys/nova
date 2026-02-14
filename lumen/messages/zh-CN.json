@@ -2183,5 +2183,13 @@
     "severity": "严重程度",
     "function": "函数",
     "source": "来源"
+  },
+  "tenantMenuPermissions": {
+    "title": "菜单权限",
+    "description": "配置 {tenantId} 可见的菜单项",
+    "refresh": "刷新菜单权限",
+    "loading": "加载菜单权限...",
+    "loadFailed": "加载菜单权限失败。",
+    "saveFailed": "保存菜单权限失败。"
   }
 }
