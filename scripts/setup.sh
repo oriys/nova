@@ -134,56 +134,14 @@ write_manifest() {
     printf '%s\n' "${value}" > "${manifest_file}"
 }
 
-# Run independent functions concurrently and fail fast on first error.
-run_parallel_functions() {
-    local -a pids=()
-    local -a names=()
+# Run functions sequentially and fail fast on first error.
+run_sequential_functions() {
     local fn
-
     for fn in "$@"; do
         info "  [start] ${fn}"
-        "${fn}" &
-        pids+=("$!")
-        names+=("${fn}")
+        "${fn}"
+        log "  [done] ${fn}"
     done
-
-    local idx
-    local failed_count=0
-    local failed_names=""
-    for idx in "${!pids[@]}"; do
-        if wait "${pids[$idx]}"; then
-            log "  [done] ${names[$idx]}"
-        else
-            failed_count=$((failed_count + 1))
-            if [[ -z "${failed_names}" ]]; then
-                failed_names="${names[$idx]}"
-            else
-                failed_names="${failed_names}, ${names[$idx]}"
-            fi
-        fi
-    done
-
-    if [[ "${failed_count}" -gt 0 ]]; then
-        err "Parallel stage failed (${failed_count} task(s)): ${failed_names}"
-    fi
-}
-
-# Calculate a safe default parallelism level.
-default_parallel_jobs() {
-    local cpus
-    cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 4)
-    if ! [[ "${cpus}" =~ ^[0-9]+$ ]] || [[ "${cpus}" -lt 1 ]]; then
-        cpus=4
-    fi
-
-    # Keep enough parallelism for speed, but avoid overloading low-end hosts.
-    if [[ "${cpus}" -lt 2 ]]; then
-        echo 1
-    elif [[ "${cpus}" -gt 6 ]]; then
-        echo 6
-    else
-        echo "${cpus}"
-    fi
 }
 
 # ─── Checks ──────────────────────────────────────────────
@@ -908,14 +866,9 @@ write_rootfs_manifest() {
     write_manifest "$(rootfs_manifest_path)" "$(rootfs_build_fingerprint)"
 }
 
-# Build all rootfs images in controlled parallel batches.
+# Build all rootfs images sequentially.
 # Dependency order is preserved at stage level (this runs only after binaries are deployed).
 build_rootfs_images() {
-    local max_jobs="${NOVA_ROOTFS_JOBS:-$(default_parallel_jobs)}"
-    if ! [[ "${max_jobs}" =~ ^[0-9]+$ ]] || [[ "${max_jobs}" -lt 1 ]]; then
-        max_jobs="$(default_parallel_jobs)"
-    fi
-
     if rootfs_is_up_to_date; then
         log "Rootfs artifacts unchanged, skipping rebuild"
         return 0
@@ -934,52 +887,13 @@ build_rootfs_images() {
         build_bun_rootfs
     )
 
-    if [[ "${max_jobs}" -eq 1 ]]; then
-        log "Building rootfs images sequentially (NOVA_ROOTFS_JOBS=1)..."
-        local fn
-        for fn in "${builders[@]}"; do
-            "${fn}"
-        done
-    else
-        log "Building rootfs images with concurrency=${max_jobs}..."
-        local total=${#builders[@]}
-        local i=0
-
-        while [[ ${i} -lt ${total} ]]; do
-            local -a pids=()
-            local -a names=()
-            local launched=0
-
-            while [[ ${launched} -lt ${max_jobs} && ${i} -lt ${total} ]]; do
-                local fn="${builders[$i]}"
-                info "  [start] ${fn}"
-                "${fn}" &
-                pids+=("$!")
-                names+=("${fn}")
-                i=$((i + 1))
-                launched=$((launched + 1))
-            done
-
-            local idx
-            local batch_failed=0
-            local batch_failed_names=""
-            for idx in "${!pids[@]}"; do
-                if wait "${pids[$idx]}"; then
-                    log "  [done] ${names[$idx]}"
-                else
-                    batch_failed=$((batch_failed + 1))
-                    if [[ -z "${batch_failed_names}" ]]; then
-                        batch_failed_names="${names[$idx]}"
-                    else
-                        batch_failed_names="${batch_failed_names}, ${names[$idx]}"
-                    fi
-                fi
-            done
-            if [[ "${batch_failed}" -gt 0 ]]; then
-                err "Rootfs build failed (${batch_failed} task(s)): ${batch_failed_names}"
-            fi
-        done
-    fi
+    log "Building rootfs images sequentially..."
+    local fn
+    for fn in "${builders[@]}"; do
+        info "  [start] ${fn}"
+        "${fn}"
+        log "  [done] ${fn}"
+    done
 
     write_rootfs_manifest
     log "Updated rootfs build manifest"
@@ -1404,17 +1318,17 @@ main() {
     install_postgres
     setup_database
 
-    # Firecracker install and kernel download are independent.
-    log "Running Firecracker + kernel setup in parallel..."
-    run_parallel_functions install_firecracker download_kernel
+    # Firecracker install and kernel download.
+    log "Running Firecracker + kernel setup..."
+    run_sequential_functions install_firecracker download_kernel
 
     # Deploy backend binaries first (so agent is available for rootfs)
     deploy_backend_services
     cleanup_deploy_build_binaries
 
-    # Build steps are independent at this stage.
-    log "Running rootfs build + Lumen build in parallel..."
-    run_parallel_functions build_rootfs_images deploy_lumen_frontend
+    # Build steps run sequentially for reliability.
+    log "Running rootfs build + Lumen build..."
+    run_sequential_functions build_rootfs_images deploy_lumen_frontend
 
     # Set KVM permissions
     chmod 666 /dev/kvm 2>/dev/null || true
