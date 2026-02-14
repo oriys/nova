@@ -4,7 +4,7 @@
 // when new tasks are enqueued.
 //
 // Implementations:
-//   - NoopNotifier: in-process channel-based notifier (no external dependencies)
+//   - NoopNotifier: a no-op notifier that never sends notifications; workers rely purely on polling
 //   - ChannelNotifier: in-process channel-based notifier suitable for single-instance deployments
 //
 // When a task is enqueued, the producer calls Notify(). Subscribed workers receive
@@ -50,9 +50,14 @@ func NewNoopNotifier() *NoopNotifier { return &NoopNotifier{} }
 
 func (n *NoopNotifier) Notify(_ context.Context, _ QueueType) error { return nil }
 
-func (n *NoopNotifier) Subscribe(_ context.Context, _ QueueType) <-chan struct{} {
+func (n *NoopNotifier) Subscribe(ctx context.Context, _ QueueType) <-chan struct{} {
 	// Return a channel that is never written to; workers rely on ticker.
+	// The channel is closed when the context is cancelled to prevent goroutine leaks.
 	ch := make(chan struct{})
+	go func() {
+		<-ctx.Done()
+		close(ch)
+	}()
 	return ch
 }
 

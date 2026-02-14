@@ -57,7 +57,7 @@ type MultiSink struct {
 }
 
 // NewMultiSink creates a LogSink that writes to all provided sinks.
-// Errors from secondary sinks are logged but do not fail the operation.
+// The first error encountered from any sink is returned.
 func NewMultiSink(primary LogSink, secondary ...LogSink) *MultiSink {
 	sinks := make([]LogSink, 0, 1+len(secondary))
 	sinks = append(sinks, primary)

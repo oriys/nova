@@ -333,7 +333,7 @@ func DefaultConfig() *Config {
 		},
 		AI: ai.DefaultConfig(),
 		Queue: QueueConfig{
-			NotifierType: "channel",
+			NotifierType: "noop",
 		},
 		LogSink: LogSinkConfig{
 			Type: "postgres",
