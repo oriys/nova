@@ -18,7 +18,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/oriys/nova/api/proto/agentpb"
 	"github.com/oriys/nova/internal/pkg/vsock"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -129,6 +131,7 @@ type Agent struct {
 	persistentIn     io.WriteCloser
 	persistentOut    *bufio.Reader
 	persistentOutRaw io.ReadCloser
+	useProtobuf      bool // true when this connection uses protobuf codec
 }
 
 func main() {
@@ -193,8 +196,14 @@ func handleConnection(conn net.Conn) {
 	defer conn.Close()
 	agent := &Agent{}
 
+	// Protocol detection: auto-detect JSON vs protobuf on the first frame.
+	// Once detected, all subsequent messages on this connection use the same codec.
+	useProtobuf := false
+	protocolDetected := false
+
 	for {
-		msg, err := readMessage(conn)
+		// Read raw frame for protocol detection on first message
+		data, err := readRawFrame(conn)
 		if err != nil {
 			if err != io.EOF {
 				fmt.Fprintf(os.Stderr, "[agent] Read error: %v\n", err)
@@ -202,9 +211,44 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
+		if !protocolDetected {
+			useProtobuf = isProtobuf(data)
+			protocolDetected = true
+			agent.useProtobuf = useProtobuf
+			if useProtobuf {
+				fmt.Println("[agent] Detected protobuf protocol")
+			}
+		}
+
+		var msg *Message
+		if useProtobuf {
+			pbMsg := &agentpb.VsockMessage{}
+			if err := proto.Unmarshal(data, pbMsg); err != nil {
+				fmt.Fprintf(os.Stderr, "[agent] Protobuf unmarshal error: %v\n", err)
+				return
+			}
+			msg, err = pbToMessage(pbMsg)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[agent] Protobuf conversion error: %v\n", err)
+				return
+			}
+		} else {
+			msg = &Message{}
+			if err := json.Unmarshal(data, msg); err != nil {
+				fmt.Fprintf(os.Stderr, "[agent] JSON unmarshal error: %v\n", err)
+				return
+			}
+		}
+
+		// Select the appropriate writer for responses
+		writer := writeMessage
+		if useProtobuf {
+			writer = writeProtobufMessage
+		}
+
 		if msg.Type == MsgTypeStop {
 			fmt.Println("[agent] Received stop, shutting down...")
-			writeMessage(conn, &Message{Type: MsgTypeResp, Payload: json.RawMessage(`{"status":"stopping"}`)})
+			writer(conn, &Message{Type: MsgTypeResp, Payload: json.RawMessage(`{"status":"stopping"}`)})
 			os.Exit(0)
 		}
 
@@ -224,7 +268,7 @@ func handleConnection(conn net.Conn) {
 			}
 		}
 
-		if err := writeMessage(conn, resp); err != nil {
+		if err := writer(conn, resp); err != nil {
 			fmt.Fprintf(os.Stderr, "[agent] Write error: %v\n", err)
 			return
 		}
@@ -401,6 +445,15 @@ func (a *Agent) handleReload(payload json.RawMessage) (*Message, error) {
 	if err == nil {
 		for _, entry := range entries {
 			os.RemoveAll(filepath.Join(CodeMountPoint, entry.Name()))
+		}
+	}
+
+	// 3b. Clean /tmp to prevent cross-function data leakage when reusing
+	// template VMs. Bootstrap scripts and other transient files are regenerated
+	// during the subsequent Init call.
+	if tmpEntries, err := os.ReadDir("/tmp"); err == nil {
+		for _, entry := range tmpEntries {
+			os.RemoveAll(filepath.Join("/tmp", entry.Name()))
 		}
 	}
 
@@ -602,6 +655,12 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID s
 func (a *Agent) handleStreamingExec(conn net.Conn, req *ExecPayload) (*Message, error) {
 	start := time.Now()
 	
+	// Select writer based on connection protocol
+	writer := writeMessage
+	if a.useProtobuf {
+		writer = writeProtobufMessage
+	}
+
 	// Helper to send stream chunk
 	sendChunk := func(data []byte, isLast bool, errMsg string) error {
 		chunk := StreamChunkPayload{
@@ -612,7 +671,7 @@ func (a *Agent) handleStreamingExec(conn net.Conn, req *ExecPayload) (*Message, 
 		}
 		chunkData, _ := json.Marshal(chunk)
 		msg := &Message{Type: MsgTypeStream, Payload: chunkData}
-		return writeMessage(conn, msg)
+		return writer(conn, msg)
 	}
 
 	// Write input to file
@@ -1039,5 +1098,149 @@ func writeMessage(conn net.Conn, msg *Message) error {
 		return err
 	}
 	_, err = conn.Write(data)
+	return err
+}
+
+// readRawFrame reads a length-prefixed frame from the connection without
+// decoding the payload. Returns the raw bytes for protocol detection.
+func readRawFrame(conn net.Conn) ([]byte, error) {
+	lenBuf := make([]byte, 4)
+	if _, err := io.ReadFull(conn, lenBuf); err != nil {
+		return nil, err
+	}
+	msgLen := binary.BigEndian.Uint32(lenBuf)
+	if msgLen > 8*1024*1024 {
+		return nil, fmt.Errorf("message too large: %d bytes", msgLen)
+	}
+	data := make([]byte, msgLen)
+	if _, err := io.ReadFull(conn, data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// isProtobuf detects whether a raw frame is protobuf-encoded (as opposed to
+// JSON). JSON messages always start with '{', while protobuf varint-encoded
+// fields start with a field tag (never 0x7B which is '{').
+func isProtobuf(data []byte) bool {
+	if len(data) == 0 {
+		return false
+	}
+	return data[0] != '{'
+}
+
+// pbToMessage converts a protobuf VsockMessage to the internal JSON-based Message.
+func pbToMessage(pb *agentpb.VsockMessage) (*Message, error) {
+	msg := &Message{Type: int(pb.Type)}
+	switch p := pb.Payload.(type) {
+	case *agentpb.VsockMessage_Init:
+		envVars := p.Init.EnvVars
+		if envVars == nil {
+			envVars = make(map[string]string)
+		}
+		payload := InitPayload{
+			Runtime:               p.Init.Runtime,
+			Handler:               p.Init.Handler,
+			EnvVars:               envVars,
+			Command:               p.Init.Command,
+			Extension:             p.Init.Extension,
+			Mode:                  ExecutionMode(p.Init.Mode),
+			FunctionName:          p.Init.FunctionName,
+			FunctionVersion:       int(p.Init.FunctionVersion),
+			MemoryMB:              int(p.Init.MemoryMb),
+			TimeoutS:              int(p.Init.TimeoutS),
+			LayerCount:            int(p.Init.LayerCount),
+		}
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		msg.Payload = data
+	case *agentpb.VsockMessage_Exec:
+		payload := ExecPayload{
+			RequestID:   p.Exec.RequestId,
+			Input:       p.Exec.Input,
+			TimeoutS:    int(p.Exec.TimeoutS),
+			TraceParent: p.Exec.TraceParent,
+			TraceState:  p.Exec.TraceState,
+			Stream:      p.Exec.Stream,
+		}
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		msg.Payload = data
+	case *agentpb.VsockMessage_Reload:
+		payload := ReloadPayload{Files: p.Reload.Files}
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		msg.Payload = data
+	case nil:
+		// No payload (e.g., PING, STOP)
+		msg.Payload = json.RawMessage(`{}`)
+	default:
+		return nil, fmt.Errorf("unsupported protobuf payload type: %T", p)
+	}
+	return msg, nil
+}
+
+// messageToPb converts the internal JSON-based Message to a protobuf VsockMessage.
+func messageToPb(msg *Message) (*agentpb.VsockMessage, error) {
+	pb := &agentpb.VsockMessage{
+		Type: agentpb.VsockMessage_Type(msg.Type),
+	}
+	switch msg.Type {
+	case MsgTypeResp:
+		var resp RespPayload
+		if err := json.Unmarshal(msg.Payload, &resp); err != nil {
+			// If payload doesn't match RespPayload, send raw bytes as output
+			pb.Payload = &agentpb.VsockMessage_Resp{
+				Resp: &agentpb.RespPayload{Output: msg.Payload},
+			}
+			return pb, nil
+		}
+		pb.Payload = &agentpb.VsockMessage_Resp{
+			Resp: &agentpb.RespPayload{
+				RequestId:  resp.RequestID,
+				Output:     resp.Output,
+				Error:      resp.Error,
+				DurationMs: resp.DurationMs,
+				Stdout:     resp.Stdout,
+				Stderr:     resp.Stderr,
+			},
+		}
+	case MsgTypeStream:
+		var chunk StreamChunkPayload
+		if err := json.Unmarshal(msg.Payload, &chunk); err != nil {
+			return nil, fmt.Errorf("unmarshal stream chunk for pb: %w", err)
+		}
+		pb.Payload = &agentpb.VsockMessage_StreamChunk{
+			StreamChunk: &agentpb.StreamChunkPayload{
+				RequestId: chunk.RequestID,
+				Data:      chunk.Data,
+				IsLast:    chunk.IsLast,
+				Error:     chunk.Error,
+			},
+		}
+	}
+	return pb, nil
+}
+
+// writeProtobufMessage marshals and sends a protobuf-encoded message.
+func writeProtobufMessage(conn net.Conn, msg *Message) error {
+	pb, err := messageToPb(msg)
+	if err != nil {
+		return err
+	}
+	data, err := proto.Marshal(pb)
+	if err != nil {
+		return err
+	}
+	buf := make([]byte, 4+len(data))
+	binary.BigEndian.PutUint32(buf[:4], uint32(len(data)))
+	copy(buf[4:], data)
+	_, err = conn.Write(buf)
 	return err
 }

@@ -244,6 +244,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /metrics/prometheus", metrics.PrometheusHandler())
 	mux.HandleFunc("GET /invocations", h.ListAllInvocations)
 	mux.HandleFunc("GET /functions/{name}/logs", h.Logs)
+	mux.HandleFunc("GET /functions/{name}/logs/stream", h.StreamLogs)
 	mux.HandleFunc("GET /functions/{name}/metrics", h.FunctionMetrics)
 	mux.HandleFunc("GET /functions/{name}/slo/status", h.FunctionSLOStatus)
 	mux.HandleFunc("GET /functions/{name}/diagnostics", h.FunctionDiagnostics)
@@ -1087,6 +1088,59 @@ func (h *Handler) Logs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writePaginatedList(w, tail, offset, len(entries), total, entries)
+}
+
+// StreamLogs handles GET /functions/{name}/logs/stream using Server-Sent Events.
+// It polls the invocation logs store at a short interval and pushes new entries
+// to the client as SSE data events in real time, enabling live log tailing from
+// the dashboard without WebSocket infrastructure.
+func (h *Handler) StreamLogs(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	// Track the last seen invocation timestamp to only send new entries.
+	lastSeen := time.Now()
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			entries, err := h.Store.ListInvocationLogs(r.Context(), fn.ID, 20, 0)
+			if err != nil {
+				continue
+			}
+			for _, entry := range entries {
+				if entry.CreatedAt.After(lastSeen) {
+					data, _ := json.Marshal(entry)
+					fmt.Fprintf(w, "data: %s\n\n", data)
+					if entry.CreatedAt.After(lastSeen) {
+						lastSeen = entry.CreatedAt
+					}
+				}
+			}
+			flusher.Flush()
+		}
+	}
 }
 
 // ListAllInvocations handles GET /invocations
