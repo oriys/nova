@@ -9,9 +9,10 @@ import (
 type SchedulingStrategy string
 
 const (
-StrategyRoundRobin  SchedulingStrategy = "round-robin"
-StrategyLeastLoaded SchedulingStrategy = "least-loaded"
-StrategyRandom      SchedulingStrategy = "random"
+StrategyRoundRobin     SchedulingStrategy = "round-robin"
+StrategyLeastLoaded    SchedulingStrategy = "least-loaded"
+StrategyRandom         SchedulingStrategy = "random"
+StrategyResourceAware  SchedulingStrategy = "resource-aware"
 )
 
 // Scheduler selects nodes for workload placement
@@ -47,6 +48,8 @@ case StrategyLeastLoaded:
 return s.selectLeastLoaded(nodes), nil
 case StrategyRandom:
 return s.selectRandom(nodes), nil
+case StrategyResourceAware:
+return s.selectResourceAware(nodes), nil
 default:
 return s.selectLeastLoaded(nodes), nil
 }
@@ -86,6 +89,28 @@ return nil
 }
 
 return nodes[rand.Intn(len(nodes))]
+}
+
+// selectResourceAware picks the node with the lowest composite resource
+// pressure score. This avoids routing work to nodes that are experiencing
+// high CPU, memory, or IO pressure (e.g. near-OOM or IO-blocked).
+func (s *Scheduler) selectResourceAware(nodes []*Node) *Node {
+if len(nodes) == 0 {
+	return nil
+}
+
+var selected *Node
+lowestScore := 2.0 // > 1.0
+
+for _, node := range nodes {
+	score := node.ResourcePressureScore()
+	if score < lowestScore {
+		lowestScore = score
+		selected = node
+	}
+}
+
+return selected
 }
 
 // SelectNodeForFunction selects a node for a specific function

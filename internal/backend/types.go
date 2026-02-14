@@ -101,6 +101,12 @@ type InitPayload struct {
 	FunctionVersion int               `json:"function_version,omitempty"`
 	MemoryMB        int               `json:"memory_mb,omitempty"`
 	TimeoutS        int               `json:"timeout_s,omitempty"`
+
+	// InternalInvokeEnabled tells the agent to expose an internal invoke
+	// capability (e.g. via environment variable NOVA_INVOKE_ENDPOINT) so
+	// that user functions can call other functions through the host without
+	// routing through the public gateway.
+	InternalInvokeEnabled bool `json:"internal_invoke_enabled,omitempty"`
 }
 
 // ExecPayload is sent to execute a function.
@@ -111,6 +117,12 @@ type ExecPayload struct {
 	TraceParent string          `json:"traceparent,omitempty"`
 	TraceState  string          `json:"tracestate,omitempty"`
 	Stream      bool            `json:"stream,omitempty"` // Enable streaming response
+
+	// InternalInvoke, when true, indicates that the function context should
+	// expose an "invoke" capability so the running function can call other
+	// functions via the host (vsock -> Comet) without going through the
+	// public gateway.
+	InternalInvoke bool `json:"internal_invoke,omitempty"`
 }
 
 // ReloadPayload is sent to hot-reload function code.

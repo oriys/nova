@@ -86,6 +86,10 @@ node.LastHeartbeat = time.Now()
 if metrics != nil {
 node.ActiveVMs = metrics.ActiveVMs
 node.QueueDepth = metrics.QueueDepth
+node.CPUUsage = metrics.CPUUsage
+node.MemoryUsage = metrics.MemoryUsage
+node.IOPressure = metrics.IOPressure
+node.MemoryPressure = metrics.MemoryPressure
 }
 
 return nil
@@ -163,7 +167,6 @@ func (r *Registry) checkNodeHealth() {
 r.mu.Lock()
 defer r.mu.Unlock()
 
-now := time.Now()
 for id, node := range r.nodes {
 if !node.IsHealthy(r.heartbeatTimeout) && node.State == NodeStateActive {
 logging.Op().Warn("node became unhealthy", "id", id, "last_heartbeat", node.LastHeartbeat)
