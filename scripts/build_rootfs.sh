@@ -15,7 +15,7 @@
 #
 # This script avoids loop-mount by using `mkfs.ext4 -d <dir>`.
 
-set -euo pipefail
+set -euxo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"

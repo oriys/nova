@@ -1,7 +1,7 @@
 #!/bin/bash
 # download_assets.sh - Download assets for offline rootfs building.
 
-set -euo pipefail
+set -euxo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"

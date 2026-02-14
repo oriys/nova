@@ -10,7 +10,7 @@
 #   ./scripts/seed-functions.sh http://nova:9000  # Custom API URL
 #   SKIP_COMPILED=1 ./scripts/seed-functions.sh   # Skip compiled languages (Go, Rust, etc.)
 
-set -e
+set -euxo pipefail
 
 API_URL="${1:-http://localhost:9000}"
 SKIP_COMPILED="${SKIP_COMPILED:-0}"

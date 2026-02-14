@@ -3,7 +3,7 @@
 # Usage: ./build-runtimes.sh [prefix]
 # Default prefix: nova-runtime
 
-set -e
+set -euxo pipefail
 
 PREFIX=${1:-nova-runtime}
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
