@@ -11,7 +11,7 @@
 #       - Rust + WASI target (for wasm):  rustup target add wasm32-wasip1 (or wasm32-wasi)
 #       - JDK (for java): javac + jar
 
-set -euo pipefail
+set -euxo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build"

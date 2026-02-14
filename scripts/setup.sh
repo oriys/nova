@@ -18,7 +18,7 @@
 #   make build-linux
 #   sudo bash scripts/setup.sh
 
-set -e
+set -euxo pipefail
 
 PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/nova/bin"
 export PATH

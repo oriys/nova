@@ -4,7 +4,7 @@
 # Usage: ./stress_test_vms.sh [max_vms]
 #   max_vms: Maximum number of VMs to create (default: 100)
 
-set -e
+set -euxo pipefail
 
 MAX_VMS=${1:-100}
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -2,7 +2,7 @@
 # Deploy Nova backend binaries on local Linux machine
 # Usage: sudo ./scripts/deploy.sh
 
-set -e
+set -euxo pipefail
 
 INSTALL_DIR="/opt/nova"
 

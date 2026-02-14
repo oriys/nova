@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Nova Workflow Seeder
 # Creates demo DAG workflows showcasing multi-language orchestration
 #
@@ -11,7 +11,7 @@
 #   ./scripts/seed-workflows.sh                   # Default: http://localhost:9000
 #   ./scripts/seed-workflows.sh http://nova:9000  # Custom API URL
 
-set -e
+set -euxo pipefail
 
 API_URL="${1:-http://localhost:9000}"
 

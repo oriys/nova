@@ -7,7 +7,7 @@
 #   batch_size: Number of concurrent requests per batch (default: 10)
 #   rsa_bits: RSA key bits for computation (default: 512)
 
-set -e
+set -euxo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BATCH_SIZE=${1:-10}

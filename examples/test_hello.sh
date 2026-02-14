@@ -2,7 +2,7 @@
 # test_hello.sh - Quick hello test (Python + Go)
 # Run this on the Linux machine where nova daemon is running
 
-set -e
+set -euxo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build"

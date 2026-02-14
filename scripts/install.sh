@@ -5,7 +5,7 @@
 # Or:
 #   scp scripts/install.sh user@server:/tmp/ && ssh user@server 'sudo bash /tmp/install.sh'
 
-set -e
+set -euxo pipefail
 
 PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/nova/bin"
 export PATH

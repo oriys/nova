@@ -9,7 +9,7 @@
 # - Java builds a single runnable JAR (renamed to "handler").
 # - WASM builds a WASI module (renamed to "handler").
 
-set -euo pipefail
+set -euxo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build"
