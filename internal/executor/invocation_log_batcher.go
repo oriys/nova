@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/oriys/nova/internal/logging"
+	"github.com/oriys/nova/internal/logsink"
 	"github.com/oriys/nova/internal/store"
 )
 
@@ -29,7 +30,7 @@ type LogBatcherConfig struct {
 }
 
 type invocationLogBatcher struct {
-	store         *store.Store
+	sink          logsink.LogSink
 	logger        *slog.Logger
 	logs          chan *store.InvocationLog
 	flushInterval time.Duration
@@ -40,7 +41,7 @@ type invocationLogBatcher struct {
 	done          chan struct{}
 }
 
-func newInvocationLogBatcher(s *store.Store, cfg LogBatcherConfig) *invocationLogBatcher {
+func newInvocationLogBatcher(s *store.Store, sink logsink.LogSink, cfg LogBatcherConfig) *invocationLogBatcher {
 	batchSize := cfg.BatchSize
 	if batchSize <= 0 {
 		batchSize = defaultInvocationLogBatchSize
@@ -67,7 +68,7 @@ func newInvocationLogBatcher(s *store.Store, cfg LogBatcherConfig) *invocationLo
 	}
 
 	b := &invocationLogBatcher{
-		store:         s,
+		sink:          sink,
 		logger:        logging.Op(),
 		logs:          make(chan *store.InvocationLog, bufferSize),
 		flushInterval: flushInterval,
@@ -113,7 +114,7 @@ func (b *invocationLogBatcher) run() {
 		var lastErr error
 		for attempt := 0; attempt < b.maxRetries; attempt++ {
 			ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
-			lastErr = b.store.SaveInvocationLogs(ctx, batch)
+			lastErr = b.sink.SaveBatch(ctx, batch)
 			cancel()
 			if lastErr == nil {
 				break

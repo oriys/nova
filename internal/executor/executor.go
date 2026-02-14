@@ -16,6 +16,7 @@ import (
 	"github.com/oriys/nova/internal/circuitbreaker"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/logging"
+	"github.com/oriys/nova/internal/logsink"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/observability"
 	"github.com/oriys/nova/internal/pool"
@@ -33,6 +34,7 @@ type Executor struct {
 	pool            *pool.Pool
 	logger          *logging.Logger
 	secretsResolver *secrets.Resolver
+	logSink         logsink.LogSink
 	logBatcher      *invocationLogBatcher
 	logBatcherConfig LogBatcherConfig
 	inflight        sync.WaitGroup
@@ -63,6 +65,14 @@ func WithLogBatcherConfig(cfg LogBatcherConfig) Option {
 	}
 }
 
+// WithLogSink sets the log sink for invocation log persistence.
+// When set, logs are routed through the sink instead of directly to PostgreSQL.
+func WithLogSink(sink logsink.LogSink) Option {
+	return func(e *Executor) {
+		e.logSink = sink
+	}
+}
+
 func New(store *store.Store, pool *pool.Pool, opts ...Option) *Executor {
 	e := &Executor{
 		store:    store,
@@ -73,7 +83,11 @@ func New(store *store.Store, pool *pool.Pool, opts ...Option) *Executor {
 	for _, opt := range opts {
 		opt(e)
 	}
-	e.logBatcher = newInvocationLogBatcher(store, e.logBatcherConfig)
+	sink := e.logSink
+	if sink == nil {
+		sink = logsink.NewPostgresSink(store)
+	}
+	e.logBatcher = newInvocationLogBatcher(store, sink, e.logBatcherConfig)
 	return e
 }
 

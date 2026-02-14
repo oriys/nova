@@ -18,9 +18,11 @@ import (
 	"github.com/oriys/nova/internal/kubernetes"
 	"github.com/oriys/nova/internal/libkrun"
 	"github.com/oriys/nova/internal/logging"
+	"github.com/oriys/nova/internal/logsink"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/observability"
 	"github.com/oriys/nova/internal/pool"
+	"github.com/oriys/nova/internal/queue"
 	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/store"
 	"github.com/oriys/nova/internal/wasm"
@@ -84,6 +86,25 @@ func daemonCmd() *cobra.Command {
 			cachedStore := store.NewCachedMetadataStore(pgStore, store.DefaultCacheTTL)
 			s := store.NewStore(cachedStore)
 			defer s.Close()
+
+			// Initialize queue notifier for push-based task triggering
+			var notifier queue.Notifier
+			switch cfg.Queue.NotifierType {
+			case "channel":
+				notifier = queue.NewChannelNotifier()
+			default:
+				notifier = queue.NewNoopNotifier()
+			}
+			defer notifier.Close()
+
+			// Initialize log sink
+			var sink logsink.LogSink
+			switch cfg.LogSink.Type {
+			case "noop":
+				sink = logsink.NewNoopSink()
+			default:
+				sink = logsink.NewPostgresSink(s)
+			}
 
 			// Determine the invoker: remote (via Comet gRPC) or local.
 			var invoker executor.Invoker
@@ -158,6 +179,7 @@ func daemonCmd() *cobra.Command {
 						FlushInterval: cfg.Executor.LogFlushInterval,
 						Timeout:       cfg.Executor.LogTimeout,
 					}),
+					executor.WithLogSink(sink),
 				}
 
 				if cfg.Secrets.Enabled || cfg.Secrets.MasterKey != "" || cfg.Secrets.MasterKeyFile != "" {
@@ -187,17 +209,23 @@ func daemonCmd() *cobra.Command {
 			defer wfEngine.Stop()
 
 			// Async queue workers
-			asyncWorkers := asyncqueue.New(s, invoker, asyncqueue.Config{})
+			asyncWorkers := asyncqueue.New(s, invoker, asyncqueue.Config{
+				Notifier: notifier,
+			})
 			asyncWorkers.Start()
 			defer asyncWorkers.Stop()
 
 			// Event bus workers
-			eventWorkers := eventbus.New(s, invoker, wfService, eventbus.Config{})
+			eventWorkers := eventbus.New(s, invoker, wfService, eventbus.Config{
+				Notifier: notifier,
+			})
 			eventWorkers.Start()
 			defer eventWorkers.Stop()
 
 			// Outbox relay
-			outboxRelay := eventbus.NewOutboxRelay(s, eventbus.OutboxRelayConfig{})
+			outboxRelay := eventbus.NewOutboxRelay(s, eventbus.OutboxRelayConfig{
+				Notifier: notifier,
+			})
 			outboxRelay.Start()
 			defer outboxRelay.Stop()
 

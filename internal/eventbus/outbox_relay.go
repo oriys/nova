@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/oriys/nova/internal/logging"
+	"github.com/oriys/nova/internal/queue"
 	"github.com/oriys/nova/internal/store"
 )
 
@@ -15,16 +16,18 @@ type OutboxRelayConfig struct {
 	Workers       int
 	PollInterval  time.Duration
 	LeaseDuration time.Duration
+	Notifier      queue.Notifier // optional push-based notifier to reduce polling
 }
 
 // OutboxRelay relays pending outbox jobs into event messages.
 type OutboxRelay struct {
-	store   *store.Store
-	cfg     OutboxRelayConfig
-	stopCh  chan struct{}
-	started bool
-	mu      sync.Mutex
-	wg      sync.WaitGroup
+	store    *store.Store
+	cfg      OutboxRelayConfig
+	notifier queue.Notifier
+	stopCh   chan struct{}
+	started  bool
+	mu       sync.Mutex
+	wg       sync.WaitGroup
 }
 
 // NewOutboxRelay creates a new outbox relay worker pool.
@@ -38,10 +41,15 @@ func NewOutboxRelay(s *store.Store, cfg OutboxRelayConfig) *OutboxRelay {
 	if cfg.LeaseDuration <= 0 {
 		cfg.LeaseDuration = store.DefaultOutboxLeaseTimeout
 	}
+	notifier := cfg.Notifier
+	if notifier == nil {
+		notifier = queue.NewNoopNotifier()
+	}
 	return &OutboxRelay{
-		store:  s,
-		cfg:    cfg,
-		stopCh: make(chan struct{}),
+		store:    s,
+		cfg:      cfg,
+		notifier: notifier,
+		stopCh:   make(chan struct{}),
 	}
 }
 
@@ -80,12 +88,18 @@ func (r *OutboxRelay) worker(id int) {
 	ticker := time.NewTicker(r.cfg.PollInterval)
 	defer ticker.Stop()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	notifyCh := r.notifier.Subscribe(ctx, queue.QueueOutbox)
+
 	workerID := fmt.Sprintf("outbox-relay-%d", id)
 	for {
 		select {
 		case <-r.stopCh:
 			return
 		case <-ticker.C:
+			r.poll(workerID)
+		case <-notifyCh:
 			r.poll(workerID)
 		}
 	}
