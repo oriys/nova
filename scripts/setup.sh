@@ -551,6 +551,15 @@ prepare_chroot_dev() {
     mknod -m 666 "${root}/dev/tty" c 5 0 2>/dev/null || true
 }
 
+# Remove device nodes before mkfs.ext4 -d (some e2fsprogs versions
+# cannot copy device special files into the new filesystem image).
+# The guest VM mounts its own devtmpfs, so these nodes are not needed.
+cleanup_chroot_dev() {
+    local root="$1"
+    rm -f "${root}/dev/null" "${root}/dev/zero" "${root}/dev/random" \
+          "${root}/dev/urandom" "${root}/dev/tty" 2>/dev/null || true
+}
+
 build_base_rootfs() {
     local output="${INSTALL_DIR}/rootfs/base.ext4"
     local mnt=$(mktemp -d)
@@ -587,6 +596,7 @@ build_python_rootfs() {
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
         chmod +x "${mnt}/init"
 
+    cleanup_chroot_dev "${mnt}"
     dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
     mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
     rm -rf "${mnt}"
@@ -614,6 +624,7 @@ build_wasm_rootfs() {
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
         chmod +x "${mnt}/init"
 
+    cleanup_chroot_dev "${mnt}"
     dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
     mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
     rm -rf "${mnt}"
@@ -637,6 +648,7 @@ build_node_rootfs() {
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
         chmod +x "${mnt}/init"
 
+    cleanup_chroot_dev "${mnt}"
     dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
     mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
     rm -rf "${mnt}"
@@ -660,6 +672,7 @@ build_ruby_rootfs() {
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
         chmod +x "${mnt}/init"
 
+    cleanup_chroot_dev "${mnt}"
     dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
     mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
     rm -rf "${mnt}"
@@ -686,6 +699,7 @@ build_java_rootfs() {
         chmod +x "${mnt}/init"
 
     # Java needs more space
+    cleanup_chroot_dev "${mnt}"
     dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_JAVA_MB} 2>/dev/null
     mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
     rm -rf "${mnt}"
@@ -709,6 +723,7 @@ build_php_rootfs() {
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
         chmod +x "${mnt}/init"
 
+    cleanup_chroot_dev "${mnt}"
     dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
     mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
     rm -rf "${mnt}"
@@ -732,6 +747,7 @@ build_lua_rootfs() {
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
         chmod +x "${mnt}/init"
 
+    cleanup_chroot_dev "${mnt}"
     dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
     mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
     rm -rf "${mnt}"
@@ -776,6 +792,7 @@ build_deno_rootfs() {
         chmod +x "${rootfs_dir}/init"
 
     # Create the ext4 image from the populated directory.
+    cleanup_chroot_dev "${rootfs_dir}"
     dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
     mkfs.ext4 -F -q -d "${rootfs_dir}" "${output}" >/dev/null
     rm -rf "${rootfs_dir}"
@@ -811,6 +828,7 @@ build_bun_rootfs() {
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
         chmod +x "${mnt}/init"
 
+    cleanup_chroot_dev "${mnt}"
     dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
     mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
     rm -rf "${mnt}"
