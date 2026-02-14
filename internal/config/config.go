@@ -190,11 +190,14 @@ type SLOConfig struct {
 	AutoHealMaxReplicas int           `json:"auto_heal_max_replicas"` // default 10
 }
 
-// QueueConfig holds async queue notification settings
+// QueueConfig holds async queue notification and worker pool settings
 type QueueConfig struct {
-	NotifierType string `json:"notifier_type"` // "noop" (default), "channel", "redis"
-	RedisAddr    string `json:"redis_addr"`     // Redis address for "redis" notifier (e.g. "localhost:6379")
-	RedisDB      int    `json:"redis_db"`       // Redis database number
+	NotifierType string        `json:"notifier_type"` // "noop" (default), "channel", "redis"
+	RedisAddr    string        `json:"redis_addr"`    // Redis address for "redis" notifier (e.g. "localhost:6379")
+	RedisDB      int           `json:"redis_db"`      // Redis database number
+	Workers      int           `json:"workers"`       // Number of async queue workers (default: 32)
+	PollInterval time.Duration `json:"poll_interval"` // Poll interval for async queue workers (default: 100ms)
+	BatchSize    int           `json:"batch_size"`    // Number of tasks to acquire per poll (default: 8)
 }
 
 // CacheConfig holds L1/L2 cache settings
@@ -890,6 +893,21 @@ func LoadFromEnv(cfg *Config) {
 	if v := os.Getenv("NOVA_QUEUE_REDIS_DB"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.Queue.RedisDB = n
+		}
+	}
+	if v := os.Getenv("NOVA_QUEUE_WORKERS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.Queue.Workers = n
+		}
+	}
+	if v := os.Getenv("NOVA_QUEUE_POLL_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.Queue.PollInterval = d
+		}
+	}
+	if v := os.Getenv("NOVA_QUEUE_BATCH_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.Queue.BatchSize = n
 		}
 	}
 

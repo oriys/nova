@@ -95,6 +95,7 @@ type MetadataStore interface {
 	ListAsyncInvocations(ctx context.Context, limit, offset int, statuses []AsyncInvocationStatus) ([]*AsyncInvocation, error)
 	ListFunctionAsyncInvocations(ctx context.Context, functionID string, limit, offset int, statuses []AsyncInvocationStatus) ([]*AsyncInvocation, error)
 	AcquireDueAsyncInvocation(ctx context.Context, workerID string, leaseDuration time.Duration) (*AsyncInvocation, error)
+	AcquireDueAsyncInvocations(ctx context.Context, workerID string, leaseDuration time.Duration, batchSize int) ([]*AsyncInvocation, error)
 	MarkAsyncInvocationSucceeded(ctx context.Context, id, requestID string, output json.RawMessage, durationMS int64, coldStart bool) error
 	MarkAsyncInvocationForRetry(ctx context.Context, id, lastError string, nextRunAt time.Time) error
 	MarkAsyncInvocationDLQ(ctx context.Context, id, lastError string) error

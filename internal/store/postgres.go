@@ -693,6 +693,8 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_secrets_tenant_namespace ON secrets(tenant_id, namespace)`,
 		`CREATE INDEX IF NOT EXISTS idx_invocation_logs_tenant_ns_func_created ON invocation_logs(tenant_id, namespace, function_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_async_invocations_tenant_ns_status ON async_invocations(tenant_id, namespace, status)`,
+		`CREATE INDEX IF NOT EXISTS idx_async_invocations_queued_due ON async_invocations(next_run_at ASC, created_at ASC) WHERE status = 'queued'`,
+		`CREATE INDEX IF NOT EXISTS idx_async_invocations_running_lease ON async_invocations(locked_until ASC) WHERE status = 'running'`,
 		`DROP INDEX IF EXISTS idx_dag_workflows_tenant_namespace_name`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_dag_workflows_tenant_namespace_name_unique ON dag_workflows(tenant_id, namespace, name)`,
 
