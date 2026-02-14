@@ -556,7 +556,7 @@
     "addDeps": "Ajouter des dépendances",
     "removeDeps": "Supprimer",
     "depsHelp": "Ajoutez des dépendances externes via {file}. Elles seront installées lors du déploiement.",
-    "backend": "Backend",
+    "backend": "Moteur d'exécution",
     "backendAuto": "Détection automatique",
     "backendHelp": "Sélectionnez le backend d'exécution. La détection automatique choisit la meilleure option disponible pour votre système."
   },
