@@ -1146,7 +1146,7 @@ deploy_lumen_frontend() {
         # Build Lumen
         log "Building Lumen (this may take a while)..."
         local npm_log
-        npm_log="$(mktemp /tmp/lumen-build.XXXXXX.log)"
+        npm_log="$(mktemp -t lumen-build.XXXXXX.log)"
         (
             cd "${lumen_src}" || exit 1
             npm install --silent 2>&1 | tee -a "${npm_log}"
@@ -1154,7 +1154,6 @@ deploy_lumen_frontend() {
         ) || {
             warn "Lumen build failed. Log output:"
             tail -30 "${npm_log}" >&2
-            rm -f "${npm_log}"
             err "npm build failed for Lumen frontend"
         }
         rm -f "${npm_log}"
