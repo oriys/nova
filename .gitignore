@@ -2,6 +2,7 @@
 bin/
 /nova
 /agent
+/comet
 /atlas/atlas
 *.exe
 *.dll
