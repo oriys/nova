@@ -230,6 +230,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /async-invocations/global-pause", h.GetGlobalAsyncPause)
 	mux.HandleFunc("POST /async-invocations/global-pause", h.SetGlobalAsyncPause)
 	mux.HandleFunc("GET /workflows/{name}/async-invocations", h.ListWorkflowAsyncInvocations)
+	mux.HandleFunc("GET /async-invocations/dlq", h.ListDLQInvocations)
+	mux.HandleFunc("POST /async-invocations/dlq/retry-all", h.RetryAllDLQ)
 
 	// Health probes
 	mux.HandleFunc("GET /health", h.Health)
@@ -853,6 +855,77 @@ func (h *Handler) SetGlobalAsyncPause(w http.ResponseWriter, r *http.Request) {
 
 	resp := map[string]bool{
 		"paused": req.Paused,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// ListDLQInvocations handles GET /async-invocations/dlq
+// Returns all async invocations that have been moved to the dead letter queue.
+func (h *Handler) ListDLQInvocations(w http.ResponseWriter, r *http.Request) {
+	limit := parseLimitQuery(r.URL.Query().Get("limit"), 50, 500)
+	offset := parseLimitQuery(r.URL.Query().Get("offset"), 0, 0)
+
+	statuses := []store.AsyncInvocationStatus{store.AsyncInvocationStatusDLQ}
+
+	jobs, err := h.Store.ListAsyncInvocations(r.Context(), limit, offset, statuses)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	total, err := h.Store.CountAsyncInvocations(r.Context(), statuses)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if jobs == nil {
+		jobs = []*store.AsyncInvocation{}
+	}
+
+	resp := map[string]interface{}{
+		"items":  jobs,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// RetryAllDLQ handles POST /async-invocations/dlq/retry-all
+// Requeues all DLQ invocations in a single batch operation.
+func (h *Handler) RetryAllDLQ(w http.ResponseWriter, r *http.Request) {
+	req := retryAsyncInvokeRequest{}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// List all DLQ items
+	dlqItems, err := h.Store.ListAsyncInvocations(r.Context(), 1000, 0, []store.AsyncInvocationStatus{store.AsyncInvocationStatusDLQ})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	retried := 0
+	failed := 0
+	for _, item := range dlqItems {
+		if _, err := h.Store.RequeueAsyncInvocation(r.Context(), item.ID, req.MaxAttempts); err != nil {
+			failed++
+		} else {
+			retried++
+		}
+	}
+
+	resp := map[string]interface{}{
+		"retried": retried,
+		"failed":  failed,
+		"total":   len(dlqItems),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/oriys/nova/internal/config"
+	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/observability"
@@ -93,6 +94,32 @@ func daemonCmd() *cobra.Command {
 				DefaultWindowS:    cfg.SLO.DefaultWindowS,
 				DefaultMinSamples: cfg.SLO.DefaultMinSamples,
 			})
+
+			// Auto-heal: when a latency or cold-start SLO breach is detected,
+			// automatically increase min_replicas to pre-warm more VMs.
+			sloService.AutoHealCallback = func(ctx context.Context, fn *domain.Function, breaches []string) {
+				current := fn.MinReplicas
+				desired := current + 1
+				if desired > 10 {
+					desired = 10 // cap to prevent runaway scaling
+				}
+				if desired <= current {
+					return
+				}
+				logging.Op().Info("slo auto-heal: increasing min_replicas",
+					"function", fn.Name,
+					"from", current,
+					"to", desired,
+					"breaches", breaches)
+				if _, err := s.UpdateFunction(ctx, fn.Name, &store.FunctionUpdate{
+					MinReplicas: &desired,
+				}); err != nil {
+					logging.Op().Error("slo auto-heal: failed to update min_replicas",
+						"function", fn.Name,
+						"error", err)
+				}
+			}
+
 			sloService.Start()
 			defer sloService.Stop()
 

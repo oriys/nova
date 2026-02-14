@@ -43,6 +43,11 @@ type Service struct {
 	doneCh  chan struct{}
 
 	state sync.Map // key => alertState
+
+	// AutoHealCallback is invoked when a latency or cold-start SLO breach is
+	// detected, allowing the system to automatically scale up min_replicas
+	// for the affected function.
+	AutoHealCallback func(ctx context.Context, fn *domain.Function, breaches []string)
 }
 
 // New creates an SLO service.
@@ -181,6 +186,20 @@ func (s *Service) evaluateFunction(ctx context.Context, fn *domain.Function) {
 			logging.Op().Warn("slo: create breach notification failed", "function", fn.Name, "error", err)
 		}
 		s.state.Store(key, alertState{active: true})
+
+		// Trigger auto-healing for latency and cold-start breaches by
+		// scaling up min_replicas via the registered callback.
+		if s.AutoHealCallback != nil {
+			for _, b := range breaches {
+				if b == "p95_latency" || b == "cold_start_rate" {
+					logging.Op().Info("slo: auto-healing triggered",
+						"function", fn.Name,
+						"breaches", strings.Join(breaches, ", "))
+					s.AutoHealCallback(ctx, fn, breaches)
+					break
+				}
+			}
+		}
 		return
 	}
 	if !isBreach && wasActive {
