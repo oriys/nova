@@ -2183,5 +2183,13 @@
     "severity": "嚴重程度",
     "function": "函式",
     "source": "來源"
+  },
+  "tenantMenuPermissions": {
+    "title": "選單權限",
+    "description": "設定 {tenantId} 可見的選單項目",
+    "refresh": "重新整理選單權限",
+    "loading": "載入選單權限...",
+    "loadFailed": "載入選單權限失敗。",
+    "saveFailed": "儲存選單權限失敗。"
   }
 }

@@ -9,6 +9,7 @@ import { ArrowLeft, RefreshCw } from "lucide-react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { TenantGovernancePanel } from "@/components/tenant-governance-panel"
+import { TenantMenuPermissionsPanel } from "@/components/tenant-menu-permissions-panel"
 import { Button } from "@/components/ui/button"
 import { NamespaceEntry, TenantEntry, tenantsApi } from "@/lib/api"
 import { DEFAULT_NAMESPACE, setTenantScope } from "@/lib/tenant-scope"
@@ -184,6 +185,7 @@ export default function TenantDetailPage() {
               </div>
             </div>
 
+            <TenantMenuPermissionsPanel tenantId={tenant.id} />
             <TenantGovernancePanel tenantId={tenant.id} />
           </>
         )}
