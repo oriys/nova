@@ -18,6 +18,7 @@ func (h *Handler) RegisterWorkflowRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /workflows/{name}/versions", h.ListWorkflowVersions)
 	mux.HandleFunc("GET /workflows/{name}/versions/{version}", h.GetWorkflowVersion)
 	mux.HandleFunc("POST /workflows/{name}/runs", h.TriggerWorkflowRun)
+	mux.HandleFunc("POST /workflows/{name}/invoke-async", h.InvokeWorkflowAsync)
 	mux.HandleFunc("GET /workflows/{name}/runs", h.ListWorkflowRuns)
 	mux.HandleFunc("GET /workflows/{name}/runs/{runID}", h.GetWorkflowRun)
 }
@@ -189,4 +190,34 @@ func wfWriteJSON(w http.ResponseWriter, status int, v interface{}) {
 func isValidationError(err error) bool {
 	msg := err.Error()
 	return len(msg) > 12 && msg[:12] == "invalid DAG:"
+}
+
+func (h *Handler) InvokeWorkflowAsync(w http.ResponseWriter, r *http.Request) {
+name := r.PathValue("name")
+var req struct {
+Input json.RawMessage `json:"input"`
+}
+if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+return
+}
+
+// Get workflow to enqueue with workflow_id and workflow_name
+workflow, err := h.WorkflowService.GetWorkflow(r.Context(), name)
+if err != nil {
+http.Error(w, err.Error(), http.StatusNotFound)
+return
+}
+
+// Create an async invocation for the workflow
+inv := store.NewAsyncInvocation(workflow.ID, workflow.Name, req.Input)
+inv.WorkflowID = workflow.ID
+inv.WorkflowName = workflow.Name
+
+if err := h.Store.EnqueueAsyncInvocation(r.Context(), inv); err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+
+wfWriteJSON(w, http.StatusCreated, inv)
 }
