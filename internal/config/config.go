@@ -192,7 +192,7 @@ type SLOConfig struct {
 
 // QueueConfig holds async queue notification and worker pool settings
 type QueueConfig struct {
-	NotifierType string        `json:"notifier_type"` // "noop" (default), "channel", "redis"
+	NotifierType string        `json:"notifier_type"` // "noop" (default), "channel", "redis", "redis-list"
 	RedisAddr    string        `json:"redis_addr"`    // Redis address for "redis" notifier (e.g. "localhost:6379")
 	RedisDB      int           `json:"redis_db"`      // Redis database number
 	Workers      int           `json:"workers"`       // Number of async queue workers (default: 32)

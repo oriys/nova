@@ -6,6 +6,9 @@
 // Implementations:
 //   - NoopNotifier: a no-op notifier that never sends notifications; workers rely purely on polling
 //   - ChannelNotifier: in-process channel-based notifier suitable for single-instance deployments
+//   - RedisNotifier: distributed Redis Pub/Sub notifier for multi-instance fan-out
+//   - RedisListNotifier: distributed Redis List (LPUSH/BRPOP) notifier combining push and pull
+//     for higher throughput, natural load balancing, and no signal loss
 //
 // When a task is enqueued, the producer calls Notify(). Subscribed workers receive
 // the signal via their subscription channel and immediately poll the database,

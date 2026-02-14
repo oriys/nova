@@ -103,6 +103,16 @@ func daemonCmd() *cobra.Command {
 				}
 				notifier = queue.NewRedisNotifier(redisClient)
 				logging.Op().Info("using Redis queue notifier", "addr", cfg.Queue.RedisAddr)
+			case "redis-list":
+				redisClient := redis.NewClient(&redis.Options{
+					Addr: cfg.Queue.RedisAddr,
+					DB:   cfg.Queue.RedisDB,
+				})
+				if err := redisClient.Ping(context.Background()).Err(); err != nil {
+					return fmt.Errorf("connect to redis for queue notifier: %w", err)
+				}
+				notifier = queue.NewRedisListNotifier(redisClient)
+				logging.Op().Info("using Redis list queue notifier (push-pull)", "addr", cfg.Queue.RedisAddr)
 			default:
 				notifier = queue.NewNoopNotifier()
 			}
