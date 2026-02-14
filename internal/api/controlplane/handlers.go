@@ -200,6 +200,20 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Test Suite handler (CRUD always available, AI generation requires AI service)
 	tsHandler := &TestSuiteHandler{AIService: h.AIService, Store: h.Store}
 	tsHandler.RegisterRoutes(mux)
+
+	// Database Access (DbResource / DbBinding / CredentialPolicy / Audit Logs)
+	mux.HandleFunc("POST /db-resources", h.CreateDbResource)
+	mux.HandleFunc("GET /db-resources", h.ListDbResources)
+	mux.HandleFunc("GET /db-resources/{name}", h.GetDbResource)
+	mux.HandleFunc("PATCH /db-resources/{name}", h.UpdateDbResource)
+	mux.HandleFunc("DELETE /db-resources/{name}", h.DeleteDbResource)
+	mux.HandleFunc("POST /db-resources/{name}/bindings", h.CreateDbBinding)
+	mux.HandleFunc("GET /db-resources/{name}/bindings", h.ListDbBindings)
+	mux.HandleFunc("DELETE /db-bindings/{id}", h.DeleteDbBinding)
+	mux.HandleFunc("PUT /db-resources/{name}/credential-policy", h.SetCredentialPolicy)
+	mux.HandleFunc("GET /db-resources/{name}/credential-policy", h.GetCredentialPolicy)
+	mux.HandleFunc("DELETE /db-resources/{name}/credential-policy", h.DeleteCredentialPolicy)
+	mux.HandleFunc("GET /db-resources/{name}/logs", h.ListDbRequestLogs)
 }
 
 // ListFunctionVersions returns all versions of a function.

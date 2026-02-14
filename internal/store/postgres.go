@@ -796,6 +796,65 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 
+		// Database Access: resources, bindings, credential policies, audit logs
+		`CREATE TABLE IF NOT EXISTS db_resources (
+			id TEXT PRIMARY KEY,
+			tenant_id TEXT NOT NULL DEFAULT 'default',
+			name TEXT NOT NULL,
+			type TEXT NOT NULL,
+			endpoint TEXT NOT NULL,
+			port INTEGER NOT NULL DEFAULT 0,
+			database_name TEXT NOT NULL DEFAULT '',
+			region TEXT NOT NULL DEFAULT '',
+			tenant_mode TEXT NOT NULL DEFAULT 'shared_rls',
+			network_policy TEXT NOT NULL DEFAULT '',
+			capabilities JSONB,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE(tenant_id, name)
+		)`,
+		`CREATE TABLE IF NOT EXISTS db_bindings (
+			id TEXT PRIMARY KEY,
+			tenant_id TEXT NOT NULL DEFAULT 'default',
+			function_id TEXT NOT NULL,
+			version_selector TEXT NOT NULL DEFAULT '*',
+			db_resource_id TEXT NOT NULL REFERENCES db_resources(id) ON DELETE CASCADE,
+			permissions JSONB NOT NULL DEFAULT '["read"]',
+			quota JSONB,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE(function_id, db_resource_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_db_bindings_function ON db_bindings(function_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_db_bindings_resource ON db_bindings(db_resource_id)`,
+		`CREATE TABLE IF NOT EXISTS credential_policies (
+			id TEXT PRIMARY KEY,
+			db_resource_id TEXT NOT NULL UNIQUE REFERENCES db_resources(id) ON DELETE CASCADE,
+			auth_mode TEXT NOT NULL DEFAULT 'static',
+			rotation_days INTEGER NOT NULL DEFAULT 0,
+			static_username TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE TABLE IF NOT EXISTS db_request_logs (
+			id TEXT PRIMARY KEY,
+			request_id TEXT NOT NULL,
+			function_id TEXT NOT NULL,
+			function_name TEXT NOT NULL DEFAULT '',
+			version INTEGER NOT NULL DEFAULT 0,
+			tenant_id TEXT NOT NULL DEFAULT 'default',
+			db_resource_id TEXT NOT NULL,
+			statement_hash TEXT NOT NULL DEFAULT '',
+			tables TEXT NOT NULL DEFAULT '',
+			rows_returned BIGINT NOT NULL DEFAULT 0,
+			rows_affected BIGINT NOT NULL DEFAULT 0,
+			latency_ms BIGINT NOT NULL DEFAULT 0,
+			error_code TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_db_request_logs_resource ON db_request_logs(db_resource_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_db_request_logs_function ON db_request_logs(function_id, created_at DESC)`,
+
 		// pg_trgm GIN index for ILIKE text search on function names
 		`CREATE EXTENSION IF NOT EXISTS pg_trgm`,
 		`CREATE INDEX IF NOT EXISTS idx_functions_name_trgm ON functions USING gin(name gin_trgm_ops)`,
