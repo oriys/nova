@@ -262,10 +262,12 @@ func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function, codeContent
 			fp.vms = append(fp.vms, pvm)
 			fp.mu.Unlock()
 			p.totalVMs.Add(1)
-			metrics.SetActiveVMs(p.TotalVMCount())
 		}()
 	}
 	wg.Wait()
+	
+	// Update metric after all VMs are created
+	metrics.SetActiveVMs(p.TotalVMCount())
 	return nil
 }
 
