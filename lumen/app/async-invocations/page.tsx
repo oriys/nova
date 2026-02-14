@@ -57,6 +57,7 @@ export default function AsyncInvocationsPage() {
   const ta = useTranslations("asyncInvocationsPage")
   const [jobID, setJobID] = useState("")
   const [statusFilter, setStatusFilter] = useState<"all" | AsyncInvocationStatus>("all")
+  const [groupBy, setGroupBy] = useState<"none" | "function" | "workflow">("none")
   const [jobs, setJobs] = useState<AsyncInvocationJob[]>([])
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
@@ -70,6 +71,8 @@ export default function AsyncInvocationsPage() {
   const [deletingID, setDeletingID] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [summary, setSummary] = useState<AsyncInvocationSummary | null>(null)
+  const [globalPaused, setGlobalPaused] = useState(false)
+  const [loadingGlobalPause, setLoadingGlobalPause] = useState(false)
 
   const loadSummary = useCallback(async () => {
     try {
@@ -199,6 +202,52 @@ export default function AsyncInvocationsPage() {
     }
   }
 
+  const loadGlobalPause = useCallback(async () => {
+    try {
+      const result = await asyncInvocationsApi.getGlobalPause()
+      setGlobalPaused(result.paused)
+    } catch {
+      // Ignore errors
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadGlobalPause()
+  }, [loadGlobalPause])
+
+  const handleToggleGlobalPause = async () => {
+    setLoadingGlobalPause(true)
+    setError(null)
+    try {
+      const result = await asyncInvocationsApi.setGlobalPause(!globalPaused)
+      setGlobalPaused(result.paused)
+      await loadList()
+    } catch (err) {
+      setError(toErrorMessage(err, ta("unexpectedError")))
+    } finally {
+      setLoadingGlobalPause(false)
+    }
+  }
+
+  // Group jobs by function or workflow
+  const groupedJobs = useMemo(() => {
+    if (groupBy === "none") {
+      return { ungrouped: jobs }
+    }
+
+    const groups: Record<string, AsyncInvocationJob[]> = {}
+    jobs.forEach((job) => {
+      const key = groupBy === "function" 
+        ? `${job.function_name}` 
+        : job.workflow_name || "(no workflow)"
+      if (!groups[key]) {
+        groups[key] = []
+      }
+      groups[key].push(job)
+    })
+    return groups
+  }, [jobs, groupBy])
+
   const selectedPayload = useMemo(() => stringifyValue(selectedJob?.payload), [selectedJob])
   const selectedOutput = useMemo(() => stringifyValue(selectedJob?.output), [selectedJob])
 
@@ -321,6 +370,32 @@ export default function AsyncInvocationsPage() {
                 <SelectItem value="dlq">{ta("status.dlq")}</SelectItem>
               </SelectContent>
             </Select>
+
+            <Select value={groupBy} onValueChange={(v: "none" | "function" | "workflow") => setGroupBy(v)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No Grouping</SelectItem>
+                <SelectItem value="function">Group by Function</SelectItem>
+                <SelectItem value="workflow">Group by Workflow</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Button 
+              variant={globalPaused ? "destructive" : "outline"} 
+              onClick={handleToggleGlobalPause} 
+              disabled={loadingGlobalPause}
+            >
+              {loadingGlobalPause ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : globalPaused ? (
+                <Play className="mr-2 h-4 w-4" />
+              ) : (
+                <Pause className="mr-2 h-4 w-4" />
+              )}
+              {globalPaused ? "Resume Global" : "Pause Global"}
+            </Button>
 
             <Button variant="outline" onClick={handleRefresh} disabled={loadingList}>
               <RefreshCw className={cn("mr-2 h-4 w-4", loadingList && "animate-spin")} />
