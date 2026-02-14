@@ -30,6 +30,7 @@ BASE_ROOTFS_SIZE_MB="${BASE_ROOTFS_SIZE_MB:-32}"
 
 OUT_DIR="${OUT_DIR:-/opt/nova/rootfs}"
 ASSETS_DIR="${ASSETS_DIR:-}"
+NOVA_CACHE_DIR="${NOVA_CACHE_DIR:-/var/cache/nova/downloads}"
 AGENT_BIN="${AGENT_BIN:-}"
 
 usage() {
@@ -120,9 +121,18 @@ fetch_asset() {
   if [[ -n "${ASSETS_DIR}" && -f "${ASSETS_DIR}/${local_name}" ]]; then
     log "Using local asset: ${ASSETS_DIR}/${local_name}"
     cp "${ASSETS_DIR}/${local_name}" "${output_path}"
+  elif [[ -n "${NOVA_CACHE_DIR}" && -f "${NOVA_CACHE_DIR}/${local_name}" ]]; then
+    log "Using cached asset: ${NOVA_CACHE_DIR}/${local_name}"
+    cp "${NOVA_CACHE_DIR}/${local_name}" "${output_path}"
   else
     log "Downloading ${url}..."
-    curl -fsSL "${url}" -o "${output_path}"
+    if [[ -n "${NOVA_CACHE_DIR}" ]]; then
+      mkdir -p "${NOVA_CACHE_DIR}"
+      curl -fsSL "${url}" -o "${NOVA_CACHE_DIR}/${local_name}"
+      cp "${NOVA_CACHE_DIR}/${local_name}" "${output_path}"
+    else
+      curl -fsSL "${url}" -o "${output_path}"
+    fi
   fi
 }
 
