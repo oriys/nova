@@ -37,6 +37,11 @@ const (
 
 	defaultPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
+	// internalInvokeEndpoint is the vsock endpoint exposed to user functions
+	// for direct function-to-function calls. CID 2 is the host in Firecracker,
+	// port 9090 is the Comet gRPC listener.
+	internalInvokeEndpoint = "vsock://2:9090/invoke"
+
 	pythonPath   = "/usr/bin/python3"
 	wasmtimePath = "/usr/local/bin/wasmtime"
 	nodePath     = "/usr/bin/node"
@@ -78,6 +83,10 @@ type InitPayload struct {
 	MemoryMB        int               `json:"memory_mb,omitempty"`
 	TimeoutS        int               `json:"timeout_s,omitempty"`
 	LayerCount      int               `json:"layer_count,omitempty"`
+
+	// InternalInvokeEnabled tells the agent to expose NOVA_INVOKE_ENDPOINT
+	// so user functions can call other functions through the host.
+	InternalInvokeEnabled bool `json:"internal_invoke_enabled,omitempty"`
 }
 
 type ExecPayload struct {
@@ -87,6 +96,9 @@ type ExecPayload struct {
 	TraceParent string          `json:"traceparent,omitempty"`
 	TraceState  string          `json:"tracestate,omitempty"`
 	Stream      bool            `json:"stream,omitempty"` // Enable streaming response
+
+	// InternalInvoke enables the invoke capability for this execution.
+	InternalInvoke bool `json:"internal_invoke,omitempty"`
 }
 
 type RespPayload struct {
@@ -445,7 +457,7 @@ func (a *Agent) handleExec(conn net.Conn, payload json.RawMessage) (*Message, er
 
 	// Normal non-streaming mode
 	start := time.Now()
-	output, stdout, stderr, execErr := a.executeFunction(req.Input, req.TimeoutS, req.RequestID)
+	output, stdout, stderr, execErr := a.executeFunction(req.Input, req.TimeoutS, req.RequestID, req.TraceParent, req.TraceState, req.InternalInvoke)
 	duration := time.Since(start).Milliseconds()
 
 	// Log execution result
@@ -471,7 +483,7 @@ func (a *Agent) handleExec(conn net.Conn, payload json.RawMessage) (*Message, er
 	return &Message{Type: MsgTypeResp, Payload: respData}, nil
 }
 
-func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID string) (json.RawMessage, string, string, error) {
+func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID string, traceParent string, traceState string, internalInvoke bool) (json.RawMessage, string, string, error) {
 	// Use persistent mode if available
 	if a.function.Mode == ModePersistent && a.persistentProc != nil {
 		output, err := a.executePersistent(input, timeoutS)
@@ -542,6 +554,17 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID s
 		fmt.Sprintf("NOVA_TIMEOUT_S=%d", a.function.TimeoutS),
 		"NOVA_RUNTIME="+a.function.Runtime,
 	)
+	// Inject W3C trace context for automatic propagation (Feature 5)
+	if traceParent != "" {
+		cmd.Env = append(cmd.Env, "TRACEPARENT="+traceParent)
+	}
+	if traceState != "" {
+		cmd.Env = append(cmd.Env, "TRACESTATE="+traceState)
+	}
+	// Expose internal invoke endpoint for function-to-function calls (Feature 4)
+	if internalInvoke || a.function.InternalInvokeEnabled {
+		cmd.Env = append(cmd.Env, "NOVA_INVOKE_ENDPOINT="+internalInvokeEndpoint)
+	}
 	// Add dependency paths based on runtime
 	cmd.Env = appendDependencyEnv(cmd.Env, a.function.Runtime)
 	for k, v := range a.function.EnvVars {
@@ -643,6 +666,17 @@ func (a *Agent) handleStreamingExec(conn net.Conn, req *ExecPayload) (*Message, 
 		fmt.Sprintf("NOVA_TIMEOUT_S=%d", a.function.TimeoutS),
 		"NOVA_RUNTIME="+a.function.Runtime,
 	)
+	// Inject W3C trace context for automatic propagation
+	if req.TraceParent != "" {
+		cmd.Env = append(cmd.Env, "TRACEPARENT="+req.TraceParent)
+	}
+	if req.TraceState != "" {
+		cmd.Env = append(cmd.Env, "TRACESTATE="+req.TraceState)
+	}
+	// Expose internal invoke endpoint for function-to-function calls
+	if req.InternalInvoke || a.function.InternalInvokeEnabled {
+		cmd.Env = append(cmd.Env, "NOVA_INVOKE_ENDPOINT="+internalInvokeEndpoint)
+	}
 	cmd.Env = appendDependencyEnv(cmd.Env, a.function.Runtime)
 	for k, v := range a.function.EnvVars {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))

@@ -196,6 +196,23 @@ type QueueConfig struct {
 	RedisDB      int    `json:"redis_db"`       // Redis database number
 }
 
+// CacheConfig holds L1/L2 cache settings
+type CacheConfig struct {
+	RedisEnabled bool   `json:"redis_enabled"` // Enable Redis as L2 cache (default: false)
+	RedisAddr    string `json:"redis_addr"`    // Redis address for L2 cache
+	RedisDB      int    `json:"redis_db"`      // Redis database number
+	KeyPrefix    string `json:"key_prefix"`    // Key prefix (default: "nova:cache:")
+	Invalidation bool   `json:"invalidation"`  // Enable Redis Pub/Sub cache invalidation (default: false)
+}
+
+// RuntimePoolConfig holds runtime template pool settings
+type RuntimePoolCfg struct {
+	Enabled        bool     `json:"enabled"`         // Enable runtime template pool (default: false)
+	PoolSize       int      `json:"pool_size"`       // VMs per runtime (default: 2)
+	RefillInterval string   `json:"refill_interval"` // Refill check interval (default: "30s")
+	Runtimes       []string `json:"runtimes"`        // Runtimes to pre-warm (e.g. ["python", "node"])
+}
+
 // LogSinkConfig holds invocation log sink settings
 type LogSinkConfig struct {
 	Type string `json:"type"` // "postgres" (default), "noop", "multi"
@@ -227,6 +244,8 @@ type Config struct {
 	AI            ai.Config           `json:"ai"`
 	Queue         QueueConfig         `json:"queue"`
 	LogSink       LogSinkConfig       `json:"log_sink"`
+	Cache         CacheConfig         `json:"cache"`
+	RuntimePool   RuntimePoolCfg      `json:"runtime_pool"`
 }
 
 // DefaultConfig returns a Config with sensible defaults
@@ -353,6 +372,14 @@ func DefaultConfig() *Config {
 		},
 		LogSink: LogSinkConfig{
 			Type: "postgres",
+		},
+		Cache: CacheConfig{
+			RedisEnabled: false,
+			KeyPrefix:    "nova:cache:",
+		},
+		RuntimePool: RuntimePoolCfg{
+			Enabled:  false,
+			PoolSize: 2,
 		},
 	}
 }
@@ -862,6 +889,41 @@ func LoadFromEnv(cfg *Config) {
 	// Log sink overrides
 	if v := os.Getenv("NOVA_LOG_SINK_TYPE"); v != "" {
 		cfg.LogSink.Type = v
+	}
+
+	// Cache overrides
+	if v := os.Getenv("NOVA_CACHE_REDIS_ENABLED"); v != "" {
+		cfg.Cache.RedisEnabled = parseBool(v)
+	}
+	if v := os.Getenv("NOVA_CACHE_REDIS_ADDR"); v != "" {
+		cfg.Cache.RedisAddr = v
+	}
+	if v := os.Getenv("NOVA_CACHE_REDIS_DB"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Cache.RedisDB = n
+		}
+	}
+	if v := os.Getenv("NOVA_CACHE_KEY_PREFIX"); v != "" {
+		cfg.Cache.KeyPrefix = v
+	}
+	if v := os.Getenv("NOVA_CACHE_INVALIDATION"); v != "" {
+		cfg.Cache.Invalidation = parseBool(v)
+	}
+
+	// Runtime template pool overrides
+	if v := os.Getenv("NOVA_RUNTIME_POOL_ENABLED"); v != "" {
+		cfg.RuntimePool.Enabled = parseBool(v)
+	}
+	if v := os.Getenv("NOVA_RUNTIME_POOL_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.RuntimePool.PoolSize = n
+		}
+	}
+	if v := os.Getenv("NOVA_RUNTIME_POOL_REFILL_INTERVAL"); v != "" {
+		cfg.RuntimePool.RefillInterval = v
+	}
+	if v := os.Getenv("NOVA_RUNTIME_POOL_RUNTIMES"); v != "" {
+		cfg.RuntimePool.Runtimes = strings.Split(v, ",")
 	}
 }
 

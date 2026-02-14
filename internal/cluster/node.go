@@ -29,6 +29,12 @@ Labels     map[string]string `json:"labels"` // Metadata labels
 LastHeartbeat time.Time `json:"last_heartbeat"`
 CreatedAt     time.Time `json:"created_at"`
 UpdatedAt     time.Time `json:"updated_at"`
+
+// Resource pressure metrics reported by Comet heartbeats.
+CPUUsage       float64 `json:"cpu_usage"`        // 0-100
+MemoryUsage    float64 `json:"memory_usage"`     // 0-100
+IOPressure     float64 `json:"io_pressure"`      // 0-100
+MemoryPressure float64 `json:"memory_pressure"`  // 0-100
 }
 
 // NodeMetrics contains runtime metrics for a node
@@ -41,6 +47,8 @@ QueueDepth     int     `json:"queue_depth"`
 Invocations1m  int64   `json:"invocations_1m"`  // Invocations in last minute
 AvgLatencyMs   int64   `json:"avg_latency_ms"`
 ErrorRate      float64 `json:"error_rate"`       // 0-1
+IOPressure     float64 `json:"io_pressure"`      // 0-100: IO wait percentage
+MemoryPressure float64 `json:"memory_pressure"`  // 0-100: memory pressure (e.g. from /proc/pressure/memory)
 Timestamp      time.Time `json:"timestamp"`
 }
 
@@ -76,4 +84,20 @@ if n.MaxVMs <= 0 {
 return 1.0
 }
 return float64(n.ActiveVMs) / float64(n.MaxVMs)
+}
+
+// ResourcePressureScore returns a composite pressure score (0-1) based on
+// CPU, memory, and IO pressure. Higher values indicate a more stressed node.
+// The scheduler uses this to avoid placing work on nodes experiencing resource
+// pressure (e.g. near-OOM or IO-blocked).
+func (n *Node) ResourcePressureScore() float64 {
+	// Weighted composite: CPU 40%, Memory 35%, IO 25%
+	score := (n.CPUUsage*0.4 + n.MemoryUsage*0.35 + n.IOPressure*0.25) / 100.0
+	if score > 1.0 {
+		return 1.0
+	}
+	if score < 0 {
+		return 0
+	}
+	return score
 }
