@@ -18,12 +18,15 @@ import (
 	"github.com/oriys/nova/internal/firecracker"
 	novagrpc "github.com/oriys/nova/internal/grpc"
 	"github.com/oriys/nova/internal/kata"
+	"github.com/oriys/nova/internal/kubernetes"
+	"github.com/oriys/nova/internal/libkrun"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/observability"
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/store"
+	"github.com/oriys/nova/internal/wasm"
 	"github.com/spf13/cobra"
 )
 
@@ -116,6 +119,27 @@ func daemonCmd() *cobra.Command {
 					return err
 				}
 				be = dockerMgr
+			case "wasm":
+				logging.Op().Info("using WASM backend")
+				wasmMgr, err := wasm.NewManager(&cfg.Wasm)
+				if err != nil {
+					return err
+				}
+				be = wasmMgr
+			case "kubernetes", "k8s":
+				logging.Op().Info("using Kubernetes backend")
+				k8sMgr, err := kubernetes.NewManager(&cfg.Kubernetes)
+				if err != nil {
+					return err
+				}
+				be = k8sMgr
+			case "libkrun":
+				logging.Op().Info("using libkrun backend")
+				libkrunMgr, err := libkrun.NewManager(&cfg.LibKrun)
+				if err != nil {
+					return err
+				}
+				be = libkrunMgr
 			case "kata":
 				logging.Op().Info("using Kata Containers backend")
 				kataMgr, err := kata.NewManager(&cfg.Kata)

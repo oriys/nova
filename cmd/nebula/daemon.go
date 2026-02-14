@@ -15,6 +15,7 @@ import (
 	"github.com/oriys/nova/internal/eventbus"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/firecracker"
+	"github.com/oriys/nova/internal/kata"
 	"github.com/oriys/nova/internal/kubernetes"
 	"github.com/oriys/nova/internal/libkrun"
 	"github.com/oriys/nova/internal/logging"
@@ -126,6 +127,12 @@ func daemonCmd() *cobra.Command {
 						return err
 					}
 					be = libkrunMgr
+				case "kata":
+					kataMgr, err := kata.NewManager(&cfg.Kata)
+					if err != nil {
+						return err
+					}
+					be = kataMgr
 				default:
 					adapter, err := firecracker.NewAdapter(&cfg.Firecracker)
 					if err != nil {
