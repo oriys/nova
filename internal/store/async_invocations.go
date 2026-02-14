@@ -465,6 +465,62 @@ func (s *PostgresStore) AcquireDueAsyncInvocation(ctx context.Context, workerID 
 	return inv, nil
 }
 
+// AcquireDueAsyncInvocations atomically leases up to batchSize queued async invocations that are due.
+func (s *PostgresStore) AcquireDueAsyncInvocations(ctx context.Context, workerID string, leaseDuration time.Duration, batchSize int) ([]*AsyncInvocation, error) {
+	if workerID == "" {
+		workerID = "async-worker"
+	}
+	if leaseDuration <= 0 {
+		leaseDuration = DefaultAsyncLeaseTimeout
+	}
+	if batchSize <= 0 {
+		batchSize = 1
+	}
+	if batchSize > 32 {
+		batchSize = 32
+	}
+
+	now := time.Now().UTC()
+	leaseUntil := now.Add(leaseDuration)
+	rows, err := s.pool.Query(ctx, `
+		UPDATE async_invocations SET
+			status = 'running',
+			attempt = attempt + 1,
+			locked_by = $1,
+			locked_until = $2,
+			started_at = COALESCE(started_at, $3),
+			updated_at = $3
+		WHERE id = ANY(
+			SELECT id FROM async_invocations
+			WHERE ((status = 'queued' AND next_run_at <= $3) OR (status = 'running' AND locked_until < $3))
+			ORDER BY next_run_at ASC, created_at ASC
+			FOR UPDATE SKIP LOCKED
+			LIMIT $4
+		)
+		RETURNING id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, payload, status, attempt, max_attempts,
+		          backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
+		          request_id, output, duration_ms, cold_start, last_error, started_at,
+		          completed_at, created_at, updated_at
+	`, workerID, leaseUntil, now, batchSize)
+	if err != nil {
+		return nil, fmt.Errorf("acquire async invocations batch: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*AsyncInvocation
+	for rows.Next() {
+		inv, err := scanAsyncInvocation(rows)
+		if err != nil {
+			return out, fmt.Errorf("scan async invocation batch: %w", err)
+		}
+		out = append(out, inv)
+	}
+	if err := rows.Err(); err != nil {
+		return out, fmt.Errorf("async invocations batch rows: %w", err)
+	}
+	return out, nil
+}
+
 func (s *PostgresStore) MarkAsyncInvocationSucceeded(ctx context.Context, id, requestID string, output json.RawMessage, durationMS int64, coldStart bool) error {
 	now := time.Now().UTC()
 	ct, err := s.pool.Exec(ctx, `

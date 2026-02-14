@@ -221,7 +221,10 @@ func daemonCmd() *cobra.Command {
 
 			// Async queue workers
 			asyncWorkers := asyncqueue.New(s, invoker, asyncqueue.Config{
-				Notifier: notifier,
+				Workers:      cfg.Queue.Workers,
+				PollInterval: cfg.Queue.PollInterval,
+				BatchSize:    cfg.Queue.BatchSize,
+				Notifier:     notifier,
 			})
 			asyncWorkers.Start()
 			defer asyncWorkers.Stop()
