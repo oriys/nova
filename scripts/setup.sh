@@ -329,12 +329,40 @@ stop_existing_services() {
     systemctl reset-failed nova-lumen >/dev/null 2>&1 || true
 }
 
+cleanup_previous_build_artifacts() {
+    log "Cleaning previous build artifacts..."
+
+    local removed=0
+
+    # Remove old rootfs images so they are rebuilt from scratch.
+    if [[ -d "${INSTALL_DIR}/rootfs" ]]; then
+        local img
+        shopt -s nullglob
+        for img in "${INSTALL_DIR}/rootfs"/*.ext4; do
+            rm -f "${img}"
+            removed=$((removed + 1))
+        done
+        shopt -u nullglob
+        # Remove stale build manifest so rootfs rebuild is forced.
+        rm -f "${INSTALL_DIR}/rootfs/.build-manifest"
+    fi
+
+    # Remove old VM snapshots from previous runs.
+    if [[ -d "${INSTALL_DIR}/snapshots" ]]; then
+        rm -rf "${INSTALL_DIR}/snapshots"
+    fi
+
+    log "Removed ${removed} rootfs image(s) and cleared stale snapshots"
+}
+
 reset_installation_state() {
     log "Preparing installation state..."
 
     stop_existing_services
+    cleanup_existing_binaries
+    cleanup_previous_build_artifacts
 
-    # Keep deployed artifacts for incremental runs; only clear transient runtime state.
+    # Clear transient runtime state.
     rm -rf /tmp/nova
 }
 
