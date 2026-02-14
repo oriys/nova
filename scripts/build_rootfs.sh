@@ -140,7 +140,7 @@ make_dev_nodes() {
 # Remove device nodes before mkfs.ext4 -d (some e2fsprogs versions
 # cannot copy device special files into the new filesystem image).
 # The guest VM mounts its own devtmpfs, so these nodes are not needed.
-cleanup_dev_nodes() {
+cleanup_chroot_dev() {
   local root="$1"
   rm -f "${root}/dev/null" "${root}/dev/zero" "${root}/dev/random" \
         "${root}/dev/urandom" "${root}/dev/tty" 2>/dev/null || true
@@ -151,7 +151,7 @@ build_image_from_dir() {
   local size_mb="$2"
   local rootdir="$3"
 
-  cleanup_dev_nodes "${rootdir}"
+  cleanup_chroot_dev "${rootdir}"
   rm -f "${output}"
   dd if=/dev/zero of="${output}" bs=1M count="${size_mb}" status=none
   mkfs.ext4 -F -q -d "${rootdir}" "${output}" >/dev/null
