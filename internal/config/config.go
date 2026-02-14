@@ -10,6 +10,7 @@ import (
 	"github.com/oriys/nova/internal/ai"
 	"github.com/oriys/nova/internal/docker"
 	"github.com/oriys/nova/internal/firecracker"
+	"github.com/oriys/nova/internal/kata"
 	"github.com/oriys/nova/internal/kubernetes"
 	"github.com/oriys/nova/internal/libkrun"
 	"github.com/oriys/nova/internal/wasm"
@@ -186,6 +187,7 @@ type Config struct {
 	Wasm          wasm.Config         `json:"wasm"`
 	Kubernetes    kubernetes.Config   `json:"kubernetes"`
 	LibKrun       libkrun.Config      `json:"libkrun"`
+	Kata          kata.Config         `json:"kata"`
 	Postgres      PostgresConfig      `json:"postgres"`
 	Pool          PoolConfig          `json:"pool"`
 	Executor      ExecutorConfig      `json:"executor"`
@@ -210,12 +212,14 @@ func DefaultConfig() *Config {
 	wasmCfg := wasm.DefaultConfig()
 	k8sCfg := kubernetes.DefaultConfig()
 	libkrunCfg := libkrun.DefaultConfig()
+	kataCfg := kata.DefaultConfig()
 	return &Config{
 		Firecracker: *fcCfg,
 		Docker:      *dockerCfg,
 		Wasm:        *wasmCfg,
 		Kubernetes:  *k8sCfg,
 		LibKrun:     *libkrunCfg,
+		Kata:        *kataCfg,
 		Postgres: PostgresConfig{
 			DSN: "postgres://nova:nova@localhost:5432/nova?sslmode=disable",
 		},
@@ -747,6 +751,45 @@ func LoadFromEnv(cfg *Config) {
 	if v := os.Getenv("NOVA_LIBKRUN_AGENT_TIMEOUT"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			cfg.LibKrun.AgentTimeout = d
+		}
+	}
+
+	// Kata Containers backend overrides
+	if v := os.Getenv("NOVA_KATA_CODE_DIR"); v != "" {
+		cfg.Kata.CodeDir = v
+	}
+	if v := os.Getenv("NOVA_KATA_IMAGE_PREFIX"); v != "" {
+		cfg.Kata.ImagePrefix = v
+	}
+	if v := os.Getenv("NOVA_KATA_RUNTIME"); v != "" {
+		cfg.Kata.RuntimeName = v
+	}
+	if v := os.Getenv("NOVA_KATA_NETWORK"); v != "" {
+		cfg.Kata.Network = v
+	}
+	if v := os.Getenv("NOVA_KATA_PORT_RANGE_MIN"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Kata.PortRangeMin = n
+		}
+	}
+	if v := os.Getenv("NOVA_KATA_PORT_RANGE_MAX"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.Kata.PortRangeMax = n
+		}
+	}
+	if v := os.Getenv("NOVA_KATA_CPU_LIMIT"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			cfg.Kata.CPULimit = f
+		}
+	}
+	if v := os.Getenv("NOVA_KATA_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Kata.DefaultTimeout = d
+		}
+	}
+	if v := os.Getenv("NOVA_KATA_AGENT_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Kata.AgentTimeout = d
 		}
 	}
 }

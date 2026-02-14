@@ -17,6 +17,7 @@ import (
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/firecracker"
 	novagrpc "github.com/oriys/nova/internal/grpc"
+	"github.com/oriys/nova/internal/kata"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/observability"
@@ -115,6 +116,13 @@ func daemonCmd() *cobra.Command {
 					return err
 				}
 				be = dockerMgr
+			case "kata":
+				logging.Op().Info("using Kata Containers backend")
+				kataMgr, err := kata.NewManager(&cfg.Kata)
+				if err != nil {
+					return err
+				}
+				be = kataMgr
 			default:
 				logging.Op().Info("using Firecracker backend")
 				adapter, err := firecracker.NewAdapter(&cfg.Firecracker)
