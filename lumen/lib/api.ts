@@ -338,6 +338,8 @@ export interface AsyncInvocationJob {
   id: string;
   function_id: string;
   function_name: string;
+  workflow_id?: string;
+  workflow_name?: string;
   payload: unknown;
   status: AsyncInvocationStatus;
   attempt: number;
@@ -1890,6 +1892,38 @@ export const asyncInvocationsApi = {
   delete: (id: string) =>
     request<void>(`/async-invocations/${encodeURIComponent(id)}`, {
       method: "DELETE",
+    }),
+
+  pauseByFunction: (functionId: string) =>
+    request<{ function_id: string; paused: number }>(
+      `/async-invocations/functions/${encodeURIComponent(functionId)}/pause`,
+      { method: "POST" }
+    ),
+
+  resumeByFunction: (functionId: string) =>
+    request<{ function_id: string; resumed: number }>(
+      `/async-invocations/functions/${encodeURIComponent(functionId)}/resume`,
+      { method: "POST" }
+    ),
+
+  pauseByWorkflow: (workflowId: string) =>
+    request<{ workflow_id: string; paused: number }>(
+      `/async-invocations/workflows/${encodeURIComponent(workflowId)}/pause`,
+      { method: "POST" }
+    ),
+
+  resumeByWorkflow: (workflowId: string) =>
+    request<{ workflow_id: string; resumed: number }>(
+      `/async-invocations/workflows/${encodeURIComponent(workflowId)}/resume`,
+      { method: "POST" }
+    ),
+
+  getGlobalPause: () => request<{ paused: boolean }>("/async-invocations/global-pause"),
+
+  setGlobalPause: (paused: boolean) =>
+    request<{ paused: boolean }>("/async-invocations/global-pause", {
+      method: "POST",
+      body: JSON.stringify({ paused }),
     }),
 
   summary: () => request<AsyncInvocationSummary>("/async-invocations/summary"),

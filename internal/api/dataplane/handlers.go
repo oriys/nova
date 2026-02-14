@@ -223,6 +223,13 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /async-invocations/{id}/pause", h.PauseAsyncInvocation)
 	mux.HandleFunc("POST /async-invocations/{id}/resume", h.ResumeAsyncInvocation)
 	mux.HandleFunc("DELETE /async-invocations/{id}", h.DeleteAsyncInvocation)
+	mux.HandleFunc("POST /async-invocations/functions/{id}/pause", h.PauseAsyncInvocationsByFunction)
+	mux.HandleFunc("POST /async-invocations/functions/{id}/resume", h.ResumeAsyncInvocationsByFunction)
+	mux.HandleFunc("POST /async-invocations/workflows/{id}/pause", h.PauseAsyncInvocationsByWorkflow)
+	mux.HandleFunc("POST /async-invocations/workflows/{id}/resume", h.ResumeAsyncInvocationsByWorkflow)
+	mux.HandleFunc("GET /async-invocations/global-pause", h.GetGlobalAsyncPause)
+	mux.HandleFunc("POST /async-invocations/global-pause", h.SetGlobalAsyncPause)
+	mux.HandleFunc("GET /workflows/{name}/async-invocations", h.ListWorkflowAsyncInvocations)
 
 	// Health probes
 	mux.HandleFunc("GET /health", h.Health)
@@ -743,6 +750,153 @@ func (h *Handler) DeleteAsyncInvocation(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// PauseAsyncInvocationsByFunction handles POST /async-invocations/functions/{id}/pause
+func (h *Handler) PauseAsyncInvocationsByFunction(w http.ResponseWriter, r *http.Request) {
+	functionID := r.PathValue("id")
+	count, err := h.Store.PauseAsyncInvocationsByFunction(r.Context(), functionID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string]interface{}{
+		"function_id": functionID,
+		"paused":      count,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// ResumeAsyncInvocationsByFunction handles POST /async-invocations/functions/{id}/resume
+func (h *Handler) ResumeAsyncInvocationsByFunction(w http.ResponseWriter, r *http.Request) {
+	functionID := r.PathValue("id")
+	count, err := h.Store.ResumeAsyncInvocationsByFunction(r.Context(), functionID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string]interface{}{
+		"function_id": functionID,
+		"resumed":     count,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// PauseAsyncInvocationsByWorkflow handles POST /async-invocations/workflows/{id}/pause
+func (h *Handler) PauseAsyncInvocationsByWorkflow(w http.ResponseWriter, r *http.Request) {
+	workflowID := r.PathValue("id")
+	count, err := h.Store.PauseAsyncInvocationsByWorkflow(r.Context(), workflowID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string]interface{}{
+		"workflow_id": workflowID,
+		"paused":      count,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// ResumeAsyncInvocationsByWorkflow handles POST /async-invocations/workflows/{id}/resume
+func (h *Handler) ResumeAsyncInvocationsByWorkflow(w http.ResponseWriter, r *http.Request) {
+	workflowID := r.PathValue("id")
+	count, err := h.Store.ResumeAsyncInvocationsByWorkflow(r.Context(), workflowID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string]interface{}{
+		"workflow_id": workflowID,
+		"resumed":     count,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// GetGlobalAsyncPause handles GET /async-invocations/global-pause
+func (h *Handler) GetGlobalAsyncPause(w http.ResponseWriter, r *http.Request) {
+	paused, err := h.Store.GetGlobalAsyncPause(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string]bool{
+		"paused": paused,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// SetGlobalAsyncPause handles POST /async-invocations/global-pause
+func (h *Handler) SetGlobalAsyncPause(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Paused bool `json:"paused"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Store.SetGlobalAsyncPause(r.Context(), req.Paused); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string]bool{
+		"paused": req.Paused,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// ListWorkflowAsyncInvocations handles GET /workflows/{name}/async-invocations
+func (h *Handler) ListWorkflowAsyncInvocations(w http.ResponseWriter, r *http.Request) {
+	workflowName := r.PathValue("name")
+	
+	// Get workflow to find workflowID
+	workflow, err := h.Store.GetWorkflowByName(r.Context(), workflowName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	limit := parseLimitQuery(r.URL.Query().Get("limit"), 50, 500)
+	offset := parseLimitQuery(r.URL.Query().Get("offset"), 0, 0)
+
+	statusParam := r.URL.Query().Get("status")
+	var statuses []store.AsyncInvocationStatus
+	if statusParam != "" {
+		statuses = append(statuses, store.AsyncInvocationStatus(statusParam))
+	}
+
+	jobs, err := h.Store.ListWorkflowAsyncInvocations(r.Context(), workflow.ID, limit, offset, statuses)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	total, err := h.Store.CountWorkflowAsyncInvocations(r.Context(), workflow.ID, statuses)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string]interface{}{
+		"items":  jobs,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func capacityShedStatus(fn *domain.Function) int {

@@ -101,6 +101,17 @@ func (w *WorkerPool) worker(id int) {
 }
 
 func (w *WorkerPool) poll(workerID string) {
+	// Check if global pause is enabled
+	paused, err := w.store.GetGlobalAsyncPause(context.Background())
+	if err != nil {
+		logging.Op().Error("check global async pause failed", "worker", workerID, "error", err)
+		return
+	}
+	if paused {
+		// Global pause is enabled, skip processing
+		return
+	}
+
 	job, err := w.store.AcquireDueAsyncInvocation(context.Background(), workerID, w.cfg.LeaseDuration)
 	if err != nil {
 		logging.Op().Error("acquire async invocation failed", "worker", workerID, "error", err)

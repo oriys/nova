@@ -50,6 +50,8 @@ type AsyncInvocation struct {
 	Namespace     string                `json:"namespace,omitempty"`
 	FunctionID    string                `json:"function_id"`
 	FunctionName  string                `json:"function_name"`
+	WorkflowID    string                `json:"workflow_id,omitempty"`
+	WorkflowName  string                `json:"workflow_name,omitempty"`
 	Payload       json.RawMessage       `json:"payload"`
 	Status        AsyncInvocationStatus `json:"status"`
 	Attempt       int                   `json:"attempt"`
@@ -253,17 +255,17 @@ func insertAsyncInvocation(ctx context.Context, exec interface {
 }, inv *AsyncInvocation) error {
 	_, err := exec.Exec(ctx, `
 		INSERT INTO async_invocations (
-			id, tenant_id, namespace, function_id, function_name, payload, status, attempt, max_attempts,
+			id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, payload, status, attempt, max_attempts,
 			backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 			request_id, output, duration_ms, cold_start, last_error, started_at,
 			completed_at, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9,
-			$10, $11, $12, $13, $14,
-			$15, $16, $17, $18, $19, $20,
-			$21, $22, $23
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+			$12, $13, $14, $15, $16,
+			$17, $18, $19, $20, $21, $22,
+			$23, $24, $25
 		)
-	`, inv.ID, inv.TenantID, inv.Namespace, inv.FunctionID, inv.FunctionName, inv.Payload, string(inv.Status), inv.Attempt, inv.MaxAttempts,
+	`, inv.ID, inv.TenantID, inv.Namespace, inv.FunctionID, inv.FunctionName, nullIfEmpty(inv.WorkflowID), nullIfEmpty(inv.WorkflowName), inv.Payload, string(inv.Status), inv.Attempt, inv.MaxAttempts,
 		inv.BackoffBaseMS, inv.BackoffMaxMS, inv.NextRunAt, nullIfEmpty(inv.LockedBy), inv.LockedUntil,
 		nullIfEmpty(inv.RequestID), inv.Output, inv.DurationMS, inv.ColdStart, nullIfEmpty(inv.LastError), inv.StartedAt,
 		inv.CompletedAt, inv.CreatedAt, inv.UpdatedAt)
@@ -273,7 +275,7 @@ func insertAsyncInvocation(ctx context.Context, exec interface {
 func (s *PostgresStore) GetAsyncInvocation(ctx context.Context, id string) (*AsyncInvocation, error) {
 	scope := tenantScopeFromContext(ctx)
 	inv, err := scanAsyncInvocation(s.pool.QueryRow(ctx, `
-		SELECT id, tenant_id, namespace, function_id, function_name, payload, status, attempt, max_attempts,
+		SELECT id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, payload, status, attempt, max_attempts,
 		       backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		       request_id, output, duration_ms, cold_start, last_error, started_at,
 		       completed_at, created_at, updated_at
@@ -296,7 +298,7 @@ func (s *PostgresStore) ListAsyncInvocations(ctx context.Context, limit, offset 
 	}
 	scope := tenantScopeFromContext(ctx)
 	query := `
-		SELECT id, tenant_id, namespace, function_id, function_name, NULL::jsonb, status, attempt, max_attempts,
+		SELECT id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, NULL::jsonb, status, attempt, max_attempts,
 		       backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		       request_id, NULL::jsonb, duration_ms, cold_start, last_error, started_at,
 		       completed_at, created_at, updated_at
@@ -363,7 +365,7 @@ func (s *PostgresStore) ListFunctionAsyncInvocations(ctx context.Context, functi
 	}
 	scope := tenantScopeFromContext(ctx)
 	query := `
-		SELECT id, tenant_id, namespace, function_id, function_name, NULL::jsonb, status, attempt, max_attempts,
+		SELECT id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, NULL::jsonb, status, attempt, max_attempts,
 		       backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		       request_id, NULL::jsonb, duration_ms, cold_start, last_error, started_at,
 		       completed_at, created_at, updated_at
@@ -449,7 +451,7 @@ func (s *PostgresStore) AcquireDueAsyncInvocation(ctx context.Context, workerID 
 			FOR UPDATE SKIP LOCKED
 			LIMIT 1
 		)
-		RETURNING id, tenant_id, namespace, function_id, function_name, payload, status, attempt, max_attempts,
+		RETURNING id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, payload, status, attempt, max_attempts,
 		          backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		          request_id, output, duration_ms, cold_start, last_error, started_at,
 		          completed_at, created_at, updated_at
@@ -556,7 +558,7 @@ func (s *PostgresStore) RequeueAsyncInvocation(ctx context.Context, id string, m
 			completed_at = NULL,
 			updated_at = $3
 		WHERE id = $1 AND tenant_id = $4 AND namespace = $5 AND status = 'dlq'
-		RETURNING id, tenant_id, namespace, function_id, function_name, payload, status, attempt, max_attempts,
+		RETURNING id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, payload, status, attempt, max_attempts,
 		          backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		          request_id, output, duration_ms, cold_start, last_error, started_at,
 		          completed_at, created_at, updated_at
@@ -590,7 +592,7 @@ func (s *PostgresStore) PauseAsyncInvocation(ctx context.Context, id string) (*A
 			locked_until = NULL,
 			updated_at = $2
 		WHERE id = $1 AND tenant_id = $3 AND namespace = $4 AND status = 'queued'
-		RETURNING id, tenant_id, namespace, function_id, function_name, payload, status, attempt, max_attempts,
+		RETURNING id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, payload, status, attempt, max_attempts,
 		          backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		          request_id, output, duration_ms, cold_start, last_error, started_at,
 		          completed_at, created_at, updated_at
@@ -623,7 +625,7 @@ func (s *PostgresStore) ResumeAsyncInvocation(ctx context.Context, id string) (*
 			next_run_at = $2,
 			updated_at = $2
 		WHERE id = $1 AND tenant_id = $3 AND namespace = $4 AND status = 'paused'
-		RETURNING id, tenant_id, namespace, function_id, function_name, payload, status, attempt, max_attempts,
+		RETURNING id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, payload, status, attempt, max_attempts,
 		          backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		          request_id, output, duration_ms, cold_start, last_error, started_at,
 		          completed_at, created_at, updated_at
@@ -697,7 +699,7 @@ func claimIdempotencyKey(ctx context.Context, tx pgx.Tx, scope, scopeID, key, re
 
 func getAsyncInvocationByIdempotency(ctx context.Context, tx pgx.Tx, scope, scopeID, key string, now time.Time) (*AsyncInvocation, error) {
 	inv, err := scanAsyncInvocation(tx.QueryRow(ctx, `
-		SELECT ai.id, ai.tenant_id, ai.namespace, ai.function_id, ai.function_name, ai.payload, ai.status, ai.attempt, ai.max_attempts,
+		SELECT ai.id, ai.tenant_id, ai.namespace, ai.function_id, ai.function_name, ai.workflow_id, ai.workflow_name, ai.payload, ai.status, ai.attempt, ai.max_attempts,
 		       ai.backoff_base_ms, ai.backoff_max_ms, ai.next_run_at, ai.locked_by, ai.locked_until,
 		       ai.request_id, ai.output, ai.duration_ms, ai.cold_start, ai.last_error, ai.started_at,
 		       ai.completed_at, ai.created_at, ai.updated_at
@@ -798,6 +800,8 @@ func scanAsyncInvocation(scanner asyncInvocationScanner) (*AsyncInvocation, erro
 	var inv AsyncInvocation
 	var status string
 	var payload []byte
+	var workflowID *string
+	var workflowName *string
 	var lockedBy *string
 	var requestID *string
 	var output []byte
@@ -809,6 +813,8 @@ func scanAsyncInvocation(scanner asyncInvocationScanner) (*AsyncInvocation, erro
 		&inv.Namespace,
 		&inv.FunctionID,
 		&inv.FunctionName,
+		&workflowID,
+		&workflowName,
 		&payload,
 		&status,
 		&inv.Attempt,
@@ -839,6 +845,12 @@ func scanAsyncInvocation(scanner asyncInvocationScanner) (*AsyncInvocation, erro
 	if len(output) > 0 {
 		inv.Output = output
 	}
+	if workflowID != nil {
+		inv.WorkflowID = *workflowID
+	}
+	if workflowName != nil {
+		inv.WorkflowName = *workflowName
+	}
 	if lockedBy != nil {
 		inv.LockedBy = *lockedBy
 	}
@@ -849,4 +861,169 @@ func scanAsyncInvocation(scanner asyncInvocationScanner) (*AsyncInvocation, erro
 		inv.LastError = *lastError
 	}
 	return &inv, nil
+}
+
+// ListWorkflowAsyncInvocations lists async invocations for a specific workflow.
+func (s *PostgresStore) ListWorkflowAsyncInvocations(ctx context.Context, workflowID string, limit, offset int, statuses []AsyncInvocationStatus) ([]*AsyncInvocation, error) {
+	limit = normalizeAsyncListLimit(limit)
+	if offset < 0 {
+		offset = 0
+	}
+	scope := tenantScopeFromContext(ctx)
+	query := `
+		SELECT id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, NULL::jsonb, status, attempt, max_attempts,
+		       backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
+		       request_id, NULL::jsonb, duration_ms, cold_start, last_error, started_at,
+		       completed_at, created_at, updated_at
+		FROM async_invocations
+		WHERE tenant_id = $1 AND namespace = $2 AND workflow_id = $3
+	`
+	args := []any{scope.TenantID, scope.Namespace, workflowID}
+
+	if len(statuses) > 0 {
+		args = append(args, statusesToStrings(statuses))
+		query += " AND status = ANY($" + strconv.Itoa(len(args)) + ")"
+	}
+
+	args = append(args, limit)
+	query += " ORDER BY created_at DESC LIMIT $" + strconv.Itoa(len(args))
+	args = append(args, offset)
+	query += " OFFSET $" + strconv.Itoa(len(args))
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list workflow async invocations: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]*AsyncInvocation, 0, limit)
+	for rows.Next() {
+		inv, err := scanAsyncInvocation(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan async invocation: %w", err)
+		}
+		out = append(out, inv)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list workflow async invocations rows: %w", err)
+	}
+	return out, nil
+}
+
+// CountWorkflowAsyncInvocations counts async invocations for a specific workflow.
+func (s *PostgresStore) CountWorkflowAsyncInvocations(ctx context.Context, workflowID string, statuses []AsyncInvocationStatus) (int64, error) {
+	scope := tenantScopeFromContext(ctx)
+	query := `
+		SELECT COUNT(*)
+		FROM async_invocations
+		WHERE tenant_id = $1 AND namespace = $2 AND workflow_id = $3
+	`
+	args := []any{scope.TenantID, scope.Namespace, workflowID}
+
+	if len(statuses) > 0 {
+		args = append(args, statusesToStrings(statuses))
+		query += " AND status = ANY($" + strconv.Itoa(len(args)) + ")"
+	}
+
+	var total int64
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("count workflow async invocations: %w", err)
+	}
+	return total, nil
+}
+
+// PauseAsyncInvocationsByFunction pauses all queued invocations for a specific function.
+func (s *PostgresStore) PauseAsyncInvocationsByFunction(ctx context.Context, functionID string) (int, error) {
+	scope := tenantScopeFromContext(ctx)
+	now := time.Now().UTC()
+
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE async_invocations SET
+			status = 'paused',
+			locked_by = NULL,
+			locked_until = NULL,
+			updated_at = $4
+		WHERE tenant_id = $1 AND namespace = $2 AND function_id = $3 AND status = 'queued'
+	`, scope.TenantID, scope.Namespace, functionID, now)
+	if err != nil {
+		return 0, fmt.Errorf("pause async invocations by function: %w", err)
+	}
+	return int(ct.RowsAffected()), nil
+}
+
+// ResumeAsyncInvocationsByFunction resumes all paused invocations for a specific function.
+func (s *PostgresStore) ResumeAsyncInvocationsByFunction(ctx context.Context, functionID string) (int, error) {
+	scope := tenantScopeFromContext(ctx)
+	now := time.Now().UTC()
+
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE async_invocations SET
+			status = 'queued',
+			next_run_at = $4,
+			updated_at = $4
+		WHERE tenant_id = $1 AND namespace = $2 AND function_id = $3 AND status = 'paused'
+	`, scope.TenantID, scope.Namespace, functionID, now)
+	if err != nil {
+		return 0, fmt.Errorf("resume async invocations by function: %w", err)
+	}
+	return int(ct.RowsAffected()), nil
+}
+
+// PauseAsyncInvocationsByWorkflow pauses all queued invocations for a specific workflow.
+func (s *PostgresStore) PauseAsyncInvocationsByWorkflow(ctx context.Context, workflowID string) (int, error) {
+	scope := tenantScopeFromContext(ctx)
+	now := time.Now().UTC()
+
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE async_invocations SET
+			status = 'paused',
+			locked_by = NULL,
+			locked_until = NULL,
+			updated_at = $4
+		WHERE tenant_id = $1 AND namespace = $2 AND workflow_id = $3 AND status = 'queued'
+	`, scope.TenantID, scope.Namespace, workflowID, now)
+	if err != nil {
+		return 0, fmt.Errorf("pause async invocations by workflow: %w", err)
+	}
+	return int(ct.RowsAffected()), nil
+}
+
+// ResumeAsyncInvocationsByWorkflow resumes all paused invocations for a specific workflow.
+func (s *PostgresStore) ResumeAsyncInvocationsByWorkflow(ctx context.Context, workflowID string) (int, error) {
+	scope := tenantScopeFromContext(ctx)
+	now := time.Now().UTC()
+
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE async_invocations SET
+			status = 'queued',
+			next_run_at = $4,
+			updated_at = $4
+		WHERE tenant_id = $1 AND namespace = $2 AND workflow_id = $3 AND status = 'paused'
+	`, scope.TenantID, scope.Namespace, workflowID, now)
+	if err != nil {
+		return 0, fmt.Errorf("resume async invocations by workflow: %w", err)
+	}
+	return int(ct.RowsAffected()), nil
+}
+
+// SetGlobalAsyncPause sets the global async queue pause state.
+func (s *PostgresStore) SetGlobalAsyncPause(ctx context.Context, paused bool) error {
+value := "false"
+if paused {
+value = "true"
+}
+return s.SetConfig(ctx, "async_queue_paused", value)
+}
+
+// GetGlobalAsyncPause retrieves the global async queue pause state.
+func (s *PostgresStore) GetGlobalAsyncPause(ctx context.Context) (bool, error) {
+config, err := s.GetConfig(ctx)
+if err != nil {
+return false, fmt.Errorf("get global async pause: %w", err)
+}
+value, ok := config["async_queue_paused"]
+if !ok {
+return false, nil
+}
+return value == "true", nil
 }
