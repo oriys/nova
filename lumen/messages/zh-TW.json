@@ -555,7 +555,10 @@
     "optional": "可選",
     "addDeps": "新增依賴",
     "removeDeps": "移除",
-    "depsHelp": "透過 {file} 新增外部依賴。它們將在部署時自動安裝。"
+    "depsHelp": "透過 {file} 新增外部依賴。它們將在部署時自動安裝。",
+    "backend": "執行後端",
+    "backendAuto": "自動偵測",
+    "backendHelp": "選擇執行後端。自動偵測會根據系統環境選擇最佳可用選項。"
   },
   "functionsTable": {
     "unlimited": "無限制",

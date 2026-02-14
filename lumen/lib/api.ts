@@ -17,6 +17,7 @@ export interface NovaFunction {
   min_replicas: number;
   max_replicas?: number;
   mode?: string;
+  backend?: string;
   limits?: ResourceLimits;
   env_vars?: Record<string, string>;
   network_policy?: NetworkPolicy;
@@ -662,6 +663,7 @@ export interface CreateFunctionRequest {
   min_replicas?: number;
   max_replicas?: number;
   mode?: string;
+  backend?: string;
   env_vars?: Record<string, string>;
   limits?: ResourceLimits;
   network_policy?: NetworkPolicy;
@@ -677,6 +679,7 @@ export interface UpdateFunctionRequest {
   min_replicas?: number;
   max_replicas?: number;
   mode?: string;
+  backend?: string;
   env_vars?: Record<string, string>;
   limits?: ResourceLimits;
   network_policy?: NetworkPolicy;
@@ -1705,6 +1708,22 @@ export const runtimesApi = {
     request<{ status: string; id: string }>(`/runtimes/${encodeURIComponent(id)}`, {
       method: "DELETE",
     }),
+};
+
+// Backend detection types
+export interface BackendInfo {
+  name: string;
+  available: boolean;
+  reason?: string;
+}
+
+export interface BackendsResponse {
+  backends: BackendInfo[];
+  default_backend: string;
+}
+
+export const backendsApi = {
+  list: () => request<BackendsResponse>("/backends"),
 };
 
 export interface TimeSeriesPoint {

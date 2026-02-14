@@ -375,7 +375,8 @@ export default function FunctionsPage() {
     code: string,
     limits?: ResourceLimits,
     networkPolicy?: NetworkPolicy,
-    dependencyFiles?: Record<string, string>
+    dependencyFiles?: Record<string, string>,
+    backend?: string
   ) => {
     try {
       await functionsApi.create({
@@ -388,6 +389,7 @@ export default function FunctionsPage() {
         limits,
         network_policy: networkPolicy,
         dependency_files: dependencyFiles,
+        backend,
       })
       markOnboardingStep("function_created", true)
       setIsCreateOpen(false)

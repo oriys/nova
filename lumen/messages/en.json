@@ -555,7 +555,10 @@
     "optional": "optional",
     "addDeps": "Add Dependencies",
     "removeDeps": "Remove",
-    "depsHelp": "Add external dependencies via {file}. They will be installed during deployment."
+    "depsHelp": "Add external dependencies via {file}. They will be installed during deployment.",
+    "backend": "Backend",
+    "backendAuto": "Auto-detect",
+    "backendHelp": "Select the execution backend. Auto-detect chooses the best available option for your system."
   },
   "functionsTable": {
     "unlimited": "Unlimited",

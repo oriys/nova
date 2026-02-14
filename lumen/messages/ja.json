@@ -555,7 +555,10 @@
     "optional": "任意",
     "addDeps": "依存関係を追加",
     "removeDeps": "削除",
-    "depsHelp": "{file} で外部依存関係を追加します。デプロイ時に自動的にインストールされます。"
+    "depsHelp": "{file} で外部依存関係を追加します。デプロイ時に自動的にインストールされます。",
+    "backend": "バックエンド",
+    "backendAuto": "自動検出",
+    "backendHelp": "実行バックエンドを選択します。自動検出はシステムで利用可能な最適なオプションを選択します。"
   },
   "functionsTable": {
     "unlimited": "無制限",
