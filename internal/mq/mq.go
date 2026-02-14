@@ -62,7 +62,7 @@ type MessageQueue interface {
 	// attempts are exhausted.
 	Nack(ctx context.Context, messageID string, reason string, nextRetry time.Time) error
 
-	// Dead-letter: move a message to the dead-letter topic after all retries
+	// DeadLetter moves a message to the dead-letter topic after all retries
 	// are exhausted.
 	DeadLetter(ctx context.Context, messageID string, reason string) error
 
