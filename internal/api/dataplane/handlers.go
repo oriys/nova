@@ -230,6 +230,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /async-invocations/global-pause", h.GetGlobalAsyncPause)
 	mux.HandleFunc("POST /async-invocations/global-pause", h.SetGlobalAsyncPause)
 	mux.HandleFunc("GET /workflows/{name}/async-invocations", h.ListWorkflowAsyncInvocations)
+	mux.HandleFunc("GET /async-invocations/dlq", h.ListDLQInvocations)
+	mux.HandleFunc("POST /async-invocations/dlq/retry-all", h.RetryAllDLQ)
 
 	// Health probes
 	mux.HandleFunc("GET /health", h.Health)
@@ -244,6 +246,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /metrics/prometheus", metrics.PrometheusHandler())
 	mux.HandleFunc("GET /invocations", h.ListAllInvocations)
 	mux.HandleFunc("GET /functions/{name}/logs", h.Logs)
+	mux.HandleFunc("GET /functions/{name}/logs/stream", h.StreamLogs)
 	mux.HandleFunc("GET /functions/{name}/metrics", h.FunctionMetrics)
 	mux.HandleFunc("GET /functions/{name}/slo/status", h.FunctionSLOStatus)
 	mux.HandleFunc("GET /functions/{name}/diagnostics", h.FunctionDiagnostics)
@@ -857,6 +860,77 @@ func (h *Handler) SetGlobalAsyncPause(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// ListDLQInvocations handles GET /async-invocations/dlq
+// Returns all async invocations that have been moved to the dead letter queue.
+func (h *Handler) ListDLQInvocations(w http.ResponseWriter, r *http.Request) {
+	limit := parseLimitQuery(r.URL.Query().Get("limit"), 50, 500)
+	offset := parseLimitQuery(r.URL.Query().Get("offset"), 0, 0)
+
+	statuses := []store.AsyncInvocationStatus{store.AsyncInvocationStatusDLQ}
+
+	jobs, err := h.Store.ListAsyncInvocations(r.Context(), limit, offset, statuses)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	total, err := h.Store.CountAsyncInvocations(r.Context(), statuses)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if jobs == nil {
+		jobs = []*store.AsyncInvocation{}
+	}
+
+	resp := map[string]interface{}{
+		"items":  jobs,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// RetryAllDLQ handles POST /async-invocations/dlq/retry-all
+// Requeues all DLQ invocations in a single batch operation.
+func (h *Handler) RetryAllDLQ(w http.ResponseWriter, r *http.Request) {
+	req := retryAsyncInvokeRequest{}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// List all DLQ items
+	dlqItems, err := h.Store.ListAsyncInvocations(r.Context(), 1000, 0, []store.AsyncInvocationStatus{store.AsyncInvocationStatusDLQ})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	retried := 0
+	failed := 0
+	for _, item := range dlqItems {
+		if _, err := h.Store.RequeueAsyncInvocation(r.Context(), item.ID, req.MaxAttempts); err != nil {
+			failed++
+		} else {
+			retried++
+		}
+	}
+
+	resp := map[string]interface{}{
+		"retried": retried,
+		"failed":  failed,
+		"total":   len(dlqItems),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
 // ListWorkflowAsyncInvocations handles GET /workflows/{name}/async-invocations
 func (h *Handler) ListWorkflowAsyncInvocations(w http.ResponseWriter, r *http.Request) {
 	workflowName := r.PathValue("name")
@@ -1087,6 +1161,57 @@ func (h *Handler) Logs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writePaginatedList(w, tail, offset, len(entries), total, entries)
+}
+
+// StreamLogs handles GET /functions/{name}/logs/stream using Server-Sent Events.
+// It polls the invocation logs store at a short interval and pushes new entries
+// to the client as SSE data events in real time, enabling live log tailing from
+// the dashboard without WebSocket infrastructure.
+func (h *Handler) StreamLogs(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	// Track the last seen invocation timestamp to only send new entries.
+	lastSeen := time.Now()
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			entries, err := h.Store.ListInvocationLogs(r.Context(), fn.ID, 20, 0)
+			if err != nil {
+				continue
+			}
+			for _, entry := range entries {
+				if entry.CreatedAt.After(lastSeen) {
+					data, _ := json.Marshal(entry)
+					fmt.Fprintf(w, "data: %s\n\n", data)
+					lastSeen = entry.CreatedAt
+				}
+			}
+			flusher.Flush()
+		}
+	}
 }
 
 // ListAllInvocations handles GET /invocations

@@ -183,10 +183,11 @@ type AutoScaleConfig struct {
 // SLOConfig holds SLO evaluation and alerting settings.
 type SLOConfig struct {
 	Enabled             bool          `json:"enabled"`
-	Interval            time.Duration `json:"interval"`             // default 30s
-	NotificationTimeout time.Duration `json:"notification_timeout"` // default 10s
-	DefaultWindowS      int           `json:"default_window_s"`     // default 900
-	DefaultMinSamples   int           `json:"default_min_samples"`  // default 20
+	Interval            time.Duration `json:"interval"`              // default 30s
+	NotificationTimeout time.Duration `json:"notification_timeout"`  // default 10s
+	DefaultWindowS      int           `json:"default_window_s"`      // default 900
+	DefaultMinSamples   int           `json:"default_min_samples"`   // default 20
+	AutoHealMaxReplicas int           `json:"auto_heal_max_replicas"` // default 10
 }
 
 // QueueConfig holds async queue notification settings
@@ -356,6 +357,7 @@ func DefaultConfig() *Config {
 			NotificationTimeout: 10 * time.Second,
 			DefaultWindowS:      900,
 			DefaultMinSamples:   20,
+			AutoHealMaxReplicas: 10,
 		},
 		Layers: LayerConfig{
 			Enabled:    false,
@@ -596,6 +598,11 @@ func LoadFromEnv(cfg *Config) {
 	if v := os.Getenv("NOVA_SLO_DEFAULT_MIN_SAMPLES"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.SLO.DefaultMinSamples = n
+		}
+	}
+	if v := os.Getenv("NOVA_SLO_AUTO_HEAL_MAX_REPLICAS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.SLO.AutoHealMaxReplicas = n
 		}
 	}
 

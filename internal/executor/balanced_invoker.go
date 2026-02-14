@@ -30,6 +30,10 @@ type cometEndpoint struct {
 	conn     *grpc.ClientConn
 	client   novapb.NovaServiceClient
 	inflight atomic.Int64
+	// Resource-aware scheduling weights (0.0–1.0 utilization).
+	// Updated asynchronously via ReportLoad.
+	cpuUsage atomic.Value // float64
+	memUsage atomic.Value // float64
 }
 
 // NewBalancedRemoteInvoker connects to the given Comet gRPC addresses and
@@ -87,18 +91,60 @@ func (b *BalancedRemoteInvoker) Invoke(ctx context.Context, funcName string, pay
 	}, nil
 }
 
-// leastLoaded returns the endpoint with the fewest in-flight requests.
+// leastLoaded returns the endpoint with the lowest composite load score.
+// The score combines in-flight requests with CPU and memory utilization
+// when resource data is available, falling back to pure least-connections
+// when no resource metrics have been reported.
 func (b *BalancedRemoteInvoker) leastLoaded() *cometEndpoint {
 	best := b.endpoints[0]
-	bestLoad := best.inflight.Load()
+	bestScore := endpointScore(best)
 	for _, ep := range b.endpoints[1:] {
-		load := ep.inflight.Load()
-		if load < bestLoad {
+		score := endpointScore(ep)
+		if score < bestScore {
 			best = ep
-			bestLoad = load
+			bestScore = score
 		}
 	}
 	return best
+}
+
+// endpointScore computes a composite load score for scheduling.
+// Lower scores indicate a better target for the next invocation.
+// The formula weights: 50% in-flight connections, 30% CPU, 20% memory.
+func endpointScore(ep *cometEndpoint) float64 {
+	inflight := float64(ep.inflight.Load())
+
+	cpu := 0.0
+	if v, ok := ep.cpuUsage.Load().(float64); ok {
+		cpu = v
+	}
+	mem := 0.0
+	if v, ok := ep.memUsage.Load().(float64); ok {
+		mem = v
+	}
+
+	// Normalize inflight to [0, 1] using a reference capacity. Most Comet
+	// instances handle ~100 concurrent invocations comfortably; values above
+	// this are clamped to 1.0 for scoring purposes.
+	const referenceCapacity = 100.0
+	inflightNorm := inflight / referenceCapacity
+	if inflightNorm > 1.0 {
+		inflightNorm = 1.0
+	}
+
+	return 0.5*inflightNorm + 0.3*cpu + 0.2*mem
+}
+
+// ReportLoad updates the resource utilization metrics for a Comet endpoint.
+// cpuUsage and memUsage should be fractions in [0.0, 1.0].
+func (b *BalancedRemoteInvoker) ReportLoad(addr string, cpuUsage, memUsage float64) {
+	for _, ep := range b.endpoints {
+		if ep.addr == addr {
+			ep.cpuUsage.Store(cpuUsage)
+			ep.memUsage.Store(memUsage)
+			return
+		}
+	}
 }
 
 // Close shuts down all underlying gRPC connections.

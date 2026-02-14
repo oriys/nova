@@ -223,6 +223,63 @@ func CleanupNetNS(vmID string) {
 	}
 }
 
+// ApplyIngressRules applies iptables INPUT rules inside a network namespace.
+// This restricts which hosts/networks can initiate connections *to* the VM,
+// preventing other VMs or internal hosts from accessing the function unless
+// explicitly allowed.
+func (m *Manager) ApplyIngressRules(nsName string, policy *domain.NetworkPolicy) error {
+	if policy == nil || len(policy.IngressRules) == 0 {
+		return nil // No ingress rules → default allow
+	}
+
+	iptables := func(args ...string) error {
+		cmdArgs := append([]string{"netns", "exec", nsName, "iptables"}, args...)
+		out, err := exec.Command("ip", cmdArgs...).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("iptables %s: %s: %w", strings.Join(args, " "), out, err)
+		}
+		return nil
+	}
+
+	// Allow loopback and established connections
+	if err := iptables("-A", "INPUT", "-i", "lo", "-j", "ACCEPT"); err != nil {
+		return err
+	}
+	if err := iptables("-A", "INPUT", "-m", "state", "--state", "ESTABLISHED,RELATED", "-j", "ACCEPT"); err != nil {
+		return err
+	}
+
+	// Allow vsock agent traffic from the host (bridge gateway)
+	gwIP := m.bridgeGatewayIP()
+	if err := iptables("-A", "INPUT", "-s", gwIP, "-j", "ACCEPT"); err != nil {
+		return err
+	}
+
+	// Apply explicit allow rules
+	for _, rule := range policy.IngressRules {
+		args := []string{"-A", "INPUT", "-s", rule.Source}
+		proto := rule.Protocol
+		if proto == "" {
+			proto = "tcp"
+		}
+		args = append(args, "-p", proto)
+		if rule.Port > 0 {
+			args = append(args, "--dport", fmt.Sprintf("%d", rule.Port))
+		}
+		args = append(args, "-j", "ACCEPT")
+		if err := iptables(args...); err != nil {
+			return err
+		}
+	}
+
+	// Drop everything else
+	if err := iptables("-P", "INPUT", "DROP"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // bridgeGatewayIP returns the gateway IP for the configured bridge subnet.
 // For "172.30.0.0/24" this returns "172.30.0.1".
 func (m *Manager) bridgeGatewayIP() string {
