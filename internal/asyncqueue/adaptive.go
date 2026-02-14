@@ -240,19 +240,27 @@ func (ac *AdaptiveController) probe() {
 	idle := depth == 0 && completed == 0
 	draining := depth == 0 && completed > 0
 
+	// Scaling constants for poll interval adjustment.
+	const (
+		pollShortenFactor  = 0.75 // reduce poll interval under growing load
+		pollLengthenFactor = 1.5  // increase poll interval when idle
+		pollRelaxFactor    = 1.25 // slightly increase poll interval when draining
+		batchScaleUpStep   = 2    // batch size increment when depth exceeds capacity
+	)
+
 	switch {
 	case growing:
 		// Queue is building up -> scale up (additive increase)
 		ac.stableRounds = 0
 		workers = minInt(workers+ac.cfg.ScaleUpStep, ac.cfg.MaxWorkers)
 
-		// Also increase batch size proportionally to depth pressure
+		// Also increase batch size when depth exceeds current processing capacity
 		if depth > int64(batch*workers) {
-			batch = minInt(batch+2, ac.cfg.MaxBatchSize)
+			batch = minInt(batch+batchScaleUpStep, ac.cfg.MaxBatchSize)
 		}
 
-		// Shorten poll interval
-		newPoll := time.Duration(float64(pollNs) * 0.75)
+		// Shorten poll interval to react faster
+		newPoll := time.Duration(float64(pollNs) * pollShortenFactor)
 		pollNs = int64(clampDuration(newPoll, ac.cfg.MinPollInterval, ac.cfg.MaxPollInterval))
 
 	case idle:
@@ -262,8 +270,8 @@ func (ac *AdaptiveController) probe() {
 			workers = maxInt(int(math.Ceil(float64(workers)*ac.cfg.ScaleDownRate)), ac.cfg.MinWorkers)
 			batch = maxInt(batch-1, ac.cfg.MinBatchSize)
 
-			// Lengthen poll interval
-			newPoll := time.Duration(float64(pollNs) * 1.5)
+			// Lengthen poll interval to reduce DB pressure
+			newPoll := time.Duration(float64(pollNs) * pollLengthenFactor)
 			pollNs = int64(clampDuration(newPoll, ac.cfg.MinPollInterval, ac.cfg.MaxPollInterval))
 		}
 
@@ -273,7 +281,7 @@ func (ac *AdaptiveController) probe() {
 		if ac.stableRounds >= ac.cfg.StableRoundsBeforeScaleDown {
 			workers = maxInt(int(math.Ceil(float64(workers)*ac.cfg.ScaleDownRate)), ac.cfg.MinWorkers)
 
-			newPoll := time.Duration(float64(pollNs) * 1.25)
+			newPoll := time.Duration(float64(pollNs) * pollRelaxFactor)
 			pollNs = int64(clampDuration(newPoll, ac.cfg.MinPollInterval, ac.cfg.MaxPollInterval))
 		}
 

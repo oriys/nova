@@ -314,3 +314,38 @@ func TestAdaptiveController_SteadyState(t *testing.T) {
 		t.Errorf("workers should not decrease in steady state with backlog, before=%d, after=%d", w1, w2)
 	}
 }
+
+func TestNewWorkerPool_AdaptiveInitialized(t *testing.T) {
+	// Verify that the adaptive controller is properly initialized when enabled.
+	wp := New(nil, nil, Config{
+		Workers:      16,
+		PollInterval: 100 * time.Millisecond,
+		BatchSize:    8,
+		Adaptive: AdaptiveConfig{
+			Enabled:    true,
+			MinWorkers: 4,
+			MaxWorkers: 64,
+		},
+	})
+	if wp.adaptive == nil {
+		t.Fatal("expected adaptive controller to be initialized when Enabled=true")
+	}
+	if wp.adaptive.Workers() != 16 {
+		t.Errorf("expected initial workers=16, got %d", wp.adaptive.Workers())
+	}
+}
+
+func TestNewWorkerPool_AdaptiveDisabled(t *testing.T) {
+	// Verify that the adaptive controller is nil when disabled.
+	wp := New(nil, nil, Config{
+		Workers:      16,
+		PollInterval: 100 * time.Millisecond,
+		BatchSize:    8,
+		Adaptive: AdaptiveConfig{
+			Enabled: false,
+		},
+	})
+	if wp.adaptive != nil {
+		t.Fatal("expected adaptive controller to be nil when Enabled=false")
+	}
+}

@@ -199,10 +199,10 @@ func (w *WorkerPool) pollBatch(pollerID string) {
 
 	// Feed queue depth signal to adaptive controller.
 	if w.adaptive != nil {
-		// Use length of acquired jobs as a proxy for queue pressure:
-		// a full batch implies more work is pending.
+		// When we get a full batch, the queue likely has more pending work.
+		// Signal higher depth to indicate continued pressure.
 		if len(jobs) >= batchSize {
-			w.adaptive.SetQueueDepth(int64(batchSize))
+			w.adaptive.SetQueueDepth(int64(batchSize) * 2)
 		} else {
 			w.adaptive.SetQueueDepth(int64(len(jobs)))
 		}
