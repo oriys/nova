@@ -188,6 +188,26 @@ func daemonCmd() *cobra.Command {
 				}
 			}
 
+			// Initialize runtime template pool for reduced cold-start latency
+			if cfg.RuntimePool.Enabled && len(cfg.RuntimePool.Runtimes) > 0 {
+				refillInterval := 30 * time.Second
+				if cfg.RuntimePool.RefillInterval != "" {
+					if d, err := time.ParseDuration(cfg.RuntimePool.RefillInterval); err == nil {
+						refillInterval = d
+					}
+				}
+				tp := pool.NewRuntimeTemplatePool(be, pool.RuntimePoolConfig{
+					Enabled:        true,
+					PoolSize:       cfg.RuntimePool.PoolSize,
+					RefillInterval: refillInterval,
+					Runtimes:       cfg.RuntimePool.Runtimes,
+				})
+				p.SetTemplatePool(tp)
+				logging.Op().Info("runtime template pool enabled",
+					"runtimes", cfg.RuntimePool.Runtimes,
+					"pool_size", cfg.RuntimePool.PoolSize)
+			}
+
 			if cfg.AutoScale.Enabled {
 				as := autoscaler.New(p, s, cfg.AutoScale.Interval)
 				as.Start()

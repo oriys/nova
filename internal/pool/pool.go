@@ -78,6 +78,7 @@ type Pool struct {
 	snapshotCallback    SnapshotCallback
 	snapshotCache       sync.Map // funcID -> bool (true if snapshot exists)
 	snapshotLocks       sync.Map // funcID -> *sync.Mutex
+	templatePool        *RuntimeTemplatePool // optional pre-warmed runtime template pool
 }
 
 // PoolConfig holds pool configuration options
@@ -121,6 +122,18 @@ func NewPool(b backend.Backend, cfg PoolConfig) *Pool {
 // SetSnapshotCallback sets the callback for creating snapshots after cold starts
 func (p *Pool) SetSnapshotCallback(cb SnapshotCallback) {
 	p.snapshotCallback = cb
+}
+
+// SetTemplatePool attaches a RuntimeTemplatePool to the pool.
+// When set, Acquire will attempt to claim a pre-warmed template VM
+// before falling back to creating a new VM from scratch.
+func (p *Pool) SetTemplatePool(tp *RuntimeTemplatePool) {
+	p.templatePool = tp
+}
+
+// TemplatePool returns the attached RuntimeTemplatePool, or nil.
+func (p *Pool) TemplatePool() *RuntimeTemplatePool {
+	return p.templatePool
 }
 
 // SetMaxGlobalVMs sets the system-wide maximum number of VMs (0 = unlimited).
@@ -522,6 +535,15 @@ func (p *Pool) Acquire(ctx context.Context, fn *domain.Function, codeContent []b
 }
 
 func (p *Pool) createVM(ctx context.Context, fn *domain.Function, codeContent []byte) (*PooledVM, error) {
+	// Try to acquire a pre-warmed template VM from the runtime template pool.
+	// This skips VM boot and kernel initialization, reducing cold-start latency.
+	if p.templatePool != nil {
+		if pvm, err := p.createVMFromTemplate(ctx, fn, codeContent); err == nil && pvm != nil {
+			return pvm, nil
+		}
+		// Template acquisition failed or unavailable — fall back to full cold start.
+	}
+
 	logging.Op().Info("creating VM", "function", fn.Name, "runtime", fn.Runtime)
 
 	bootStart := time.Now()
@@ -592,6 +614,72 @@ func (p *Pool) createVM(ctx context.Context, fn *domain.Function, codeContent []
 	}
 
 	logging.Op().Info("VM ready", "vm_id", vm.ID, "function", fn.Name)
+	return pvm, nil
+}
+
+// createVMFromTemplate attempts to acquire a pre-warmed template VM for the
+// function's runtime, injects the function code via Reload, and re-initializes
+// the agent with the correct function identity. Returns nil, nil when no
+// template VM is available (caller should fall back to full cold start).
+func (p *Pool) createVMFromTemplate(ctx context.Context, fn *domain.Function, codeContent []byte) (*PooledVM, error) {
+	tvm, err := p.templatePool.Acquire(fn.Runtime)
+	if err != nil {
+		logging.Op().Warn("template pool acquire error", "runtime", string(fn.Runtime), "error", err)
+		return nil, err
+	}
+	if tvm == nil {
+		return nil, nil // no template available
+	}
+
+	bootStart := time.Now()
+
+	// Build the code files map for Reload. The handler file path follows
+	// the convention used by the agent: the primary entry point is "handler".
+	files := map[string][]byte{
+		"handler": codeContent,
+	}
+
+	// Inject the function code into the template VM via hot-reload.
+	// This also clears /tmp inside the VM to prevent cross-function pollution.
+	if err := tvm.Client.Reload(files); err != nil {
+		logging.Op().Warn("template VM reload failed, returning to pool",
+			"runtime", string(fn.Runtime),
+			"vm_id", tvm.VM.ID,
+			"error", err)
+		p.templatePool.Return(fn.Runtime, tvm)
+		return nil, err
+	}
+
+	// Re-initialize the agent with the real function identity so it picks
+	// up the correct runtime config, env vars, handler path, etc.
+	if err := tvm.Client.Init(fn); err != nil {
+		logging.Op().Warn("template VM re-init failed, stopping VM",
+			"runtime", string(fn.Runtime),
+			"vm_id", tvm.VM.ID,
+			"error", err)
+		tvm.Client.Close()
+		p.backend.StopVM(tvm.VM.ID)
+		return nil, err
+	}
+
+	bootDurationMs := time.Since(bootStart).Milliseconds()
+	metrics.RecordVMBootDuration(fn.Name, string(fn.Runtime), bootDurationMs, false)
+
+	pvm := &PooledVM{
+		VM:            tvm.VM,
+		Client:        tvm.Client,
+		Function:      fn,
+		LastUsed:      time.Now(),
+		ColdStart:     true,
+		inflight:      1,
+		maxConcurrent: p.computeInstanceConcurrency(fn),
+	}
+
+	logging.Op().Info("VM ready from template",
+		"vm_id", tvm.VM.ID,
+		"function", fn.Name,
+		"runtime", string(fn.Runtime),
+		"boot_ms", bootDurationMs)
 	return pvm, nil
 }
 
@@ -805,11 +893,15 @@ func (p *Pool) Stats() map[string]interface{} {
 		return true
 	})
 
-	return map[string]interface{}{
+	stats := map[string]interface{}{
 		"active_vms": totalVMs,
 		"idle_ttl":   p.idleTTL.String(),
 		"vms":        vmStats,
 	}
+	if p.templatePool != nil {
+		stats["template_pool"] = p.templatePool.Stats()
+	}
+	return stats
 }
 
 // FunctionStats returns pool stats for a specific function
@@ -843,6 +935,11 @@ func (p *Pool) FunctionStats(funcID string) map[string]interface{} {
 
 func (p *Pool) Shutdown() {
 	p.cancel()
+
+	// Shutdown the template pool first
+	if p.templatePool != nil {
+		p.templatePool.Shutdown()
+	}
 
 	type vmToStop struct {
 		client backend.Client
