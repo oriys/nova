@@ -823,7 +823,7 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			quota JSONB,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			UNIQUE(function_id, db_resource_id)
+			UNIQUE(tenant_id, function_id, db_resource_id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_db_bindings_function ON db_bindings(function_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_db_bindings_resource ON db_bindings(db_resource_id)`,

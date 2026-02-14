@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -207,7 +208,7 @@ func (s *PostgresStore) GetDbBinding(ctx context.Context, id string) (*DbBinding
 	if err := json.Unmarshal(permsJSON, &b.Permissions); err != nil {
 		return nil, fmt.Errorf("unmarshal permissions: %w", err)
 	}
-	if len(quotaJSON) > 0 && string(quotaJSON) != "null" {
+	if len(quotaJSON) > 0 && !bytes.Equal(quotaJSON, []byte("null")) {
 		b.Quota = &domain.DbBindingQuota{}
 		if err := json.Unmarshal(quotaJSON, b.Quota); err != nil {
 			return nil, fmt.Errorf("unmarshal quota: %w", err)
@@ -256,7 +257,7 @@ func scanDbBindings(rows interface {
 		if err := json.Unmarshal(permsJSON, &b.Permissions); err != nil {
 			return nil, fmt.Errorf("unmarshal permissions: %w", err)
 		}
-		if len(quotaJSON) > 0 && string(quotaJSON) != "null" {
+		if len(quotaJSON) > 0 && !bytes.Equal(quotaJSON, []byte("null")) {
 			b.Quota = &domain.DbBindingQuota{}
 			if err := json.Unmarshal(quotaJSON, b.Quota); err != nil {
 				return nil, fmt.Errorf("unmarshal quota: %w", err)

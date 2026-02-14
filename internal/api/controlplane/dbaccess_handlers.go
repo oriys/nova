@@ -257,8 +257,8 @@ func (h *Handler) SetCredentialPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try to update existing; if not found, create new.
-	existing, getErr := h.Store.GetCredentialPolicy(r.Context(), res.ID)
-	if getErr == nil && existing != nil {
+	_, getErr := h.Store.GetCredentialPolicy(r.Context(), res.ID)
+	if getErr == nil {
 		update := &store.CredentialPolicyUpdate{
 			AuthMode:       &req.AuthMode,
 			RotationDays:   &req.RotationDays,
