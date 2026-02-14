@@ -9,6 +9,7 @@ import (
 
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/logging"
+	"github.com/oriys/nova/internal/queue"
 	"github.com/oriys/nova/internal/store"
 )
 
@@ -18,17 +19,19 @@ type Config struct {
 	PollInterval  time.Duration
 	LeaseDuration time.Duration
 	InvokeTimeout time.Duration
+	Notifier      queue.Notifier // optional push-based notifier to reduce polling
 }
 
 // WorkerPool polls queued async invocations and executes them.
 type WorkerPool struct {
-	store   *store.Store
-	exec    executor.Invoker
-	cfg     Config
-	stopCh  chan struct{}
-	started bool
-	mu      sync.Mutex
-	wg      sync.WaitGroup
+	store    *store.Store
+	exec     executor.Invoker
+	cfg      Config
+	notifier queue.Notifier
+	stopCh   chan struct{}
+	started  bool
+	mu       sync.Mutex
+	wg       sync.WaitGroup
 }
 
 // New creates a new async worker pool.
@@ -45,11 +48,16 @@ func New(s *store.Store, exec executor.Invoker, cfg Config) *WorkerPool {
 	if cfg.InvokeTimeout <= 0 {
 		cfg.InvokeTimeout = 5 * time.Minute
 	}
+	notifier := cfg.Notifier
+	if notifier == nil {
+		notifier = queue.NewNoopNotifier()
+	}
 	return &WorkerPool{
-		store:  s,
-		exec:   exec,
-		cfg:    cfg,
-		stopCh: make(chan struct{}),
+		store:    s,
+		exec:     exec,
+		cfg:      cfg,
+		notifier: notifier,
+		stopCh:   make(chan struct{}),
 	}
 }
 
@@ -89,12 +97,18 @@ func (w *WorkerPool) worker(id int) {
 	ticker := time.NewTicker(w.cfg.PollInterval)
 	defer ticker.Stop()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	notifyCh := w.notifier.Subscribe(ctx, queue.QueueAsync)
+
 	workerID := fmt.Sprintf("async-worker-%d", id)
 	for {
 		select {
 		case <-w.stopCh:
 			return
 		case <-ticker.C:
+			w.poll(workerID)
+		case <-notifyCh:
 			w.poll(workerID)
 		}
 	}

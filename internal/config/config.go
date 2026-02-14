@@ -186,6 +186,16 @@ type SLOConfig struct {
 	DefaultMinSamples   int           `json:"default_min_samples"`  // default 20
 }
 
+// QueueConfig holds async queue notification settings
+type QueueConfig struct {
+	NotifierType string `json:"notifier_type"` // "noop" (default), "channel"
+}
+
+// LogSinkConfig holds invocation log sink settings
+type LogSinkConfig struct {
+	Type string `json:"type"` // "postgres" (default), "noop", "multi"
+}
+
 // Config is the central configuration struct embedding all component configs
 type Config struct {
 	Firecracker   firecracker.Config  `json:"firecracker"`
@@ -210,6 +220,8 @@ type Config struct {
 	Layers        LayerConfig         `json:"layers"`
 	Volumes       VolumeConfig        `json:"volumes"`
 	AI            ai.Config           `json:"ai"`
+	Queue         QueueConfig         `json:"queue"`
+	LogSink       LogSinkConfig       `json:"log_sink"`
 }
 
 // DefaultConfig returns a Config with sensible defaults
@@ -331,6 +343,12 @@ func DefaultConfig() *Config {
 			StorageDir: "/opt/nova/volumes",
 		},
 		AI: ai.DefaultConfig(),
+		Queue: QueueConfig{
+			NotifierType: "noop",
+		},
+		LogSink: LogSinkConfig{
+			Type: "postgres",
+		},
 	}
 }
 
@@ -810,6 +828,16 @@ func LoadFromEnv(cfg *Config) {
 		if d, err := time.ParseDuration(v); err == nil {
 			cfg.Kata.AgentTimeout = d
 		}
+	}
+
+	// Queue notifier overrides
+	if v := os.Getenv("NOVA_QUEUE_NOTIFIER_TYPE"); v != "" {
+		cfg.Queue.NotifierType = v
+	}
+
+	// Log sink overrides
+	if v := os.Getenv("NOVA_LOG_SINK_TYPE"); v != "" {
+		cfg.LogSink.Type = v
 	}
 }
 

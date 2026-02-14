@@ -19,9 +19,11 @@ import (
 	novagrpc "github.com/oriys/nova/internal/grpc"
 	"github.com/oriys/nova/internal/kata"
 	"github.com/oriys/nova/internal/logging"
+	"github.com/oriys/nova/internal/logsink"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/observability"
 	"github.com/oriys/nova/internal/pool"
+	"github.com/oriys/nova/internal/queue"
 	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/store"
 	"github.com/spf13/cobra"
@@ -105,6 +107,25 @@ func daemonCmd() *cobra.Command {
 			cachedStore := store.NewCachedMetadataStore(pgStore, store.DefaultCacheTTL)
 			s := store.NewStore(cachedStore)
 			defer s.Close()
+
+			// Initialize queue notifier for push-based task triggering
+			var notifier queue.Notifier
+			switch cfg.Queue.NotifierType {
+			case "channel":
+				notifier = queue.NewChannelNotifier()
+			default:
+				notifier = queue.NewNoopNotifier()
+			}
+			defer notifier.Close()
+
+			// Initialize log sink
+			var sink logsink.LogSink
+			switch cfg.LogSink.Type {
+			case "noop":
+				sink = logsink.NewNoopSink()
+			default:
+				sink = logsink.NewPostgresSink(s)
+			}
 
 			var be backend.Backend
 			var fcAdapter *firecracker.Adapter
@@ -196,13 +217,16 @@ func daemonCmd() *cobra.Command {
 					FlushInterval: cfg.Executor.LogFlushInterval,
 					Timeout:       cfg.Executor.LogTimeout,
 				}),
+				executor.WithLogSink(sink),
 			}
 			if secretsResolver != nil {
 				execOpts = append(execOpts, executor.WithSecretsResolver(secretsResolver))
 			}
 			exec := executor.New(s, p, execOpts...)
 
-			asyncWorkers := asyncqueue.New(s, exec, asyncqueue.Config{})
+			asyncWorkers := asyncqueue.New(s, exec, asyncqueue.Config{
+				Notifier: notifier,
+			})
 			asyncWorkers.Start()
 
 			grpcServer := novagrpc.NewServer(s, exec, p)

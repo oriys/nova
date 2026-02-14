@@ -51,7 +51,7 @@ type PooledVM struct {
 // functionPool holds VMs for a single function with its own lock
 type functionPool struct {
 	vms             []*PooledVM
-	mu              sync.Mutex
+	mu              sync.RWMutex // read-write lock reduces contention for read-heavy paths
 	maxReplicas     atomic.Int32 // max concurrent VMs (0 = unlimited)
 	waiters         int          // number of goroutines waiting for a VM
 	cond            *sync.Cond   // condition variable for waiting
@@ -231,9 +231,9 @@ func (p *Pool) cleanupExpired() {
 func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function, codeContent []byte) error {
 	fp := p.getOrCreatePool(fn.ID)
 
-	fp.mu.Lock()
+	fp.mu.RLock()
 	currentCount := len(fp.vms)
-	fp.mu.Unlock()
+	fp.mu.RUnlock()
 
 	needed := max(fn.MinReplicas, int(fp.desiredReplicas.Load())) - currentCount
 	if needed <= 0 {
@@ -747,10 +747,10 @@ func (p *Pool) ReloadCode(funcID string, files map[string][]byte) error {
 	}
 	fp := val.(*functionPool)
 
-	fp.mu.Lock()
+	fp.mu.RLock()
 	vms := make([]*PooledVM, len(fp.vms))
 	copy(vms, fp.vms)
-	fp.mu.Unlock()
+	fp.mu.RUnlock()
 
 	if len(vms) == 0 {
 		return nil
@@ -789,7 +789,7 @@ func (p *Pool) Stats() map[string]interface{} {
 		funcID := key.(string)
 		fp := value.(*functionPool)
 
-		fp.mu.Lock()
+		fp.mu.RLock()
 		totalVMs += len(fp.vms)
 		for _, pvm := range fp.vms {
 			vmStats = append(vmStats, map[string]interface{}{
@@ -801,7 +801,7 @@ func (p *Pool) Stats() map[string]interface{} {
 				"idle_sec":       time.Since(pvm.LastUsed).Seconds(),
 			})
 		}
-		fp.mu.Unlock()
+		fp.mu.RUnlock()
 		return true
 	})
 
@@ -822,7 +822,7 @@ func (p *Pool) FunctionStats(funcID string) map[string]interface{} {
 
 	if value, ok := p.pools.Load(funcID); ok {
 		fp := value.(*functionPool)
-		fp.mu.Lock()
+		fp.mu.RLock()
 		busyCount := 0
 		idleCount := 0
 		for _, pvm := range fp.vms {
@@ -835,7 +835,7 @@ func (p *Pool) FunctionStats(funcID string) map[string]interface{} {
 		result["active_vms"] = len(fp.vms)
 		result["busy_vms"] = busyCount
 		result["idle_vms"] = idleCount
-		fp.mu.Unlock()
+		fp.mu.RUnlock()
 	}
 
 	return result
@@ -889,9 +889,9 @@ func (p *Pool) Shutdown() {
 func (p *Pool) QueueDepth(funcID string) int {
 	if value, ok := p.pools.Load(funcID); ok {
 		fp := value.(*functionPool)
-		fp.mu.Lock()
+		fp.mu.RLock()
 		depth := fp.waiters
-		fp.mu.Unlock()
+		fp.mu.RUnlock()
 		return depth
 	}
 	return 0
@@ -916,7 +916,7 @@ func (p *Pool) SetDesiredReplicas(funcID string, desired int) {
 func (p *Pool) FunctionPoolStats(funcID string) (total, busy, idle int) {
 	if value, ok := p.pools.Load(funcID); ok {
 		fp := value.(*functionPool)
-		fp.mu.Lock()
+		fp.mu.RLock()
 		total = len(fp.vms)
 		for _, pvm := range fp.vms {
 			if pvm.inflight > 0 {
@@ -925,7 +925,7 @@ func (p *Pool) FunctionPoolStats(funcID string) (total, busy, idle int) {
 				idle++
 			}
 		}
-		fp.mu.Unlock()
+		fp.mu.RUnlock()
 	}
 	return
 }
@@ -952,18 +952,18 @@ func (p *Pool) healthCheck() {
 	}
 	var targets []checkTarget
 
-	// Collect idle VMs under lock
+	// Collect idle VMs under read lock
 	p.pools.Range(func(key, value interface{}) bool {
 		funcID := key.(string)
 		fp := value.(*functionPool)
 
-		fp.mu.Lock()
+		fp.mu.RLock()
 		for _, pvm := range fp.vms {
 			if pvm.inflight == 0 {
 				targets = append(targets, checkTarget{funcID: funcID, pvm: pvm})
 			}
 		}
-		fp.mu.Unlock()
+		fp.mu.RUnlock()
 		return true
 	})
 
