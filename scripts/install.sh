@@ -11,6 +11,7 @@ PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/nova/bin
 export PATH
 
 INSTALL_DIR="/opt/nova"
+NOVA_CACHE_DIR="${NOVA_CACHE_DIR:-/var/cache/nova/downloads}"
 FC_VERSION="latest"
 ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.3-x86_64.tar.gz"
 WASMTIME_VERSION="v41.0.1"
@@ -27,6 +28,58 @@ NC='\033[0m'
 log()  { echo -e "${GREEN}[+]${NC} $1"; }
 warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 err()  { echo -e "${RED}[!]${NC} $1" >&2; exit 1; }
+
+# ─── Download cache ───────────────────────────────────────
+# cached_curl <url> <output_file> [<cache_key>]
+#   Downloads <url> to <output_file>, caching the result under NOVA_CACHE_DIR.
+#   If the file is already cached, copies from cache instead of downloading.
+#   Optional <cache_key> overrides the auto-derived cache filename.
+cached_curl() {
+    local url="$1"
+    local output="$2"
+    local cache_key="${3:-$(basename "${url}")}"
+    local cached="${NOVA_CACHE_DIR}/${cache_key}"
+
+    mkdir -p "${NOVA_CACHE_DIR}"
+    if [[ -f "${cached}" ]]; then
+        log "Using cached ${cache_key}"
+        cp "${cached}" "${output}"
+    else
+        log "Downloading ${cache_key}..."
+        local tmp_dl="${cached}.tmp.$$"
+        if curl -fsSL "${url}" -o "${tmp_dl}"; then
+            mv "${tmp_dl}" "${cached}"
+        else
+            rm -f "${tmp_dl}"
+            err "Failed to download ${url}"
+        fi
+        cp "${cached}" "${output}"
+    fi
+}
+
+# cached_curl_pipe <url> <cache_key>
+#   Prints the cached (or freshly downloaded) file content to stdout,
+#   so it can be piped into tar/unzip etc.
+cached_curl_pipe() {
+    local url="$1"
+    local cache_key="${2:-$(basename "${url}")}"
+    local cached="${NOVA_CACHE_DIR}/${cache_key}"
+
+    mkdir -p "${NOVA_CACHE_DIR}"
+    if [[ -f "${cached}" ]]; then
+        log "Using cached ${cache_key}"
+    else
+        log "Downloading ${cache_key}..."
+        local tmp_dl="${cached}.tmp.$$"
+        if curl -fsSL "${url}" -o "${tmp_dl}"; then
+            mv "${tmp_dl}" "${cached}"
+        else
+            rm -f "${tmp_dl}"
+            err "Failed to download ${url}"
+        fi
+    fi
+    cat "${cached}"
+}
 
 # ─── Checks ──────────────────────────────────────────────
 check_root()   { [[ $EUID -eq 0 ]] || err "Run as root: sudo $0"; }
@@ -66,7 +119,7 @@ install_firecracker() {
     log "Installing Firecracker ${FC_VERSION}..."
     local tmp=$(mktemp -d)
     local fc_url="https://github.com/firecracker-microvm/firecracker/releases/download/${FC_VERSION}/firecracker-${FC_VERSION}-${arch}.tgz"
-    curl -fsSL -o "${tmp}/fc.tgz" "${fc_url}"
+    cached_curl "${fc_url}" "${tmp}/fc.tgz" "firecracker-${FC_VERSION}-${arch}.tgz"
     tar -xzf "${tmp}/fc.tgz" -C "${tmp}"
     local installed_fc=""
     local installed_jailer=""
@@ -134,7 +187,7 @@ download_kernel() {
     if [[ -z "${kernel_key}" ]]; then
         err "Failed to locate Firecracker CI kernel for ${ci_version}/${arch}"
     fi
-    curl -fsSL -o "${INSTALL_DIR}/kernel/vmlinux" "https://s3.amazonaws.com/spec.ccfc.min/${kernel_key}"
+    cached_curl "https://s3.amazonaws.com/spec.ccfc.min/${kernel_key}" "${INSTALL_DIR}/kernel/vmlinux" "vmlinux-$(basename "${kernel_key}")"
     log "Kernel: ${INSTALL_DIR}/kernel/vmlinux ($(du -h ${INSTALL_DIR}/kernel/vmlinux | cut -f1))"
 }
 
@@ -208,7 +261,7 @@ build_python_rootfs() {
 
     log "Building python rootfs (Alpine + python3)..."
 
-    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
+    cached_curl_pipe "${ALPINE_URL}" "alpine-minirootfs.tar.gz" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
     prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
@@ -233,7 +286,7 @@ build_wasm_rootfs() {
 
     log "Building wasm rootfs (Alpine + wasmtime)..."
 
-    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
+    cached_curl_pipe "${ALPINE_URL}" "alpine-minirootfs.tar.gz" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp,usr/local/bin}
     prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
@@ -241,8 +294,9 @@ build_wasm_rootfs() {
     # wasmtime release is glibc-linked; add compatibility layer.
     chroot "${mnt}" /bin/sh -c "apk add --no-cache libstdc++ gcompat" >/dev/null 2>&1
 
-    curl -fsSL \
+    cached_curl_pipe \
         "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
+        "wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
         | tar -xJf - -C "${mnt}/usr/local/bin" --strip-components=1 --wildcards '*/wasmtime'
 
     # init = nova-agent
@@ -263,7 +317,7 @@ build_node_rootfs() {
 
     log "Building node rootfs (Alpine + nodejs)..."
 
-    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
+    cached_curl_pipe "${ALPINE_URL}" "alpine-minirootfs.tar.gz" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
     prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
@@ -288,7 +342,7 @@ build_ruby_rootfs() {
 
     log "Building ruby rootfs (Alpine + ruby)..."
 
-    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
+    cached_curl_pipe "${ALPINE_URL}" "alpine-minirootfs.tar.gz" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
     prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
@@ -313,7 +367,7 @@ build_java_rootfs() {
 
     log "Building java rootfs (Alpine + OpenJDK)..."
 
-    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
+    cached_curl_pipe "${ALPINE_URL}" "alpine-minirootfs.tar.gz" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
     prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
@@ -342,7 +396,7 @@ build_php_rootfs() {
 
     log "Building php rootfs (Alpine + php)..."
 
-    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
+    cached_curl_pipe "${ALPINE_URL}" "alpine-minirootfs.tar.gz" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
     prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
@@ -369,7 +423,7 @@ build_deno_rootfs() {
 
     # Build in a temp directory instead of a mounted ext4 image.
     # build-base (gcc) temporarily needs more space than the 256MB rootfs allows.
-    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${rootfs_dir}"
+    cached_curl_pipe "${ALPINE_URL}" "alpine-minirootfs.tar.gz" | tar -xzf - -C "${rootfs_dir}"
     mkdir -p "${rootfs_dir}"/{code,tmp,usr/local/bin}
     prepare_chroot_dev "${rootfs_dir}"
     echo "nameserver 8.8.8.8" > "${rootfs_dir}/etc/resolv.conf"
@@ -386,9 +440,9 @@ build_deno_rootfs() {
     chroot "${rootfs_dir}" /bin/sh -c "apk del build-base" >/dev/null 2>&1
 
     # Download Deno binary
-    curl -fsSL \
+    cached_curl \
         "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" \
-        -o /tmp/deno.zip
+        /tmp/deno.zip "deno-${DENO_VERSION}-x86_64-unknown-linux-gnu.zip"
     unzip -q -o /tmp/deno.zip -d "${rootfs_dir}/usr/local/bin"
     chmod +x "${rootfs_dir}/usr/local/bin/deno"
     rm -f /tmp/deno.zip
@@ -412,7 +466,7 @@ build_bun_rootfs() {
 
     log "Building bun rootfs (Alpine + bun)..."
 
-    curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
+    cached_curl_pipe "${ALPINE_URL}" "alpine-minirootfs.tar.gz" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp,usr/local/bin}
     prepare_chroot_dev "${mnt}"
     echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
@@ -421,9 +475,9 @@ build_bun_rootfs() {
     chroot "${mnt}" /bin/sh -c "apk add --no-cache libgcc libstdc++" >/dev/null 2>&1
 
     # Download Bun binary
-    curl -fsSL \
+    cached_curl \
         "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/bun-linux-x64-musl.zip" \
-        -o /tmp/bun.zip
+        /tmp/bun.zip "bun-${BUN_VERSION}-linux-x64-musl.zip"
     unzip -q -o /tmp/bun.zip -d /tmp/bun-extract
     cp /tmp/bun-extract/bun-linux-x64-musl/bun "${mnt}/usr/local/bin/bun"
     chmod +x "${mnt}/usr/local/bin/bun"

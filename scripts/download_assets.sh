@@ -6,6 +6,7 @@ set -euxo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ASSETS_DIR="${REPO_ROOT}/assets/downloads"
+NOVA_CACHE_DIR="${NOVA_CACHE_DIR:-/var/cache/nova/downloads}"
 
 # Versions (must match build_rootfs.sh defaults or be overridden)
 ALPINE_VERSION="3.23.3"
@@ -25,12 +26,23 @@ download_if_missing() {
   local url="$1"
   local filename="$2"
   local filepath="${ASSETS_DIR}/${filename}"
+  local cached="${NOVA_CACHE_DIR}/${filename}"
 
   if [[ -f "${filepath}" ]]; then
     echo "[+] ${filename} already exists, skipping."
+  elif [[ -n "${NOVA_CACHE_DIR}" && -f "${cached}" ]]; then
+    echo "[+] ${filename} found in cache, copying."
+    cp "${cached}" "${filepath}"
   else
     echo "[+] Downloading ${filename}..."
-    curl -fsSL "${url}" -o "${filepath}"
+    local tmp_dl="${filepath}.tmp.$$"
+    curl -fsSL "${url}" -o "${tmp_dl}"
+    mv "${tmp_dl}" "${filepath}"
+    # Also save to global cache for reuse
+    if [[ -n "${NOVA_CACHE_DIR}" ]]; then
+      mkdir -p "${NOVA_CACHE_DIR}"
+      cp "${filepath}" "${cached}"
+    fi
   fi
 }
 
