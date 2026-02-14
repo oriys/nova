@@ -15,6 +15,10 @@ import (
 	"github.com/oriys/nova/internal/domain"
 )
 
+const (
+	// maxMessageSize is the maximum allowed message size (16MB).
+	maxMessageSize = 16 * 1024 * 1024
+)
 // Client communicates with the nova-agent inside a Kata Container via TCP.
 type Client struct {
 	vm          *backend.VM
@@ -333,6 +337,9 @@ func (c *Client) receiveLocked() (*backend.VsockMessage, error) {
 	}
 
 	msgLen := binary.BigEndian.Uint32(lenBuf)
+	if msgLen > maxMessageSize {
+		return nil, fmt.Errorf("message too large: %d bytes (max %d)", msgLen, maxMessageSize)
+	}
 	data := make([]byte, msgLen)
 	if _, err := io.ReadFull(c.conn, data); err != nil {
 		return nil, err

@@ -15,7 +15,6 @@ type Config struct {
 	ImagePrefix    string        // Container image prefix (e.g., "nova-runtime")
 	RuntimeName    string        // OCI runtime name (default: "kata")
 	Network        string        // Container network name (optional)
-	AgentPath      string        // Path to nova-agent binary (mounted into container)
 	PortRangeMin   int           // Minimum host port for agent mapping
 	PortRangeMax   int           // Maximum host port for agent mapping
 	CPULimit       float64       // CPU limit per container (default: 1.0)
@@ -28,10 +27,6 @@ func DefaultConfig() *Config {
 	codeDir := os.Getenv("NOVA_KATA_CODE_DIR")
 	if codeDir == "" {
 		codeDir = "/tmp/nova/kata-code"
-	}
-	agentPath := os.Getenv("NOVA_AGENT_PATH")
-	if agentPath == "" {
-		agentPath = "/opt/nova/bin/nova-agent"
 	}
 	imagePrefix := os.Getenv("NOVA_KATA_IMAGE_PREFIX")
 	if imagePrefix == "" {
@@ -47,7 +42,6 @@ func DefaultConfig() *Config {
 		ImagePrefix:    imagePrefix,
 		RuntimeName:    runtimeName,
 		Network:        os.Getenv("NOVA_KATA_NETWORK"),
-		AgentPath:      agentPath,
 		PortRangeMin:   50000,
 		PortRangeMax:   60000,
 		CPULimit:       1.0,

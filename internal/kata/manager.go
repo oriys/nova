@@ -261,8 +261,12 @@ func (m *Manager) stopContainer(containerID, codeDir string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	exec.CommandContext(ctx, "docker", "stop", "-t", "2", containerID).Run()
-	exec.CommandContext(ctx, "docker", "rm", "-f", containerID).Run()
+	if out, err := exec.CommandContext(ctx, "docker", "stop", "-t", "2", containerID).CombinedOutput(); err != nil {
+		logging.Op().Warn("docker stop failed", "container", containerID, "error", err, "output", string(out))
+	}
+	if out, err := exec.CommandContext(ctx, "docker", "rm", "-f", containerID).CombinedOutput(); err != nil {
+		logging.Op().Warn("docker rm failed", "container", containerID, "error", err, "output", string(out))
+	}
 
 	if codeDir != "" {
 		os.RemoveAll(codeDir)
