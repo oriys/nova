@@ -27,18 +27,24 @@ type ButtonPermissionRecord struct {
 
 // AllMenuKeys defines every menu key the UI can render.
 var AllMenuKeys = []string{
-	"dashboard",
-	"functions",
-	"events",
-	"workflows",
-	"tenancy",
-	"asyncJobs",
-	"history",
-	"runtimes",
-	"configurations",
-	"secrets",
-	"apiKeys",
 	"apiDocs",
+	"apiKeys",
+	"asyncJobs",
+	"configurations",
+	"dashboard",
+	"events",
+	"functions",
+	"gateway",
+	"history",
+	"layers",
+	"notifications",
+	"rbac",
+	"runtimes",
+	"secrets",
+	"snapshots",
+	"tenancy",
+	"volumes",
+	"workflows",
 }
 
 // DefaultTenantOnlyMenuKeys are menu keys that only the default (platform)
@@ -46,6 +52,7 @@ var AllMenuKeys = []string{
 var DefaultTenantOnlyMenuKeys = map[string]bool{
 	"tenancy":        true,
 	"configurations": true,
+	"rbac":           true,
 }
 
 // AllButtonPermissionKeys defines every button-level permission the UI can check.

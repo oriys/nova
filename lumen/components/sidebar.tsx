@@ -108,9 +108,10 @@ export function Sidebar() {
   const t = useTranslations("nav")
   const enabledMenuKeys = useMenuPermissions()
 
+  // Show empty menu while loading permissions to prevent flash
   const visibleNavigation =
     enabledMenuKeys === null
-      ? navigation
+      ? []
       : navigation.filter((item) => enabledMenuKeys.has(item.key))
 
   return (
