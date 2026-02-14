@@ -32,6 +32,7 @@ type PrometheusMetrics struct {
 	vmPool          *prometheus.GaugeVec
 	poolUtilization *prometheus.GaugeVec
 	activeRequests  prometheus.Gauge
+	activeVMs       prometheus.Gauge
 
 	// Autoscaling
 	autoscaleDesiredReplicas *prometheus.GaugeVec
@@ -190,6 +191,14 @@ func InitPrometheus(namespace string, buckets []float64) {
 			},
 		),
 
+		activeVMs: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "active_vms",
+				Help:      "Total number of active VMs across all function pools",
+			},
+		),
+
 		autoscaleDesiredReplicas: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -290,6 +299,7 @@ func InitPrometheus(namespace string, buckets []float64) {
 		pm.vmPool,
 		pm.poolUtilization,
 		pm.activeRequests,
+		pm.activeVMs,
 		pm.autoscaleDesiredReplicas,
 		pm.autoscaleDecisionsTotal,
 		pm.admissionTotal,
@@ -417,6 +427,14 @@ func DecActiveRequests() {
 		return
 	}
 	promMetrics.activeRequests.Dec()
+}
+
+// SetActiveVMs sets the total number of active VMs across all pools
+func SetActiveVMs(count int) {
+	if promMetrics == nil {
+		return
+	}
+	promMetrics.activeVMs.Set(float64(count))
 }
 
 // PrometheusHandler returns an HTTP handler for Prometheus metrics scraping

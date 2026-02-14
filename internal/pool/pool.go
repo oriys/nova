@@ -211,6 +211,9 @@ func (p *Pool) cleanupExpired() {
 		return true
 	})
 
+	// Update Prometheus active VMs metric
+	metrics.SetActiveVMs(p.TotalVMCount())
+
 	// Stop expired VMs asynchronously — they are already removed from pools
 	for _, e := range toStop {
 		go func(client backend.Client, vmID string) {
@@ -259,6 +262,7 @@ func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function, codeContent
 			fp.vms = append(fp.vms, pvm)
 			fp.mu.Unlock()
 			p.totalVMs.Add(1)
+			metrics.SetActiveVMs(p.TotalVMCount())
 		}()
 	}
 	wg.Wait()
@@ -298,6 +302,7 @@ func (p *Pool) preparePoolForFunction(fn *domain.Function) *functionPool {
 				fp.mu.Unlock()
 				if evictedCount > 0 {
 					p.totalVMs.Add(-evictedCount)
+					metrics.SetActiveVMs(p.TotalVMCount())
 				}
 
 				// Stop all old VMs in background
@@ -503,6 +508,7 @@ func (p *Pool) acquireGeneric(
 	fp.vms = append(fp.vms, pvm)
 	fp.mu.Unlock()
 	p.totalVMs.Add(1)
+	metrics.SetActiveVMs(p.TotalVMCount())
 	recordQueueWait()
 	return pvm, nil
 }
@@ -679,6 +685,7 @@ func (p *Pool) Evict(funcID string) {
 	fp.mu.Unlock()
 	if evictedCount > 0 {
 		p.totalVMs.Add(-evictedCount)
+		metrics.SetActiveVMs(p.TotalVMCount())
 	}
 
 	// Stop VMs in parallel
@@ -714,6 +721,7 @@ func (p *Pool) EvictVM(funcID string, target *PooledVM) {
 	fp.mu.Unlock()
 	if removed > 0 {
 		p.totalVMs.Add(-removed)
+		metrics.SetActiveVMs(p.TotalVMCount())
 	}
 
 	// Stop VM asynchronously — it is already removed from the pool
