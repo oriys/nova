@@ -598,9 +598,6 @@ build_base_rootfs() {
     local mnt=$(mktemp -d)
 
     log "Building base rootfs (minimal, no distro)..."
-    dd if=/dev/zero of="${output}" bs=1M count=32 2>/dev/null
-    mkfs.ext4 -F -q "${output}"
-    mount -o loop "${output}" "${mnt}"
 
     mkdir -p "${mnt}"/{dev,proc,sys,tmp,code,usr/local/bin}
 
@@ -609,7 +606,9 @@ build_base_rootfs() {
         chmod +x "${mnt}/init"
     fi
 
-    umount "${mnt}" && rmdir "${mnt}"
+    dd if=/dev/zero of="${output}" bs=1M count=32 2>/dev/null
+    mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
+    rm -rf "${mnt}"
     log "base.ext4 ready ($(du -h ${output} | cut -f1)) - Go/Rust runtime"
 }
 
@@ -618,9 +617,6 @@ build_python_rootfs() {
     local mnt=$(mktemp -d)
 
     log "Building python rootfs (Alpine + python3)..."
-    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
-    mkfs.ext4 -F -q "${output}"
-    mount -o loop "${output}" "${mnt}"
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
@@ -633,7 +629,9 @@ build_python_rootfs() {
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
         chmod +x "${mnt}/init"
 
-    umount "${mnt}" && rmdir "${mnt}"
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
+    rm -rf "${mnt}"
     log "python.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
@@ -642,9 +640,6 @@ build_wasm_rootfs() {
     local mnt=$(mktemp -d)
 
     log "Building wasm rootfs (Alpine + wasmtime)..."
-    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
-    mkfs.ext4 -F -q "${output}"
-    mount -o loop "${output}" "${mnt}"
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp,usr/local/bin}
@@ -661,7 +656,9 @@ build_wasm_rootfs() {
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
         chmod +x "${mnt}/init"
 
-    umount "${mnt}" && rmdir "${mnt}"
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
+    rm -rf "${mnt}"
     log "wasm.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
@@ -670,9 +667,6 @@ build_node_rootfs() {
     local mnt=$(mktemp -d)
 
     log "Building node rootfs (Alpine + nodejs)..."
-    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
-    mkfs.ext4 -F -q "${output}"
-    mount -o loop "${output}" "${mnt}"
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
@@ -685,7 +679,9 @@ build_node_rootfs() {
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
         chmod +x "${mnt}/init"
 
-    umount "${mnt}" && rmdir "${mnt}"
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
+    rm -rf "${mnt}"
     log "node.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
@@ -694,9 +690,6 @@ build_ruby_rootfs() {
     local mnt=$(mktemp -d)
 
     log "Building ruby rootfs (Alpine + ruby)..."
-    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
-    mkfs.ext4 -F -q "${output}"
-    mount -o loop "${output}" "${mnt}"
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
@@ -709,7 +702,9 @@ build_ruby_rootfs() {
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
         chmod +x "${mnt}/init"
 
-    umount "${mnt}" && rmdir "${mnt}"
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
+    rm -rf "${mnt}"
     log "ruby.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
@@ -718,9 +713,6 @@ build_java_rootfs() {
     local mnt=$(mktemp -d)
 
     log "Building java rootfs (Alpine + OpenJDK)..."
-    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_JAVA_MB} 2>/dev/null
-    mkfs.ext4 -F -q "${output}"
-    mount -o loop "${output}" "${mnt}"
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
@@ -735,7 +727,10 @@ build_java_rootfs() {
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
         chmod +x "${mnt}/init"
 
-    umount "${mnt}" && rmdir "${mnt}"
+    # Java needs more space
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_JAVA_MB} 2>/dev/null
+    mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
+    rm -rf "${mnt}"
     log "java.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
@@ -744,9 +739,6 @@ build_php_rootfs() {
     local mnt=$(mktemp -d)
 
     log "Building php rootfs (Alpine + php)..."
-    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
-    mkfs.ext4 -F -q "${output}"
-    mount -o loop "${output}" "${mnt}"
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
@@ -759,7 +751,9 @@ build_php_rootfs() {
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
         chmod +x "${mnt}/init"
 
-    umount "${mnt}" && rmdir "${mnt}"
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
+    rm -rf "${mnt}"
     log "php.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
@@ -768,9 +762,6 @@ build_lua_rootfs() {
     local mnt=$(mktemp -d)
 
     log "Building lua rootfs (Alpine + lua)..."
-    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
-    mkfs.ext4 -F -q "${output}"
-    mount -o loop "${output}" "${mnt}"
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp}
@@ -783,7 +774,9 @@ build_lua_rootfs() {
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
         chmod +x "${mnt}/init"
 
-    umount "${mnt}" && rmdir "${mnt}"
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
+    rm -rf "${mnt}"
     log "lua.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
@@ -836,9 +829,6 @@ build_bun_rootfs() {
     local mnt=$(mktemp -d)
 
     log "Building bun rootfs (Alpine + bun)..."
-    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
-    mkfs.ext4 -F -q "${output}"
-    mount -o loop "${output}" "${mnt}"
 
     curl -fsSL "${ALPINE_URL}" | tar -xzf - -C "${mnt}"
     mkdir -p "${mnt}"/{code,tmp,usr/local/bin}
@@ -863,7 +853,9 @@ build_bun_rootfs() {
         cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
         chmod +x "${mnt}/init"
 
-    umount "${mnt}" && rmdir "${mnt}"
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
+    rm -rf "${mnt}"
     log "bun.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
