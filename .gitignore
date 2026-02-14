@@ -3,6 +3,7 @@ bin/
 /nova
 /agent
 /comet
+/nebula
 /atlas/atlas
 *.exe
 *.dll
