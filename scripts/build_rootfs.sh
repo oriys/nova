@@ -128,7 +128,9 @@ fetch_asset() {
     log "Downloading ${url}..."
     if [[ -n "${NOVA_CACHE_DIR}" ]]; then
       mkdir -p "${NOVA_CACHE_DIR}"
-      curl -fsSL "${url}" -o "${NOVA_CACHE_DIR}/${local_name}"
+      local tmp_dl="${NOVA_CACHE_DIR}/${local_name}.tmp.$$"
+      curl -fsSL "${url}" -o "${tmp_dl}"
+      mv "${tmp_dl}" "${NOVA_CACHE_DIR}/${local_name}"
       cp "${NOVA_CACHE_DIR}/${local_name}" "${output_path}"
     else
       curl -fsSL "${url}" -o "${output_path}"

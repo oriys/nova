@@ -35,7 +35,9 @@ download_if_missing() {
     cp "${cached}" "${filepath}"
   else
     echo "[+] Downloading ${filename}..."
-    curl -fsSL "${url}" -o "${filepath}"
+    local tmp_dl="${filepath}.tmp.$$"
+    curl -fsSL "${url}" -o "${tmp_dl}"
+    mv "${tmp_dl}" "${filepath}"
     # Also save to global cache for reuse
     if [[ -n "${NOVA_CACHE_DIR}" ]]; then
       mkdir -p "${NOVA_CACHE_DIR}"

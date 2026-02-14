@@ -66,7 +66,13 @@ cached_curl() {
         cp "${cached}" "${output}"
     else
         log "Downloading ${cache_key}..."
-        curl -fsSL "${url}" -o "${cached}"
+        local tmp_dl="${cached}.tmp.$$"
+        if curl -fsSL "${url}" -o "${tmp_dl}"; then
+            mv "${tmp_dl}" "${cached}"
+        else
+            rm -f "${tmp_dl}"
+            err "Failed to download ${url}"
+        fi
         cp "${cached}" "${output}"
     fi
 }
@@ -84,7 +90,13 @@ cached_curl_pipe() {
         log "Using cached ${cache_key}"
     else
         log "Downloading ${cache_key}..."
-        curl -fsSL "${url}" -o "${cached}"
+        local tmp_dl="${cached}.tmp.$$"
+        if curl -fsSL "${url}" -o "${tmp_dl}"; then
+            mv "${tmp_dl}" "${cached}"
+        else
+            rm -f "${tmp_dl}"
+            err "Failed to download ${url}"
+        fi
     fi
     cat "${cached}"
 }
