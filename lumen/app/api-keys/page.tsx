@@ -105,10 +105,7 @@ function PolicyBindingEditor({
         <Select
           value={currentBinding.role || "invoker"}
           onValueChange={(role) => {
-            onChange(bindings.length > 0
-              ? bindings.map((b, i) => i === 0 ? { ...b, role } : b)
-              : [{ role, functions: [], workflows: [] }]
-            )
+            onChange([{ ...currentBinding, role }])
           }}
         >
           <SelectTrigger>
