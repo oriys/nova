@@ -497,12 +497,28 @@ make rootfs             # Docker 内构建全部 rootfs 镜像
 make download-assets    # 下载 Firecracker 二进制、内核等大文件
 ```
 
+### Orbit CLI
+
+```bash
+make orbit           # 构建 Orbit CLI（debug）
+make orbit-release   # 构建 Orbit CLI（release）
+make orbit-clean     # 清理 Orbit 构建产物
+```
+
+### Atlas MCP Server
+
+```bash
+make atlas         # 构建 Atlas MCP Server
+make atlas-linux   # 交叉编译 Atlas for linux/amd64
+make atlas-clean   # 清理 Atlas 构建产物
+```
+
 ### 全量构建与清理
 
 ```bash
-make all        # 后端 + 前端 + 全部 Docker 镜像
+make all        # 后端 + 前端 + Orbit + Atlas + 全部 Docker 镜像
 make clean      # 清理 bin/
-make clean-all  # 清理 bin/ + assets/ + lumen 构建产物
+make clean-all  # 清理 bin/ + assets/ + lumen/orbit/atlas 构建产物
 ```
 
 ### 部署
@@ -665,7 +681,7 @@ fn main() {
 ```json
 {
   "postgres": { "dsn": "postgres://nova:nova@localhost:5432/nova?sslmode=disable" },
-  "daemon": { "http_addr": ":9000", "log_level": "info" },
+  "daemon": { "http_addr": ":9001", "log_level": "info" },
   "pool": { "idle_ttl": "60s" }
 }
 ```
@@ -714,7 +730,7 @@ executor:
   log_timeout: 5s
 
 daemon:
-  http_addr: ":9000"
+  http_addr: ":9001"
   log_level: info
 
 tracing:
