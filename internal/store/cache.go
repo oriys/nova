@@ -47,7 +47,7 @@ type CachedMetadataStore struct {
 }
 
 // DefaultCacheTTL is the default time-to-live for cache entries.
-const DefaultCacheTTL = 5 * time.Second
+const DefaultCacheTTL = 60 * time.Second
 
 type invocationPaginationDelegate interface {
 	CountInvocationLogs(ctx context.Context, functionID string) (int64, error)
@@ -65,7 +65,7 @@ type asyncInvocationPaginationDelegate interface {
 }
 
 // NewCachedMetadataStore returns a MetadataStore that caches hot-path reads.
-// Pass ttl <= 0 to use the default (5 s).
+// Pass ttl <= 0 to use the default (60 s).
 func NewCachedMetadataStore(underlying MetadataStore, ttl time.Duration) *CachedMetadataStore {
 	if ttl <= 0 {
 		ttl = DefaultCacheTTL

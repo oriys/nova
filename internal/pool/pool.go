@@ -35,7 +35,6 @@ const (
 	DefaultCleanupInterval     = 10 * time.Second
 	DefaultHealthCheckInterval = 30 * time.Second
 	DefaultMaxPreWarmWorkers   = 8
-	defaultQueuePollInterval   = 10 * time.Millisecond
 )
 
 type PooledVM struct {
@@ -53,6 +52,9 @@ type functionPool struct {
 	vms             []*PooledVM
 	mu              sync.RWMutex // read-write lock reduces contention for read-heavy paths
 	maxReplicas     atomic.Int32 // max concurrent VMs (0 = unlimited)
+	totalInflight   int
+	readyVMs        []*PooledVM
+	readySet        map[*PooledVM]struct{}
 	waiters         int          // number of goroutines waiting for a VM
 	cond            *sync.Cond   // condition variable for waiting
 	codeHash        atomic.Value // string: hash of code when VMs were created
@@ -76,8 +78,8 @@ type Pool struct {
 	ctx                 context.Context
 	cancel              context.CancelFunc
 	snapshotCallback    SnapshotCallback
-	snapshotCache       sync.Map // funcID -> bool (true if snapshot exists)
-	snapshotLocks       sync.Map // funcID -> *sync.Mutex
+	snapshotCache       sync.Map             // funcID -> bool (true if snapshot exists)
+	snapshotLocks       sync.Map             // funcID -> *sync.Mutex
 	templatePool        *RuntimeTemplatePool // optional pre-warmed runtime template pool
 }
 
@@ -217,6 +219,7 @@ func (p *Pool) cleanupExpired() {
 			kept = append(kept, pvm)
 		}
 		fp.vms = kept
+		rebuildReadyVMLocked(fp)
 		if removed > 0 {
 			p.totalVMs.Add(int32(-removed))
 		}
@@ -273,12 +276,16 @@ func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function, codeContent
 
 			fp.mu.Lock()
 			fp.vms = append(fp.vms, pvm)
+			addReadyVMLocked(fp, pvm)
+			if fp.waiters > 0 {
+				fp.cond.Signal()
+			}
 			fp.mu.Unlock()
 			p.totalVMs.Add(1)
 		}()
 	}
 	wg.Wait()
-	
+
 	// Update metric after all VMs are created
 	metrics.SetActiveVMs(p.TotalVMCount())
 	return nil
@@ -313,6 +320,9 @@ func (p *Pool) preparePoolForFunction(fn *domain.Function) *functionPool {
 				vmsToStop := fp.vms
 				evictedCount := int32(len(vmsToStop))
 				fp.vms = nil
+				fp.totalInflight = 0
+				fp.readyVMs = nil
+				fp.readySet = nil
 				fp.codeHash.Store(fn.CodeHash)
 				fp.mu.Unlock()
 				if evictedCount > 0 {
@@ -353,24 +363,104 @@ func getCapacityLimits(fn *domain.Function) (maxInflight, maxQueueDepth int, max
 	return
 }
 
-func takeWarmVMLocked(fp *functionPool) *PooledVM {
+func ensurePoolStateLocked(fp *functionPool) {
+	if fp.readySet == nil {
+		fp.readySet = make(map[*PooledVM]struct{})
+	}
+}
+
+func addReadyVMLocked(fp *functionPool, pvm *PooledVM) {
+	if pvm == nil || pvm.inflight >= pvm.maxConcurrent {
+		return
+	}
+	ensurePoolStateLocked(fp)
+	if _, ok := fp.readySet[pvm]; ok {
+		return
+	}
+	fp.readySet[pvm] = struct{}{}
+	fp.readyVMs = append(fp.readyVMs, pvm)
+}
+
+func removeReadyVMLocked(fp *functionPool, pvm *PooledVM) {
+	if fp.readySet == nil || pvm == nil {
+		return
+	}
+	delete(fp.readySet, pvm)
+}
+
+func rebuildReadyVMLocked(fp *functionPool) {
+	ensurePoolStateLocked(fp)
+	clear(fp.readySet)
+	fp.readyVMs = fp.readyVMs[:0]
+	fp.totalInflight = 0
 	for _, pvm := range fp.vms {
-		if pvm.inflight < pvm.maxConcurrent {
-			pvm.inflight++
-			pvm.LastUsed = time.Now()
-			pvm.ColdStart = false
-			return pvm
+		fp.totalInflight += pvm.inflight
+		addReadyVMLocked(fp, pvm)
+	}
+}
+
+func takeWarmVMLocked(fp *functionPool) *PooledVM {
+	ensurePoolStateLocked(fp)
+	for len(fp.readyVMs) > 0 {
+		last := len(fp.readyVMs) - 1
+		pvm := fp.readyVMs[last]
+		fp.readyVMs = fp.readyVMs[:last]
+		if _, ok := fp.readySet[pvm]; !ok {
+			continue
 		}
+		delete(fp.readySet, pvm)
+		if pvm.inflight >= pvm.maxConcurrent {
+			continue
+		}
+		pvm.inflight++
+		fp.totalInflight++
+		pvm.LastUsed = time.Now()
+		pvm.ColdStart = false
+		addReadyVMLocked(fp, pvm)
+		return pvm
 	}
 	return nil
 }
 
 func inflightCountLocked(fp *functionPool) int {
-	total := 0
-	for _, pvm := range fp.vms {
-		total += pvm.inflight
+	return fp.totalInflight
+}
+
+func waitForVMLocked(ctx context.Context, fp *functionPool, waitFor time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	return total
+	fp.waiters++
+	defer func() {
+		fp.waiters--
+	}()
+
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			fp.mu.Lock()
+			fp.cond.Broadcast()
+			fp.mu.Unlock()
+		case <-done:
+		}
+	}()
+
+	var timer *time.Timer
+	if waitFor > 0 {
+		timer = time.AfterFunc(waitFor, func() {
+			fp.mu.Lock()
+			fp.cond.Broadcast()
+			fp.mu.Unlock()
+		})
+	}
+
+	fp.cond.Wait()
+	close(done)
+	if timer != nil {
+		timer.Stop()
+	}
+	return ctx.Err()
 }
 
 func (p *Pool) acquireGeneric(
@@ -437,46 +527,23 @@ func (p *Pool) acquireGeneric(
 			return nil, ErrQueueWaitTimeout
 		}
 
-		fp.waiters++
-		fp.mu.Unlock()
-
-		waitFor := defaultQueuePollInterval
+		waitFor := time.Duration(0)
 		if maxQueueWait > 0 {
 			remaining := maxQueueWait - time.Since(waitStart)
 			if remaining <= 0 {
-				fp.mu.Lock()
-				if fp.waiters > 0 {
-					fp.waiters--
-				}
 				fp.mu.Unlock()
 				recordQueueWait()
 				return nil, ErrQueueWaitTimeout
 			}
-			if remaining < waitFor {
-				waitFor = remaining
-			}
+			waitFor = remaining
 		}
 
-		timer := time.NewTimer(waitFor)
-		select {
-		case <-ctx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
-			fp.mu.Lock()
-			if fp.waiters > 0 {
-				fp.waiters--
-			}
+		if err := waitForVMLocked(ctx, fp, waitFor); err != nil {
 			fp.mu.Unlock()
 			recordQueueWait()
-			return nil, ctx.Err()
-		case <-timer.C:
-			fp.mu.Lock()
-			if fp.waiters > 0 {
-				fp.waiters--
-			}
-			fp.mu.Unlock()
+			return nil, err
 		}
+		fp.mu.Unlock()
 	}
 
 	val, err, shared := p.group.Do(fn.ID, func() (interface{}, error) {
@@ -489,15 +556,10 @@ func (p *Pool) acquireGeneric(
 	pvm := val.(*PooledVM)
 	if shared {
 		fp.mu.Lock()
-		for _, existing := range fp.vms {
-			if existing.VM.ID == pvm.VM.ID && existing.inflight < existing.maxConcurrent {
-				existing.inflight++
-				existing.LastUsed = time.Now()
-				existing.ColdStart = false
-				fp.mu.Unlock()
-				recordQueueWait()
-				return existing, nil
-			}
+		if existing := takeWarmVMLocked(fp); existing != nil {
+			fp.mu.Unlock()
+			recordQueueWait()
+			return existing, nil
 		}
 		maxReps := fp.maxReplicas.Load()
 		canCreate := maxReps == 0 || len(fp.vms) < int(maxReps)
@@ -521,6 +583,11 @@ func (p *Pool) acquireGeneric(
 
 	fp.mu.Lock()
 	fp.vms = append(fp.vms, pvm)
+	fp.totalInflight += pvm.inflight
+	addReadyVMLocked(fp, pvm)
+	if fp.waiters > 0 {
+		fp.cond.Signal()
+	}
 	fp.mu.Unlock()
 	p.totalVMs.Add(1)
 	metrics.SetActiveVMs(p.TotalVMCount())
@@ -602,8 +669,8 @@ func (p *Pool) createVM(ctx context.Context, fn *domain.Function, codeContent []
 				if _, hasSnapshot := p.snapshotCache.Load(funcID); !hasSnapshot {
 					logging.Op().Info("creating snapshot after cold start", "function", funcName, "vm_id", vmID)
 					snapshotCtx, snapshotCancel := context.WithTimeout(context.Background(), 60*time.Second)
-				defer snapshotCancel()
-				if err := snapshotCb(snapshotCtx, vmID, funcID); err != nil {
+					defer snapshotCancel()
+					if err := snapshotCb(snapshotCtx, vmID, funcID); err != nil {
 						logging.Op().Error("snapshot creation failed", "function", funcName, "error", err)
 					} else {
 						p.snapshotCache.Store(funcID, true)
@@ -750,15 +817,17 @@ func (p *Pool) Release(pvm *PooledVM) {
 	fp.mu.Lock()
 	if pvm.inflight > 0 {
 		pvm.inflight--
+		fp.totalInflight--
+		if fp.totalInflight < 0 {
+			fp.totalInflight = 0
+		}
 	}
 	pvm.LastUsed = time.Now()
-	hasWaiters := fp.waiters > 0
-	fp.mu.Unlock()
-
-	// Signal one waiting goroutine if any
-	if hasWaiters {
+	addReadyVMLocked(fp, pvm)
+	if fp.waiters > 0 {
 		fp.cond.Signal()
 	}
+	fp.mu.Unlock()
 }
 
 func (p *Pool) Evict(funcID string) {
@@ -772,6 +841,9 @@ func (p *Pool) Evict(funcID string) {
 	vms := fp.vms
 	evictedCount := int32(len(vms))
 	fp.vms = nil
+	fp.totalInflight = 0
+	fp.readyVMs = nil
+	fp.readySet = nil
 	fp.mu.Unlock()
 	if evictedCount > 0 {
 		p.totalVMs.Add(-evictedCount)
@@ -801,12 +873,20 @@ func (p *Pool) EvictVM(funcID string, target *PooledVM) {
 	fp.mu.Lock()
 	prevLen := len(fp.vms)
 	newList := make([]*PooledVM, 0, len(fp.vms))
+	removedInflight := 0
 	for _, pvm := range fp.vms {
 		if pvm != target {
 			newList = append(newList, pvm)
+		} else {
+			removedInflight += pvm.inflight
+			removeReadyVMLocked(fp, pvm)
 		}
 	}
 	fp.vms = newList
+	fp.totalInflight -= removedInflight
+	if fp.totalInflight < 0 {
+		fp.totalInflight = 0
+	}
 	removed := int32(prevLen - len(newList))
 	fp.mu.Unlock()
 	if removed > 0 {
@@ -954,6 +1034,9 @@ func (p *Pool) Shutdown() {
 			toStop = append(toStop, vmToStop{client: pvm.Client, vmID: pvm.VM.ID})
 		}
 		fp.vms = nil
+		fp.totalInflight = 0
+		fp.readyVMs = nil
+		fp.readySet = nil
 		fp.mu.Unlock()
 		return true
 	})
