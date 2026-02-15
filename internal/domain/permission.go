@@ -18,6 +18,7 @@ const (
 	PermAPIKeyManage    Permission = "apikey:manage"
 	PermSecretManage    Permission = "secret:manage"
 	PermWorkflowManage  Permission = "workflow:manage"
+	PermWorkflowInvoke  Permission = "workflow:invoke"
 	PermScheduleManage  Permission = "schedule:manage"
 	PermGatewayManage   Permission = "gateway:manage"
 	PermLogRead         Permission = "log:read"
@@ -47,11 +48,12 @@ const (
 	EffectDeny  Effect = "deny"
 )
 
-// PolicyBinding binds a role to an optional set of function scopes
+// PolicyBinding binds a role to an optional set of function and workflow scopes
 type PolicyBinding struct {
 	Role      Role     `json:"role"`
-	Functions []string `json:"functions,omitempty"` // empty = all functions; supports glob patterns (e.g. "staging-*")
-	Effect    Effect   `json:"effect,omitempty"`    // "allow" (default) or "deny"
+	Functions []string `json:"functions,omitempty"`  // empty = all functions; supports glob patterns (e.g. "staging-*")
+	Workflows []string `json:"workflows,omitempty"`  // empty = all workflows; supports glob patterns
+	Effect    Effect   `json:"effect,omitempty"`     // "allow" (default) or "deny"
 }
 
 // RolePermissions maps each role to its granted permissions
@@ -62,7 +64,7 @@ var RolePermissions = map[Role][]Permission{
 		PermConfigRead, PermConfigWrite,
 		PermSnapshotRead, PermSnapshotWrite,
 		PermAPIKeyManage, PermSecretManage,
-		PermWorkflowManage, PermScheduleManage, PermGatewayManage,
+		PermWorkflowManage, PermWorkflowInvoke, PermScheduleManage, PermGatewayManage,
 		PermLogRead, PermMetricsRead,
 		PermAppPublish, PermAppRead, PermAppInstall, PermAppManage,
 		PermRBACManage,
@@ -71,12 +73,13 @@ var RolePermissions = map[Role][]Permission{
 		PermFunctionCreate, PermFunctionRead, PermFunctionUpdate, PermFunctionDelete, PermFunctionInvoke,
 		PermRuntimeRead, PermRuntimeWrite,
 		PermSnapshotRead, PermSnapshotWrite,
-		PermWorkflowManage, PermScheduleManage,
+		PermWorkflowManage, PermWorkflowInvoke, PermScheduleManage,
 		PermLogRead, PermMetricsRead,
 		PermAppRead, PermAppInstall,
 	},
 	RoleInvoker: {
 		PermFunctionRead, PermFunctionInvoke,
+		PermWorkflowInvoke,
 		PermLogRead,
 		PermAppRead,
 	},

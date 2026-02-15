@@ -2191,10 +2191,18 @@ export const workflowsApi = {
 
 // --- API Keys ---
 
+export interface PolicyBinding {
+  role: string;
+  functions?: string[];
+  workflows?: string[];
+  effect?: "allow" | "deny";
+}
+
 export interface APIKeyEntry {
   name: string;
   tier: string;
   enabled: boolean;
+  permissions: PolicyBinding[];
   created_at: string;
 }
 
@@ -2202,6 +2210,7 @@ export interface APIKeyCreateResponse {
   name: string;
   key: string;
   tier: string;
+  permissions: PolicyBinding[];
 }
 
 export const apiKeysApi = {
@@ -2215,10 +2224,10 @@ export const apiKeysApi = {
     return result.items;
   },
 
-  create: (name: string, tier: string = "default") =>
+  create: (name: string, tier: string = "default", permissions?: PolicyBinding[]) =>
     request<APIKeyCreateResponse>("/apikeys", {
       method: "POST",
-      body: JSON.stringify({ name, tier }),
+      body: JSON.stringify({ name, tier, permissions: permissions || [] }),
     }),
 
   delete: (name: string) =>
@@ -2230,6 +2239,12 @@ export const apiKeysApi = {
     request<{ name: string; enabled: boolean }>(`/apikeys/${encodeURIComponent(name)}`, {
       method: "PATCH",
       body: JSON.stringify({ enabled }),
+    }),
+
+  updatePermissions: (name: string, permissions: PolicyBinding[]) =>
+    request<{ name: string; status: string }>(`/apikeys/${encodeURIComponent(name)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ permissions }),
     }),
 };
 
