@@ -432,9 +432,7 @@ func waitForVMLocked(ctx context.Context, fp *functionPool, waitFor time.Duratio
 	}
 	fp.waiters++
 	defer func() {
-		if fp.waiters > 0 {
-			fp.waiters--
-		}
+		fp.waiters--
 	}()
 
 	done := make(chan struct{})
@@ -819,8 +817,9 @@ func (p *Pool) Release(pvm *PooledVM) {
 	fp.mu.Lock()
 	if pvm.inflight > 0 {
 		pvm.inflight--
-		if fp.totalInflight > 0 {
-			fp.totalInflight--
+		fp.totalInflight--
+		if fp.totalInflight < 0 {
+			fp.totalInflight = 0
 		}
 	}
 	pvm.LastUsed = time.Now()
