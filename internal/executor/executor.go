@@ -30,16 +30,17 @@ import (
 var ErrCircuitOpen = fmt.Errorf("circuit breaker is open")
 
 type Executor struct {
-	store           *store.Store
-	pool            *pool.Pool
-	logger          *logging.Logger
-	secretsResolver *secrets.Resolver
-	logSink         logsink.LogSink
-	logBatcher      *invocationLogBatcher
+	store            *store.Store
+	pool             *pool.Pool
+	logger           *logging.Logger
+	secretsResolver  *secrets.Resolver
+	logSink          logsink.LogSink
+	logBatcher       *invocationLogBatcher
 	logBatcherConfig LogBatcherConfig
-	inflight        sync.WaitGroup
-	closing         atomic.Bool
-	breakers        *circuitbreaker.Registry
+	persistPayloads  bool
+	inflight         sync.WaitGroup
+	closing          atomic.Bool
+	breakers         *circuitbreaker.Registry
 }
 
 type Option func(*Executor)
@@ -73,12 +74,20 @@ func WithLogSink(sink logsink.LogSink) Option {
 	}
 }
 
+// WithPayloadPersistence controls whether full invocation payloads/stdout/stderr are stored.
+func WithPayloadPersistence(enabled bool) Option {
+	return func(e *Executor) {
+		e.persistPayloads = enabled
+	}
+}
+
 func New(store *store.Store, pool *pool.Pool, opts ...Option) *Executor {
 	e := &Executor{
-		store:    store,
-		pool:     pool,
-		logger:   logging.Default(),
-		breakers: circuitbreaker.NewRegistry(),
+		store:           store,
+		pool:            pool,
+		logger:          logging.Default(),
+		breakers:        circuitbreaker.NewRegistry(),
+		persistPayloads: false,
 	}
 	for _, opt := range opts {
 		opt(e)
@@ -129,9 +138,9 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 
 	// Parallel pre-execution queries: runtime config, layers, code, and multi-file check
 	var (
-		rtCfg        *store.RuntimeRecord
-		layers       []*domain.Layer
-		codeRecord   *domain.FunctionCode
+		rtCfg         *store.RuntimeRecord
+		layers        []*domain.Layer
+		codeRecord    *domain.FunctionCode
 		hasMultiFiles bool
 	)
 
@@ -454,9 +463,9 @@ func (e *Executor) InvokeStream(ctx context.Context, funcName string, payload js
 
 	// Parallel pre-execution queries: runtime config, layers, code, and multi-file check
 	var (
-		rtCfg        *store.RuntimeRecord
-		layers       []*domain.Layer
-		codeRecord   *domain.FunctionCode
+		rtCfg         *store.RuntimeRecord
+		layers        []*domain.Layer
+		codeRecord    *domain.FunctionCode
 		hasMultiFiles bool
 	)
 
@@ -701,6 +710,12 @@ func (e *Executor) BreakerSnapshot() map[string]string {
 
 // persistInvocationLog asynchronously saves an invocation log to Postgres
 func (e *Executor) persistInvocationLog(reqID string, fn *domain.Function, durationMs int64, coldStart, success bool, errMsg string, inputSize, outputSize int, input, output json.RawMessage, stdout, stderr string) {
+	if !e.persistPayloads {
+		input = nil
+		output = nil
+		stdout = ""
+		stderr = ""
+	}
 	e.logBatcher.Enqueue(&store.InvocationLog{
 		ID:           reqID,
 		TenantID:     fn.TenantID,
