@@ -1,0 +1,23 @@
+# Lightweight test environment — Postgres only.
+# Usage:
+#   make env-up     # start
+#   make test       # run all tests
+#   make env-down   # tear down
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nova-test-postgres
+    environment:
+      POSTGRES_USER: nova
+      POSTGRES_PASSWORD: nova
+      POSTGRES_DB: nova
+    ports:
+      - "127.0.0.1:${NOVA_TEST_PG_PORT:-5433}:5432"
+    volumes:
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nova -d nova"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
