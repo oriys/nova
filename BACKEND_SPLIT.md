@@ -73,8 +73,8 @@ make build
 
 ```bash
 ./bin/zenith serve \
-  --listen :8080 \
-  --nova-url http://127.0.0.1:8081 \
+  --listen :9000 \
+  --nova-url http://127.0.0.1:9001 \
   --comet-grpc 127.0.0.1:9090
 ```
 
@@ -84,9 +84,9 @@ make build
 - 数据面路径（如 `invoke-async` / logs / metrics / heatmap / invocations / async-invocations）：通过 gRPC `ProxyHTTP` 转发到 Comet 内部数据面处理器
 - 其余管理类路径：反向代理到 Nova HTTP
 
-## Docker 启动（7 容器）
+## Docker 启动（11 服务）
 
-`docker-compose.yml` 已配置为七服务独立容器启动：
+`docker-compose.yml` 已配置为多服务独立容器启动（核心后端 6 服务 + Lumen + Postgres + rootfs-builder + seeder + workflow-seeder）：
 
 - `nova` 使用 `Dockerfile` 的 `nova-runtime` target
 - `comet` 使用 `Dockerfile` 的 `comet-runtime` target
