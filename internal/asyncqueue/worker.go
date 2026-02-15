@@ -22,6 +22,7 @@ type Config struct {
 	InvokeTimeout time.Duration
 	BatchSize     int
 	Notifier      queue.Notifier // optional push-based notifier to reduce polling
+	Adaptive      AdaptiveConfig // optional adaptive concurrency control
 }
 
 // WorkerPool polls queued async invocations and executes them.
@@ -35,6 +36,9 @@ type WorkerPool struct {
 	started  bool
 	mu       sync.Mutex
 	wg       sync.WaitGroup
+
+	// adaptive controller for dynamic concurrency tuning (nil when disabled)
+	adaptive *AdaptiveController
 
 	// cached global pause state to avoid querying DB on every poll
 	pausedUntil atomic.Int64 // unix nano timestamp until which cached pause value is valid
@@ -69,7 +73,7 @@ func New(s *store.Store, exec executor.Invoker, cfg Config) *WorkerPool {
 	if notifier == nil {
 		notifier = queue.NewNoopNotifier()
 	}
-	return &WorkerPool{
+	wp := &WorkerPool{
 		store:    s,
 		exec:     exec,
 		cfg:      cfg,
@@ -77,6 +81,10 @@ func New(s *store.Store, exec executor.Invoker, cfg Config) *WorkerPool {
 		stopCh:   make(chan struct{}),
 		taskCh:   make(chan *store.AsyncInvocation, cfg.Workers*cfg.BatchSize),
 	}
+	if cfg.Adaptive.Enabled {
+		wp.adaptive = newAdaptiveController(cfg.Adaptive, cfg.Workers, cfg.BatchSize, cfg.PollInterval)
+	}
+	return wp
 }
 
 // Start launches poller and worker goroutines.
@@ -88,14 +96,29 @@ func (w *WorkerPool) Start() {
 	}
 	w.started = true
 
-	// Start worker goroutines that process tasks from the channel
+	if w.adaptive != nil {
+		// Adaptive mode: start the controller and use elastic goroutines.
+		w.adaptive.Start()
+		w.wg.Add(1)
+		go w.elasticWorkerManager()
+		w.wg.Add(1)
+		go w.elasticPollerManager()
+
+		logging.Op().Info("async queue workers started (adaptive mode)",
+			"initial_workers", w.adaptive.Workers(),
+			"initial_pollers", w.adaptive.Pollers(),
+			"initial_poll_interval", w.adaptive.PollInterval(),
+			"initial_batch_size", w.adaptive.BatchSize(),
+		)
+		return
+	}
+
+	// Static mode: fixed number of workers and pollers.
 	for i := 0; i < w.cfg.Workers; i++ {
 		w.wg.Add(1)
 		go w.worker(i)
 	}
 
-	// Start poller goroutines that fetch tasks from DB and feed the channel.
-	// Use fewer pollers than workers since each poller fetches a batch.
 	pollerCount := w.cfg.Workers / w.cfg.BatchSize
 	if pollerCount < 2 {
 		pollerCount = 2
@@ -127,6 +150,9 @@ func (w *WorkerPool) Stop() {
 	close(w.stopCh)
 	w.mu.Unlock()
 
+	if w.adaptive != nil {
+		w.adaptive.Stop()
+	}
 	w.wg.Wait()
 	logging.Op().Info("async queue workers stopped")
 }
@@ -160,11 +186,28 @@ func (w *WorkerPool) pollBatch(pollerID string) {
 		return
 	}
 
-	jobs, err := w.store.AcquireDueAsyncInvocations(context.Background(), pollerID, w.cfg.LeaseDuration, w.cfg.BatchSize)
+	batchSize := w.cfg.BatchSize
+	if w.adaptive != nil {
+		batchSize = w.adaptive.BatchSize()
+	}
+
+	jobs, err := w.store.AcquireDueAsyncInvocations(context.Background(), pollerID, w.cfg.LeaseDuration, batchSize)
 	if err != nil {
 		logging.Op().Error("acquire async invocations failed", "poller", pollerID, "error", err)
 		return
 	}
+
+	// Feed queue depth signal to adaptive controller.
+	if w.adaptive != nil {
+		// When we get a full batch, the queue likely has more pending work.
+		// Signal higher depth to indicate continued pressure.
+		if len(jobs) >= batchSize {
+			w.adaptive.SetQueueDepth(int64(batchSize) * 2)
+		} else {
+			w.adaptive.SetQueueDepth(int64(len(jobs)))
+		}
+	}
+
 	if len(jobs) == 0 {
 		return
 	}
@@ -178,7 +221,7 @@ func (w *WorkerPool) pollBatch(pollerID string) {
 	}
 
 	// If we got a full batch, immediately try again (drain loop)
-	if len(jobs) >= w.cfg.BatchSize {
+	if len(jobs) >= batchSize {
 		select {
 		case <-w.stopCh:
 			return
@@ -231,6 +274,11 @@ func (w *WorkerPool) processJob(workerID string, job *store.AsyncInvocation) {
 
 	resp, invokeErr := w.exec.Invoke(ctx, job.FunctionName, job.Payload)
 
+	// Record completion for adaptive controller regardless of success/failure.
+	if w.adaptive != nil {
+		w.adaptive.RecordCompleted(1)
+	}
+
 	errMsg := ""
 	if invokeErr != nil {
 		errMsg = invokeErr.Error()
@@ -265,6 +313,157 @@ func (w *WorkerPool) processJob(workerID string, job *store.AsyncInvocation) {
 		return
 	}
 	logging.Op().Warn("async invocation retry scheduled", "job", job.ID, "function", job.FunctionName, "attempt", job.Attempt, "next_run_at", nextRun, "error", errMsg)
+}
+
+// elasticWorkerManager dynamically adjusts the number of active workers
+// based on the adaptive controller's target. It runs a reconciliation loop
+// that spawns or stops worker goroutines as needed.
+func (w *WorkerPool) elasticWorkerManager() {
+	defer w.wg.Done()
+
+	type workerHandle struct {
+		cancel context.CancelFunc
+	}
+
+	var handles []workerHandle
+	reconcile := func() {
+		target := w.adaptive.Workers()
+		current := len(handles)
+
+		if target > current {
+			// Scale up: spawn new workers
+			for i := current; i < target; i++ {
+				ctx, cancel := context.WithCancel(context.Background())
+				handles = append(handles, workerHandle{cancel: cancel})
+				w.wg.Add(1)
+				go w.elasticWorker(i, ctx)
+			}
+		} else if target < current {
+			// Scale down: cancel excess workers (LIFO order)
+			for i := current - 1; i >= target; i-- {
+				handles[i].cancel()
+			}
+			handles = handles[:target]
+		}
+	}
+
+	// Initial spawn
+	reconcile()
+
+	ticker := time.NewTicker(w.adaptive.cfg.ProbeInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-w.stopCh:
+			// Cancel all remaining workers
+			for _, h := range handles {
+				h.cancel()
+			}
+			return
+		case <-ticker.C:
+			reconcile()
+		}
+	}
+}
+
+// elasticWorker is a worker goroutine that processes tasks until its context
+// is cancelled (scale-down) or the pool stops.
+func (w *WorkerPool) elasticWorker(id int, ctx context.Context) {
+	defer w.wg.Done()
+	workerID := fmt.Sprintf("async-worker-%d", id)
+
+	for {
+		select {
+		case <-w.stopCh:
+			return
+		case <-ctx.Done():
+			return
+		case job := <-w.taskCh:
+			w.processJob(workerID, job)
+		}
+	}
+}
+
+// elasticPollerManager dynamically adjusts poller goroutines and their poll
+// intervals based on the adaptive controller's target values.
+func (w *WorkerPool) elasticPollerManager() {
+	defer w.wg.Done()
+
+	type pollerHandle struct {
+		cancel context.CancelFunc
+	}
+
+	var handles []pollerHandle
+	reconcile := func() {
+		target := w.adaptive.Pollers()
+		current := len(handles)
+
+		if target > current {
+			for i := current; i < target; i++ {
+				ctx, cancel := context.WithCancel(context.Background())
+				handles = append(handles, pollerHandle{cancel: cancel})
+				w.wg.Add(1)
+				go w.elasticPoller(i, ctx)
+			}
+		} else if target < current {
+			for i := current - 1; i >= target; i-- {
+				handles[i].cancel()
+			}
+			handles = handles[:target]
+		}
+	}
+
+	reconcile()
+
+	ticker := time.NewTicker(w.adaptive.cfg.ProbeInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-w.stopCh:
+			for _, h := range handles {
+				h.cancel()
+			}
+			return
+		case <-ticker.C:
+			reconcile()
+		}
+	}
+}
+
+// elasticPoller is a poller goroutine whose poll interval is read dynamically
+// from the adaptive controller.
+func (w *WorkerPool) elasticPoller(id int, ctx context.Context) {
+	defer w.wg.Done()
+
+	pollInterval := w.adaptive.PollInterval()
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	defer bgCancel()
+	notifyCh := w.notifier.Subscribe(bgCtx, queue.QueueAsync)
+
+	pollerID := fmt.Sprintf("async-poller-%d", id)
+	for {
+		select {
+		case <-w.stopCh:
+			return
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			w.pollBatch(pollerID)
+			// Re-read poll interval from controller and reset ticker if changed.
+			newInterval := w.adaptive.PollInterval()
+			if newInterval != pollInterval {
+				pollInterval = newInterval
+				ticker.Reset(pollInterval)
+			}
+		case <-notifyCh:
+			w.pollBatch(pollerID)
+		}
+	}
 }
 
 func calcBackoff(attempt, baseMS, maxMS int) time.Duration {
