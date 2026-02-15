@@ -38,6 +38,8 @@ func (a *Authorizer) Check(identity *auth.Identity, perm domain.Permission, reso
 		policies = []domain.PolicyBinding{{Role: a.defaultRole}}
 	}
 
+	isWorkflowPerm := isWorkflowPermission(perm)
+
 	// Phase 1: Check DENY policies first
 	for _, pb := range policies {
 		if pb.Effect != domain.EffectDeny {
@@ -51,8 +53,14 @@ func (a *Authorizer) Check(identity *auth.Identity, perm domain.Permission, reso
 			if p != perm {
 				continue
 			}
-			if matchScope(pb.Functions, resource) {
-				return errForbidden
+			if isWorkflowPerm {
+				if matchScope(pb.Workflows, resource) {
+					return errForbidden
+				}
+			} else {
+				if matchScope(pb.Functions, resource) {
+					return errForbidden
+				}
 			}
 		}
 	}
@@ -73,12 +81,23 @@ func (a *Authorizer) Check(identity *auth.Identity, perm domain.Permission, reso
 			if p != perm {
 				continue
 			}
-			if matchScope(pb.Functions, resource) {
-				return nil
+			if isWorkflowPerm {
+				if matchScope(pb.Workflows, resource) {
+					return nil
+				}
+			} else {
+				if matchScope(pb.Functions, resource) {
+					return nil
+				}
 			}
 		}
 	}
 	return errForbidden
+}
+
+// isWorkflowPermission returns true if the permission is workflow-specific.
+func isWorkflowPermission(perm domain.Permission) bool {
+	return perm == domain.PermWorkflowInvoke || perm == domain.PermWorkflowManage
 }
 
 // matchScope checks whether the resource matches a set of function scope patterns.
@@ -193,7 +212,14 @@ var routeTable = []routePermission{
 func resolvePermission(method, path string) domain.Permission {
 	// Special case: invoke endpoint
 	if method == "POST" && strings.Contains(path, "/invoke") {
+		if strings.HasPrefix(path, "/workflows/") {
+			return domain.PermWorkflowInvoke
+		}
 		return domain.PermFunctionInvoke
+	}
+	// Special case: workflow runs
+	if method == "POST" && strings.HasPrefix(path, "/workflows/") && strings.HasSuffix(path, "/runs") {
+		return domain.PermWorkflowInvoke
 	}
 	// Special case: snapshot endpoints
 	if strings.Contains(path, "/snapshot") {
@@ -251,6 +277,28 @@ func extractFunctionName(path string) string {
 	return rest
 }
 
+// extractWorkflowName extracts the workflow name from URL path if applicable.
+func extractWorkflowName(path string) string {
+	// /workflows/{name}... -> name
+	const prefix = "/workflows/"
+	if !strings.HasPrefix(path, prefix) {
+		return ""
+	}
+	rest := path[len(prefix):]
+	if idx := strings.Index(rest, "/"); idx >= 0 {
+		return rest[:idx]
+	}
+	return rest
+}
+
+// extractResource extracts the resource name (function or workflow) from the URL path.
+func extractResource(path string) string {
+	if name := extractFunctionName(path); name != "" {
+		return name
+	}
+	return extractWorkflowName(path)
+}
+
 // Middleware returns an HTTP middleware that enforces authorization.
 func Middleware(authorizer *Authorizer) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -263,7 +311,7 @@ func Middleware(authorizer *Authorizer) func(http.Handler) http.Handler {
 			}
 
 			perm := resolvePermission(r.Method, r.URL.Path)
-			resource := extractFunctionName(r.URL.Path)
+			resource := extractResource(r.URL.Path)
 
 			if err := authorizer.Check(identity, perm, resource); err != nil {
 				scope := store.TenantScopeFromContext(r.Context())
