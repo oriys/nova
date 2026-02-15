@@ -21,8 +21,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { apiKeysApi } from "@/lib/api"
-import type { APIKeyEntry } from "@/lib/api"
+import { apiKeysApi, functionsApi, workflowsApi } from "@/lib/api"
+import type { APIKeyEntry, PolicyBinding } from "@/lib/api"
 import {
   Plus,
   Trash2,
@@ -32,8 +32,236 @@ import {
   KeyRound,
   ToggleLeft,
   ToggleRight,
+  X,
+  Shield,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+
+function PolicyBindingEditor({
+  bindings,
+  onChange,
+  availableFunctions,
+  availableWorkflows,
+  tk,
+  tc,
+}: {
+  bindings: PolicyBinding[]
+  onChange: (bindings: PolicyBinding[]) => void
+  availableFunctions: string[]
+  availableWorkflows: string[]
+  tk: (key: string) => string
+  tc: (key: string) => string
+}) {
+  const [fnInput, setFnInput] = useState("")
+  const [wfInput, setWfInput] = useState("")
+
+  const currentBinding = bindings.length > 0 ? bindings[0] : { role: "invoker", functions: [], workflows: [] }
+  const boundFunctions = currentBinding.functions || []
+  const boundWorkflows = currentBinding.workflows || []
+
+  const updateBinding = (fns: string[], wfs: string[]) => {
+    const role = currentBinding.role || "invoker"
+    if (fns.length === 0 && wfs.length === 0) {
+      onChange([{ role }])
+    } else {
+      onChange([{
+        role,
+        ...(fns.length > 0 ? { functions: fns } : {}),
+        ...(wfs.length > 0 ? { workflows: wfs } : {}),
+      }])
+    }
+  }
+
+  const addFunction = (name: string) => {
+    if (name && !boundFunctions.includes(name)) {
+      updateBinding([...boundFunctions, name], boundWorkflows)
+    }
+    setFnInput("")
+  }
+
+  const removeFunction = (name: string) => {
+    updateBinding(boundFunctions.filter((f) => f !== name), boundWorkflows)
+  }
+
+  const addWorkflow = (name: string) => {
+    if (name && !boundWorkflows.includes(name)) {
+      updateBinding(boundFunctions, [...boundWorkflows, name])
+    }
+    setWfInput("")
+  }
+
+  const removeWorkflow = (name: string) => {
+    updateBinding(boundFunctions, boundWorkflows.filter((w) => w !== name))
+  }
+
+  const unusedFunctions = availableFunctions.filter((f) => !boundFunctions.includes(f))
+  const unusedWorkflows = availableWorkflows.filter((w) => !boundWorkflows.includes(w))
+
+  return (
+    <div className="space-y-4">
+      {/* Role */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">{tk("role")}</label>
+        <Select
+          value={currentBinding.role || "invoker"}
+          onValueChange={(role) => {
+            onChange(bindings.length > 0
+              ? bindings.map((b, i) => i === 0 ? { ...b, role } : b)
+              : [{ role, functions: [], workflows: [] }]
+            )
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="admin">{tk("roleAdmin")}</SelectItem>
+            <SelectItem value="operator">{tk("roleOperator")}</SelectItem>
+            <SelectItem value="invoker">{tk("roleInvoker")}</SelectItem>
+            <SelectItem value="viewer">{tk("roleViewer")}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Bound Functions */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">{tk("boundFunctions")}</label>
+        <p className="text-xs text-muted-foreground">{tk("boundFunctionsHint")}</p>
+        <div className="flex flex-wrap gap-1.5 min-h-[28px]">
+          {boundFunctions.map((fn) => (
+            <Badge key={fn} variant="secondary" className="text-xs gap-1 pr-1">
+              {fn}
+              <button onClick={() => removeFunction(fn)} className="ml-0.5 hover:text-destructive">
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          {unusedFunctions.length > 0 ? (
+            <Select value="" onValueChange={(v) => addFunction(v)}>
+              <SelectTrigger className="flex-1">
+                <SelectValue placeholder={tk("selectFunction")} />
+              </SelectTrigger>
+              <SelectContent>
+                {unusedFunctions.map((fn) => (
+                  <SelectItem key={fn} value={fn}>{fn}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+          <div className="flex gap-1 flex-1">
+            <Input
+              value={fnInput}
+              onChange={(e) => setFnInput(e.target.value)}
+              placeholder={tk("functionPatternPlaceholder")}
+              className="flex-1"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault()
+                  addFunction(fnInput.trim())
+                }
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!fnInput.trim()}
+              onClick={() => addFunction(fnInput.trim())}
+            >
+              <Plus className="h-3 w-3" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Bound Workflows */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">{tk("boundWorkflows")}</label>
+        <p className="text-xs text-muted-foreground">{tk("boundWorkflowsHint")}</p>
+        <div className="flex flex-wrap gap-1.5 min-h-[28px]">
+          {boundWorkflows.map((wf) => (
+            <Badge key={wf} variant="secondary" className="text-xs gap-1 pr-1">
+              {wf}
+              <button onClick={() => removeWorkflow(wf)} className="ml-0.5 hover:text-destructive">
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          {unusedWorkflows.length > 0 ? (
+            <Select value="" onValueChange={(v) => addWorkflow(v)}>
+              <SelectTrigger className="flex-1">
+                <SelectValue placeholder={tk("selectWorkflow")} />
+              </SelectTrigger>
+              <SelectContent>
+                {unusedWorkflows.map((wf) => (
+                  <SelectItem key={wf} value={wf}>{wf}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+          <div className="flex gap-1 flex-1">
+            <Input
+              value={wfInput}
+              onChange={(e) => setWfInput(e.target.value)}
+              placeholder={tk("workflowPatternPlaceholder")}
+              className="flex-1"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault()
+                  addWorkflow(wfInput.trim())
+                }
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!wfInput.trim()}
+              onClick={() => addWorkflow(wfInput.trim())}
+            >
+              <Plus className="h-3 w-3" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PermissionsSummary({ permissions, tk }: { permissions: PolicyBinding[]; tk: (key: string) => string }) {
+  if (!permissions || permissions.length === 0) {
+    return <span className="text-muted-foreground text-xs">{tk("allResources")}</span>
+  }
+  const binding = permissions[0]
+  const fns = binding.functions || []
+  const wfs = binding.workflows || []
+  const hasScope = fns.length > 0 || wfs.length > 0
+  return (
+    <div className="flex flex-col gap-0.5">
+      <Badge variant="outline" className="text-xs w-fit">{binding.role || "invoker"}</Badge>
+      {hasScope ? (
+        <div className="flex flex-wrap gap-1 mt-0.5">
+          {fns.map((f) => (
+            <Badge key={"fn:" + f} variant="secondary" className="text-xs">
+              ƒ {f}
+            </Badge>
+          ))}
+          {wfs.map((w) => (
+            <Badge key={"wf:" + w} variant="secondary" className="text-xs">
+              ⚡ {w}
+            </Badge>
+          ))}
+        </div>
+      ) : (
+        <span className="text-muted-foreground text-xs">{tk("allResources")}</span>
+      )}
+    </div>
+  )
+}
 
 export default function APIKeysPage() {
   const t = useTranslations("pages")
@@ -45,9 +273,15 @@ export default function APIKeysPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [newKeyName, setNewKeyName] = useState("")
   const [newKeyTier, setNewKeyTier] = useState("default")
+  const [newKeyPermissions, setNewKeyPermissions] = useState<PolicyBinding[]>([{ role: "invoker" }])
   const [createdKey, setCreatedKey] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [availableFunctions, setAvailableFunctions] = useState<string[]>([])
+  const [availableWorkflows, setAvailableWorkflows] = useState<string[]>([])
+  const [editingKey, setEditingKey] = useState<string | null>(null)
+  const [editPermissions, setEditPermissions] = useState<PolicyBinding[]>([])
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
 
   const fetchKeys = useCallback(async () => {
     try {
@@ -62,18 +296,33 @@ export default function APIKeysPage() {
     }
   }, [tk])
 
+  const fetchResources = useCallback(async () => {
+    try {
+      const [fns, wfs] = await Promise.all([
+        functionsApi.list().catch(() => []),
+        workflowsApi.list().catch(() => []),
+      ])
+      setAvailableFunctions(fns.map((f) => f.name))
+      setAvailableWorkflows(wfs.map((w) => w.name))
+    } catch {
+      // ignore – resource lists are optional
+    }
+  }, [])
+
   useEffect(() => {
     fetchKeys()
-  }, [fetchKeys])
+    fetchResources()
+  }, [fetchKeys, fetchResources])
 
   const handleCreate = async () => {
     if (!newKeyName.trim()) return
     try {
       setCreating(true)
-      const result = await apiKeysApi.create(newKeyName.trim(), newKeyTier)
+      const result = await apiKeysApi.create(newKeyName.trim(), newKeyTier, newKeyPermissions)
       setCreatedKey(result.key)
       setNewKeyName("")
       setNewKeyTier("default")
+      setNewKeyPermissions([{ role: "invoker" }])
       fetchKeys()
     } catch (err) {
       setError(err instanceof Error ? err.message : tk("failedToCreate"))
@@ -106,6 +355,24 @@ export default function APIKeysPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const openEditPermissions = (key: APIKeyEntry) => {
+    setEditingKey(key.name)
+    setEditPermissions(key.permissions && key.permissions.length > 0 ? [...key.permissions] : [{ role: "invoker" }])
+    setEditDialogOpen(true)
+  }
+
+  const handleSavePermissions = async () => {
+    if (!editingKey) return
+    try {
+      await apiKeysApi.updatePermissions(editingKey, editPermissions)
+      setEditDialogOpen(false)
+      setEditingKey(null)
+      fetchKeys()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : tk("failedToUpdate"))
+    }
+  }
+
   return (
     <DashboardLayout>
       <Header title={t("apiKeys.title")} description={t("apiKeys.description")} />
@@ -134,7 +401,7 @@ export default function APIKeysPage() {
                 {tk("createApiKey")}
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{tk("createApiKey")}</DialogTitle>
               </DialogHeader>
@@ -191,6 +458,14 @@ export default function APIKeysPage() {
                       </SelectContent>
                     </Select>
                   </div>
+                  <PolicyBindingEditor
+                    bindings={newKeyPermissions}
+                    onChange={setNewKeyPermissions}
+                    availableFunctions={availableFunctions}
+                    availableWorkflows={availableWorkflows}
+                    tk={tk}
+                    tc={tc}
+                  />
                   <Button
                     className="w-full"
                     onClick={handleCreate}
@@ -209,12 +484,33 @@ export default function APIKeysPage() {
           </Button>
         </div>
 
+        {/* Edit permissions dialog */}
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{tk("editPermissions")} – {editingKey}</DialogTitle>
+            </DialogHeader>
+            <PolicyBindingEditor
+              bindings={editPermissions}
+              onChange={setEditPermissions}
+              availableFunctions={availableFunctions}
+              availableWorkflows={availableWorkflows}
+              tk={tk}
+              tc={tc}
+            />
+            <Button className="w-full" onClick={handleSavePermissions}>
+              {tc("save")}
+            </Button>
+          </DialogContent>
+        </Dialog>
+
         <div className="rounded-xl border border-border bg-card overflow-hidden">
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
                 <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tk("colName")}</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tk("colTier")}</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tk("colPermissions")}</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tk("colStatus")}</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tk("colCreated")}</th>
                 <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">{tk("colActions")}</th>
@@ -224,14 +520,14 @@ export default function APIKeysPage() {
               {loading ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <tr key={i} className="border-b border-border">
-                    <td colSpan={5} className="px-4 py-3">
+                    <td colSpan={6} className="px-4 py-3">
                       <div className="h-4 bg-muted rounded animate-pulse" />
                     </td>
                   </tr>
                 ))
               ) : keys.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
                     <KeyRound className="mx-auto h-8 w-8 mb-2 opacity-50" />
                     {tk("noKeys")}
                   </td>
@@ -246,6 +542,9 @@ export default function APIKeysPage() {
                       <Badge variant="secondary" className="text-xs">
                         {key.tier}
                       </Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <PermissionsSummary permissions={key.permissions} tk={tk} />
                     </td>
                     <td className="px-4 py-3">
                       <Badge
@@ -265,6 +564,14 @@ export default function APIKeysPage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEditPermissions(key)}
+                          title={tk("editPermissions")}
+                        >
+                          <Shield className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
