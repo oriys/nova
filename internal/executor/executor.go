@@ -140,6 +140,7 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	var (
 		rtCfg         *store.RuntimeRecord
 		layers        []*domain.Layer
+		volumes       []*domain.Volume
 		codeRecord    *domain.FunctionCode
 		hasMultiFiles bool
 	)
@@ -163,6 +164,17 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 			layers, err = e.store.GetFunctionLayers(gctx, fn.ID)
 			if err != nil {
 				logging.Op().Warn("failed to resolve layers", "function", fn.Name, "error", err)
+			}
+			return nil
+		})
+	}
+
+	if len(fn.Mounts) > 0 {
+		g.Go(func() error {
+			var err error
+			volumes, err = e.store.GetFunctionVolumes(gctx, fn.ID)
+			if err != nil {
+				logging.Op().Warn("failed to resolve volumes", "function", fn.Name, "error", err)
 			}
 			return nil
 		})
@@ -221,6 +233,9 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	for _, l := range layers {
 		fn.LayerPaths = append(fn.LayerPaths, l.ImagePath)
 	}
+
+	// Resolve volume mounts to host-side image paths
+	fn.ResolvedMounts = resolveVolumeMounts(fn.Mounts, volumes)
 
 	// Circuit breaker check
 	breaker := e.getBreakerForFunction(fn)
@@ -465,6 +480,7 @@ func (e *Executor) InvokeStream(ctx context.Context, funcName string, payload js
 	var (
 		rtCfg         *store.RuntimeRecord
 		layers        []*domain.Layer
+		volumes       []*domain.Volume
 		codeRecord    *domain.FunctionCode
 		hasMultiFiles bool
 	)
@@ -488,6 +504,17 @@ func (e *Executor) InvokeStream(ctx context.Context, funcName string, payload js
 			layers, err = e.store.GetFunctionLayers(gctx, fn.ID)
 			if err != nil {
 				logging.Op().Warn("failed to resolve layers", "function", fn.Name, "error", err)
+			}
+			return nil
+		})
+	}
+
+	if len(fn.Mounts) > 0 {
+		g.Go(func() error {
+			var err error
+			volumes, err = e.store.GetFunctionVolumes(gctx, fn.ID)
+			if err != nil {
+				logging.Op().Warn("failed to resolve volumes", "function", fn.Name, "error", err)
 			}
 			return nil
 		})
@@ -546,6 +573,9 @@ func (e *Executor) InvokeStream(ctx context.Context, funcName string, payload js
 	for _, l := range layers {
 		fn.LayerPaths = append(fn.LayerPaths, l.ImagePath)
 	}
+
+	// Resolve volume mounts to host-side image paths
+	fn.ResolvedMounts = resolveVolumeMounts(fn.Mounts, volumes)
 
 	// For compiled languages, check compilation status
 	if domain.NeedsCompilation(fn.Runtime) {
@@ -814,4 +844,30 @@ func (e *Executor) Shutdown(timeout time.Duration) {
 
 	e.logBatcher.Shutdown(timeout)
 	e.pool.Shutdown()
+}
+
+// resolveVolumeMounts builds the resolved mount list by matching each
+// VolumeMount.VolumeID to its Volume metadata to obtain the host-side
+// image path. Unresolved mounts (volume not found) are silently skipped.
+func resolveVolumeMounts(mounts []domain.VolumeMount, volumes []*domain.Volume) []domain.ResolvedMount {
+	if len(mounts) == 0 || len(volumes) == 0 {
+		return nil
+	}
+	volMap := make(map[string]*domain.Volume, len(volumes))
+	for _, v := range volumes {
+		volMap[v.ID] = v
+	}
+	var resolved []domain.ResolvedMount
+	for _, m := range mounts {
+		vol, ok := volMap[m.VolumeID]
+		if !ok || vol.ImagePath == "" {
+			continue
+		}
+		resolved = append(resolved, domain.ResolvedMount{
+			ImagePath: vol.ImagePath,
+			MountPath: m.MountPath,
+			ReadOnly:  m.ReadOnly,
+		})
+	}
+	return resolved
 }

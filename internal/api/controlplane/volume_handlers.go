@@ -104,3 +104,78 @@ func (h *Handler) DeleteVolume(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// SetFunctionMounts handles PUT /functions/{name}/mounts
+func (h *Handler) SetFunctionMounts(w http.ResponseWriter, r *http.Request) {
+	if h.VolumeManager == nil {
+		http.Error(w, "volumes not enabled", http.StatusNotImplemented)
+		return
+	}
+
+	name := r.PathValue("name")
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, "function not found: "+name, http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		Mounts []domain.VolumeMount `json:"mounts"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Validate each mount: volume must exist and mount_path must be set
+	for _, m := range req.Mounts {
+		if m.VolumeID == "" {
+			http.Error(w, "volume_id is required for each mount", http.StatusBadRequest)
+			return
+		}
+		if m.MountPath == "" {
+			http.Error(w, "mount_path is required for each mount", http.StatusBadRequest)
+			return
+		}
+		vol, err := h.Store.GetVolume(r.Context(), m.VolumeID)
+		if err != nil {
+			http.Error(w, "volume not found: "+m.VolumeID, http.StatusBadRequest)
+			return
+		}
+		if vol.ImagePath == "" {
+			http.Error(w, "volume has no image: "+m.VolumeID, http.StatusBadRequest)
+			return
+		}
+	}
+
+	fn.Mounts = req.Mounts
+	if err := h.Store.SaveFunction(r.Context(), fn); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":   "ok",
+		"function": name,
+		"mounts":   fn.Mounts,
+	})
+}
+
+// GetFunctionMounts handles GET /functions/{name}/mounts
+func (h *Handler) GetFunctionMounts(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, "function not found: "+name, http.StatusNotFound)
+		return
+	}
+
+	mounts := fn.Mounts
+	if mounts == nil {
+		mounts = []domain.VolumeMount{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(mounts)
+}

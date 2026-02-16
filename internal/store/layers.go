@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -143,7 +144,10 @@ func (s *PostgresStore) DeleteLayer(ctx context.Context, id string) error {
 }
 
 // SetFunctionLayers replaces the layer associations for a function
+// and updates the function's layers field in JSONB so the executor
+// can detect that layers need to be resolved at invocation time.
 func (s *PostgresStore) SetFunctionLayers(ctx context.Context, funcID string, layerIDs []string) error {
+	scope := tenantScopeFromContext(ctx)
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -164,6 +168,22 @@ func (s *PostgresStore) SetFunctionLayers(ctx context.Context, funcID string, la
 		if err != nil {
 			return fmt.Errorf("insert function layer %s: %w", layerID, err)
 		}
+	}
+
+	// Update the function's layers field in JSONB so the executor knows to
+	// resolve layers at invocation time.
+	layersJSON, err := json.Marshal(layerIDs)
+	if err != nil {
+		return fmt.Errorf("marshal layer IDs: %w", err)
+	}
+	_, err = tx.Exec(ctx, `
+		UPDATE functions
+		SET data = jsonb_set(data, '{layers}', $1::jsonb),
+		    updated_at = NOW()
+		WHERE id = $2 AND tenant_id = $3 AND namespace = $4
+	`, string(layersJSON), funcID, scope.TenantID, scope.Namespace)
+	if err != nil {
+		return fmt.Errorf("update function layers field: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {

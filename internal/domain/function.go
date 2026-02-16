@@ -226,6 +226,14 @@ type VolumeMount struct {
 	ReadOnly  bool   `json:"read_only,omitempty"` // Mount as read-only
 }
 
+// ResolvedMount is a VolumeMount with the host-side image path resolved.
+// Populated at invocation time by the executor.
+type ResolvedMount struct {
+	ImagePath string `json:"image_path"` // host-side path to ext4 image
+	MountPath string `json:"mount_path"` // mount point inside the VM
+	ReadOnly  bool   `json:"read_only"`
+}
+
 // Volume represents a persistent ext4 volume
 type Volume struct {
 	ID          string    `json:"id"`
@@ -264,6 +272,7 @@ type Function struct {
 	Layers              []string          `json:"layers,omitempty"` // layer IDs (max 6)
 	LayerPaths          []string          `json:"-"`                // resolved at invocation time
 	Mounts              []VolumeMount     `json:"mounts,omitempty"` // persistent volume mounts
+	ResolvedMounts      []ResolvedMount   `json:"-"`                // resolved at invocation time (image_path + mount config)
 	EnvVars             map[string]string `json:"env_vars,omitempty"`
 	CreatedAt           time.Time         `json:"created_at"`
 	UpdatedAt           time.Time         `json:"updated_at"`

@@ -421,6 +421,12 @@ func (s *PostgresStore) UpdateFunction(ctx context.Context, name string, update 
 			fn.EnvVars = update.EnvVars
 		}
 	}
+	if update.Layers != nil {
+		fn.Layers = update.Layers
+	}
+	if update.Mounts != nil {
+		fn.Mounts = update.Mounts
+	}
 
 	fn.UpdatedAt = time.Now()
 

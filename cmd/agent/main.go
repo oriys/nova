@@ -85,10 +85,17 @@ type InitPayload struct {
 	MemoryMB        int               `json:"memory_mb,omitempty"`
 	TimeoutS        int               `json:"timeout_s,omitempty"`
 	LayerCount      int               `json:"layer_count,omitempty"`
+	VolumeMounts    []VolumeMountInfo `json:"volume_mounts,omitempty"`
 
 	// InternalInvokeEnabled tells the agent to expose NOVA_INVOKE_ENDPOINT
 	// so user functions can call other functions through the host.
 	InternalInvokeEnabled bool `json:"internal_invoke_enabled,omitempty"`
+}
+
+// VolumeMountInfo tells the agent where to mount a volume drive inside the VM.
+type VolumeMountInfo struct {
+	MountPath string `json:"mount_path"` // guest mount point (e.g., /mnt/data)
+	ReadOnly  bool   `json:"read_only"`
 }
 
 type ExecPayload struct {
@@ -309,6 +316,11 @@ func (a *Agent) handleInit(payload json.RawMessage) (*Message, error) {
 
 	a.function = &init
 	fmt.Printf("[agent] Init: runtime=%s handler=%s mode=%s\n", init.Runtime, init.Handler, init.Mode)
+
+	// Mount volume drives if configured
+	if len(init.VolumeMounts) > 0 {
+		mountVolumeDrives(init.LayerCount, init.VolumeMounts)
+	}
 
 	// Write bootstrap script for interpreted runtimes
 	if err := a.writeBootstrap(); err != nil {

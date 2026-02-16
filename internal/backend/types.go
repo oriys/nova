@@ -101,12 +101,20 @@ type InitPayload struct {
 	FunctionVersion int               `json:"function_version,omitempty"`
 	MemoryMB        int               `json:"memory_mb,omitempty"`
 	TimeoutS        int               `json:"timeout_s,omitempty"`
+	LayerCount      int               `json:"layer_count,omitempty"`
+	VolumeMounts    []VolumeMountInfo `json:"volume_mounts,omitempty"`
 
 	// InternalInvokeEnabled tells the agent to expose an internal invoke
 	// capability (e.g. via environment variable NOVA_INVOKE_ENDPOINT) so
 	// that user functions can call other functions through the host without
 	// routing through the public gateway.
 	InternalInvokeEnabled bool `json:"internal_invoke_enabled,omitempty"`
+}
+
+// VolumeMountInfo tells the agent where to mount a volume drive inside the VM.
+type VolumeMountInfo struct {
+	MountPath string `json:"mount_path"` // guest mount point (e.g., /mnt/data)
+	ReadOnly  bool   `json:"read_only"`
 }
 
 // ExecPayload is sent to execute a function.
