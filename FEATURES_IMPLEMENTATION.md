@@ -2,6 +2,67 @@
 
 This document summarizes the implementation of four high-priority features for Nova.
 
+## Plan Mode（2026）：Nova 全平台 10 个高优先级功能规划
+
+### 问题与目标
+Nova 已具备五平面架构与多运行时执行能力，但从文档和现状看，仍有若干“可用但未完全产品化”的关键能力（如 Volumes/Triggers/Cluster 等）。
+本规划目标是在 **全平台（Nova + Comet + Corona/Nebula/Aurora + Lumen）** 范围内，明确 10 个高优先级功能及其落地顺序，优先补齐生产可用性、可扩展性与运维闭环。
+
+### 规划方法
+- 以“生产底线 > 规模化能力 > 企业级增强”为优先级。
+- 优先完成已部分实现但未打通闭环的能力。
+- 每个功能都覆盖后端能力 + 网关接入 + Lumen 可操作性。
+
+### Workplan（10 个高优先级功能）
+
+#### P0（生产底线）
+- [ ] **1. 异步调用可靠性闭环（Async + Retry + DLQ）**
+  - 范围：Nebula/AsyncQueue、Dataplane invoke-async、Aurora 指标、Lumen 重试/重放入口。
+  - 目标：失败自动重试（指数退避）、重试上限入 DLQ、支持手动重放。
+- [ ] **2. 事件触发器产品化（Kafka/RabbitMQ/Redis Stream）**
+  - 范围：`internal/triggers` 连接器补齐、触发器 CRUD API、触发器运行态监控页。
+  - 目标：至少 3 类外部事件源可稳定触发函数，含消费位点与失败处理。
+- [ ] **3. 持久卷端到端打通（Firecracker 挂载）**
+  - 范围：Comet/Firecracker 磁盘附加、Agent 挂载、Function Mount 解析、Lumen 管理界面。
+  - 目标：卷可在函数重启后保留数据，支持只读/读写挂载策略。
+- [ ] **4. 集群模式最小可用（跨节点执行与转发）**
+  - 范围：`internal/cluster` 注册与心跳、跨节点路由/代理、失败节点摘除。
+  - 目标：多 Comet 节点稳定分流，节点故障时自动切换。
+
+#### P1（规模化必需）
+- [ ] **5. 自适应自动扩缩策略（池化 + 调度联动）**
+  - 范围：Corona autoscaler、Comet pool 指标联动、策略配置 API。
+  - 目标：基于 QPS/P95/排队深度自动调整 min/max replicas。
+- [ ] **6. 共享依赖层统一化（Layers 全运行时支持）**
+  - 范围：Layer 构建与缓存、函数绑定层版本、Lumen 可视化管理。
+  - 目标：减少重复打包时间与镜像/代码体积，提升冷启动稳定性。
+- [ ] **7. 工作流与事件总线可靠投递（Outbox/幂等/补偿）**
+  - 范围：Nebula EventBus/Workflow、Store 去重键、失败补偿策略。
+  - 目标：降低重复消费与消息丢失风险，提供可追踪的执行链路。
+- [ ] **8. API 网关增强（请求治理 + 自定义域名）**
+  - 范围：Zenith 路由策略、请求校验、限流策略细化、自定义域名与证书。
+  - 目标：提升外部接入可控性，满足多租户/多环境接入规范。
+
+#### P2（企业级增强）
+- [ ] **9. 函数级权限与网络隔离（Least Privilege）**
+  - 范围：函数级权限模型、Secrets 细粒度授权、网络出入站策略。
+  - 目标：实现“最小权限 + 最小网络面”默认安全基线。
+- [ ] **10. 运维可观测闭环（SLO 告警 + Lumen 运维视图）**
+  - 范围：Aurora SLO 告警通道（Webhook/Slack/Email）、Lumen SLO/告警中心。
+  - 目标：从“有指标”升级到“可告警、可定位、可处置”的运维体验。
+
+### 执行顺序建议
+1. 先完成 1~4（P0）形成生产最小闭环。
+2. 再推进 5~8（P1）支撑规模化与生态接入。
+3. 最后实施 9~10（P2）补齐企业级安全与运维。
+
+### 备注与约束
+- 本计划以现有仓库文档与实现状态为基线（含已部分完成模块）。
+- 默认不改变现有五平面架构边界，仅在边界内补齐能力。
+- 每个功能落地时应同时定义：API 契约、存储模型、观测指标、Lumen 操作入口与回归测试范围。
+
+---
+
 ## Feature 1: Response Streaming (P0) ✅ COMPLETE
 
 ### Implementation Overview
