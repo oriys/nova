@@ -23,7 +23,10 @@
     "volumes": "Volumes",
     "layers": "Layers",
     "notifications": "Notifications",
-    "snapshots": "Snapshots"
+    "snapshots": "Snapshots",
+    "triggers": "Triggers",
+    "cluster": "Cluster",
+    "alerts": "Alerts"
   },
   "pages": {
     "dashboard": {
@@ -424,6 +427,18 @@
     "notifications": {
       "title": "Notifications",
       "description": "View and manage system notifications"
+    },
+    "triggers": {
+      "title": "Triggers",
+      "description": "Manage event triggers that automatically invoke functions"
+    },
+    "cluster": {
+      "title": "Cluster",
+      "description": "Monitor cluster nodes and their health status"
+    },
+    "alerts": {
+      "title": "Alerts",
+      "description": "SLO alerts and system notifications"
     }
   },
   "common": {
@@ -2208,5 +2223,49 @@
     "loading": "Loading menu permissions...",
     "loadFailed": "Failed to load menu permissions.",
     "saveFailed": "Failed to save menu permissions."
+  },
+  "triggersPage": {
+    "title": "Triggers",
+    "description": "Manage event triggers that automatically invoke functions",
+    "createTrigger": "Create Trigger",
+    "failedToLoad": "Failed to load triggers",
+    "noTriggers": "No triggers configured",
+    "noTriggersDescription": "Create a trigger to automatically invoke functions on external events",
+    "colName": "Name",
+    "colType": "Type",
+    "colFunction": "Function",
+    "colEnabled": "Enabled",
+    "colCreated": "Created",
+    "colActions": "Actions",
+    "deleteTrigger": "Delete Trigger",
+    "deleteConfirm": "Are you sure you want to delete this trigger?"
+  },
+  "clusterPage": {
+    "title": "Cluster",
+    "description": "Monitor cluster nodes and their health status",
+    "failedToLoad": "Failed to load cluster nodes",
+    "noNodes": "No cluster nodes registered",
+    "noNodesDescription": "Cluster nodes will appear here when Comet instances register",
+    "colName": "Name",
+    "colAddress": "Address",
+    "colState": "State",
+    "colVMs": "VMs",
+    "colQueue": "Queue",
+    "colHeartbeat": "Last Heartbeat",
+    "colActions": "Actions",
+    "removeNode": "Remove Node",
+    "removeConfirm": "Are you sure you want to remove this node?"
+  },
+  "alertsPage": {
+    "title": "Alerts",
+    "description": "SLO alerts and system notifications",
+    "failedToLoad": "Failed to load alerts",
+    "noAlerts": "No alerts",
+    "noAlertsDescription": "Configure SLO policies on your functions to receive alerts",
+    "colTitle": "Title",
+    "colSeverity": "Severity",
+    "colFunction": "Function",
+    "colTime": "Time",
+    "colStatus": "Status"
   }
 }

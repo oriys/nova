@@ -34,8 +34,9 @@ type alertState struct {
 
 // Service periodically evaluates function SLOs and emits in-app notifications.
 type Service struct {
-	store *store.Store
-	cfg   Config
+	store    *store.Store
+	cfg      Config
+	notifier *Notifier
 
 	mu      sync.Mutex
 	running bool
@@ -62,10 +63,11 @@ func New(s *store.Store, cfg Config) *Service {
 		cfg.DefaultMinSamples = defaultMinSamples
 	}
 	return &Service{
-		store:  s,
-		cfg:    cfg,
-		stopCh: make(chan struct{}),
-		doneCh: make(chan struct{}),
+		store:    s,
+		cfg:      cfg,
+		notifier: NewNotifier(),
+		stopCh:   make(chan struct{}),
+		doneCh:   make(chan struct{}),
 	}
 }
 
@@ -185,6 +187,15 @@ func (s *Service) evaluateFunction(ctx context.Context, fn *domain.Function) {
 		if err := s.createNotification(ctx, fn, &policy, snapshot, breaches, true); err != nil {
 			logging.Op().Warn("slo: create breach notification failed", "function", fn.Name, "error", err)
 		}
+		// Send external alerts (webhook, Slack, email)
+		if s.notifier != nil && len(policy.Notifications) > 0 {
+			s.notifier.SendAlerts(ctx, fn, breaches, true, &alertSnapshot{
+				SuccessRatePct:   snapshot.SuccessRatePct,
+				P95DurationMs:    snapshot.P95DurationMs,
+				ColdStartRatePct: snapshot.ColdStartRatePct,
+				WindowSeconds:    snapshot.WindowSeconds,
+			}, policy.Notifications)
+		}
 		s.state.Store(key, alertState{active: true})
 
 		// Trigger auto-healing for latency and cold-start breaches by
@@ -205,6 +216,15 @@ func (s *Service) evaluateFunction(ctx context.Context, fn *domain.Function) {
 	if !isBreach && wasActive {
 		if err := s.createNotification(ctx, fn, &policy, snapshot, breaches, false); err != nil {
 			logging.Op().Warn("slo: create recovery notification failed", "function", fn.Name, "error", err)
+		}
+		// Send external recovery alerts
+		if s.notifier != nil && len(policy.Notifications) > 0 {
+			s.notifier.SendAlerts(ctx, fn, breaches, false, &alertSnapshot{
+				SuccessRatePct:   snapshot.SuccessRatePct,
+				P95DurationMs:    snapshot.P95DurationMs,
+				ColdStartRatePct: snapshot.ColdStartRatePct,
+				WindowSeconds:    snapshot.WindowSeconds,
+			}, policy.Notifications)
 		}
 		s.state.Delete(key)
 	}

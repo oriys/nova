@@ -23,7 +23,10 @@
     "volumes": "Volumes",
     "layers": "Couches",
     "notifications": "Notifications",
-    "snapshots": "Snapshots"
+    "snapshots": "Snapshots",
+    "triggers": "Déclencheurs",
+    "cluster": "Cluster",
+    "alerts": "Alertes"
   },
   "pages": {
     "dashboard": {
@@ -2208,5 +2211,49 @@
     "loading": "Chargement des permissions de menu...",
     "loadFailed": "Échec du chargement des permissions de menu.",
     "saveFailed": "Échec de la sauvegarde des permissions de menu."
+  },
+  "triggersPage": {
+    "title": "Déclencheurs",
+    "description": "Gérer les déclencheurs d'événements qui invoquent automatiquement des fonctions",
+    "createTrigger": "Créer un déclencheur",
+    "failedToLoad": "Échec du chargement des déclencheurs",
+    "noTriggers": "Aucun déclencheur configuré",
+    "noTriggersDescription": "Créez un déclencheur pour invoquer automatiquement des fonctions sur des événements externes",
+    "colName": "Nom",
+    "colType": "Type",
+    "colFunction": "Fonction",
+    "colEnabled": "Activé",
+    "colCreated": "Créé",
+    "colActions": "Actions",
+    "deleteTrigger": "Supprimer le déclencheur",
+    "deleteConfirm": "Êtes-vous sûr de vouloir supprimer ce déclencheur ?"
+  },
+  "clusterPage": {
+    "title": "Cluster",
+    "description": "Surveiller les nœuds du cluster et leur état de santé",
+    "failedToLoad": "Échec du chargement des nœuds du cluster",
+    "noNodes": "Aucun nœud de cluster enregistré",
+    "noNodesDescription": "Les nœuds du cluster apparaîtront ici lorsque les instances Comet s'enregistrent",
+    "colName": "Nom",
+    "colAddress": "Adresse",
+    "colState": "État",
+    "colVMs": "VMs",
+    "colQueue": "File d'attente",
+    "colHeartbeat": "Dernier battement de cœur",
+    "colActions": "Actions",
+    "removeNode": "Supprimer le nœud",
+    "removeConfirm": "Êtes-vous sûr de vouloir supprimer ce nœud ?"
+  },
+  "alertsPage": {
+    "title": "Alertes",
+    "description": "Alertes SLO et notifications système",
+    "failedToLoad": "Échec du chargement des alertes",
+    "noAlerts": "Aucune alerte",
+    "noAlertsDescription": "Configurez des politiques SLO sur vos fonctions pour recevoir des alertes",
+    "colTitle": "Titre",
+    "colSeverity": "Sévérité",
+    "colFunction": "Fonction",
+    "colTime": "Heure",
+    "colStatus": "Statut"
   }
 }

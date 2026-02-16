@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -483,6 +484,12 @@ func calcBackoff(attempt, baseMS, maxMS int) time.Duration {
 	ms := float64(baseMS) * math.Pow(2, float64(attempt-1))
 	if ms > float64(maxMS) {
 		ms = float64(maxMS)
+	}
+	// Add ±25% jitter to prevent thundering herd on mass retries
+	jitter := ms * 0.25 * (2*rand.Float64() - 1)
+	ms += jitter
+	if ms < 0 {
+		ms = float64(baseMS)
 	}
 	return time.Duration(ms) * time.Millisecond
 }

@@ -27,15 +27,19 @@ import {
   Layers,
   Bell,
   Camera,
+  Zap,
+  Server,
+  Activity,
 } from "lucide-react"
 
-type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "asyncJobs" | "history" | "runtimes" | "configurations" | "secrets" | "apiKeys" | "gateway" | "apiDocs" | "rbac" | "volumes" | "layers" | "notifications" | "snapshots"
+type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "asyncJobs" | "history" | "runtimes" | "configurations" | "secrets" | "apiKeys" | "gateway" | "apiDocs" | "rbac" | "volumes" | "layers" | "notifications" | "snapshots" | "triggers" | "cluster" | "alerts"
 
 const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] = [
   { key: "dashboard", href: "/dashboard", icon: LayoutDashboard },
   { key: "functions", href: "/functions", icon: Code2 },
   { key: "gateway", href: "/gateway", icon: Network },
   { key: "events", href: "/events", icon: RadioTower },
+  { key: "triggers", href: "/triggers", icon: Zap },
   { key: "workflows", href: "/workflows", icon: GitBranch },
   { key: "tenancy", href: "/tenancy", icon: Building2 },
   { key: "asyncJobs", href: "/async-invocations", icon: Clock3 },
@@ -43,9 +47,11 @@ const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] 
   { key: "runtimes", href: "/runtimes", icon: Play },
   { key: "layers", href: "/layers", icon: Layers },
   { key: "volumes", href: "/volumes", icon: HardDrive },
+  { key: "cluster", href: "/cluster", icon: Server },
   { key: "snapshots", href: "/snapshots", icon: Camera },
   { key: "rbac", href: "/rbac", icon: ShieldCheck },
   { key: "notifications", href: "/notifications", icon: Bell },
+  { key: "alerts", href: "/alerts", icon: Activity },
   { key: "configurations", href: "/configurations", icon: Settings },
   { key: "secrets", href: "/secrets", icon: Lock },
   { key: "apiKeys", href: "/api-keys", icon: KeyRound },

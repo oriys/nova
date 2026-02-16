@@ -52,6 +52,12 @@ functionName: trigger.FunctionName,
 switch trigger.Type {
 case TriggerTypeFilesystem:
 connector, err = NewFilesystemConnector(trigger, handler)
+case TriggerTypeKafka:
+connector, err = NewKafkaConnector(trigger, handler)
+case TriggerTypeRabbitMQ:
+connector, err = NewRabbitMQConnector(trigger, handler)
+case TriggerTypeRedis:
+connector, err = NewRedisStreamConnector(trigger, handler)
 default:
 return fmt.Errorf("unsupported trigger type: %s", trigger.Type)
 }
@@ -106,6 +112,45 @@ logging.Op().Warn("failed to stop connector during shutdown", "trigger", id, "er
 m.connectors = make(map[string]Connector)
 logging.Op().Info("trigger manager shutdown complete")
 return nil
+}
+
+// TriggerStatus contains runtime status for a registered trigger.
+type TriggerStatus struct {
+	TriggerID string      `json:"trigger_id"`
+	Type      TriggerType `json:"type"`
+	Healthy   bool        `json:"healthy"`
+}
+
+// ListTriggerStatuses returns the runtime status of all registered triggers.
+func (m *Manager) ListTriggerStatuses() []TriggerStatus {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	statuses := make([]TriggerStatus, 0, len(m.connectors))
+	for id, c := range m.connectors {
+		statuses = append(statuses, TriggerStatus{
+			TriggerID: id,
+			Type:      c.Type(),
+			Healthy:   c.IsHealthy(),
+		})
+	}
+	return statuses
+}
+
+// GetTriggerStatus returns the runtime status of a single trigger.
+func (m *Manager) GetTriggerStatus(triggerID string) (*TriggerStatus, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	c, exists := m.connectors[triggerID]
+	if !exists {
+		return nil, fmt.Errorf("trigger %s not found", triggerID)
+	}
+	return &TriggerStatus{
+		TriggerID: triggerID,
+		Type:      c.Type(),
+		Healthy:   c.IsHealthy(),
+	}, nil
 }
 
 // functionEventHandler implements EventHandler by invoking functions

@@ -23,7 +23,10 @@
     "volumes": "儲存卷",
     "layers": "依賴層",
     "notifications": "通知",
-    "snapshots": "快照"
+    "snapshots": "快照",
+    "triggers": "觸發器",
+    "cluster": "叢集",
+    "alerts": "告警"
   },
   "pages": {
     "dashboard": {
@@ -2208,5 +2211,49 @@
     "loading": "載入選單權限...",
     "loadFailed": "載入選單權限失敗。",
     "saveFailed": "儲存選單權限失敗。"
+  },
+  "triggersPage": {
+    "title": "觸發器",
+    "description": "管理自動呼叫函數的事件觸發器",
+    "createTrigger": "建立觸發器",
+    "failedToLoad": "載入觸發器失敗",
+    "noTriggers": "尚無觸發器",
+    "noTriggersDescription": "建立觸發器以在外部事件上自動呼叫函數",
+    "colName": "名稱",
+    "colType": "類型",
+    "colFunction": "函數",
+    "colEnabled": "已啟用",
+    "colCreated": "建立時間",
+    "colActions": "操作",
+    "deleteTrigger": "刪除觸發器",
+    "deleteConfirm": "確定要刪除此觸發器嗎？"
+  },
+  "clusterPage": {
+    "title": "叢集",
+    "description": "監控叢集節點及其健康狀態",
+    "failedToLoad": "載入叢集節點失敗",
+    "noNodes": "尚無叢集節點",
+    "noNodesDescription": "當Comet實例註冊時，叢集節點將顯示在這裡",
+    "colName": "名稱",
+    "colAddress": "地址",
+    "colState": "狀態",
+    "colVMs": "虛擬機",
+    "colQueue": "佇列",
+    "colHeartbeat": "最後心跳",
+    "colActions": "操作",
+    "removeNode": "移除節點",
+    "removeConfirm": "確定要移除此節點嗎？"
+  },
+  "alertsPage": {
+    "title": "告警",
+    "description": "SLO告警與系統通知",
+    "failedToLoad": "載入告警失敗",
+    "noAlerts": "尚無告警",
+    "noAlertsDescription": "在函數上設定SLO策略以接收告警",
+    "colTitle": "標題",
+    "colSeverity": "嚴重級別",
+    "colFunction": "函數",
+    "colTime": "時間",
+    "colStatus": "狀態"
   }
 }
