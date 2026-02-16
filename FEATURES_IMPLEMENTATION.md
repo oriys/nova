@@ -2,14 +2,14 @@
 
 This document summarizes the implementation of four high-priority features for Nova.
 
-## Plan Mode（2026）：Nova 全平台 10 个高优先级功能规划
+## Plan Mode (2026): Nova 全平台 10 个高优先级功能规划 (Top 10 High-Priority Cross-Platform Features)
 
 ### 问题与目标
-Nova 已具备五平面架构与多运行时执行能力，但从文档和现状看，仍有若干“可用但未完全产品化”的关键能力（如 Volumes/Triggers/Cluster 等）。
+Nova 已具备五平面架构与多运行时执行能力，但从文档和现状看，仍有若干"可用但未完全产品化"的关键能力（如 Volumes/Triggers/Cluster 等）。
 本规划目标是在 **全平台（Nova + Comet + Corona/Nebula/Aurora + Lumen）** 范围内，明确 10 个高优先级功能及其落地顺序，优先补齐生产可用性、可扩展性与运维闭环。
 
 ### 规划方法
-- 以“生产底线 > 规模化能力 > 企业级增强”为优先级。
+- 以"生产底线 > 规模化能力 > 企业级增强"为优先级。
 - 优先完成已部分实现但未打通闭环的能力。
 - 每个功能都覆盖后端能力 + 网关接入 + Lumen 可操作性。
 
@@ -46,10 +46,10 @@ Nova 已具备五平面架构与多运行时执行能力，但从文档和现状
 #### P2（企业级增强）
 - [ ] **9. 函数级权限与网络隔离（Least Privilege）**
   - 范围：函数级权限模型、Secrets 细粒度授权、网络出入站策略。
-  - 目标：实现“最小权限 + 最小网络面”默认安全基线。
+  - 目标：实现"最小权限 + 最小网络面"默认安全基线。
 - [ ] **10. 运维可观测闭环（SLO 告警 + Lumen 运维视图）**
   - 范围：Aurora SLO 告警通道（Webhook/Slack/Email）、Lumen SLO/告警中心。
-  - 目标：从“有指标”升级到“可告警、可定位、可处置”的运维体验。
+  - 目标：从"有指标"升级到"可告警、可定位、可处置"的运维体验。
 
 ### 执行顺序建议
 1. 先完成 1~4（P0）形成生产最小闭环。
