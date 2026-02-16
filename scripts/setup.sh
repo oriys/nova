@@ -87,9 +87,9 @@ cached_curl_pipe() {
 
     mkdir -p "${NOVA_CACHE_DIR}"
     if [[ -f "${cached}" ]]; then
-        log "Using cached ${cache_key}"
+        log "Using cached ${cache_key}" >&2
     else
-        log "Downloading ${cache_key}..."
+        log "Downloading ${cache_key}..." >&2
         local tmp_dl="${cached}.tmp.$$"
         if curl -fsSL "${url}" -o "${tmp_dl}"; then
             mv "${tmp_dl}" "${cached}"
