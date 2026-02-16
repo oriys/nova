@@ -154,9 +154,10 @@ func mountVolumeDrives(layerCount int, mounts []VolumeMountInfo) {
 	}
 
 	// Volume devices start after layers. The device letter offset is:
-	// 'c' (index 2) + layerCount. For example, with 0 layers the first
-	// volume is /dev/vdc; with 2 layers it is /dev/vde.
-	baseIdx := 2 + layerCount // 'a'=0,'b'=1,'c'=2,...
+	// 'c' (index 2) + layerCount, where 'a'=0 (rootfs/vda), 'b'=1
+	// (code/vdb), 'c'=2 (first layer/vdc). For example, with 0 layers
+	// the first volume is /dev/vdc; with 2 layers it is /dev/vde.
+	baseIdx := 2 + layerCount
 
 	for i, m := range mounts {
 		devLetter := rune('a' + baseIdx + i)

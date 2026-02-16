@@ -149,7 +149,6 @@ func (h *Handler) SetFunctionMounts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fn.Mounts = req.Mounts
-	fn.UpdatedAt = fn.UpdatedAt // will be updated by SaveFunction
 	if err := h.Store.SaveFunction(r.Context(), fn); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
