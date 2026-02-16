@@ -37,8 +37,12 @@ export default function ClusterPage() {
 
   const handleRemove = async (id: string) => {
     if (!confirm(tp("removeConfirm"))) return
-    try { await clusterApi.deleteNode(id); fetchNodes() }
-    catch (err) { setError(err instanceof Error ? err.message : tp("failedToLoad")) }
+    try {
+      await clusterApi.deleteNode(id)
+      fetchNodes()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : tp("failedToLoad"))
+    }
   }
 
   const stateBadge = (state: string) => {

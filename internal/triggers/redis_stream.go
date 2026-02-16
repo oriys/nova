@@ -103,7 +103,10 @@ func (rs *RedisStreamConnector) consumeLoop(ctx context.Context) {
 
 // dispatchMessage converts a raw Redis Stream message into a TriggerEvent.
 func (rs *RedisStreamConnector) dispatchMessage(ctx context.Context, messageID string, values map[string]interface{}) error {
-	data, _ := json.Marshal(values)
+	data, err := json.Marshal(values)
+	if err != nil {
+		return fmt.Errorf("marshal redis stream message: %w", err)
+	}
 	event := &TriggerEvent{
 		TriggerID: rs.trigger.ID,
 		EventID:   uuid.New().String(),

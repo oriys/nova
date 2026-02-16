@@ -70,8 +70,12 @@ export default function TriggersPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm(tt("deleteConfirm"))) return
-    try { await triggersApi.delete(id); fetchTriggers() }
-    catch (err) { setError(err instanceof Error ? err.message : tt("failedToLoad")) }
+    try {
+      await triggersApi.delete(id)
+      fetchTriggers()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : tt("failedToLoad"))
+    }
   }
 
   return (
