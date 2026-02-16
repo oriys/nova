@@ -64,8 +64,27 @@ defer r.mu.Unlock()
 node.UpdatedAt = time.Now()
 node.LastHeartbeat = time.Now()
 
-// Store in database (implement this in store layer)
-// For now, just store in memory
+// Persist to database
+if r.store != nil {
+	rec := &store.ClusterNodeRecord{
+		ID:            node.ID,
+		Name:          node.Name,
+		Address:       node.Address,
+		State:         string(node.State),
+		CPUCores:      node.CPUCores,
+		MemoryMB:      node.MemoryMB,
+		MaxVMs:        node.MaxVMs,
+		ActiveVMs:     node.ActiveVMs,
+		QueueDepth:    node.QueueDepth,
+		Version:       node.Version,
+		Labels:        node.Labels,
+		LastHeartbeat: node.LastHeartbeat,
+	}
+	if err := r.store.UpsertClusterNode(ctx, rec); err != nil {
+		logging.Op().Warn("failed to persist node registration", "id", node.ID, "error", err)
+	}
+}
+
 r.nodes[node.ID] = node
 
 logging.Op().Info("node registered", "id", node.ID, "name", node.Name, "address", node.Address)
@@ -90,6 +109,13 @@ node.CPUUsage = metrics.CPUUsage
 node.MemoryUsage = metrics.MemoryUsage
 node.IOPressure = metrics.IOPressure
 node.MemoryPressure = metrics.MemoryPressure
+}
+
+// Persist heartbeat to database
+if r.store != nil {
+	if err := r.store.UpdateClusterNodeHeartbeat(ctx, nodeID, node.ActiveVMs, node.QueueDepth); err != nil {
+		logging.Op().Warn("failed to persist heartbeat", "node", nodeID, "error", err)
+	}
 }
 
 return nil
@@ -142,6 +168,14 @@ r.mu.Lock()
 defer r.mu.Unlock()
 
 delete(r.nodes, nodeID)
+
+// Remove from database
+if r.store != nil {
+	if err := r.store.DeleteClusterNode(ctx, nodeID); err != nil {
+		logging.Op().Warn("failed to delete node from store", "id", nodeID, "error", err)
+	}
+}
+
 logging.Op().Info("node removed", "id", nodeID)
 return nil
 }
