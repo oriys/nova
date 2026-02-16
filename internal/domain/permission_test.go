@@ -28,7 +28,7 @@ func TestRolePermissions_AdminHasAllPermissions(t *testing.T) {
 		PermConfigRead, PermConfigWrite,
 		PermSnapshotRead, PermSnapshotWrite,
 		PermAPIKeyManage, PermSecretManage,
-		PermWorkflowManage, PermScheduleManage, PermGatewayManage,
+		PermWorkflowManage, PermWorkflowInvoke, PermScheduleManage, PermGatewayManage,
 		PermLogRead, PermMetricsRead,
 		PermAppPublish, PermAppRead, PermAppInstall, PermAppManage,
 		PermRBACManage,
@@ -52,7 +52,7 @@ func TestRolePermissions_ViewerCannotWrite(t *testing.T) {
 		PermFunctionCreate, PermFunctionUpdate, PermFunctionDelete, PermFunctionInvoke,
 		PermRuntimeWrite, PermConfigWrite, PermSnapshotWrite,
 		PermAPIKeyManage, PermSecretManage,
-		PermWorkflowManage, PermScheduleManage, PermGatewayManage,
+		PermWorkflowManage, PermWorkflowInvoke, PermScheduleManage, PermGatewayManage,
 		PermRBACManage,
 	}
 

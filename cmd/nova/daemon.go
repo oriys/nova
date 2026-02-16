@@ -401,10 +401,12 @@ type apiKeyStoreAdapterDaemon struct {
 }
 
 func (a *apiKeyStoreAdapterDaemon) SaveAPIKey(ctx context.Context, key *auth.APIKey) error {
+	permissions, _ := auth.MarshalPolicies(key.Policies)
 	return a.s.SaveAPIKey(ctx, &store.APIKeyRecord{
 		Name: key.Name, KeyHash: key.KeyHash, Tier: key.Tier,
 		Enabled: key.Enabled, ExpiresAt: key.ExpiresAt,
-		CreatedAt: key.CreatedAt, UpdatedAt: key.UpdatedAt,
+		Permissions: permissions,
+		CreatedAt:   key.CreatedAt, UpdatedAt: key.UpdatedAt,
 	})
 }
 
@@ -416,9 +418,12 @@ func (a *apiKeyStoreAdapterDaemon) GetAPIKeyByHash(ctx context.Context, keyHash 
 	if rec == nil {
 		return nil, nil
 	}
+	policies, _ := auth.UnmarshalPolicies(rec.Permissions)
 	return &auth.APIKey{
 		Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
 		Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
+		TenantID: rec.TenantID, Namespace: rec.Namespace,
+		Policies:  policies,
 		CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,
 	}, nil
 }
@@ -428,9 +433,12 @@ func (a *apiKeyStoreAdapterDaemon) GetAPIKeyByName(ctx context.Context, name str
 	if err != nil {
 		return nil, err
 	}
+	policies, _ := auth.UnmarshalPolicies(rec.Permissions)
 	return &auth.APIKey{
 		Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
 		Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
+		TenantID: rec.TenantID, Namespace: rec.Namespace,
+		Policies:  policies,
 		CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,
 	}, nil
 }
@@ -442,9 +450,12 @@ func (a *apiKeyStoreAdapterDaemon) ListAPIKeys(ctx context.Context) ([]*auth.API
 	}
 	keys := make([]*auth.APIKey, len(recs))
 	for i, rec := range recs {
+		policies, _ := auth.UnmarshalPolicies(rec.Permissions)
 		keys[i] = &auth.APIKey{
 			Name: rec.Name, KeyHash: rec.KeyHash, Tier: rec.Tier,
 			Enabled: rec.Enabled, ExpiresAt: rec.ExpiresAt,
+			TenantID: rec.TenantID, Namespace: rec.Namespace,
+			Policies:  policies,
 			CreatedAt: rec.CreatedAt, UpdatedAt: rec.UpdatedAt,
 		}
 	}
