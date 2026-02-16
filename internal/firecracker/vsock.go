@@ -377,7 +377,7 @@ func (c *VsockClient) ExecuteStream(reqID string, input json.RawMessage, timeout
 		// Call callback with chunk
 		var chunkErr error
 		if chunk.Error != "" {
-			chunkErr = fmt.Errorf(chunk.Error)
+			chunkErr = fmt.Errorf("%s", chunk.Error)
 		}
 		if err := callback(chunk.Data, chunk.IsLast, chunkErr); err != nil {
 			_ = c.closeLocked()
