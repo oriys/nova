@@ -23,7 +23,10 @@
     "volumes": "存储卷",
     "layers": "依赖层",
     "notifications": "通知",
-    "snapshots": "快照"
+    "snapshots": "快照",
+    "triggers": "触发器",
+    "cluster": "集群",
+    "alerts": "告警"
   },
   "pages": {
     "dashboard": {
@@ -2208,5 +2211,49 @@
     "loading": "加载菜单权限...",
     "loadFailed": "加载菜单权限失败。",
     "saveFailed": "保存菜单权限失败。"
+  },
+  "triggersPage": {
+    "title": "触发器",
+    "description": "管理自动调用函数的事件触发器",
+    "createTrigger": "创建触发器",
+    "failedToLoad": "加载触发器失败",
+    "noTriggers": "暂无触发器",
+    "noTriggersDescription": "创建触发器以在外部事件上自动调用函数",
+    "colName": "名称",
+    "colType": "类型",
+    "colFunction": "函数",
+    "colEnabled": "已启用",
+    "colCreated": "创建时间",
+    "colActions": "操作",
+    "deleteTrigger": "删除触发器",
+    "deleteConfirm": "确定要删除此触发器吗？"
+  },
+  "clusterPage": {
+    "title": "集群",
+    "description": "监控集群节点及其健康状态",
+    "failedToLoad": "加载集群节点失败",
+    "noNodes": "暂无集群节点",
+    "noNodesDescription": "当Comet实例注册时，集群节点将显示在这里",
+    "colName": "名称",
+    "colAddress": "地址",
+    "colState": "状态",
+    "colVMs": "虚拟机",
+    "colQueue": "队列",
+    "colHeartbeat": "最后心跳",
+    "colActions": "操作",
+    "removeNode": "移除节点",
+    "removeConfirm": "确定要移除此节点吗？"
+  },
+  "alertsPage": {
+    "title": "告警",
+    "description": "SLO告警与系统通知",
+    "failedToLoad": "加载告警失败",
+    "noAlerts": "暂无告警",
+    "noAlertsDescription": "在函数上配置SLO策略以接收告警",
+    "colTitle": "标题",
+    "colSeverity": "严重级别",
+    "colFunction": "函数",
+    "colTime": "时间",
+    "colStatus": "状态"
   }
 }

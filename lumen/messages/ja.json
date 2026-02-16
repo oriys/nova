@@ -23,7 +23,10 @@
     "volumes": "ボリューム",
     "layers": "レイヤー",
     "notifications": "通知",
-    "snapshots": "スナップショット"
+    "snapshots": "スナップショット",
+    "triggers": "トリガー",
+    "cluster": "クラスター",
+    "alerts": "アラート"
   },
   "pages": {
     "dashboard": {
@@ -2208,5 +2211,49 @@
     "loading": "メニュー権限を読み込み中...",
     "loadFailed": "メニュー権限の読み込みに失敗しました。",
     "saveFailed": "メニュー権限の保存に失敗しました。"
+  },
+  "triggersPage": {
+    "title": "トリガー",
+    "description": "関数を自動的に呼び出すイベントトリガーを管理",
+    "createTrigger": "トリガーを作成",
+    "failedToLoad": "トリガーの読み込みに失敗しました",
+    "noTriggers": "トリガーが構成されていません",
+    "noTriggersDescription": "外部イベントで関数を自動的に呼び出すトリガーを作成してください",
+    "colName": "名前",
+    "colType": "タイプ",
+    "colFunction": "関数",
+    "colEnabled": "有効",
+    "colCreated": "作成日",
+    "colActions": "アクション",
+    "deleteTrigger": "トリガーを削除",
+    "deleteConfirm": "このトリガーを削除してもよろしいですか？"
+  },
+  "clusterPage": {
+    "title": "クラスター",
+    "description": "クラスターノードとその健全性状態を監視",
+    "failedToLoad": "クラスターノードの読み込みに失敗しました",
+    "noNodes": "クラスターノードが登録されていません",
+    "noNodesDescription": "Cometインスタンスが登録されるとクラスターノードがここに表示されます",
+    "colName": "名前",
+    "colAddress": "アドレス",
+    "colState": "状態",
+    "colVMs": "VM数",
+    "colQueue": "キュー",
+    "colHeartbeat": "最終ハートビート",
+    "colActions": "アクション",
+    "removeNode": "ノードを削除",
+    "removeConfirm": "このノードを削除してもよろしいですか？"
+  },
+  "alertsPage": {
+    "title": "アラート",
+    "description": "SLOアラートとシステム通知",
+    "failedToLoad": "アラートの読み込みに失敗しました",
+    "noAlerts": "アラートなし",
+    "noAlertsDescription": "関数にSLOポリシーを設定するとアラートを受信できます",
+    "colTitle": "タイトル",
+    "colSeverity": "重要度",
+    "colFunction": "関数",
+    "colTime": "時間",
+    "colStatus": "ステータス"
   }
 }
