@@ -183,6 +183,13 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /functions/{name}/mounts", h.SetFunctionMounts)
 	mux.HandleFunc("GET /functions/{name}/mounts", h.GetFunctionMounts)
 
+	// Triggers
+	mux.HandleFunc("POST /triggers", h.CreateTrigger)
+	mux.HandleFunc("GET /triggers", h.ListTriggers)
+	mux.HandleFunc("GET /triggers/{id}", h.GetTrigger)
+	mux.HandleFunc("PATCH /triggers/{id}", h.UpdateTrigger)
+	mux.HandleFunc("DELETE /triggers/{id}", h.DeleteTrigger)
+
 	// AI-powered code operations
 	if h.AIService != nil {
 		aiHandler := &AIHandler{Service: h.AIService, Store: h.Store}
