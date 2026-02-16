@@ -3009,3 +3009,100 @@ export const costApi = {
     return request<TenantCostSummary>(`/cost/summary${qs ? `?${qs}` : ""}`);
   },
 };
+
+// Trigger types
+export type TriggerType = "kafka" | "rabbitmq" | "redis" | "filesystem" | "webhook";
+
+export interface TriggerEntry {
+  id: string;
+  tenant_id: string;
+  namespace: string;
+  name: string;
+  type: string;
+  function_id: string;
+  function_name: string;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+// Triggers API
+export const triggersApi = {
+  list: async (limit?: number, offset?: number) => {
+    const params = new URLSearchParams();
+    const resolvedLimit =
+      typeof limit === "number" && Number.isFinite(limit) && limit > 0
+        ? Math.floor(limit)
+        : 100;
+    params.set("limit", String(resolvedLimit));
+    if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    const result = await requestPaged<TriggerEntry>(`/triggers?${params.toString()}`);
+    return result.items;
+  },
+
+  get: (id: string) =>
+    request<TriggerEntry>(`/triggers/${encodeURIComponent(id)}`),
+
+  create: (data: { name: string; type: TriggerType; function_name: string; enabled?: boolean; config?: Record<string, unknown> }) =>
+    request<TriggerEntry>("/triggers", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  update: (id: string, data: { enabled?: boolean; config?: Record<string, unknown> }) =>
+    request<TriggerEntry>(`/triggers/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: string) =>
+    request<void>(`/triggers/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+};
+
+// Cluster types
+export interface ClusterNodeEntry {
+  id: string;
+  name: string;
+  address: string;
+  state: string;
+  cpu_cores: number;
+  memory_mb: number;
+  max_vms: number;
+  active_vms: number;
+  queue_depth: number;
+  version: string;
+  labels: Record<string, string>;
+  last_heartbeat: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Cluster API
+export const clusterApi = {
+  listNodes: async (limit?: number, offset?: number) => {
+    const params = new URLSearchParams();
+    const resolvedLimit =
+      typeof limit === "number" && Number.isFinite(limit) && limit > 0
+        ? Math.floor(limit)
+        : 100;
+    params.set("limit", String(resolvedLimit));
+    if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    const result = await requestPaged<ClusterNodeEntry>(`/cluster/nodes?${params.toString()}`);
+    return result.items;
+  },
+
+  getNode: (id: string) =>
+    request<ClusterNodeEntry>(`/cluster/nodes/${encodeURIComponent(id)}`),
+
+  deleteNode: (id: string) =>
+    request<void>(`/cluster/nodes/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+};
