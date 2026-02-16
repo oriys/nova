@@ -325,6 +325,14 @@ type MetadataStore interface {
 	// Database Access audit log
 	SaveDbRequestLog(ctx context.Context, log *domain.DbRequestLog) error
 	ListDbRequestLogs(ctx context.Context, dbResourceID string, limit, offset int) ([]*domain.DbRequestLog, error)
+
+	// Cluster nodes
+	UpsertClusterNode(ctx context.Context, node *ClusterNodeRecord) error
+	GetClusterNode(ctx context.Context, id string) (*ClusterNodeRecord, error)
+	ListClusterNodes(ctx context.Context, limit, offset int) ([]*ClusterNodeRecord, error)
+	UpdateClusterNodeHeartbeat(ctx context.Context, id string, activeVMs, queueDepth int) error
+	DeleteClusterNode(ctx context.Context, id string) error
+	ListActiveClusterNodes(ctx context.Context) ([]*ClusterNodeRecord, error)
 }
 
 // Store wraps the MetadataStore, WorkflowStore, and ScheduleStore (Postgres) for all persistence.
