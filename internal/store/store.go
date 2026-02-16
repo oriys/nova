@@ -227,6 +227,14 @@ type MetadataStore interface {
 	GetFunctionLayers(ctx context.Context, funcID string) ([]*domain.Layer, error)
 	ListFunctionsByLayer(ctx context.Context, layerID string) ([]string, error)
 
+	// Triggers
+	CreateTrigger(ctx context.Context, trigger *TriggerRecord) error
+	GetTrigger(ctx context.Context, id string) (*TriggerRecord, error)
+	GetTriggerByName(ctx context.Context, name string) (*TriggerRecord, error)
+	ListTriggers(ctx context.Context, limit, offset int) ([]*TriggerRecord, error)
+	UpdateTrigger(ctx context.Context, id string, update *TriggerUpdate) (*TriggerRecord, error)
+	DeleteTrigger(ctx context.Context, id string) error
+
 	// Volumes
 	CreateVolume(ctx context.Context, vol *domain.Volume) error
 	GetVolume(ctx context.Context, id string) (*domain.Volume, error)
