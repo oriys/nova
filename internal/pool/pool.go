@@ -2,8 +2,10 @@ package pool
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -60,6 +62,7 @@ type functionPool struct {
 	codeHash        atomic.Value // string: hash of code when VMs were created
 	desiredReplicas atomic.Int32 // desired replica count set by autoscaler
 	lastQueueWaitMs atomic.Int64
+	functionRefs    map[string]struct{}
 }
 
 // SnapshotCallback is called after a cold start to create a snapshot
@@ -67,7 +70,8 @@ type SnapshotCallback func(ctx context.Context, vmID, funcID string) error
 
 type Pool struct {
 	backend             backend.Backend
-	pools               sync.Map // map[string]*functionPool - per-function pools
+	pools               sync.Map // map[string]*functionPool - per-configuration pools
+	functionPoolKeys    sync.Map // map[string]string - function ID -> pool key
 	group               singleflight.Group
 	idleTTL             time.Duration
 	cleanupInterval     time.Duration
@@ -153,14 +157,86 @@ func (p *Pool) InvalidateSnapshotCache(funcID string) {
 	p.snapshotCache.Delete(funcID)
 }
 
-// getOrCreatePool returns the function pool, creating it if needed
-func (p *Pool) getOrCreatePool(funcID string) *functionPool {
-	if fp, ok := p.pools.Load(funcID); ok {
+type poolKeyPayload struct {
+	Runtime             domain.Runtime        `json:"runtime"`
+	MemoryMB            int                   `json:"memory_mb"`
+	Mode                domain.ExecutionMode  `json:"mode,omitempty"`
+	Backend             domain.BackendType    `json:"backend,omitempty"`
+	InstanceConcurrency int                   `json:"instance_concurrency,omitempty"`
+	CodeHash            string                `json:"code_hash,omitempty"`
+	Handler             string                `json:"handler,omitempty"`
+	Limits              domain.ResourceLimits `json:"limits"`
+	NetworkPolicy       *domain.NetworkPolicy `json:"network_policy,omitempty"`
+	Layers              []string              `json:"layers,omitempty"`
+	Mounts              []domain.VolumeMount  `json:"mounts,omitempty"`
+	EnvVars             []string              `json:"env_vars,omitempty"`
+	RuntimeCommand      []string              `json:"runtime_command,omitempty"`
+	RuntimeExtension    string                `json:"runtime_extension,omitempty"`
+	RuntimeImageName    string                `json:"runtime_image_name,omitempty"`
+}
+
+func (p *Pool) poolKeyForFunction(fn *domain.Function) string {
+	if fn == nil {
+		return ""
+	}
+	limits := domain.ResourceLimits{}
+	if fn.Limits != nil {
+		limits = *fn.Limits
+	}
+	envVars := make([]string, 0, len(fn.EnvVars))
+	for k, v := range fn.EnvVars {
+		envVars = append(envVars, k+"="+v)
+	}
+	sort.Strings(envVars)
+
+	payload := poolKeyPayload{
+		Runtime:             fn.Runtime,
+		MemoryMB:            fn.MemoryMB,
+		Mode:                fn.Mode,
+		Backend:             fn.Backend,
+		InstanceConcurrency: fn.InstanceConcurrency,
+		CodeHash:            fn.CodeHash,
+		Handler:             fn.Handler,
+		Limits:              limits,
+		NetworkPolicy:       fn.NetworkPolicy,
+		Layers:              fn.Layers,
+		Mounts:              fn.Mounts,
+		EnvVars:             envVars,
+		RuntimeCommand:      fn.RuntimeCommand,
+		RuntimeExtension:    fn.RuntimeExtension,
+		RuntimeImageName:    fn.RuntimeImageName,
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		logging.Op().Warn("failed to build pool key payload, using fallback key", "function", fn.ID, "error", err)
+		return fmt.Sprintf("fallback|%s|%d|%s|%s", fn.Runtime, fn.MemoryMB, fn.Backend, fn.CodeHash)
+	}
+	return string(b)
+}
+
+func (p *Pool) getPoolForFunctionID(funcID string) (string, *functionPool, bool) {
+	if poolKey, ok := p.functionPoolKeys.Load(funcID); ok {
+		if val, ok := p.pools.Load(poolKey.(string)); ok {
+			return poolKey.(string), val.(*functionPool), true
+		}
+	}
+	// Backward compatibility for any legacy per-function keyed entries.
+	if val, ok := p.pools.Load(funcID); ok {
+		return funcID, val.(*functionPool), true
+	}
+	return "", nil, false
+}
+
+// getOrCreatePool returns the function pool by key, creating it if needed.
+func (p *Pool) getOrCreatePool(poolKey string) *functionPool {
+	if fp, ok := p.pools.Load(poolKey); ok {
 		return fp.(*functionPool)
 	}
-	fp := &functionPool{}
+	fp := &functionPool{
+		functionRefs: make(map[string]struct{}),
+	}
 	fp.cond = sync.NewCond(&fp.mu)
-	actual, _ := p.pools.LoadOrStore(funcID, fp)
+	actual, _ := p.pools.LoadOrStore(poolKey, fp)
 	return actual.(*functionPool)
 }
 
@@ -187,7 +263,6 @@ func (p *Pool) cleanupExpired() {
 
 	now := time.Now()
 	p.pools.Range(func(key, value interface{}) bool {
-		funcID := key.(string)
 		fp := value.(*functionPool)
 
 		fp.mu.Lock()
@@ -209,7 +284,7 @@ func (p *Pool) cleanupExpired() {
 			if activeCount > minReplicas && now.Sub(pvm.LastUsed) > p.idleTTL {
 				logging.Op().Info("VM expired",
 					"vm_id", pvm.VM.ID,
-					"function", funcID,
+					"function", pvm.Function.Name,
 					"idle", now.Sub(pvm.LastUsed).Round(time.Second).String())
 				toStop = append(toStop, expiredVM{client: pvm.Client, vmID: pvm.VM.ID})
 				activeCount--
@@ -245,7 +320,7 @@ func (p *Pool) cleanupExpired() {
 }
 
 func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function, codeContent []byte) error {
-	fp := p.getOrCreatePool(fn.ID)
+	fp := p.preparePoolForFunction(fn)
 
 	fp.mu.RLock()
 	currentCount := len(fp.vms)
@@ -303,7 +378,25 @@ func (p *Pool) computeInstanceConcurrency(fn *domain.Function) int {
 }
 
 func (p *Pool) preparePoolForFunction(fn *domain.Function) *functionPool {
-	fp := p.getOrCreatePool(fn.ID)
+	poolKey := p.poolKeyForFunction(fn)
+	fp := p.getOrCreatePool(poolKey)
+	if oldPoolKey, ok := p.functionPoolKeys.Load(fn.ID); ok && oldPoolKey.(string) != poolKey {
+		if oldVal, ok := p.pools.Load(oldPoolKey.(string)); ok {
+			oldFP := oldVal.(*functionPool)
+			oldFP.mu.Lock()
+			if oldFP.functionRefs != nil {
+				delete(oldFP.functionRefs, fn.ID)
+			}
+			oldFP.mu.Unlock()
+		}
+	}
+	p.functionPoolKeys.Store(fn.ID, poolKey)
+	fp.mu.Lock()
+	if fp.functionRefs == nil {
+		fp.functionRefs = make(map[string]struct{})
+	}
+	fp.functionRefs[fn.ID] = struct{}{}
+	fp.mu.Unlock()
 
 	// Check if code has changed using atomic load first
 	if fn.CodeHash != "" {
@@ -546,7 +639,8 @@ func (p *Pool) acquireGeneric(
 		fp.mu.Unlock()
 	}
 
-	val, err, shared := p.group.Do(fn.ID, func() (interface{}, error) {
+	poolKey := p.poolKeyForFunction(fn)
+	val, err, shared := p.group.Do(poolKey, func() (interface{}, error) {
 		return createVM(ctx, fn)
 	})
 	if err != nil {
@@ -813,7 +907,7 @@ func (p *Pool) getSnapshotLock(funcID string) *sync.Mutex {
 }
 
 func (p *Pool) Release(pvm *PooledVM) {
-	fp := p.getOrCreatePool(pvm.Function.ID)
+	fp := p.getOrCreatePool(p.poolKeyForFunction(pvm.Function))
 	fp.mu.Lock()
 	if pvm.inflight > 0 {
 		pvm.inflight--
@@ -831,13 +925,20 @@ func (p *Pool) Release(pvm *PooledVM) {
 }
 
 func (p *Pool) Evict(funcID string) {
-	val, ok := p.pools.LoadAndDelete(funcID)
+	poolKey, fp, ok := p.getPoolForFunctionID(funcID)
 	if !ok {
 		return
 	}
-	fp := val.(*functionPool)
+	p.functionPoolKeys.Delete(funcID)
 
 	fp.mu.Lock()
+	if fp.functionRefs != nil {
+		delete(fp.functionRefs, funcID)
+		if len(fp.functionRefs) > 0 {
+			fp.mu.Unlock()
+			return
+		}
+	}
 	vms := fp.vms
 	evictedCount := int32(len(vms))
 	fp.vms = nil
@@ -845,6 +946,7 @@ func (p *Pool) Evict(funcID string) {
 	fp.readyVMs = nil
 	fp.readySet = nil
 	fp.mu.Unlock()
+	p.pools.Delete(poolKey)
 	if evictedCount > 0 {
 		p.totalVMs.Add(-evictedCount)
 		metrics.SetActiveVMs(p.TotalVMCount())
@@ -868,7 +970,7 @@ func (p *Pool) EvictVM(funcID string, target *PooledVM) {
 		return
 	}
 
-	fp := p.getOrCreatePool(funcID)
+	fp := p.getOrCreatePool(p.poolKeyForFunction(target.Function))
 
 	fp.mu.Lock()
 	prevLen := len(fp.vms)
@@ -909,11 +1011,10 @@ func (p *Pool) EvictVM(funcID string, target *PooledVM) {
 // ReloadCode sends new code files to all active VMs for a function.
 // Returns nil if no VMs are active. Falls back to eviction on failure.
 func (p *Pool) ReloadCode(funcID string, files map[string][]byte) error {
-	val, ok := p.pools.Load(funcID)
+	_, fp, ok := p.getPoolForFunctionID(funcID)
 	if !ok {
 		return nil // No active pool, nothing to reload
 	}
-	fp := val.(*functionPool)
 
 	fp.mu.RLock()
 	vms := make([]*PooledVM, len(fp.vms))
@@ -954,14 +1055,13 @@ func (p *Pool) Stats() map[string]interface{} {
 	totalVMs := 0
 
 	p.pools.Range(func(key, value interface{}) bool {
-		funcID := key.(string)
 		fp := value.(*functionPool)
 
 		fp.mu.RLock()
 		totalVMs += len(fp.vms)
 		for _, pvm := range fp.vms {
 			vmStats = append(vmStats, map[string]interface{}{
-				"function_id":    funcID,
+				"function_id":    pvm.Function.ID,
 				"vm_id":          pvm.VM.ID,
 				"runtime":        pvm.VM.Runtime,
 				"inflight":       pvm.inflight,
@@ -992,8 +1092,7 @@ func (p *Pool) FunctionStats(funcID string) map[string]interface{} {
 		"idle_vms":   0,
 	}
 
-	if value, ok := p.pools.Load(funcID); ok {
-		fp := value.(*functionPool)
+	if _, fp, ok := p.getPoolForFunctionID(funcID); ok {
 		fp.mu.RLock()
 		busyCount := 0
 		idleCount := 0
@@ -1134,13 +1233,12 @@ func (p *Pool) healthCheck() {
 
 	// Collect idle VMs under read lock
 	p.pools.Range(func(key, value interface{}) bool {
-		funcID := key.(string)
 		fp := value.(*functionPool)
 
 		fp.mu.RLock()
 		for _, pvm := range fp.vms {
 			if pvm.inflight == 0 {
-				targets = append(targets, checkTarget{funcID: funcID, pvm: pvm})
+				targets = append(targets, checkTarget{funcID: pvm.Function.ID, pvm: pvm})
 			}
 		}
 		fp.mu.RUnlock()
