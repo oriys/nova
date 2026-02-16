@@ -143,3 +143,42 @@ func mountLayerOverlay(layerCount int) {
 	}
 	fmt.Printf("[agent] Mounted overlayfs at %s (layers: %d)\n", mergedDir, layerCount)
 }
+
+// mountVolumeDrives mounts persistent volume drives at the mount paths
+// specified in the init payload. Volume drives are attached after layer
+// drives, so the first volume device letter depends on the layer count.
+// Drive layout: vda=rootfs, vdb=code, vdc..vdh=layers, then volumes.
+func mountVolumeDrives(layerCount int, mounts []VolumeMountInfo) {
+	if os.Getenv("NOVA_SKIP_MOUNT") == "true" {
+		return
+	}
+
+	// Volume devices start after layers. The device letter offset is:
+	// 'c' (index 2) + layerCount. For example, with 0 layers the first
+	// volume is /dev/vdc; with 2 layers it is /dev/vde.
+	baseIdx := 2 + layerCount // 'a'=0,'b'=1,'c'=2,...
+
+	for i, m := range mounts {
+		devLetter := rune('a' + baseIdx + i)
+		dev := fmt.Sprintf("/dev/vd%c", devLetter)
+
+		if _, err := os.Stat(dev); err != nil {
+			fmt.Fprintf(os.Stderr, "[agent] Volume device %s not found, skipping mount to %s\n", dev, m.MountPath)
+			continue
+		}
+
+		_ = os.MkdirAll(m.MountPath, 0755)
+
+		var flags uintptr
+		if m.ReadOnly {
+			flags = unix.MS_RDONLY
+		}
+
+		err := unix.Mount(dev, m.MountPath, "ext4", flags, "")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[agent] Mount volume %s at %s: %v\n", dev, m.MountPath, err)
+			continue
+		}
+		fmt.Printf("[agent] Mounted volume drive %s at %s (read_only=%v)\n", dev, m.MountPath, m.ReadOnly)
+	}
+}

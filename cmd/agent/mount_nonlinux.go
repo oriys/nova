@@ -16,3 +16,5 @@ func mountLayerDrives() {
 }
 
 func mountLayerOverlay(layerCount int) {}
+
+func mountVolumeDrives(layerCount int, mounts []VolumeMountInfo) {}

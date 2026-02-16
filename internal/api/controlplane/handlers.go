@@ -180,6 +180,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /volumes", h.ListVolumes)
 	mux.HandleFunc("GET /volumes/{name}", h.GetVolume)
 	mux.HandleFunc("DELETE /volumes/{name}", h.DeleteVolume)
+	mux.HandleFunc("PUT /functions/{name}/mounts", h.SetFunctionMounts)
+	mux.HandleFunc("GET /functions/{name}/mounts", h.GetFunctionMounts)
 
 	// AI-powered code operations
 	if h.AIService != nil {

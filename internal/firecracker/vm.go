@@ -945,6 +945,21 @@ func (m *Manager) apiBoot(ctx context.Context, vm *VM, rootfs, codeDrive string,
 		}
 	}
 
+	// Volume drives (persistent storage attached after layers)
+	for i, rm := range fn.ResolvedMounts {
+		driveID := fmt.Sprintf("vol%d", i)
+		volDrive := map[string]interface{}{
+			"drive_id":       driveID,
+			"path_on_host":   rm.ImagePath,
+			"is_root_device": false,
+			"is_read_only":   rm.ReadOnly,
+			"io_engine":      "Async",
+		}
+		if err := m.apiCall(ctx, vm, "PUT", "/drives/"+driveID, volDrive); err != nil {
+			return fmt.Errorf("drive %s: %w", driveID, err)
+		}
+	}
+
 	// 3. Network interface
 	netIface := map[string]interface{}{
 		"iface_id":      "eth0",
@@ -1822,6 +1837,13 @@ type InitPayload struct {
 	MemoryMB        int               `json:"memory_mb,omitempty"`
 	TimeoutS        int               `json:"timeout_s,omitempty"`
 	LayerCount      int               `json:"layer_count,omitempty"`
+	VolumeMounts    []VolumeMountInfo `json:"volume_mounts,omitempty"`
+}
+
+// VolumeMountInfo tells the agent where to mount a volume drive inside the VM.
+type VolumeMountInfo struct {
+	MountPath string `json:"mount_path"` // guest mount point (e.g., /mnt/data)
+	ReadOnly  bool   `json:"read_only"`
 }
 
 type ExecPayload struct {
@@ -1991,6 +2013,15 @@ func (c *VsockClient) Init(fn *domain.Function) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// Build volume mount info for the agent
+	var volumeMounts []VolumeMountInfo
+	for _, rm := range fn.ResolvedMounts {
+		volumeMounts = append(volumeMounts, VolumeMountInfo{
+			MountPath: rm.MountPath,
+			ReadOnly:  rm.ReadOnly,
+		})
+	}
+
 	payload, _ := json.Marshal(&InitPayload{
 		Runtime:         string(fn.Runtime),
 		Handler:         fn.Handler,
@@ -2003,6 +2034,7 @@ func (c *VsockClient) Init(fn *domain.Function) error {
 		MemoryMB:        fn.MemoryMB,
 		TimeoutS:        fn.TimeoutS,
 		LayerCount:      len(fn.LayerPaths),
+		VolumeMounts:    volumeMounts,
 	})
 	c.initPayload = payload
 	if err := c.redialAndInitLocked(5 * time.Second); err != nil {

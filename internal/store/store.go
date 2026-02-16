@@ -28,6 +28,8 @@ type FunctionUpdate struct {
 	SLOPolicy           *domain.SLOPolicy       `json:"slo_policy,omitempty"`
 	EnvVars             map[string]string       `json:"env_vars,omitempty"`
 	MergeEnvVars        bool                    `json:"merge_env_vars,omitempty"`
+	Layers              []string                `json:"layers,omitempty"`  // layer IDs (max 6)
+	Mounts              []domain.VolumeMount    `json:"mounts,omitempty"` // persistent volume mounts
 }
 
 // MetadataStore is the durable metadata store (functions, versions, aliases).

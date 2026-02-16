@@ -43,6 +43,13 @@ message InitPayload {
   int32 memory_mb = 9;
   int32 timeout_s = 10;
   int32 layer_count = 11;
+  repeated VolumeMountInfo volume_mounts = 12;
+}
+
+// VolumeMountInfo tells the agent where to mount a volume drive inside the VM.
+message VolumeMountInfo {
+  string mount_path = 1;   // guest mount point (e.g., /mnt/data)
+  bool read_only = 2;
 }
 
 // ExecPayload sends a function invocation request
