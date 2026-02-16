@@ -4,81 +4,32 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/oriys/nova/internal/circuitbreaker"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/logging"
-	"github.com/oriys/nova/internal/logsink"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/observability"
 	"github.com/oriys/nova/internal/pool"
-	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/store"
-	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 )
 
-// ErrCircuitOpen is returned when the circuit breaker is open for a function.
-var ErrCircuitOpen = fmt.Errorf("circuit breaker is open")
-
-type Executor struct {
-	store            *store.Store
-	pool             *pool.Pool
-	logger           *logging.Logger
-	secretsResolver  *secrets.Resolver
-	logSink          logsink.LogSink
-	logBatcher       *invocationLogBatcher
-	logBatcherConfig LogBatcherConfig
-	persistPayloads  bool
-	inflight         sync.WaitGroup
-	closing          atomic.Bool
-	breakers         *circuitbreaker.Registry
-}
-
-func New(store *store.Store, pool *pool.Pool, opts ...Option) *Executor {
-	e := &Executor{
-		store:           store,
-		pool:            pool,
-		logger:          logging.Default(),
-		breakers:        circuitbreaker.NewRegistry(),
-		persistPayloads: false,
-	}
-	for _, opt := range opts {
-		opt(e)
-	}
-	sink := e.logSink
-	if sink == nil {
-		sink = logsink.NewPostgresSink(store)
-	}
-	e.logBatcher = newInvocationLogBatcher(store, sink, e.logBatcherConfig)
-	return e
-}
-
-func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.RawMessage) (*domain.InvokeResponse, error) {
+// InvokeStream executes a function in streaming mode, calling the callback for each chunk
+func (e *Executor) InvokeStream(ctx context.Context, funcName string, payload json.RawMessage, callback func(chunk []byte, isLast bool, err error) error) error {
 	// Check if executor is shutting down
 	if e.closing.Load() {
-		return nil, fmt.Errorf("executor is shutting down")
+		return fmt.Errorf("executor is shutting down")
 	}
 
 	e.inflight.Add(1)
 	defer e.inflight.Done()
 
+	// Resolve function and code (same as regular Invoke)
 	fn, err := e.store.GetFunctionByName(ctx, funcName)
 	if err != nil {
-		return nil, fmt.Errorf("get function: %w", err)
-	}
-	requestedFunction := fn.Name
-	fn = e.selectRolloutTarget(ctx, fn)
-	if fn.Name != requestedFunction {
-		logging.Op().Debug(
-			"rollout canary selected",
-			"requested_function", requestedFunction,
-			"target_function", fn.Name,
-		)
+		return fmt.Errorf("get function: %w", err)
 	}
 
 	// Parallel pre-execution queries: runtime config, layers, code, and multi-file check
@@ -147,7 +98,7 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	})
 
 	if err := g.Wait(); err != nil {
-		return nil, err
+		return err
 	}
 
 	// Apply runtime config
@@ -169,7 +120,7 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	if e.secretsResolver != nil && len(fn.EnvVars) > 0 {
 		resolved, err := e.secretsResolver.ResolveEnvVars(ctx, fn.EnvVars)
 		if err != nil {
-			return nil, fmt.Errorf("resolve secrets: %w", err)
+			return fmt.Errorf("resolve secrets: %w", err)
 		}
 		fn.EnvVars = resolved
 	}
@@ -182,25 +133,18 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	// Resolve volume mounts to host-side image paths
 	fn.ResolvedMounts = resolveVolumeMounts(fn.Mounts, volumes)
 
-	// Circuit breaker check
-	breaker := e.getBreakerForFunction(fn)
-	if breaker != nil && !breaker.Allow() {
-		metrics.RecordShed(fn.Name, "circuit_breaker_open")
-		return nil, ErrCircuitOpen
-	}
-
-	// For compiled languages, check compilation status before proceeding
+	// For compiled languages, check compilation status
 	if domain.NeedsCompilation(fn.Runtime) {
 		switch codeRecord.CompileStatus {
 		case domain.CompileStatusCompiling:
-			return nil, fmt.Errorf("function '%s' is still compiling", fn.Name)
+			return fmt.Errorf("function '%s' is still compiling", fn.Name)
 		case domain.CompileStatusFailed:
-			return nil, fmt.Errorf("function '%s' compilation failed: %s", fn.Name, codeRecord.CompileError)
+			return fmt.Errorf("function '%s' compilation failed: %s", fn.Name, codeRecord.CompileError)
 		case domain.CompileStatusPending:
-			return nil, fmt.Errorf("function '%s' compilation is pending", fn.Name)
+			return fmt.Errorf("function '%s' compilation is pending", fn.Name)
 		}
 		if len(codeRecord.CompiledBinary) == 0 {
-			return nil, fmt.Errorf("function '%s' has no compiled binary", fn.Name)
+			return fmt.Errorf("function '%s' has no compiled binary", fn.Name)
 		}
 	}
 
@@ -209,27 +153,21 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	var files map[string][]byte
 
 	if hasMultiFiles {
-		// Fetch all files for multi-file function
 		files, err = e.store.GetFunctionFiles(ctx, fn.ID)
 		if err != nil {
-			return nil, fmt.Errorf("get function files: %w", err)
+			return fmt.Errorf("get function files: %w", err)
 		}
 
-		// For compiled languages with multi-file, use the compiled binary
 		if len(codeRecord.CompiledBinary) > 0 {
-			// Replace the entry point file with compiled binary
 			files[fn.Handler] = codeRecord.CompiledBinary
 		}
 
-		// Agent always executes/loads /code/handler.
-		// Keep a canonical alias even when entry point is a different file name.
 		if _, ok := files["handler"]; !ok {
 			if entry, ok := files[fn.Handler]; ok {
 				files["handler"] = entry
 			}
 		}
 	} else {
-		// Single file function
 		if len(codeRecord.CompiledBinary) > 0 {
 			codeContent = codeRecord.CompiledBinary
 		} else {
@@ -240,7 +178,7 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	reqID := uuid.New().String()[:8]
 
 	// Start tracing span
-	ctx, span := observability.StartSpan(ctx, "nova.invoke",
+	ctx, span := observability.StartSpan(ctx, "nova.invoke.stream",
 		observability.AttrFunctionName.String(fn.Name),
 		observability.AttrFunctionID.String(fn.ID),
 		observability.AttrRuntime.String(string(fn.Runtime)),
@@ -248,7 +186,6 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	)
 	defer span.End()
 
-	// Track active requests
 	metrics.IncActiveRequests()
 	defer metrics.DecActiveRequests()
 
@@ -257,6 +194,7 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 
 	start := time.Now()
 
+	// Acquire VM
 	var pvm *pool.PooledVM
 	if files != nil && len(files) > 0 {
 		pvm, err = e.pool.AcquireWithFiles(ctx, fn, files)
@@ -265,7 +203,7 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 	}
 	if err != nil {
 		observability.SetSpanError(span, err)
-		return nil, fmt.Errorf("acquire VM: %w", err)
+		return fmt.Errorf("acquire VM: %w", err)
 	}
 	defer e.pool.Release(pvm)
 
@@ -274,9 +212,10 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		observability.AttrVMID.String(pvm.VM.ID),
 	)
 
-	// Propagate trace context over vsock
+	// Execute in streaming mode
 	tc := observability.ExtractTraceContext(ctx)
-	resp, err := pvm.Client.ExecuteWithTrace(reqID, payload, fn.TimeoutS, tc.TraceParent, tc.TraceState)
+	var execErr error
+	err = pvm.Client.ExecuteStream(reqID, payload, fn.TimeoutS, tc.TraceParent, tc.TraceState, callback)
 	durationMs := time.Since(start).Milliseconds()
 
 	span.SetAttributes(observability.AttrDurationMs.Int64(durationMs))
@@ -296,7 +235,7 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 
 	if err != nil {
 		e.pool.EvictVM(fn.ID, pvm)
-
+		execErr = err
 		// Async: metrics recording
 		safeGo(func() {
 			metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, false)
@@ -310,62 +249,25 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 
 		observability.SetSpanError(span, err)
 
-		// Record circuit breaker failure
-		if breaker != nil {
-			breaker.RecordFailure()
-		}
-
-		// Async persist invocation log to database
+		// Async persist invocation log
 		e.persistInvocationLog(reqID, fn, durationMs, pvm.ColdStart, false, err.Error(), len(payload), 0, payload, nil, "", "")
 
-		return nil, fmt.Errorf("execute: %w", err)
+		return fmt.Errorf("execute stream: %w", err)
 	}
 
-	// Record successful invocation
-	success := resp.Error == ""
-
-	// Async: metrics recording
+	// Async: record successful streaming invocation
 	safeGo(func() {
-		metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, success)
+		metrics.Global().RecordInvocationWithDetails(fn.ID, fn.Name, string(fn.Runtime), durationMs, pvm.ColdStart, true)
 	})
 
-	// Record circuit breaker outcome
-	if breaker != nil {
-		if success {
-			breaker.RecordSuccess()
-		} else {
-			breaker.RecordFailure()
-		}
-	}
-
-	logEntry.Success = success
-	logEntry.Error = resp.Error
-	logEntry.OutputSize = len(resp.Output)
+	logEntry.Success = true
 
 	// Async: request logging
 	safeGo(func() { e.logger.Log(logEntry) })
 
-	// Async: store captured output if available
-	if resp.Stdout != "" || resp.Stderr != "" {
-		if outStore := logging.GetOutputStore(); outStore != nil {
-			safeGo(func() { outStore.Store(reqID, fn.ID, resp.Stdout, resp.Stderr) })
-		}
-	}
+	// Async persist invocation log (output is streamed, so we don't have it)
+	e.persistInvocationLog(reqID, fn, durationMs, pvm.ColdStart, true, "", len(payload), 0, payload, nil, "", "")
 
-	// Async persist invocation log to database
-	e.persistInvocationLog(reqID, fn, durationMs, pvm.ColdStart, success, resp.Error, len(payload), len(resp.Output), payload, resp.Output, resp.Stdout, resp.Stderr)
-
-	if success {
-		observability.SetSpanOK(span)
-	} else {
-		span.SetAttributes(attribute.String("nova.error", resp.Error))
-	}
-
-	return &domain.InvokeResponse{
-		RequestID:  reqID,
-		Output:     resp.Output,
-		Error:      resp.Error,
-		DurationMs: durationMs,
-		ColdStart:  pvm.ColdStart,
-	}, nil
+	observability.SetSpanOK(span)
+	return execErr
 }
