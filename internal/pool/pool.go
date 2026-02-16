@@ -208,9 +208,23 @@ func (p *Pool) poolKeyForFunction(fn *domain.Function) string {
 	}
 	b, err := json.Marshal(payload)
 	if err != nil {
-		return fn.ID
+		logging.Op().Warn("failed to build pool key payload, using fallback key", "function", fn.ID, "error", err)
+		return fmt.Sprintf("fallback|%s|%d|%s|%s", fn.Runtime, fn.MemoryMB, fn.Backend, fn.CodeHash)
 	}
 	return string(b)
+}
+
+func (p *Pool) getPoolForFunctionID(funcID string) (string, *functionPool, bool) {
+	if poolKey, ok := p.functionPoolKeys.Load(funcID); ok {
+		if val, ok := p.pools.Load(poolKey.(string)); ok {
+			return poolKey.(string), val.(*functionPool), true
+		}
+	}
+	// Backward compatibility for any legacy per-function keyed entries.
+	if val, ok := p.pools.Load(funcID); ok {
+		return funcID, val.(*functionPool), true
+	}
+	return "", nil, false
 }
 
 // getOrCreatePool returns the function pool by key, creating it if needed.
@@ -218,7 +232,9 @@ func (p *Pool) getOrCreatePool(poolKey string) *functionPool {
 	if fp, ok := p.pools.Load(poolKey); ok {
 		return fp.(*functionPool)
 	}
-	fp := &functionPool{}
+	fp := &functionPool{
+		functionRefs: make(map[string]struct{}),
+	}
 	fp.cond = sync.NewCond(&fp.mu)
 	actual, _ := p.pools.LoadOrStore(poolKey, fp)
 	return actual.(*functionPool)
@@ -371,11 +387,7 @@ func (p *Pool) preparePoolForFunction(fn *domain.Function) *functionPool {
 			if oldFP.functionRefs != nil {
 				delete(oldFP.functionRefs, fn.ID)
 			}
-			shouldDeleteOldPool := len(oldFP.vms) == 0 && (oldFP.functionRefs == nil || len(oldFP.functionRefs) == 0)
 			oldFP.mu.Unlock()
-			if shouldDeleteOldPool {
-				p.pools.Delete(oldPoolKey.(string))
-			}
 		}
 	}
 	p.functionPoolKeys.Store(fn.ID, poolKey)
@@ -913,17 +925,11 @@ func (p *Pool) Release(pvm *PooledVM) {
 }
 
 func (p *Pool) Evict(funcID string) {
-	poolKey, ok := p.functionPoolKeys.Load(funcID)
+	poolKey, fp, ok := p.getPoolForFunctionID(funcID)
 	if !ok {
 		return
 	}
 	p.functionPoolKeys.Delete(funcID)
-
-	val, ok := p.pools.Load(poolKey.(string))
-	if !ok {
-		return
-	}
-	fp := val.(*functionPool)
 
 	fp.mu.Lock()
 	if fp.functionRefs != nil {
@@ -940,7 +946,7 @@ func (p *Pool) Evict(funcID string) {
 	fp.readyVMs = nil
 	fp.readySet = nil
 	fp.mu.Unlock()
-	p.pools.Delete(poolKey.(string))
+	p.pools.Delete(poolKey)
 	if evictedCount > 0 {
 		p.totalVMs.Add(-evictedCount)
 		metrics.SetActiveVMs(p.TotalVMCount())
@@ -1005,15 +1011,10 @@ func (p *Pool) EvictVM(funcID string, target *PooledVM) {
 // ReloadCode sends new code files to all active VMs for a function.
 // Returns nil if no VMs are active. Falls back to eviction on failure.
 func (p *Pool) ReloadCode(funcID string, files map[string][]byte) error {
-	poolKey, ok := p.functionPoolKeys.Load(funcID)
-	if !ok {
-		poolKey = funcID
-	}
-	val, ok := p.pools.Load(poolKey.(string))
+	_, fp, ok := p.getPoolForFunctionID(funcID)
 	if !ok {
 		return nil // No active pool, nothing to reload
 	}
-	fp := val.(*functionPool)
 
 	fp.mu.RLock()
 	vms := make([]*PooledVM, len(fp.vms))
@@ -1091,12 +1092,7 @@ func (p *Pool) FunctionStats(funcID string) map[string]interface{} {
 		"idle_vms":   0,
 	}
 
-	poolKey, ok := p.functionPoolKeys.Load(funcID)
-	if !ok {
-		poolKey = funcID
-	}
-	if value, ok := p.pools.Load(poolKey.(string)); ok {
-		fp := value.(*functionPool)
+	if _, fp, ok := p.getPoolForFunctionID(funcID); ok {
 		fp.mu.RLock()
 		busyCount := 0
 		idleCount := 0
