@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -24,8 +27,8 @@ import (
 	"github.com/oriys/nova/internal/firecracker"
 	novagrpc "github.com/oriys/nova/internal/grpc"
 	"github.com/oriys/nova/internal/kubernetes"
-	"github.com/oriys/nova/internal/libkrun"
 	"github.com/oriys/nova/internal/layer"
+	"github.com/oriys/nova/internal/libkrun"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/observability"
@@ -114,6 +117,7 @@ func daemonCmd() *cobra.Command {
 			cachedStore := store.NewCachedMetadataStore(pgStore, store.DefaultCacheTTL)
 			s := store.NewStore(cachedStore)
 			defer s.Close()
+			seedConfigDefaults(context.Background(), s, cfg)
 
 			sloService := slo.New(s, slo.Config{
 				Enabled:           cfg.SLO.Enabled,
@@ -393,6 +397,98 @@ func daemonCmd() *cobra.Command {
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level")
 
 	return cmd
+}
+
+func seedConfigDefaults(ctx context.Context, s *store.Store, cfg *config.Config) {
+	defaults := flattenConfigForStore(cfg)
+	if len(defaults) == 0 {
+		return
+	}
+	current, err := s.GetConfig(ctx)
+	if err != nil {
+		logging.Op().Warn("failed to load existing config from database", "error", err)
+		return
+	}
+	keys := make([]string, 0, len(defaults))
+	for key := range defaults {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if _, exists := current[key]; exists {
+			continue
+		}
+		if err := s.SetConfig(ctx, key, defaults[key]); err != nil {
+			logging.Op().Warn("failed to persist default config entry", "key", key, "error", err)
+		}
+	}
+}
+
+func flattenConfigForStore(cfg *config.Config) map[string]string {
+	if cfg == nil {
+		return nil
+	}
+	rawBytes, err := json.Marshal(cfg)
+	if err != nil {
+		return nil
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(rawBytes, &raw); err != nil {
+		return nil
+	}
+	flattened := make(map[string]string)
+	flattenConfigValue("", raw, flattened)
+	return flattened
+}
+
+func flattenConfigValue(prefix string, value any, out map[string]string) {
+	switch v := value.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			nextPrefix := key
+			if prefix != "" {
+				nextPrefix = prefix + "." + key
+			}
+			flattenConfigValue(nextPrefix, v[key], out)
+		}
+	case []any:
+		if isSensitiveConfigKey(prefix) {
+			return
+		}
+		b, err := json.Marshal(v)
+		if err != nil {
+			return
+		}
+		out[prefix] = string(b)
+	default:
+		if isSensitiveConfigKey(prefix) {
+			return
+		}
+		switch typed := v.(type) {
+		case string:
+			out[prefix] = typed
+		default:
+			b, err := json.Marshal(typed)
+			if err != nil {
+				return
+			}
+			out[prefix] = string(b)
+		}
+	}
+}
+
+func isSensitiveConfigKey(key string) bool {
+	lowerKey := strings.ToLower(key)
+	return strings.HasSuffix(lowerKey, ".dsn") ||
+		strings.HasSuffix(lowerKey, ".secret") ||
+		strings.HasSuffix(lowerKey, ".api_key") ||
+		strings.HasSuffix(lowerKey, ".master_key") ||
+		strings.Contains(lowerKey, ".static_keys")
 }
 
 // apiKeyStoreAdapterDaemon adapts store.Store to auth.APIKeyStore for use in daemon.

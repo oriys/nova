@@ -69,6 +69,11 @@ function formatComponentLabel(name: string, fallbackLabel: string): string {
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
+function isSensitiveConfigKey(key: string): boolean {
+  const normalized = key.toLowerCase()
+  return normalized.includes("api_key") || normalized.includes("secret") || normalized.includes("password") || normalized.includes("token") || normalized.endsWith(".dsn")
+}
+
 export default function ConfigurationsPage() {
   const t = useTranslations("pages")
   const tc = useTranslations("configurations")
@@ -87,6 +92,10 @@ export default function ConfigurationsPage() {
   const [logLevel, setLogLevel] = useState("info")
   const [maxGlobalVMs, setMaxGlobalVMs] = useState("0")
   const [dirty, setDirty] = useState(false)
+  const [dbConfig, setDbConfig] = useState<Record<string, string>>({})
+  const [dbConfigDirty, setDbConfigDirty] = useState(false)
+  const [dbConfigSaving, setDbConfigSaving] = useState(false)
+  const [dbConfigSaved, setDbConfigSaved] = useState(false)
 
   // AI Settings
   const [aiEnabled, setAiEnabled] = useState(false)
@@ -174,6 +183,8 @@ export default function ConfigurationsPage() {
       if (configData["log_level"]) setLogLevel(configData["log_level"])
       if (configData["max_global_vms"]) setMaxGlobalVMs(configData["max_global_vms"])
       setDirty(false)
+      setDbConfig(configData)
+      setDbConfigDirty(false)
 
       // Apply AI config
       if (aiConfigData) {
@@ -252,6 +263,12 @@ export default function ConfigurationsPage() {
         log_level: logLevel,
         max_global_vms: maxGlobalVMs,
       })
+      setDbConfig((prev) => ({
+        ...prev,
+        pool_ttl: poolTTL,
+        log_level: logLevel,
+        max_global_vms: maxGlobalVMs,
+      }))
       setDirty(false)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
@@ -303,6 +320,30 @@ export default function ConfigurationsPage() {
       setError(err instanceof Error ? err.message : tc("failedToSaveAiConfiguration"))
     } finally {
       setAiSaving(false)
+    }
+  }
+
+  const handleDbConfigSave = async () => {
+    try {
+      setDbConfigSaving(true)
+      setDbConfigSaved(false)
+      const payload = Object.fromEntries(
+        Object.entries(dbConfig).filter(([key]) => !isSensitiveConfigKey(key))
+      )
+      const updated = await configApi.update(payload)
+      setDbConfig(updated)
+      if (updated["pool_ttl"]) setPoolTTL(updated["pool_ttl"])
+      if (updated["log_level"]) setLogLevel(updated["log_level"])
+      if (updated["max_global_vms"]) setMaxGlobalVMs(updated["max_global_vms"])
+      setDbConfigDirty(false)
+      setDirty(false)
+      setDbConfigSaved(true)
+      setTimeout(() => setDbConfigSaved(false), 3000)
+    } catch (err) {
+      console.error("Failed to save database config:", err)
+      setError(err instanceof Error ? err.message : tc("failedToSaveConfiguration"))
+    } finally {
+      setDbConfigSaving(false)
     }
   }
 
@@ -525,6 +566,61 @@ export default function ConfigurationsPage() {
               )}
             </Button>
             {saved && (
+              <span className="flex items-center gap-1 text-sm text-success">
+                <CheckCircle className="h-4 w-4" />
+                {tc("saved")}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* AI Settings */}
+        <div className="rounded-xl border border-border bg-card p-6">
+          <h3 className="text-lg font-semibold text-card-foreground mb-2">
+            Database Configuration
+          </h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            All configuration entries persisted in the database.
+          </p>
+          <div className="max-h-72 overflow-auto rounded-lg border border-border">
+            <div className="grid grid-cols-2 gap-2 p-3 text-xs font-medium text-muted-foreground border-b border-border bg-muted/30">
+              <span>Key</span>
+              <span>Value</span>
+            </div>
+            <div className="space-y-2 p-3">
+              {Object.keys(dbConfig).sort().map((key) => {
+                const sensitive = isSensitiveConfigKey(key)
+                return (
+                  <div key={key} className="grid grid-cols-2 gap-2 items-center">
+                    <code className="text-xs">{key}</code>
+                    <Input
+                      value={sensitive ? "********" : dbConfig[key]}
+                      disabled={sensitive}
+                      onChange={(e) => {
+                        setDbConfig((prev) => ({ ...prev, [key]: e.target.value }))
+                        setDbConfigDirty(true)
+                      }}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+          <div className="mt-4 flex items-center gap-3">
+            <Button variant="outline" onClick={handleDbConfigSave} disabled={dbConfigSaving || !dbConfigDirty}>
+              {dbConfigSaving ? (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  {tc("saving")}
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Save Database Config
+                </>
+              )}
+            </Button>
+            {dbConfigSaved && (
               <span className="flex items-center gap-1 text-sm text-success">
                 <CheckCircle className="h-4 w-4" />
                 {tc("saved")}
