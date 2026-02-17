@@ -845,7 +845,12 @@
     "savePromptTemplate": "プロンプトテンプレートを保存",
     "vmSnapshots": "VM スナップショット",
     "noSnapshots": "スナップショットはまだ作成されていません。関数詳細ページからスナップショットを作成してください。",
-    "snapshotsLabel": "スナップショット"
+    "snapshotsLabel": "スナップショット",
+    "systemConfiguration": "システム設定",
+    "systemConfigurationDescription": "データベースに永続化されたすべての設定項目。",
+    "key": "キー",
+    "value": "値",
+    "saveDatabaseConfig": "データベース設定を保存"
   },
   "apiKeysPage": {
     "createApiKey": "API キーを作成",

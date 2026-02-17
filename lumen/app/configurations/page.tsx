@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useMemo } from "react"
 import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
@@ -71,7 +71,15 @@ function formatComponentLabel(name: string, fallbackLabel: string): string {
 
 function isSensitiveConfigKey(key: string): boolean {
   const normalized = key.toLowerCase()
-  return normalized.includes("api_key") || normalized.includes("secret") || normalized.includes("password") || normalized.includes("token") || normalized.endsWith(".dsn")
+  return normalized.endsWith(".dsn")
+    || normalized.endsWith(".secret")
+    || normalized.endsWith(".api_key")
+    || normalized.endsWith(".master_key")
+    || normalized.includes(".static_keys")
+}
+
+function filterPublicConfig(config: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(config).filter(([key]) => !isSensitiveConfigKey(key)))
 }
 
 export default function ConfigurationsPage() {
@@ -117,6 +125,7 @@ export default function ConfigurationsPage() {
   const [promptSaving, setPromptSaving] = useState(false)
   const [promptDirty, setPromptDirty] = useState(false)
   const [promptSaved, setPromptSaved] = useState(false)
+  const sortedDbConfigKeys = useMemo(() => Object.keys(dbConfig).sort(), [dbConfig])
 
   const fetchModels = useCallback(async () => {
     try {
@@ -183,7 +192,7 @@ export default function ConfigurationsPage() {
       if (configData["log_level"]) setLogLevel(configData["log_level"])
       if (configData["max_global_vms"]) setMaxGlobalVMs(configData["max_global_vms"])
       setDirty(false)
-      setDbConfig(configData)
+      setDbConfig(filterPublicConfig(configData))
       setDbConfigDirty(false)
 
       // Apply AI config
@@ -327,11 +336,8 @@ export default function ConfigurationsPage() {
     try {
       setDbConfigSaving(true)
       setDbConfigSaved(false)
-      const payload = Object.fromEntries(
-        Object.entries(dbConfig).filter(([key]) => !isSensitiveConfigKey(key))
-      )
-      const updated = await configApi.update(payload)
-      setDbConfig(updated)
+      const updated = await configApi.update(dbConfig)
+      setDbConfig(filterPublicConfig(updated))
       if (updated["pool_ttl"]) setPoolTTL(updated["pool_ttl"])
       if (updated["log_level"]) setLogLevel(updated["log_level"])
       if (updated["max_global_vms"]) setMaxGlobalVMs(updated["max_global_vms"])
@@ -574,27 +580,27 @@ export default function ConfigurationsPage() {
           </div>
         </div>
 
-        {/* AI Settings */}
+        {/* System Configuration */}
         <div className="rounded-xl border border-border bg-card p-6">
           <h3 className="text-lg font-semibold text-card-foreground mb-2">
-            Database Configuration
+            {tc("systemConfiguration")}
           </h3>
           <p className="text-sm text-muted-foreground mb-4">
-            All configuration entries persisted in the database.
+            {tc("systemConfigurationDescription")}
           </p>
           <div className="max-h-72 overflow-auto rounded-lg border border-border">
             <div className="grid grid-cols-2 gap-2 p-3 text-xs font-medium text-muted-foreground border-b border-border bg-muted/30">
-              <span>Key</span>
-              <span>Value</span>
+              <span>{tc("key")}</span>
+              <span>{tc("value")}</span>
             </div>
             <div className="space-y-2 p-3">
-              {Object.keys(dbConfig).sort().map((key) => {
+              {sortedDbConfigKeys.map((key) => {
                 const sensitive = isSensitiveConfigKey(key)
                 return (
                   <div key={key} className="grid grid-cols-2 gap-2 items-center">
                     <code className="text-xs">{key}</code>
                     <Input
-                      value={sensitive ? "********" : dbConfig[key]}
+                      value={sensitive ? "[REDACTED]" : dbConfig[key]}
                       disabled={sensitive}
                       onChange={(e) => {
                         setDbConfig((prev) => ({ ...prev, [key]: e.target.value }))
@@ -616,7 +622,7 @@ export default function ConfigurationsPage() {
               ) : (
                 <>
                   <Save className="mr-2 h-4 w-4" />
-                  Save Database Config
+                  {tc("saveDatabaseConfig")}
                 </>
               )}
             </Button>

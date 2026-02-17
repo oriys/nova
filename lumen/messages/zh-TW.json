@@ -845,7 +845,12 @@
     "savePromptTemplate": "儲存提示詞範本",
     "vmSnapshots": "VM 快照",
     "noSnapshots": "尚無快照。請在函式詳情頁面建立快照。",
-    "snapshotsLabel": "快照"
+    "snapshotsLabel": "快照",
+    "systemConfiguration": "系統設定",
+    "systemConfigurationDescription": "所有已持久化到資料庫的設定項。",
+    "key": "鍵",
+    "value": "值",
+    "saveDatabaseConfig": "儲存資料庫設定"
   },
   "apiKeysPage": {
     "createApiKey": "建立 API 金鑰",

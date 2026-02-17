@@ -857,7 +857,12 @@
     "savePromptTemplate": "Save Prompt Template",
     "vmSnapshots": "VM Snapshots",
     "noSnapshots": "No snapshots created yet. Create snapshots from the function detail page.",
-    "snapshotsLabel": "snapshots"
+    "snapshotsLabel": "snapshots",
+    "systemConfiguration": "System Configuration",
+    "systemConfigurationDescription": "All configuration entries persisted in the database.",
+    "key": "Key",
+    "value": "Value",
+    "saveDatabaseConfig": "Save Database Config"
   },
   "apiKeysPage": {
     "createApiKey": "Create API Key",

@@ -845,7 +845,12 @@
     "savePromptTemplate": "Enregistrer le modèle de prompt",
     "vmSnapshots": "Instantanés VM",
     "noSnapshots": "Aucun instantané créé. Créez des instantanés depuis la page de détails de la fonction.",
-    "snapshotsLabel": "instantanés"
+    "snapshotsLabel": "instantanés",
+    "systemConfiguration": "Configuration système",
+    "systemConfigurationDescription": "Toutes les entrées de configuration persistées en base de données.",
+    "key": "Clé",
+    "value": "Valeur",
+    "saveDatabaseConfig": "Enregistrer la configuration base de données"
   },
   "apiKeysPage": {
     "createApiKey": "Créer une clé API",

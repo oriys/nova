@@ -414,13 +414,24 @@ func seedConfigDefaults(ctx context.Context, s *store.Store, cfg *config.Config)
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
+	seeded := 0
+	failed := 0
 	for _, key := range keys {
 		if _, exists := current[key]; exists {
 			continue
 		}
 		if err := s.SetConfig(ctx, key, defaults[key]); err != nil {
 			logging.Op().Warn("failed to persist default config entry", "key", key, "error", err)
+			failed++
+			continue
 		}
+		seeded++
+	}
+	if seeded > 0 {
+		logging.Op().Info("seeded default configuration entries", "count", seeded)
+	}
+	if failed > 0 {
+		logging.Op().Warn("some default configuration entries failed to seed", "failed", failed)
 	}
 }
 
@@ -462,6 +473,7 @@ func flattenConfigValue(prefix string, value any, out map[string]string) {
 		}
 		b, err := json.Marshal(v)
 		if err != nil {
+			logging.Op().Warn("failed to serialize config value", "key", prefix, "error", err)
 			return
 		}
 		out[prefix] = string(b)
@@ -475,6 +487,7 @@ func flattenConfigValue(prefix string, value any, out map[string]string) {
 		default:
 			b, err := json.Marshal(typed)
 			if err != nil {
+				logging.Op().Warn("failed to serialize config value", "key", prefix, "error", err)
 				return
 			}
 			out[prefix] = string(b)

@@ -845,7 +845,12 @@
     "savePromptTemplate": "保存提示词模板",
     "vmSnapshots": "VM 快照",
     "noSnapshots": "暂无快照。请在函数详情页面创建快照。",
-    "snapshotsLabel": "快照"
+    "snapshotsLabel": "快照",
+    "systemConfiguration": "系统配置",
+    "systemConfigurationDescription": "所有已持久化到数据库的配置项。",
+    "key": "键",
+    "value": "值",
+    "saveDatabaseConfig": "保存数据库配置"
   },
   "apiKeysPage": {
     "createApiKey": "创建 API 密钥",
