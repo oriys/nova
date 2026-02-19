@@ -145,6 +145,20 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			updated_at TIMESTAMPTZ NOT NULL,
 			PRIMARY KEY (function_id, name)
 		)`,
+		`CREATE TABLE IF NOT EXISTS function_states (
+			tenant_id TEXT NOT NULL DEFAULT 'default',
+			namespace TEXT NOT NULL DEFAULT 'default',
+			function_id TEXT NOT NULL REFERENCES functions(id) ON DELETE CASCADE,
+			key TEXT NOT NULL,
+			value JSONB NOT NULL,
+			version BIGINT NOT NULL DEFAULT 1,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			expires_at TIMESTAMPTZ,
+			PRIMARY KEY (tenant_id, namespace, function_id, key)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_function_states_tenant_namespace_function_key ON function_states(tenant_id, namespace, function_id, key)`,
+		`CREATE INDEX IF NOT EXISTS idx_function_states_expires_at ON function_states(expires_at)`,
 		`CREATE TABLE IF NOT EXISTS invocation_logs (
 			id TEXT PRIMARY KEY,
 			function_id TEXT NOT NULL,

@@ -651,6 +651,7 @@ fn main() {
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/functions/{name}/invoke` | 调用函数 |
+| GET/PUT/DELETE | `/functions/{name}/state` | 函数级持久状态（`key` 查询参数指定状态键） |
 | GET | `/functions/{name}/logs` | 函数调用日志 |
 | GET | `/functions/{name}/metrics` | 函数维度指标 |
 | GET | `/invocations` | 全局调用日志 |

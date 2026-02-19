@@ -28,7 +28,7 @@ type FunctionUpdate struct {
 	SLOPolicy           *domain.SLOPolicy       `json:"slo_policy,omitempty"`
 	EnvVars             map[string]string       `json:"env_vars,omitempty"`
 	MergeEnvVars        bool                    `json:"merge_env_vars,omitempty"`
-	Layers              []string                `json:"layers,omitempty"`  // layer IDs (max 6)
+	Layers              []string                `json:"layers,omitempty"` // layer IDs (max 6)
 	Mounts              []domain.VolumeMount    `json:"mounts,omitempty"` // persistent volume mounts
 }
 
@@ -90,6 +90,13 @@ type MetadataStore interface {
 	GetFunctionDailyHeatmap(ctx context.Context, functionID string, weeks int) ([]DailyCount, error)
 	GetGlobalDailyHeatmap(ctx context.Context, weeks int) ([]DailyCount, error)
 	GetFunctionSLOSnapshot(ctx context.Context, functionID string, windowSeconds int) (*FunctionSLOSnapshot, error)
+
+	// Stateful function key-value entries
+	GetFunctionState(ctx context.Context, functionID, key string) (*FunctionStateEntry, error)
+	PutFunctionState(ctx context.Context, functionID, key string, value json.RawMessage, opts *FunctionStatePutOptions) (*FunctionStateEntry, error)
+	DeleteFunctionState(ctx context.Context, functionID, key string) error
+	ListFunctionStates(ctx context.Context, functionID string, opts *FunctionStateListOptions) ([]*FunctionStateEntry, error)
+	CountFunctionStates(ctx context.Context, functionID, prefix string) (int64, error)
 
 	// Async invocations (queue + retries + DLQ)
 	EnqueueAsyncInvocation(ctx context.Context, inv *AsyncInvocation) error

@@ -163,6 +163,11 @@ func (s *PostgresStore) DeleteFunction(ctx context.Context, id string) error {
 			args: []any{scope.TenantID, scope.Namespace, id, fnName},
 		},
 		{
+			name: "function states",
+			sql:  `DELETE FROM function_states WHERE tenant_id = $1 AND namespace = $2 AND function_id = $3`,
+			args: []any{scope.TenantID, scope.Namespace, id},
+		},
+		{
 			name: "idempotency keys",
 			sql:  `DELETE FROM idempotency_keys WHERE scope = 'invoke_async' AND scope_id = $1`,
 			args: []any{id},
