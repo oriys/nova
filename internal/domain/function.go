@@ -1,3 +1,28 @@
+// Package domain defines the core value objects, entities, and invariants for
+// the Nova serverless platform.
+//
+// # Design rationale
+//
+// All types in this package are plain Go structs with no behaviour that touches
+// I/O or infrastructure. This keeps the domain layer free of side-effects and
+// makes business rules independently testable.
+//
+// # Invariants
+//
+//   - A Function's Name is immutable after creation; changes require a new
+//     Function record to avoid aliasing bugs in the pool and metrics layers.
+//   - CodeHash must always reflect the SHA-256 of the code that is currently
+//     deployed. The executor uses this hash to detect stale VM pools and
+//     force re-creation. Skipping the update silently runs old code.
+//   - TrafficSplit percentages must sum to exactly 100 when non-empty; the
+//     executor rejects distributions that violate this constraint to prevent
+//     traffic being silently dropped or over-served.
+//
+// # Concurrency
+//
+// Domain types are value objects passed by pointer. Callers that share a
+// *Function across goroutines must synchronise externally — the types
+// themselves provide no locking.
 package domain
 
 import (
@@ -31,7 +56,17 @@ const (
 	RuntimeProvided Runtime = "provided"
 )
 
-// ExecutionMode determines how functions are executed
+// ExecutionMode determines how functions are executed.
+//
+// The choice of mode is a trade-off between isolation and throughput:
+//   - ModeProcess provides the strongest isolation because every invocation
+//     gets a fresh OS process; it cannot share in-memory state with prior
+//     calls. Use this when the runtime or user code is not designed to handle
+//     concurrent requests.
+//   - ModePersistent keeps the process alive between invocations for
+//     connection reuse (e.g. database clients, ML model weights). This is
+//     more efficient but requires the handler to be re-entrant if
+//     InstanceConcurrency > 1.
 type ExecutionMode string
 
 const (
@@ -41,7 +76,12 @@ const (
 	ModePersistent ExecutionMode = "persistent"
 )
 
-// BackendType determines which execution backend a function uses
+// BackendType determines which execution backend a function uses.
+//
+// BackendAuto is the recommended default: it probes available backends at
+// startup and picks the most capable one (Firecracker > libkrun > Docker).
+// Explicitly pinning a backend is useful for testing or when the deployment
+// environment lacks kernel features (e.g. no /dev/kvm → use Docker).
 type BackendType string
 
 const (
@@ -248,6 +288,34 @@ type Volume struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// Function is the central aggregate of the Nova platform.
+//
+// # Lifecycle
+//
+// Functions are created via the control-plane API, stored in Postgres, and
+// referenced by the executor at invocation time. A function transitions
+// through the following states: created → deployed (code uploaded) →
+// optionally compiled → invocable. Deletion is soft via the store; the pool
+// evicts VMs asynchronously when it observes the function is gone.
+//
+// # Immutable fields
+//
+// ID and Name must never be changed after creation. The pool keys VMs by a
+// hash derived from these fields plus CodeHash; mutating them causes silent
+// pool misses or cross-function VM reuse.
+//
+// # Versioning invariant
+//
+// When TrafficSplit is non-empty its values must sum to 100. The executor
+// validates this before routing; a violation results in a 400 error rather
+// than silently misrouting traffic.
+//
+// # Runtime metadata
+//
+// RuntimeCommand, RuntimeExtension, and RuntimeImageName are intentionally
+// excluded from JSON serialisation (json:"-"). They are resolved from the
+// runtimes table at invocation time and must not be persisted; storing them
+// would create a stale-config risk if the runtime record is updated.
 type Function struct {
 	ID                  string            `json:"id"`
 	TenantID            string            `json:"tenant_id,omitempty"`
@@ -360,7 +428,13 @@ type FunctionCode struct {
 	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
-// NeedsCompilation returns true if the runtime requires compilation
+// NeedsCompilation returns true if the runtime requires compilation before
+// the function can be invoked.
+//
+// The executor checks this before acquiring a VM. If compilation is still
+// in progress or has failed, the invocation is rejected early rather than
+// allowing a VM to boot with an incomplete binary, which would cause a
+// confusing runtime error inside the guest.
 func NeedsCompilation(runtime Runtime) bool {
 	compiledRuntimes := map[Runtime]bool{
 		RuntimeGo:     true,

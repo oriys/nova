@@ -25,6 +25,21 @@ func (p *Pool) cleanupLoop() {
 	}
 }
 
+// cleanupExpired scans all active function pools and evicts VMs that have
+// been idle for longer than IdleTTL, subject to the MinReplicas floor.
+//
+// # Why idle eviction matters
+//
+// Firecracker VMs consume memory even when idle. Evicting stale VMs returns
+// resources to the host so they can be used by other functions or the OS.
+// The MinReplicas floor prevents the pool from dropping below the
+// pre-warmed baseline requested by the function owner or the autoscaler.
+//
+// # Side effects
+//
+// VM stop operations are dispatched asynchronously (goroutine per VM)
+// after the pool lock is released to avoid holding the lock during I/O.
+// Prometheus active-VM gauge is updated before the async stops begin.
 func (p *Pool) cleanupExpired() {
 	type expiredVM struct {
 		client backend.Client
@@ -90,6 +105,27 @@ func (p *Pool) cleanupExpired() {
 	}
 }
 
+// EnsureReady pre-warms VMs up to the function's MinReplicas or the
+// autoscaler's desired replica count, whichever is higher.
+//
+// # When to call
+//
+// This is called by the pre-warm scheduler after function creation or
+// update and by the autoscaler when it decides to scale up. It is NOT
+// on the hot invocation path; the pool's Acquire method handles
+// just-in-time cold starts.
+//
+// # Concurrency
+//
+// VM creation is parallelised up to maxPreWarmWorkers. Each goroutine
+// appends to fp.vms under the write lock after creation succeeds.
+// EnsureReady waits for all goroutines to finish before returning, so
+// the caller can assert that MinReplicas VMs are available.
+//
+// # Edge cases
+//
+// If needed <= 0 (pool already at or above the target), the function
+// returns immediately without creating any VMs.
 func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function, codeContent []byte) error {
 	fp := p.preparePoolForFunction(fn)
 

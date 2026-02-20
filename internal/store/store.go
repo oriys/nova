@@ -1,3 +1,32 @@
+// Package store provides the durable metadata layer for the Nova control
+// plane.
+//
+// # Consistency model
+//
+// All writes go to a single PostgreSQL primary. Reads are served from the
+// same connection pool, so they see committed data immediately
+// (read-your-writes consistency within a request). The package does not use
+// read replicas; adding replication-lag tolerance is a future concern.
+//
+// # Transaction boundaries
+//
+// Each exported method executes in a single implicit transaction unless the
+// method name contains "Tx" or the method accepts a pgx.Tx argument.
+// Callers that need multi-table atomicity (e.g. create function + create
+// version) must use the BeginTx / CommitTx helpers to wrap multiple calls.
+//
+// # Tenancy
+//
+// Every read and write is scoped to (tenant_id, namespace) derived from
+// the context via tenantScopeFromContext. Callers must set a valid tenant
+// scope in the context before invoking any store method; missing scope
+// defaults to the empty string, which is the global/system tenant.
+//
+// # Caching
+//
+// The store has no internal cache. Hot read paths (GetFunctionByName on the
+// invocation hot path) should be cached by the caller (e.g. executor uses
+// a short-TTL in-memory cache) to reduce Postgres load.
 package store
 
 import (

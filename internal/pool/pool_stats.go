@@ -10,6 +10,17 @@ import (
 	"github.com/oriys/nova/internal/metrics"
 )
 
+// Release returns pvm to the warm pool after a successful invocation.
+//
+// # Concurrency
+//
+// Must NOT be called more than once per Acquire call. Double-release would
+// corrupt totalInflight and the readySet, leading to phantom capacity.
+// The executor defers Release at the point of Acquire; EvictVM is used
+// instead of Release when the VM is known to be unhealthy.
+//
+// Signals a waiting goroutine (cond.Signal) if any are queued, allowing
+// the next acquisition to proceed without sleeping until the cleanup tick.
 func (p *Pool) Release(pvm *PooledVM) {
 	fp := p.getOrCreatePool(p.poolKeyForFunction(pvm.Function))
 	fp.mu.Lock()
@@ -28,6 +39,26 @@ func (p *Pool) Release(pvm *PooledVM) {
 	fp.mu.Unlock()
 }
 
+// Evict removes all VMs for a function and stops them in parallel.
+//
+// # When to call
+//
+// Call when a function is deleted via the control-plane API. The executor
+// will no longer acquire VMs for a deleted function, so the pool entry
+// serves no purpose and should be cleaned up immediately.
+//
+// # Shared pools
+//
+// If multiple function IDs share the same pool key (identical config), the
+// eviction only proceeds when the last function referencing the pool is
+// evicted. This prevents evicting VMs that are still used by a different
+// function with the same runtime configuration.
+//
+// # Side effects
+//
+// Stops all VMs in parallel (goroutine per VM). Blocks until all stops
+// complete (unlike EvictVM which is fully async). Updates totalVMs and
+// the Prometheus active-VM gauge before returning.
 func (p *Pool) Evict(funcID string) {
 	poolKey, fp, ok := p.getPoolForFunctionID(funcID)
 	if !ok {
@@ -69,6 +100,19 @@ func (p *Pool) Evict(funcID string) {
 	wg.Wait()
 }
 
+// EvictVM removes a single VM from the pool and stops it asynchronously.
+//
+// # When to call
+//
+// Call when the executor receives an execution error from a VM. The VM
+// is immediately removed from the pool so it cannot serve further requests,
+// then stopped in the background to avoid blocking the invocation response.
+//
+// # Concurrency
+//
+// Safe to call from multiple goroutines concurrently. The VM removal is
+// performed under the pool write lock; the subsequent stop is asynchronous
+// and does not re-acquire the lock.
 func (p *Pool) EvictVM(funcID string, target *PooledVM) {
 	if target == nil {
 		return
