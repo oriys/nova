@@ -623,7 +623,7 @@ func (c *Client) ExecuteStream(reqID string, input json.RawMessage, timeoutS int
 		// Call callback with chunk
 		var chunkErr error
 		if chunk.Error != "" {
-			chunkErr = fmt.Errorf(chunk.Error)
+			chunkErr = errors.New(chunk.Error)
 		}
 		if err := callback(chunk.Data, chunk.IsLast, chunkErr); err != nil {
 			_ = c.closeLocked()

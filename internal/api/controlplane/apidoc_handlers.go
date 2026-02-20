@@ -88,12 +88,12 @@ func (h *APIDocHandler) GenerateWorkflowDocs(w http.ResponseWriter, r *http.Requ
 	json.NewEncoder(w).Encode(resp)
 }
 
-func generateToken() string {
+func generateToken() (string, error) {
 	b := make([]byte, 24)
 	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand: failed to read random bytes: " + err.Error())
+		return "", err
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
 func (h *APIDocHandler) CreateShare(w http.ResponseWriter, r *http.Request) {
@@ -116,11 +116,20 @@ func (h *APIDocHandler) CreateShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token := generateToken()
+	token, err := generateToken()
+	if err != nil {
+		http.Error(w, "failed to generate share token", http.StatusInternalServerError)
+		return
+	}
+	idToken, err := generateToken()
+	if err != nil {
+		http.Error(w, "failed to generate share token", http.StatusInternalServerError)
+		return
+	}
 	now := time.Now()
 
 	share := &store.APIDocShare{
-		ID:           "doc_" + generateToken()[:16],
+		ID:           "doc_" + idToken[:16],
 		TenantID:     r.Header.Get("X-Tenant-ID"),
 		Namespace:    r.Header.Get("X-Namespace"),
 		FunctionName: req.FunctionName,

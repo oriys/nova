@@ -92,7 +92,6 @@ func defaultAdaptiveConfig() AdaptiveConfig {
 
 func mergeAdaptiveConfig(cfg AdaptiveConfig) AdaptiveConfig {
 	d := defaultAdaptiveConfig()
-	cfg.Enabled = cfg.Enabled // keep caller value
 
 	if cfg.ProbeInterval <= 0 {
 		cfg.ProbeInterval = d.ProbeInterval
