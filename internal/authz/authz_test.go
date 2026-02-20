@@ -127,7 +127,7 @@ func TestCheck_WorkflowScopeBinding(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			name: "nil identity denied",
+			name:     "nil identity denied",
 			identity: nil,
 			perm:     domain.PermWorkflowInvoke,
 			resource: "wf",
@@ -157,6 +157,10 @@ func TestResolvePermission_WorkflowInvoke(t *testing.T) {
 		{"GET", "/workflows", domain.PermWorkflowManage},
 		{"POST", "/workflows", domain.PermWorkflowManage},
 		{"DELETE", "/workflows/my-wf", domain.PermWorkflowManage},
+		{"GET", "/ai/config", domain.PermConfigRead},
+		{"PUT", "/ai/config", domain.PermConfigWrite},
+		{"GET", "/ai/prompts/custom", domain.PermConfigRead},
+		{"PUT", "/ai/prompts/custom", domain.PermConfigWrite},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {

@@ -163,10 +163,11 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 		// Resolve/enforce effective tenant scope after authentication and before handlers.
 		handler = tenantScopeMiddleware(handler)
 
-		if len(authenticators) > 0 {
-			handler = auth.Middleware(authenticators, cfg.AuthCfg.PublicPaths)(handler)
-			logging.Op().Info("authentication enabled", "public_paths", cfg.AuthCfg.PublicPaths)
+		handler = auth.Middleware(authenticators, cfg.AuthCfg.PublicPaths)(handler)
+		if len(authenticators) == 0 {
+			logging.Op().Warn("authentication enabled but no authenticators configured; only public paths are accessible")
 		}
+		logging.Op().Info("authentication enabled", "public_paths", cfg.AuthCfg.PublicPaths, "authenticator_count", len(authenticators))
 	}
 
 	// Set up gateway host router if enabled

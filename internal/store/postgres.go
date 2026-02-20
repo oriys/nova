@@ -954,7 +954,11 @@ func (s *PostgresStore) ListAPIDocShares(ctx context.Context, tenantID, namespac
 }
 
 func (s *PostgresStore) DeleteAPIDocShare(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM api_doc_shares WHERE id = $1`, id)
+	scope := TenantScopeFromContext(ctx)
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM api_doc_shares
+		WHERE id = $1 AND tenant_id = $2 AND namespace = $3`,
+		id, scope.TenantID, scope.Namespace)
 	return err
 }
 

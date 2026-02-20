@@ -221,6 +221,13 @@ func resolvePermission(method, path string) domain.Permission {
 	if method == "POST" && strings.HasPrefix(path, "/workflows/") && strings.HasSuffix(path, "/runs") {
 		return domain.PermWorkflowInvoke
 	}
+	// Special case: AI configuration/prompts
+	if strings.HasPrefix(path, "/ai/config") || strings.HasPrefix(path, "/ai/prompts") {
+		if method == "GET" || method == "HEAD" {
+			return domain.PermConfigRead
+		}
+		return domain.PermConfigWrite
+	}
 	// Special case: snapshot endpoints
 	if strings.Contains(path, "/snapshot") {
 		if method == "POST" || method == "DELETE" {

@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/oriys/nova/internal/ai"
+	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/store"
 )
 
@@ -126,25 +128,24 @@ func (h *APIDocHandler) CreateShare(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to generate share token", http.StatusInternalServerError)
 		return
 	}
+	scope := store.TenantScopeFromContext(r.Context())
+	createdBy := "anonymous"
+	if identity := auth.GetIdentity(r.Context()); identity != nil && strings.TrimSpace(identity.Subject) != "" {
+		createdBy = identity.Subject
+	}
 	now := time.Now()
 
 	share := &store.APIDocShare{
 		ID:           "doc_" + idToken[:16],
-		TenantID:     r.Header.Get("X-Tenant-ID"),
-		Namespace:    r.Header.Get("X-Namespace"),
+		TenantID:     scope.TenantID,
+		Namespace:    scope.Namespace,
 		FunctionName: req.FunctionName,
 		Title:        req.Title,
 		Token:        token,
 		DocContent:   req.DocContent,
-		CreatedBy:    r.Header.Get("X-User"),
+		CreatedBy:    createdBy,
 		AccessCount:  0,
 		CreatedAt:    now,
-	}
-	if share.TenantID == "" {
-		share.TenantID = "default"
-	}
-	if share.Namespace == "" {
-		share.Namespace = "default"
 	}
 
 	if req.ExpiresIn != "" {
@@ -184,14 +185,7 @@ func (h *APIDocHandler) CreateShare(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *APIDocHandler) ListShares(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.Header.Get("X-Tenant-ID")
-	namespace := r.Header.Get("X-Namespace")
-	if tenantID == "" {
-		tenantID = "default"
-	}
-	if namespace == "" {
-		namespace = "default"
-	}
+	scope := store.TenantScopeFromContext(r.Context())
 
 	limit := 50
 	offset := 0
@@ -206,7 +200,7 @@ func (h *APIDocHandler) ListShares(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	shares, err := h.Store.ListAPIDocShares(r.Context(), tenantID, namespace, limit, offset)
+	shares, err := h.Store.ListAPIDocShares(r.Context(), scope.TenantID, scope.Namespace, limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
