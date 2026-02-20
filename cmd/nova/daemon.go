@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -24,8 +25,8 @@ import (
 	"github.com/oriys/nova/internal/firecracker"
 	novagrpc "github.com/oriys/nova/internal/grpc"
 	"github.com/oriys/nova/internal/kubernetes"
-	"github.com/oriys/nova/internal/libkrun"
 	"github.com/oriys/nova/internal/layer"
+	"github.com/oriys/nova/internal/libkrun"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/observability"
@@ -286,23 +287,25 @@ func daemonCmd() *cobra.Command {
 			var httpServer *http.Server
 			if cfg.Daemon.HTTPAddr != "" {
 				httpServer = api.StartHTTPServer(cfg.Daemon.HTTPAddr, api.ServerConfig{
-					Store:           s,
-					Exec:            exec,
-					Pool:            p,
-					Backend:         be,
-					FCAdapter:       fcAdapter,
-					AuthCfg:         &cfg.Auth,
-					RateLimitCfg:    &cfg.RateLimit,
-					GatewayCfg:      &cfg.Gateway,
-					WorkflowService: wfService,
-					APIKeyManager:   apiKeyManager,
-					SecretsStore:    secretsStore,
-					Scheduler:       sched,
-					RootfsDir:       cfg.Firecracker.RootfsDir,
-					LayerManager:    layerManager,
-					VolumeManager:   volumeManager,
-					AIService:       aiService,
-					PlaneMode:       api.PlaneModeControlPlane,
+					Store:                 s,
+					Exec:                  exec,
+					Pool:                  p,
+					Backend:               be,
+					FCAdapter:             fcAdapter,
+					AuthCfg:               &cfg.Auth,
+					RateLimitCfg:          &cfg.RateLimit,
+					GatewayCfg:            &cfg.Gateway,
+					WorkflowService:       wfService,
+					APIKeyManager:         apiKeyManager,
+					SecretsStore:          secretsStore,
+					Scheduler:             sched,
+					RootfsDir:             cfg.Firecracker.RootfsDir,
+					LayerManager:          layerManager,
+					VolumeManager:         volumeManager,
+					AIService:             aiService,
+					PlaneMode:             api.PlaneModeControlPlane,
+					LocalNodeID:           strings.TrimSpace(os.Getenv("NOVA_CLUSTER_NODE_ID")),
+					ClusterForwardTimeout: 3 * time.Second,
 				})
 				logging.Op().Info("HTTP API started", "addr", cfg.Daemon.HTTPAddr)
 			}

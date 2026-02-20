@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/oriys/nova/internal/ai"
 	"github.com/oriys/nova/internal/api/controlplane"
@@ -12,6 +13,7 @@ import (
 	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/authz"
 	"github.com/oriys/nova/internal/backend"
+	"github.com/oriys/nova/internal/cluster"
 	"github.com/oriys/nova/internal/compiler"
 	"github.com/oriys/nova/internal/config"
 	"github.com/oriys/nova/internal/domain"
@@ -42,23 +44,25 @@ const (
 
 // ServerConfig contains dependencies for the HTTP server.
 type ServerConfig struct {
-	Store           *store.Store
-	Exec            *executor.Executor
-	Pool            *pool.Pool
-	Backend         backend.Backend
-	FCAdapter       *firecracker.Adapter // Optional: for Firecracker-specific features (snapshots)
-	AuthCfg         *config.AuthConfig
-	RateLimitCfg    *config.RateLimitConfig
-	GatewayCfg      *config.GatewayConfig
-	WorkflowService *workflow.Service
-	APIKeyManager   *auth.APIKeyManager
-	SecretsStore    *secrets.Store
-	Scheduler       *scheduler.Scheduler
-	RootfsDir       string
-	LayerManager    *layer.Manager
-	VolumeManager   *volume.Manager
-	AIService       *ai.Service
-	PlaneMode       PlaneMode
+	Store                 *store.Store
+	Exec                  *executor.Executor
+	Pool                  *pool.Pool
+	Backend               backend.Backend
+	FCAdapter             *firecracker.Adapter // Optional: for Firecracker-specific features (snapshots)
+	AuthCfg               *config.AuthConfig
+	RateLimitCfg          *config.RateLimitConfig
+	GatewayCfg            *config.GatewayConfig
+	WorkflowService       *workflow.Service
+	APIKeyManager         *auth.APIKeyManager
+	SecretsStore          *secrets.Store
+	Scheduler             *scheduler.Scheduler
+	RootfsDir             string
+	LayerManager          *layer.Manager
+	VolumeManager         *volume.Manager
+	AIService             *ai.Service
+	PlaneMode             PlaneMode
+	LocalNodeID           string
+	ClusterForwardTimeout time.Duration
 }
 
 // StartHTTPServer creates and starts the HTTP server with control plane and data plane handlers.
@@ -68,6 +72,19 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 	controlPlaneEnabled := mode == PlaneModeAll || mode == PlaneModeControlPlane
 	dataPlaneEnabled := mode == PlaneModeAll || mode == PlaneModeDataPlane
 	gatewayRouteMgmtEnabled := cfg.GatewayCfg != nil && cfg.GatewayCfg.Enabled
+	var clusterRegistry *cluster.Registry
+	var clusterRouter *cluster.Router
+
+	if cfg.Store != nil && strings.TrimSpace(cfg.LocalNodeID) != "" {
+		registryCfg := cluster.DefaultConfig(strings.TrimSpace(cfg.LocalNodeID))
+		clusterRegistry = cluster.NewRegistry(cfg.Store, registryCfg)
+		scheduler := cluster.NewScheduler(clusterRegistry, cluster.StrategyLocalityAware)
+		forwardTimeout := cfg.ClusterForwardTimeout
+		if forwardTimeout <= 0 {
+			forwardTimeout = 3 * time.Second
+		}
+		clusterRouter = cluster.NewRouter(clusterRegistry, scheduler, cluster.NewProxy(forwardTimeout), registryCfg.NodeID)
+	}
 
 	if controlPlaneEnabled {
 		comp := compiler.New(cfg.Store)
@@ -83,6 +100,7 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 			APIKeyManager:   cfg.APIKeyManager,
 			SecretsStore:    cfg.SecretsStore,
 			Scheduler:       cfg.Scheduler,
+			ClusterRegistry: clusterRegistry,
 			RootfsDir:       cfg.RootfsDir,
 			GatewayEnabled:  gatewayRouteMgmtEnabled,
 			LayerManager:    cfg.LayerManager,
@@ -94,10 +112,11 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 
 	if dataPlaneEnabled {
 		dpHandler := &dataplane.Handler{
-			Store:     cfg.Store,
-			Exec:      cfg.Exec,
-			Pool:      cfg.Pool,
-			AIService: cfg.AIService,
+			Store:         cfg.Store,
+			Exec:          cfg.Exec,
+			Pool:          cfg.Pool,
+			AIService:     cfg.AIService,
+			ClusterRouter: clusterRouter,
 		}
 		dpHandler.RegisterRoutes(mux)
 	} else {

@@ -10,12 +10,14 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/oriys/nova/api/proto/novapb"
 	"github.com/oriys/nova/internal/api/dataplane"
+	"github.com/oriys/nova/internal/cluster"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/networkpolicy"
@@ -34,15 +36,25 @@ type Server struct {
 	executor        *executor.Executor
 	server          *grpc.Server
 	dataPlaneRouter http.Handler
+	clusterRouter   *cluster.Router
 }
 
 // NewServer creates a new gRPC server
 func NewServer(s *store.Store, exec *executor.Executor, p *pool.Pool) *Server {
+	var clusterRouter *cluster.Router
+	localNodeID := strings.TrimSpace(os.Getenv("NOVA_CLUSTER_NODE_ID"))
+	if localNodeID != "" {
+		registry := cluster.NewRegistry(s, cluster.DefaultConfig(localNodeID))
+		scheduler := cluster.NewScheduler(registry, cluster.StrategyLocalityAware)
+		clusterRouter = cluster.NewRouter(registry, scheduler, cluster.NewProxy(3*time.Second), localNodeID)
+	}
+
 	mux := http.NewServeMux()
 	dpHandler := &dataplane.Handler{
-		Store: s,
-		Exec:  exec,
-		Pool:  p,
+		Store:         s,
+		Exec:          exec,
+		Pool:          p,
+		ClusterRouter: clusterRouter,
 	}
 	dpHandler.RegisterRoutes(mux)
 
@@ -50,6 +62,7 @@ func NewServer(s *store.Store, exec *executor.Executor, p *pool.Pool) *Server {
 		store:           s,
 		executor:        exec,
 		dataPlaneRouter: mux,
+		clusterRouter:   clusterRouter,
 	}
 }
 
@@ -104,9 +117,26 @@ func (s *Server) Invoke(ctx context.Context, req *novapb.InvokeRequest) (*novapb
 	if err != nil {
 		return nil, status.Errorf(codes.NotFound, "function not found: %v", err)
 	}
+	clusterForwarded := false
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if err := networkpolicy.EnforceIngress(fn.Name, fn.NetworkPolicy, ingressCallerFromMetadata(md)); err != nil {
 			return nil, status.Error(codes.PermissionDenied, err.Error())
+		}
+		clusterForwarded = strings.EqualFold(metadataValue(md, "x-nova-cluster-forwarded"), "true")
+	}
+
+	if s.clusterRouter != nil && !clusterForwarded {
+		routedResp, routed, routeErr := s.clusterRouter.TryRouteInvoke(ctx, fn.ID, fn.Name, payload)
+		if routeErr != nil {
+			logging.Op().Warn("cluster route invoke failed; fallback local", "function", fn.Name, "error", routeErr)
+		} else if routed && routedResp != nil {
+			return &novapb.InvokeResponse{
+				RequestId:  routedResp.RequestID,
+				Output:     routedResp.Output,
+				Error:      routedResp.Error,
+				DurationMs: routedResp.DurationMs,
+				ColdStart:  routedResp.ColdStart,
+			}, nil
 		}
 	}
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
+	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/store"
@@ -88,6 +89,20 @@ func (h *Handler) InvokeFunction(w http.ResponseWriter, r *http.Request) {
 		metrics.RecordShed(fn.Name, reason)
 		writeTenantQuotaExceeded(w, invQuotaDecision)
 		return
+	}
+
+	if h.ClusterRouter != nil && strings.TrimSpace(r.Header.Get("X-Nova-Cluster-Forwarded")) == "" {
+		routedResp, routed, routeErr := h.ClusterRouter.TryRouteInvoke(r.Context(), fn.ID, fn.Name, payload)
+		if routeErr != nil {
+			logging.Op().Warn("cluster route invoke failed; fallback local",
+				"function", fn.Name,
+				"error", routeErr)
+		} else if routed && routedResp != nil {
+			metrics.RecordAdmissionResult(fn.Name, "accepted", "cluster_forwarded")
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(routedResp)
+			return
+		}
 	}
 
 	metrics.SetQueueDepth(fn.Name, h.Pool.QueueDepth(fn.ID))

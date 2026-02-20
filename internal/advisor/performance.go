@@ -3,6 +3,7 @@ package advisor
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/oriys/nova/internal/ai"
@@ -45,9 +46,116 @@ type Recommendation struct {
 	Metrics          map[string]string `json:"metrics,omitempty"`
 }
 
+// TrafficPrediction represents advisor-estimated near-term traffic for a function.
+type TrafficPrediction struct {
+	FunctionID          string    `json:"function_id"`
+	CurrentRatePerSec   float64   `json:"current_rate_per_sec"`
+	PredictedRatePerSec float64   `json:"predicted_rate_per_sec"`
+	Confidence          float64   `json:"confidence"`
+	LookbackDays        int       `json:"lookback_days"`
+	PredictedAt         time.Time `json:"predicted_at"`
+}
+
 // AnalyzePerformance analyzes function performance and provides recommendations.
 func (p *PerformanceAdvisor) AnalyzePerformance(ctx context.Context, req RecommendationRequest) (*RecommendationResponse, error) {
 	return p.basicAnalysis(ctx, req)
+}
+
+// PredictTraffic estimates near-term request rate for proactive autoscaling.
+func (p *PerformanceAdvisor) PredictTraffic(ctx context.Context, functionID string, lookbackDays int) (*TrafficPrediction, error) {
+	if p.Store == nil {
+		return nil, fmt.Errorf("advisor store is not configured")
+	}
+	if functionID == "" {
+		return nil, fmt.Errorf("function id is required")
+	}
+
+	if lookbackDays <= 0 {
+		lookbackDays = 7
+	}
+
+	logs, err := p.Store.ListInvocationLogs(ctx, functionID, 10000, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	cutoff := now.Add(-time.Duration(lookbackDays) * 24 * time.Hour)
+	currentWindow := now.Add(-1 * time.Minute)
+	recentWindow := now.Add(-5 * time.Minute)
+
+	// Seasonality window: +/-2 minutes around current minute for each day.
+	seasonalStartMinute := now.Minute() - 2
+	seasonalEndMinute := now.Minute() + 2
+
+	var (
+		totalSamples  int
+		currentCount  int
+		recentCount   int
+		seasonalCount int
+	)
+
+	for _, log := range logs {
+		if log.CreatedAt.Before(cutoff) {
+			continue
+		}
+
+		totalSamples++
+		if log.CreatedAt.After(currentWindow) {
+			currentCount++
+		}
+		if log.CreatedAt.After(recentWindow) {
+			recentCount++
+		}
+
+		if log.CreatedAt.Hour() != now.Hour() {
+			continue
+		}
+		minute := log.CreatedAt.Minute()
+		if minute >= seasonalStartMinute && minute <= seasonalEndMinute {
+			seasonalCount++
+		}
+	}
+
+	currentRate := float64(currentCount) / 60.0
+	recentRate := float64(recentCount) / (5.0 * 60.0)
+	seasonalRate := float64(seasonalCount) / float64(maxInt(lookbackDays, 1)*5*60)
+
+	predictedRate := recentRate
+	if seasonalRate > predictedRate {
+		predictedRate = seasonalRate
+	}
+	if trend := recentRate - currentRate; trend > 0 {
+		predictedRate = math.Max(predictedRate, recentRate+trend*0.5)
+	}
+	if currentRate > predictedRate {
+		predictedRate = currentRate
+	}
+	if predictedRate < 0 {
+		predictedRate = 0
+	}
+
+	sampleConfidence := math.Min(1, float64(totalSamples)/500.0)
+	burstSignal := 0.0
+	if currentRate > 0 {
+		burstSignal = math.Min(1, math.Abs(recentRate-currentRate)/currentRate)
+	}
+	confidence := 0.35 + sampleConfidence*0.45 + burstSignal*0.2
+	if confidence > 0.95 {
+		confidence = 0.95
+	}
+	if totalSamples == 0 {
+		confidence = 0.2
+	}
+
+	return &TrafficPrediction{
+		FunctionID:          functionID,
+		CurrentRatePerSec:   currentRate,
+		PredictedRatePerSec: predictedRate,
+		Confidence:          confidence,
+		LookbackDays:        lookbackDays,
+		PredictedAt:         now,
+	}, nil
 }
 
 // basicAnalysis provides rule-based recommendations.
@@ -183,4 +291,11 @@ func (p *PerformanceAdvisor) basicAnalysis(ctx context.Context, req Recommendati
 		AnalysisSummary:  summary,
 		EstimatedSavings: "Enable AI service for advanced cost estimation",
 	}, nil
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

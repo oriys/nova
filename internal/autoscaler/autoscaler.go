@@ -2,9 +2,18 @@ package autoscaler
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/oriys/nova/internal/advisor"
+	"github.com/oriys/nova/internal/checkpoint"
+	"github.com/oriys/nova/internal/cluster"
+	"github.com/oriys/nova/internal/domain"
+	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/pool"
@@ -39,12 +48,16 @@ type funcSnapshot struct {
 
 // Autoscaler dynamically adjusts pool sizing based on load signals
 type Autoscaler struct {
-	pool      *pool.Pool
-	store     *store.Store
-	interval  time.Duration
-	ctx       context.Context
-	cancel    context.CancelFunc
-	prevState sync.Map // funcID -> *funcSnapshot
+	pool            *pool.Pool
+	store           *store.Store
+	interval        time.Duration
+	ctx             context.Context
+	cancel          context.CancelFunc
+	prevState       sync.Map // funcID -> *funcSnapshot
+	predictor       *advisor.PerformanceAdvisor
+	checkpointStore *checkpoint.Store
+	clusterRouter   *cluster.Router
+	localNodeID     string
 }
 
 // New creates a new Autoscaler
@@ -53,13 +66,25 @@ func New(p *pool.Pool, s *store.Store, interval time.Duration) *Autoscaler {
 		interval = 10 * time.Second
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Autoscaler{
-		pool:     p,
-		store:    s,
-		interval: interval,
-		ctx:      ctx,
-		cancel:   cancel,
+	localNodeID := strings.TrimSpace(os.Getenv("NOVA_CLUSTER_NODE_ID"))
+	as := &Autoscaler{
+		pool:            p,
+		store:           s,
+		interval:        interval,
+		ctx:             ctx,
+		cancel:          cancel,
+		checkpointStore: checkpoint.NewStore(6 * time.Hour),
+		localNodeID:     localNodeID,
 	}
+	if s != nil {
+		as.predictor = &advisor.PerformanceAdvisor{Store: s}
+	}
+	if s != nil && localNodeID != "" {
+		registry := cluster.NewRegistry(s, cluster.DefaultConfig(localNodeID))
+		scheduler := cluster.NewScheduler(registry, cluster.StrategyLocalityAware)
+		as.clusterRouter = cluster.NewRouter(registry, scheduler, cluster.NewProxy(3*time.Second), localNodeID)
+	}
+	return as
 }
 
 // Start launches the autoscaler background goroutine
@@ -321,7 +346,12 @@ func (a *Autoscaler) evaluate() {
 			}
 		}
 
-		// Predictive scaling: check if next hour has historically higher load.
+		snapshotAvailable := false
+		if snapshotDir := strings.TrimSpace(a.pool.SnapshotDir()); snapshotDir != "" {
+			snapshotAvailable = executor.HasSnapshot(snapshotDir, funcID)
+		}
+
+		// Predictive scaling #1: hourly seasonality.
 		nextHour := (time.Now().Hour() + 1) % 24
 		currentHour := time.Now().Hour()
 		if prev.hourlyRates[nextHour] > 0 && prev.hourlyRates[currentHour] > 0 {
@@ -332,14 +362,91 @@ func (a *Autoscaler) evaluate() {
 					predictedDesired = maxReplicas
 				}
 				if predictedDesired > newDesired {
+					targetNodeID := a.resolveLocalNodeID()
+					remotePrewarm := false
+					if a.clusterRouter != nil {
+						if nodeID, routed, routeErr := a.clusterRouter.TryRoutePrewarm(ctx, funcID, fn.Name, predictedDesired); routeErr != nil {
+							logging.Op().Warn("autoscaler: remote predictive prewarm failed",
+								"function", fn.Name,
+								"error", routeErr)
+						} else if routed {
+							remotePrewarm = true
+							targetNodeID = nodeID
+						}
+					}
+					if !remotePrewarm {
+						if err := a.prewarmLocal(ctx, fn, predictedDesired); err != nil {
+							logging.Op().Warn("autoscaler: local predictive prewarm failed", "function", fn.Name, "error", err)
+						}
+					}
+
 					logging.Op().Info("autoscaler: predictive pre-warm",
 						"function", fn.Name,
 						"current_desired", newDesired,
 						"predicted_desired", predictedDesired,
 						"next_hour_rate", prev.hourlyRates[nextHour],
-						"current_hour_rate", prev.hourlyRates[currentHour])
+						"current_hour_rate", prev.hourlyRates[currentHour],
+						"snapshot_available", snapshotAvailable,
+						"target_node", targetNodeID,
+						"remote", remotePrewarm)
 					newDesired = predictedDesired
 					metrics.RecordAutoscaleDecision(fn.Name, "predictive")
+					a.recordPredictiveCheckpoint(funcID, "hourly-seasonality", targetNodeID, nil, predictedDesired, snapshotAvailable, remotePrewarm)
+				}
+			}
+		}
+
+		// Predictive scaling #2: advisor near-term forecast.
+		if a.predictor != nil {
+			prediction, predErr := a.predictor.PredictTraffic(ctx, funcID, 7)
+			if predErr != nil {
+				logging.Op().Warn("autoscaler: advisor prediction failed", "function", fn.Name, "error", predErr)
+			} else if prediction != nil && prediction.Confidence >= 0.6 {
+				advisorDesired := estimateDesiredReplicas(
+					prediction.PredictedRatePerSec,
+					prev.emaLatencyMs,
+					targetUtilization,
+					instanceConcurrency,
+					policy.MinReplicas,
+				)
+				if !snapshotAvailable && advisorDesired > newDesired+2 {
+					advisorDesired = newDesired + 2
+				}
+				if maxReplicas > 0 && advisorDesired > maxReplicas {
+					advisorDesired = maxReplicas
+				}
+
+				if advisorDesired > newDesired {
+					targetNodeID := a.resolveLocalNodeID()
+					remotePrewarm := false
+					if a.clusterRouter != nil {
+						if nodeID, routed, routeErr := a.clusterRouter.TryRoutePrewarm(ctx, funcID, fn.Name, advisorDesired); routeErr != nil {
+							logging.Op().Warn("autoscaler: advisor remote prewarm failed",
+								"function", fn.Name,
+								"error", routeErr)
+						} else if routed {
+							remotePrewarm = true
+							targetNodeID = nodeID
+						}
+					}
+					if !remotePrewarm {
+						if err := a.prewarmLocal(ctx, fn, advisorDesired); err != nil {
+							logging.Op().Warn("autoscaler: advisor local prewarm failed", "function", fn.Name, "error", err)
+						}
+					}
+
+					logging.Op().Info("autoscaler: advisor predictive pre-warm",
+						"function", fn.Name,
+						"from", newDesired,
+						"to", advisorDesired,
+						"predicted_rate_per_sec", prediction.PredictedRatePerSec,
+						"confidence", prediction.Confidence,
+						"snapshot_available", snapshotAvailable,
+						"target_node", targetNodeID,
+						"remote", remotePrewarm)
+					newDesired = advisorDesired
+					metrics.RecordAutoscaleDecision(fn.Name, "advisor_predictive")
+					a.recordPredictiveCheckpoint(funcID, "advisor-predictive", targetNodeID, prediction, advisorDesired, snapshotAvailable, remotePrewarm)
 				}
 			}
 		}
@@ -366,4 +473,98 @@ func (a *Autoscaler) getSnapshot(funcID string) *funcSnapshot {
 	snap := &funcSnapshot{}
 	actual, _ := a.prevState.LoadOrStore(funcID, snap)
 	return actual.(*funcSnapshot)
+}
+
+func (a *Autoscaler) resolveLocalNodeID() string {
+	if a.localNodeID != "" {
+		return a.localNodeID
+	}
+	return "local"
+}
+
+func (a *Autoscaler) recordPredictiveCheckpoint(
+	functionID string,
+	reason string,
+	targetNodeID string,
+	prediction *advisor.TrafficPrediction,
+	targetReplicas int,
+	snapshotAvailable bool,
+	remote bool,
+) {
+	if a.checkpointStore == nil || functionID == "" {
+		return
+	}
+
+	payload := map[string]interface{}{
+		"reason":             reason,
+		"target_node_id":     targetNodeID,
+		"target_replicas":    targetReplicas,
+		"snapshot_available": snapshotAvailable,
+		"remote_dispatch":    remote,
+		"recorded_at":        time.Now().UTC().Format(time.RFC3339),
+	}
+	if prediction != nil {
+		payload["current_rate_per_sec"] = prediction.CurrentRatePerSec
+		payload["predicted_rate_per_sec"] = prediction.PredictedRatePerSec
+		payload["confidence"] = prediction.Confidence
+		payload["lookback_days"] = prediction.LookbackDays
+	}
+
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		logging.Op().Warn("autoscaler: marshal predictive checkpoint failed", "function_id", functionID, "error", err)
+		return
+	}
+
+	a.checkpointStore.Save("predictive:"+functionID, functionID, "predictive_prewarm", raw)
+}
+
+func (a *Autoscaler) prewarmLocal(ctx context.Context, fn *domain.Function, targetReplicas int) error {
+	if a.pool == nil || a.store == nil || fn == nil {
+		return nil
+	}
+
+	codeRecord, err := a.store.GetFunctionCode(ctx, fn.ID)
+	if err != nil {
+		return err
+	}
+	if codeRecord == nil {
+		return fmt.Errorf("function code not found: %s", fn.Name)
+	}
+
+	codeContent := codeRecord.CompiledBinary
+	if len(codeContent) == 0 {
+		codeContent = []byte(codeRecord.SourceCode)
+	}
+
+	a.pool.SetDesiredReplicas(fn.ID, targetReplicas)
+	return a.pool.EnsureReady(ctx, fn, codeContent)
+}
+
+func estimateDesiredReplicas(ratePerSec, emaLatencyMs, targetUtilization float64, instanceConcurrency, minReplicas int) int {
+	if ratePerSec <= 0 {
+		return minReplicas
+	}
+
+	serviceTimeSec := emaLatencyMs / 1000.0
+	if serviceTimeSec <= 0 {
+		serviceTimeSec = 0.05
+	}
+	if targetUtilization <= 0 || targetUtilization > 1 {
+		targetUtilization = 0.7
+	}
+	if instanceConcurrency <= 0 {
+		instanceConcurrency = 1
+	}
+
+	capacityPerReplica := float64(instanceConcurrency) * targetUtilization
+	if capacityPerReplica < 0.01 {
+		capacityPerReplica = 0.01
+	}
+
+	desired := int((ratePerSec*serviceTimeSec)/capacityPerReplica + 0.999)
+	if desired < minReplicas {
+		desired = minReplicas
+	}
+	return desired
 }

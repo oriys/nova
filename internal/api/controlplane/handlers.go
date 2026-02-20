@@ -8,6 +8,7 @@ import (
 	"github.com/oriys/nova/internal/ai"
 	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/backend"
+	"github.com/oriys/nova/internal/cluster"
 	"github.com/oriys/nova/internal/compiler"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/firecracker"
@@ -33,6 +34,7 @@ type Handler struct {
 	APIKeyManager   *auth.APIKeyManager
 	SecretsStore    *secrets.Store
 	Scheduler       *scheduler.Scheduler
+	ClusterRegistry *cluster.Registry
 	RootfsDir       string          // Directory where rootfs ext4 images are stored
 	GatewayEnabled  bool            // Whether gateway route management is enabled
 	LayerManager    *layer.Manager  // Optional: for shared dependency layers
@@ -191,8 +193,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /triggers/{id}", h.DeleteTrigger)
 
 	// Cluster nodes
+	mux.HandleFunc("POST /cluster/nodes", h.RegisterClusterNode)
 	mux.HandleFunc("GET /cluster/nodes", h.ListClusterNodes)
+	mux.HandleFunc("GET /cluster/nodes/healthy", h.ListHealthyClusterNodes)
 	mux.HandleFunc("GET /cluster/nodes/{id}", h.GetClusterNode)
+	mux.HandleFunc("POST /cluster/nodes/{id}/heartbeat", h.HeartbeatClusterNode)
 	mux.HandleFunc("DELETE /cluster/nodes/{id}", h.DeleteClusterNode)
 
 	// AI-powered code operations

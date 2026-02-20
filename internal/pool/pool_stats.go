@@ -270,8 +270,7 @@ func (p *Pool) Shutdown() {
 
 // QueueDepth returns the number of goroutines waiting for a VM for the given function
 func (p *Pool) QueueDepth(funcID string) int {
-	if value, ok := p.pools.Load(funcID); ok {
-		fp := value.(*functionPool)
+	if _, fp, ok := p.getPoolForFunctionID(funcID); ok {
 		fp.mu.RLock()
 		depth := fp.waiters
 		fp.mu.RUnlock()
@@ -282,8 +281,7 @@ func (p *Pool) QueueDepth(funcID string) int {
 
 // FunctionQueueWaitMs returns the most recent queue wait duration observed for a function.
 func (p *Pool) FunctionQueueWaitMs(funcID string) int64 {
-	if value, ok := p.pools.Load(funcID); ok {
-		fp := value.(*functionPool)
+	if _, fp, ok := p.getPoolForFunctionID(funcID); ok {
 		return fp.lastQueueWaitMs.Load()
 	}
 	return 0
@@ -291,14 +289,19 @@ func (p *Pool) FunctionQueueWaitMs(funcID string) int64 {
 
 // SetDesiredReplicas sets the autoscaler-driven desired replica count for a function
 func (p *Pool) SetDesiredReplicas(funcID string, desired int) {
-	fp := p.getOrCreatePool(funcID)
-	fp.desiredReplicas.Store(int32(desired))
+	if desired < 0 {
+		desired = 0
+	}
+	desiredValue := int32(desired)
+	p.desiredByFunction.Store(funcID, desiredValue)
+	if _, fp, ok := p.getPoolForFunctionID(funcID); ok {
+		fp.desiredReplicas.Store(desiredValue)
+	}
 }
 
 // FunctionPoolStats returns total, busy, and idle VM counts for a function
 func (p *Pool) FunctionPoolStats(funcID string) (total, busy, idle int) {
-	if value, ok := p.pools.Load(funcID); ok {
-		fp := value.(*functionPool)
+	if _, fp, ok := p.getPoolForFunctionID(funcID); ok {
 		fp.mu.RLock()
 		total = len(fp.vms)
 		for _, pvm := range fp.vms {

@@ -71,6 +71,7 @@ type Pool struct {
 	backend             backend.Backend
 	pools               sync.Map // map[string]*functionPool - per-configuration pools
 	functionPoolKeys    sync.Map // map[string]string - function ID -> pool key
+	desiredByFunction   sync.Map // map[string]int32 - desired replicas keyed by function ID
 	group               singleflight.Group
 	idleTTL             time.Duration
 	cleanupInterval     time.Duration
@@ -144,6 +145,12 @@ func (p *Pool) TemplatePool() *RuntimeTemplatePool {
 // SetMaxGlobalVMs sets the system-wide maximum number of VMs (0 = unlimited).
 func (p *Pool) SetMaxGlobalVMs(n int) {
 	p.maxGlobalVMs.Store(int32(n))
+}
+
+// SnapshotDir exposes the backend snapshot directory for snapshot-aware
+// scheduling and autoscaling decisions.
+func (p *Pool) SnapshotDir() string {
+	return p.backend.SnapshotDir()
 }
 
 // TotalVMCount returns the total number of active VMs across all function pools.

@@ -454,7 +454,7 @@ func isCometOnlyHTTPPath(path string) bool {
 	if function, action, ok := splitFunctionPath(path); ok {
 		_ = function
 		switch action {
-		case "invoke-stream", "invoke-async", "async-invocations", "logs", "metrics", "diagnostics", "heatmap", "state":
+		case "invoke-stream", "invoke-async", "async-invocations", "logs", "metrics", "diagnostics", "heatmap", "state", "prewarm":
 			return true
 		}
 	}

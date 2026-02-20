@@ -167,6 +167,9 @@ func (p *Pool) preparePoolForFunction(fn *domain.Function) *functionPool {
 		fp.functionRefs = make(map[string]struct{})
 	}
 	fp.functionRefs[fn.ID] = struct{}{}
+	if desired, ok := p.desiredByFunction.Load(fn.ID); ok {
+		fp.desiredReplicas.Store(desired.(int32))
+	}
 	fp.mu.Unlock()
 
 	// Check if code has changed using atomic load first
