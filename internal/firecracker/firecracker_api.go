@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/oriys/nova/internal/domain"
+	"github.com/oriys/nova/internal/logging"
 )
 
 // buildRateLimiter creates a Firecracker rate limiter config
@@ -208,15 +209,11 @@ func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath
 	// Reserve the snapshot's CID to prevent conflicts.
 	// If the CID is already in use by another VM, the snapshot cannot be loaded.
 	// Note: We don't release the original CID here - the caller handles CID cleanup.
-	m.cidMu.Lock()
-	if _, inUse := m.usedCIDs[meta.VsockCID]; inUse && meta.VsockCID != originalCID {
-		m.cidMu.Unlock()
-		return fmt.Errorf("snapshot CID %d is already in use", meta.VsockCID)
-	}
 	if meta.VsockCID != originalCID {
-		m.usedCIDs[meta.VsockCID] = struct{}{}
+		if !m.cidPool.tryReserve(meta.VsockCID) {
+			return fmt.Errorf("snapshot CID %d is already in use", meta.VsockCID)
+		}
 	}
-	m.cidMu.Unlock()
 
 	// Clean up stale vsock socket at the original path and update VM
 	_ = os.Remove(meta.VsockPath)
@@ -228,15 +225,14 @@ func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath
 	// so the restored VM will use that IP regardless of what we allocated.
 	if meta.GuestIP != "" {
 		newIP := vm.GuestIP
-		m.ipMu.Lock()
-		// Reserve the snapshot's IP
-		m.usedIPs[meta.GuestIP] = struct{}{}
-		// Release the newly allocated IP (unless it's the same)
-		if newIP != meta.GuestIP {
-			delete(m.usedIPs, newIP)
+		// Atomically reserve the snapshot's IP and release the newly allocated one
+		if !m.ipPool.swapReserved(newIP, meta.GuestIP) {
+			// Snapshot IP is in use; keep the new IP
+			logging.Op().Warn("snapshot IP already in use, keeping newly allocated IP",
+				"snapshot_ip", meta.GuestIP, "new_ip", newIP)
+		} else {
+			vm.GuestIP = meta.GuestIP
 		}
-		m.ipMu.Unlock()
-		vm.GuestIP = meta.GuestIP
 	}
 	if meta.GuestMAC != "" {
 		vm.GuestMAC = meta.GuestMAC

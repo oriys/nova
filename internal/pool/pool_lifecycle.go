@@ -28,12 +28,19 @@ func (p *Pool) cleanupLoop() {
 // cleanupExpired scans all active function pools and evicts VMs that have
 // been idle for longer than IdleTTL, subject to the MinReplicas floor.
 //
-// # Why idle eviction matters
+// # Tiered eviction strategy
 //
-// Firecracker VMs consume memory even when idle. Evicting stale VMs returns
-// resources to the host so they can be used by other functions or the OS.
-// The MinReplicas floor prevents the pool from dropping below the
-// pre-warmed baseline requested by the function owner or the autoscaler.
+// When SuspendTTL is configured (> 0), idle VMs pass through an intermediate
+// "suspended" state before destruction:
+//
+//  1. Active → Idle: VM finishes all in-flight requests (via Release).
+//  2. Idle → Suspended: idle longer than SuspendTTL. A snapshot is created
+//     asynchronously so the next cold start can restore from it.
+//  3. Idle/Suspended → Destroyed: idle longer than IdleTTL. VM is stopped
+//     and all resources are released.
+//
+// When SuspendTTL is 0 (default), VMs skip the suspend step and go directly
+// from Idle to Destroyed after IdleTTL.
 //
 // # Side effects
 //
@@ -45,7 +52,12 @@ func (p *Pool) cleanupExpired() {
 		client backend.Client
 		vmID   string
 	}
+	type suspendTarget struct {
+		pvm    *PooledVM
+		funcID string
+	}
 	var toStop []expiredVM
+	var toSuspend []suspendTarget
 
 	now := time.Now()
 	p.pools.Range(func(key, value interface{}) bool {
@@ -63,20 +75,34 @@ func (p *Pool) cleanupExpired() {
 
 		for _, pvm := range fp.vms {
 			if pvm.inflight > 0 {
+				pvm.State = VMStateActive
 				kept = append(kept, pvm)
 				continue
 			}
 
-			if activeCount > minReplicas && now.Sub(pvm.LastUsed) > p.idleTTL {
+			idleDur := now.Sub(pvm.LastUsed)
+
+			// Destroy: idle longer than IdleTTL and above min replicas
+			if activeCount > minReplicas && idleDur > p.idleTTL {
 				logging.Op().Info("VM expired",
 					"vm_id", pvm.VM.ID,
 					"function", pvm.Function.Name,
-					"idle", now.Sub(pvm.LastUsed).Round(time.Second).String())
+					"state", string(pvm.State),
+					"idle", idleDur.Round(time.Second).String())
+				pvm.State = VMStateDestroyed
 				toStop = append(toStop, expiredVM{client: pvm.Client, vmID: pvm.VM.ID})
 				activeCount--
 				removed++
 				continue
 			}
+
+			// Suspend: idle longer than SuspendTTL but less than IdleTTL
+			if p.suspendTTL > 0 && p.snapshotCallback != nil &&
+				pvm.State == VMStateIdle && idleDur > p.suspendTTL {
+				pvm.State = VMStateSuspended
+				toSuspend = append(toSuspend, suspendTarget{pvm: pvm, funcID: pvm.Function.ID})
+			}
+
 			kept = append(kept, pvm)
 		}
 		fp.vms = kept
@@ -102,6 +128,44 @@ func (p *Pool) cleanupExpired() {
 			client.Close()
 			p.backend.StopVM(vmID)
 		}(e.client, e.vmID)
+	}
+
+	// Trigger snapshot creation for suspended VMs asynchronously.
+	// The snapshot callback creates a snapshot that can be restored on
+	// the next cold start, giving near-instant boot times.
+	for _, s := range toSuspend {
+		if p.snapshotCallback != nil {
+			if _, hasSnapshot := p.snapshotCache.Load(s.funcID); hasSnapshot {
+				continue // snapshot already exists
+			}
+			cb := p.snapshotCallback
+			funcID := s.funcID
+			vmID := s.pvm.VM.ID
+			funcName := s.pvm.Function.Name
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						logging.Op().Error("recovered panic in suspend snapshot", "panic", r)
+					}
+				}()
+				lock := p.getSnapshotLock(funcID)
+				lock.Lock()
+				defer lock.Unlock()
+				if _, has := p.snapshotCache.Load(funcID); has {
+					return
+				}
+				logging.Op().Info("suspending idle VM via snapshot",
+					"function", funcName, "vm_id", vmID)
+				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+				defer cancel()
+				if err := cb(ctx, vmID, funcID); err != nil {
+					logging.Op().Error("suspend snapshot failed",
+						"function", funcName, "error", err)
+				} else {
+					p.snapshotCache.Store(funcID, true)
+				}
+			}()
+		}
 	}
 }
 

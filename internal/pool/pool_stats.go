@@ -32,6 +32,9 @@ func (p *Pool) Release(pvm *PooledVM) {
 		}
 	}
 	pvm.LastUsed = time.Now()
+	if pvm.inflight == 0 {
+		pvm.State = VMStateIdle
+	}
 	addReadyVMLocked(fp, pvm)
 	if fp.waiters > 0 {
 		fp.cond.Signal()
@@ -214,6 +217,7 @@ func (p *Pool) Stats() map[string]interface{} {
 				"runtime":        pvm.VM.Runtime,
 				"inflight":       pvm.inflight,
 				"max_concurrent": pvm.maxConcurrent,
+				"state":          string(pvm.State),
 				"idle_sec":       time.Since(pvm.LastUsed).Seconds(),
 			})
 		}

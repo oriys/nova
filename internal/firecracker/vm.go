@@ -119,12 +119,8 @@ type Manager struct {
 	config        *Config
 	vms           map[string]*VM
 	mu            sync.RWMutex
-	nextCID       uint32
-	nextIP        uint32 // last octet for IP allocation
-	cidMu         sync.Mutex
-	ipMu          sync.Mutex
-	usedCIDs      map[uint32]struct{}
-	usedIPs       map[string]struct{}
+	cidPool       *resourcePool[uint32] // pre-allocated CID free-list
+	ipPool        *resourcePool[string] // pre-allocated IP free-list
 	templateReady atomic.Bool
 	templateMu    sync.Mutex
 	bridgeReady   atomic.Bool
@@ -139,13 +135,11 @@ func NewManager(cfg *Config) (*Manager, error) {
 		}
 	}
 
-	return &Manager{
-		config:   cfg,
-		vms:      make(map[string]*VM),
-		nextCID:  100,
-		nextIP:   2, // Start from .2 (.1 is bridge)
-		usedCIDs: make(map[uint32]struct{}),
-		usedIPs:  make(map[string]struct{}),
+	m := &Manager{
+		config:  cfg,
+		vms:     make(map[string]*VM),
+		cidPool: newResourcePool[uint32](),
+		ipPool:  newResourcePool[string](),
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(_ context.Context, _, addr string) (net.Conn, error) {
@@ -153,7 +147,15 @@ func NewManager(cfg *Config) (*Manager, error) {
 				},
 			},
 		},
-	}, nil
+	}
+
+	// Pre-fill resource pools for O(1) allocation under high concurrency
+	m.initCIDPool()
+	if err := m.initIPPool(); err != nil {
+		return nil, fmt.Errorf("init IP pool: %w", err)
+	}
+
+	return m, nil
 }
 
 // CreateVM boots a microVM for the given function.

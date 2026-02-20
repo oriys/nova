@@ -47,6 +47,10 @@ type PrometheusMetrics struct {
 	// Circuit breaker
 	circuitBreakerState       *prometheus.GaugeVec
 	circuitBreakerTripsTotal  *prometheus.CounterVec
+
+	// Log batcher
+	logBatcherDroppedTotal *prometheus.Counter
+	logBatcherFlushFailed  *prometheus.Counter
 }
 
 // Default histogram buckets for invocation duration (in milliseconds)
@@ -272,6 +276,20 @@ func InitPrometheus(namespace string, buckets []float64) {
 		),
 	}
 
+	droppedCounter := prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "log_batcher_dropped_total",
+		Help:      "Total invocation logs dropped due to full buffer",
+	})
+	pm.logBatcherDroppedTotal = &droppedCounter
+
+	flushFailedCounter := prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "log_batcher_flush_failed_total",
+		Help:      "Total invocation log batch flushes that permanently failed",
+	})
+	pm.logBatcherFlushFailed = &flushFailedCounter
+
 	pm.uptime = prometheus.NewGaugeFunc(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
@@ -308,6 +326,8 @@ func InitPrometheus(namespace string, buckets []float64) {
 		pm.queueWaitMs,
 		pm.circuitBreakerState,
 		pm.circuitBreakerTripsTotal,
+		*pm.logBatcherDroppedTotal,
+		*pm.logBatcherFlushFailed,
 	)
 
 	promMetrics = pm
@@ -519,4 +539,20 @@ func RecordCircuitBreakerTrip(funcName, toState string) {
 		return
 	}
 	promMetrics.circuitBreakerTripsTotal.WithLabelValues(funcName, toState).Inc()
+}
+
+// RecordLogBatcherDrop records a dropped invocation log due to full buffer.
+func RecordLogBatcherDrop() {
+	if promMetrics == nil || promMetrics.logBatcherDroppedTotal == nil {
+		return
+	}
+	(*promMetrics.logBatcherDroppedTotal).Inc()
+}
+
+// RecordLogBatcherFlushFailed records a permanently failed batch flush.
+func RecordLogBatcherFlushFailed() {
+	if promMetrics == nil || promMetrics.logBatcherFlushFailed == nil {
+		return
+	}
+	(*promMetrics.logBatcherFlushFailed).Inc()
 }

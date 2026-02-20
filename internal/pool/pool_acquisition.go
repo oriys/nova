@@ -90,6 +90,7 @@ func takeWarmVMLocked(fp *functionPool) *PooledVM {
 		fp.totalInflight++
 		pvm.LastUsed = time.Now()
 		pvm.ColdStart = false
+		pvm.State = VMStateActive
 		addReadyVMLocked(fp, pvm)
 		return pvm
 	}
@@ -353,6 +354,7 @@ func (p *Pool) createVM(ctx context.Context, fn *domain.Function, codeContent []
 		Function:      fn,
 		LastUsed:      time.Now(),
 		ColdStart:     true,
+		State:         VMStateActive,
 		inflight:      1,
 		maxConcurrent: p.computeInstanceConcurrency(fn),
 	}
@@ -445,6 +447,7 @@ func (p *Pool) createVMFromTemplate(ctx context.Context, fn *domain.Function, co
 		Function:      fn,
 		LastUsed:      time.Now(),
 		ColdStart:     true,
+		State:         VMStateActive,
 		inflight:      1,
 		maxConcurrent: p.computeInstanceConcurrency(fn),
 	}
@@ -500,6 +503,7 @@ func (p *Pool) createVMWithFiles(ctx context.Context, fn *domain.Function, files
 		Function:      fn,
 		LastUsed:      time.Now(),
 		ColdStart:     true,
+		State:         VMStateActive,
 		inflight:      1,
 		maxConcurrent: p.computeInstanceConcurrency(fn),
 	}

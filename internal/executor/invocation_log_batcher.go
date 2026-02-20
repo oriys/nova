@@ -3,10 +3,12 @@ package executor
 import (
 	"context"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/logsink"
+	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/store"
 )
 
@@ -39,6 +41,10 @@ type invocationLogBatcher struct {
 	maxRetries    int
 	retryInterval time.Duration
 	done          chan struct{}
+
+	// Overflow tracking
+	droppedTotal     atomic.Int64
+	flushFailedTotal atomic.Int64
 }
 
 func newInvocationLogBatcher(s *store.Store, sink logsink.LogSink, cfg LogBatcherConfig) *invocationLogBatcher {
@@ -86,8 +92,23 @@ func (b *invocationLogBatcher) Enqueue(log *store.InvocationLog) {
 	select {
 	case b.logs <- log:
 	default:
-		b.logger.Warn("dropping invocation log due to full buffer", "request_id", log.ID, "function_id", log.FunctionID)
+		dropped := b.droppedTotal.Add(1)
+		metrics.RecordLogBatcherDrop()
+		b.logger.Warn("dropping invocation log due to full buffer",
+			"request_id", log.ID,
+			"function_id", log.FunctionID,
+			"total_dropped", dropped)
 	}
+}
+
+// DroppedTotal returns the total number of logs dropped since startup.
+func (b *invocationLogBatcher) DroppedTotal() int64 {
+	return b.droppedTotal.Load()
+}
+
+// FlushFailedTotal returns the total number of permanently failed flushes.
+func (b *invocationLogBatcher) FlushFailedTotal() int64 {
+	return b.flushFailedTotal.Load()
 }
 
 func (b *invocationLogBatcher) Shutdown(timeout time.Duration) {
@@ -124,8 +145,10 @@ func (b *invocationLogBatcher) run() {
 			time.Sleep(time.Duration(1<<uint(attempt)) * b.retryInterval)
 		}
 		if lastErr != nil {
+			failed := b.flushFailedTotal.Add(1)
+			metrics.RecordLogBatcherFlushFailed()
 			b.logger.Error("permanently failed to persist invocation logs after retries",
-				"error", lastErr, "count", len(batch))
+				"error", lastErr, "count", len(batch), "total_flush_failures", failed)
 		}
 		batch = batch[:0]
 	}

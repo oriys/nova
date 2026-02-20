@@ -45,6 +45,15 @@ func WithPayloadPersistence(enabled bool) Option {
 	}
 }
 
+// WithTransportCipher sets the transport cipher used to encrypt secret
+// values before they are sent to the guest agent in the Init message.
+// When nil, secrets are sent as plaintext (legacy behaviour).
+func WithTransportCipher(tc *secrets.TransportCipher) Option {
+	return func(e *Executor) {
+		e.transportCipher = tc
+	}
+}
+
 // safeGo runs f in a new goroutine with panic recovery so that a failure
 // in fire-and-forget background work never crashes the process.
 func safeGo(f func()) {
