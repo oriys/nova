@@ -1,0 +1,92 @@
+name: Security PR Gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  sast:
+    name: SAST (gosec high)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+      - name: Run gosec
+        run: |
+          "$(go env GOPATH)/bin/gosec" -quiet -severity high -confidence medium ./...
+
+  sca:
+    name: SCA (high/critical)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan dependencies with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  high-risk-review-gate:
+    name: High Risk Review Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect high-risk changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            high_risk:
+              - 'internal/auth/**'
+              - 'internal/authz/**'
+              - 'internal/api/**'
+              - 'internal/gateway/**'
+              - 'internal/secrets/**'
+              - 'internal/store/**'
+              - 'internal/eventbus/**'
+              - 'internal/triggers/**'
+              - 'cmd/**'
+              - 'configs/**'
+              - 'Dockerfile'
+              - 'Dockerfile.*'
+      - name: Enforce threat model and security label
+        if: steps.changes.outputs.high_risk == 'true'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          body="$(printf '%s' "$PR_BODY" | tr '[:upper:]' '[:lower:]')"
+          labels="$(printf '%s' "$PR_LABELS" | tr '[:upper:]' '[:lower:]')"
+
+          if ! printf '%s' "$body" | grep -q "threat model"; then
+            echo "High-risk PR must include a Threat Model section in the PR description."
+            exit 1
+          fi
+
+          if ! printf '%s' "$labels" | grep -Eq "(security-reviewed|security-exception-approved)"; then
+            echo "High-risk PR requires 'security-reviewed' (or 'security-exception-approved') label."
+            exit 1
+          fi
