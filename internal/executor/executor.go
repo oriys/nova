@@ -84,6 +84,7 @@ type Executor struct {
 	pool             *pool.Pool
 	logger           *logging.Logger
 	secretsResolver  *secrets.Resolver
+	transportCipher  *secrets.TransportCipher // encrypts secret values in vsock Init messages
 	logSink          logsink.LogSink
 	logBatcher       *invocationLogBatcher
 	logBatcherConfig LogBatcherConfig
@@ -256,10 +257,29 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 
 	// Resolve $SECRET: references in env vars (depends on runtime config merge above)
 	if e.secretsResolver != nil && len(fn.EnvVars) > 0 {
+		// Track which env var keys hold secret values so we can encrypt
+		// them before sending over vsock to prevent plaintext leakage.
+		secretKeys := make(map[string]bool)
+		for k, v := range fn.EnvVars {
+			if secrets.IsSecretRef(v) {
+				secretKeys[k] = true
+			}
+		}
+
 		resolved, err := e.secretsResolver.ResolveEnvVars(ctx, fn.EnvVars)
 		if err != nil {
 			return nil, fmt.Errorf("resolve secrets: %w", err)
 		}
+
+		// Encrypt resolved secret values for safe transport over vsock.
+		// The agent decrypts them using the shared transport key.
+		if e.transportCipher != nil && len(secretKeys) > 0 {
+			resolved, err = e.transportCipher.EncryptEnvVars(resolved, secretKeys)
+			if err != nil {
+				return nil, fmt.Errorf("encrypt secrets for transport: %w", err)
+			}
+		}
+
 		fn.EnvVars = resolved
 	}
 
