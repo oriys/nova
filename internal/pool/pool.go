@@ -75,12 +75,36 @@ var (
 )
 
 const (
-	DefaultIdleTTL = 60 * time.Second
+	DefaultIdleTTL    = 60 * time.Second
+	DefaultSuspendTTL = 30 * time.Second // idle duration before snapshot-suspend
 
 	// Default values for pool settings
 	DefaultCleanupInterval     = 10 * time.Second
 	DefaultHealthCheckInterval = 30 * time.Second
 	DefaultMaxPreWarmWorkers   = 8
+)
+
+// PooledVMState represents the lifecycle state of a pooled VM.
+//
+// The state transitions form a linear progression:
+//
+//	Active → Idle → Suspended → Destroyed
+//
+// Active: VM is currently handling at least one in-flight request.
+// Idle:   VM has completed all requests and is warm in memory, waiting for reuse.
+// Suspended: VM was idle for longer than SuspendTTL, so its state was
+//
+//	snapshot-saved to disk and the process was stopped. Restoring
+//	from snapshot is much faster than a full cold start.
+//
+// Destroyed: VM has been fully stopped and cleaned up.
+type PooledVMState string
+
+const (
+	VMStateActive    PooledVMState = "active"
+	VMStateIdle      PooledVMState = "idle"
+	VMStateSuspended PooledVMState = "suspended"
+	VMStateDestroyed PooledVMState = "destroyed"
 )
 
 // PooledVM is a handle to a live VM that has been acquired from the pool.
@@ -95,6 +119,7 @@ type PooledVM struct {
 	Function      *domain.Function
 	LastUsed      time.Time
 	ColdStart     bool
+	State         PooledVMState
 	inflight      int
 	maxConcurrent int
 }
@@ -143,6 +168,7 @@ type Pool struct {
 	desiredByFunction   sync.Map // map[string]int32 - desired replicas keyed by function ID
 	group               singleflight.Group
 	idleTTL             time.Duration
+	suspendTTL          time.Duration // idle duration before snapshot-suspend (0 = disabled)
 	cleanupInterval     time.Duration
 	healthCheckInterval time.Duration
 	maxPreWarmWorkers   int
@@ -159,6 +185,7 @@ type Pool struct {
 // PoolConfig holds pool configuration options
 type PoolConfig struct {
 	IdleTTL             time.Duration
+	SuspendTTL          time.Duration // idle time before snapshot-suspend (0 = disabled, skip straight to destroy)
 	CleanupInterval     time.Duration
 	HealthCheckInterval time.Duration
 	MaxPreWarmWorkers   int
@@ -185,6 +212,7 @@ func NewPool(b backend.Backend, cfg PoolConfig) *Pool {
 	p := &Pool{
 		backend:             b,
 		idleTTL:             cfg.IdleTTL,
+		suspendTTL:          cfg.SuspendTTL,
 		cleanupInterval:     cfg.CleanupInterval,
 		healthCheckInterval: cfg.HealthCheckInterval,
 		maxPreWarmWorkers:   cfg.MaxPreWarmWorkers,
