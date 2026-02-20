@@ -1,3 +1,5 @@
+// pool_acquisition.go contains the VM acquisition path: the hot path that
+// every invocation traverses to obtain a warm VM or trigger a cold start.
 package pool
 
 import (
@@ -11,6 +13,8 @@ import (
 )
 
 func getCapacityLimits(fn *domain.Function) (maxInflight, maxQueueDepth int, maxQueueWait time.Duration) {
+	// Zero values mean "no limit" throughout the acquisition loop, so
+	// returning zeros when the policy is absent is the correct default.
 	if fn.CapacityPolicy == nil || !fn.CapacityPolicy.Enabled {
 		return 0, 0, 0
 	}
@@ -58,6 +62,17 @@ func rebuildReadyVMLocked(fp *functionPool) {
 	}
 }
 
+// takeWarmVMLocked returns a VM that has capacity for one more in-flight
+// request, or nil if none is available.
+//
+// Must be called with fp.mu held (write lock). Increments pvm.inflight and
+// fp.totalInflight before returning so that the caller cannot accidentally
+// double-count the slot.
+//
+// The readyVMs slice is used as a stack (LIFO) so that the most recently
+// used VM is preferred, maximising the chance that its process cache is
+// warm. VMs that are in readyVMs but no longer in readySet (stale pointers
+// from removeReadyVMLocked) are silently skipped.
 func takeWarmVMLocked(fp *functionPool) *PooledVM {
 	ensurePoolStateLocked(fp)
 	for len(fp.readyVMs) > 0 {
@@ -85,6 +100,16 @@ func inflightCountLocked(fp *functionPool) int {
 	return fp.totalInflight
 }
 
+// waitForVMLocked suspends the calling goroutine until either a VM becomes
+// available (signalled via fp.cond), the context is cancelled, or the
+// optional waitFor deadline elapses.
+//
+// Must be called with fp.mu held (write lock). Releases the lock
+// via cond.Wait and re-acquires it before returning.
+//
+// The goroutine spawned here exists solely to translate channel-based
+// cancellation signals (ctx.Done) into a Broadcast on the condition variable.
+// This is necessary because sync.Cond has no native context-awareness.
 func waitForVMLocked(ctx context.Context, fp *functionPool, waitFor time.Duration) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -122,6 +147,28 @@ func waitForVMLocked(ctx context.Context, fp *functionPool, waitFor time.Duratio
 	return ctx.Err()
 }
 
+// acquireGeneric is the shared acquisition loop used by Acquire and
+// AcquireWithFiles. It implements the following admission control policy:
+//
+//  1. If a warm VM has capacity, return it immediately (fast path).
+//  2. If a new VM can be created (below MaxReplicas and MaxGlobalVMs),
+//     break out of the loop and call createVM.
+//  3. Otherwise, apply capacity policy checks:
+//     - Reject immediately if MaxInflight is exceeded.
+//     - Reject immediately if MaxQueueDepth is exceeded.
+//     - Wait on the condition variable until a VM is released or the
+//       MaxQueueWait deadline expires.
+//
+// The singleflight group deduplicates concurrent cold-start attempts for
+// the same function so that N waiting goroutines result in exactly one VM
+// creation. When the shared result arrives, the group re-checks whether
+// the caller can use the new VM or must create another one.
+//
+// # Concurrency
+//
+// The inner loop acquires and releases fp.mu on every iteration to allow
+// other goroutines to release VMs concurrently. The singleflight call
+// happens outside the lock to avoid blocking the whole pool.
 func (p *Pool) acquireGeneric(
 	ctx context.Context,
 	fn *domain.Function,

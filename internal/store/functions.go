@@ -11,6 +11,25 @@ import (
 	"github.com/oriys/nova/internal/domain"
 )
 
+// SaveFunction persists fn to the functions table using an upsert (INSERT …
+// ON CONFLICT DO UPDATE) keyed on the function ID.
+//
+// # Preconditions
+//
+//   - fn.ID and fn.Name must be non-empty; returns an error otherwise.
+//   - ctx must carry a valid tenant scope (see tenantScopeFromContext);
+//     the tenant_id and namespace fields of fn are overwritten with the
+//     values from the context to prevent cross-tenant writes.
+//
+// # Side effects
+//
+// Writes exactly one row to Postgres. No cache invalidation is performed;
+// callers that maintain a function cache must invalidate it after this call.
+//
+// # Idempotency
+//
+// Idempotent for the same (fn.ID, fn.Name) pair. A second call with the
+// same ID overwrites all mutable fields (data, updated_at).
 func (s *PostgresStore) SaveFunction(ctx context.Context, fn *domain.Function) error {
 	if fn.ID == "" || fn.Name == "" {
 		return fmt.Errorf("function id and name are required")
@@ -48,6 +67,9 @@ func (s *PostgresStore) SaveFunction(ctx context.Context, fn *domain.Function) e
 	return nil
 }
 
+// GetFunction retrieves a function by its opaque ID, scoped to the tenant
+// derived from ctx. Returns an error wrapping "function not found" when no
+// row exists (callers may use strings.Contains to detect this case).
 func (s *PostgresStore) GetFunction(ctx context.Context, id string) (*domain.Function, error) {
 	scope := tenantScopeFromContext(ctx)
 	var data []byte
@@ -76,6 +98,15 @@ func (s *PostgresStore) GetFunction(ctx context.Context, id string) (*domain.Fun
 	return &fn, nil
 }
 
+// GetFunctionByName retrieves a function by its human-readable name, scoped
+// to the tenant derived from ctx.
+//
+// # Performance
+//
+// This method is on the invocation hot path (called for every request by the
+// executor). The functions table has an index on (name, tenant_id, namespace)
+// so the query is O(log n) in table size. Callers with latency budgets below
+// 1 ms should wrap this in a short-TTL cache.
 func (s *PostgresStore) GetFunctionByName(ctx context.Context, name string) (*domain.Function, error) {
 	scope := tenantScopeFromContext(ctx)
 	var data []byte

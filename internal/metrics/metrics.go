@@ -1,3 +1,39 @@
+// Package metrics collects and exposes Nova runtime observability data.
+//
+// # Design rationale
+//
+// Two metric stores coexist in this package:
+//
+//  1. The in-process Metrics struct (per-function counters + time series)
+//     for the lightweight JSON /metrics endpoint used by the dashboard.
+//  2. A Prometheus registry (prometheus.go) for scraping by external
+//     monitoring systems (Grafana, Alertmanager, etc.).
+//
+// Keeping both allows the dashboard to work without a Prometheus sidecar
+// while still supporting enterprise monitoring stacks.
+//
+// # Concurrency — hot path
+//
+// RecordInvocationWithDetails is called from the executor on every
+// invocation and must be as fast as possible. It uses atomic increments
+// for global counters and dispatches a lightweight event onto a buffered
+// channel (tsChan) for the time-series worker to process asynchronously.
+// This avoids holding any lock on the hot path.
+//
+// The per-function FunctionMetrics struct also uses atomic operations
+// exclusively; the sync.Map that stores the per-function entries is
+// read-heavy and write-once-per-new-function, which is the ideal use case
+// for sync.Map.
+//
+// # Invariants
+//
+//   - TotalInvocations == SuccessInvocations + FailedInvocations (maintained
+//     by RecordInvocation and RecordInvocationWithDetails).
+//   - ColdStarts + WarmStarts == TotalInvocations.
+//   - The time-series ring buffer holds at most timeSeriesBucketCount buckets
+//     (24 * 60 = 1440 for the last 24 hours at 1-minute granularity).
+//   - tsChan capacity is 8192 events; events dropped when full are counted
+//     in tsDroppedEvents for observability.
 package metrics
 
 import (

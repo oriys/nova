@@ -1,3 +1,52 @@
+// Package executor orchestrates function invocations on behalf of the
+// data-plane API and the remote gRPC endpoint.
+//
+// # Invocation pipeline
+//
+// Invoke is the single entry point for all synchronous function calls.
+// The pipeline is:
+//
+//  1. Drain-check: reject if the executor is shutting down.
+//  2. Parallel pre-fetch: runtime config, layers, volumes, code, and
+//     multi-file flag are fetched concurrently via errgroup to minimise
+//     round-trip latency.
+//  3. Secret resolution: $SECRET: references in EnvVars are substituted
+//     using the secrets resolver before the VM sees any environment.
+//  4. Circuit-breaker check: if the per-function breaker is open the call
+//     is rejected immediately without touching the pool.
+//  5. Compilation guard: compiled runtimes (Go, Rust, Java, …) require a
+//     successful CompileStatus before a VM is acquired; this prevents the
+//     agent from receiving an incomplete binary.
+//  6. VM acquisition: a warm VM is taken from the pool, or a cold start is
+//     performed if none is available.
+//  7. Execution: the payload is forwarded to the guest agent over vsock;
+//     the response includes stdout/stderr and timing information.
+//  8. Async side-effects: metrics recording, structured logging, output
+//     capture, invocation-log persistence, and circuit-breaker bookkeeping
+//     are all fire-and-forget to keep the critical path lean.
+//
+// # Concurrency
+//
+// Executor is safe for concurrent use. The inflight WaitGroup is used to
+// drain in-flight calls during graceful shutdown (see GracefulShutdown).
+// Each call increments the counter before any work begins and decrements it
+// on return, so Shutdown blocks until all active invocations finish.
+//
+// # Side effects
+//
+// Every successful or failed invocation triggers the following side-effects
+// (all asynchronous unless noted):
+//   - Prometheus metrics update (RecordInvocationWithDetails)
+//   - Structured request log via the Logger
+//   - stdout/stderr capture via the output store
+//   - Invocation log row persisted to Postgres via the log batcher
+//   - Circuit-breaker success/failure counter update
+//
+// # Failure behaviour
+//
+// A VM that returns an execution error is immediately evicted from the pool
+// (EvictVM) rather than returned to the warm set. This prevents a poisoned
+// process from serving subsequent requests.
 package executor
 
 import (
@@ -25,6 +74,11 @@ import (
 // ErrCircuitOpen is returned when the circuit breaker is open for a function.
 var ErrCircuitOpen = fmt.Errorf("circuit breaker is open")
 
+// Executor orchestrates the full invocation pipeline for a single Nova node.
+// It is the only component that may acquire VMs from the pool and send
+// execution requests to the guest agent.
+//
+// The zero value is not usable; always construct via New.
 type Executor struct {
 	store            *store.Store
 	pool             *pool.Pool
@@ -34,11 +88,13 @@ type Executor struct {
 	logBatcher       *invocationLogBatcher
 	logBatcherConfig LogBatcherConfig
 	persistPayloads  bool
-	inflight         sync.WaitGroup
-	closing          atomic.Bool
+	inflight         sync.WaitGroup // drained by GracefulShutdown
+	closing          atomic.Bool    // set true before draining; rejects new calls
 	breakers         *circuitbreaker.Registry
 }
 
+// New creates a ready-to-use Executor. The logSink defaults to a Postgres
+// sink backed by store if not overridden via WithLogSink.
 func New(store *store.Store, pool *pool.Pool, opts ...Option) *Executor {
 	e := &Executor{
 		store:           store,
@@ -58,8 +114,41 @@ func New(store *store.Store, pool *pool.Pool, opts ...Option) *Executor {
 	return e
 }
 
+// Invoke executes the named function with the supplied JSON payload and
+// returns a structured response.
+//
+// # Contract
+//
+// Preconditions:
+//   - funcName must identify an existing, deployed function in the store.
+//   - payload must be valid JSON or nil (nil is passed as "null" to the handler).
+//
+// Postconditions:
+//   - On success, InvokeResponse.RequestID is a unique 8-hex-char correlation
+//     ID that appears in metrics, structured logs, and the invocation log.
+//   - On error, any VM that was acquired is evicted to prevent reuse of a
+//     potentially broken process.
+//
+// # Idempotency
+//
+// Not idempotent. Each call creates a new invocation record with a fresh
+// RequestID. Callers that need at-most-once or exactly-once semantics must
+// implement deduplication upstream (e.g. via the async-queue idempotency key).
+//
+// # Side effects
+//
+// Regardless of success or failure, Invoke writes asynchronously to:
+//   - Prometheus metrics (invocation count, latency, cold-start ratio)
+//   - Structured request log
+//   - Invocation log table in Postgres
+//   - Output capture store (stdout/stderr) when available
+//
+// # Concurrency
+//
+// Safe for concurrent use. The method increments the inflight counter before
+// any work begins so GracefulShutdown can drain all in-flight calls.
 func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.RawMessage) (*domain.InvokeResponse, error) {
-	// Check if executor is shutting down
+	// Reject early during shutdown so we don't start work that cannot finish.
 	if e.closing.Load() {
 		return nil, fmt.Errorf("executor is shutting down")
 	}

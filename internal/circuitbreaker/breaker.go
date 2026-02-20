@@ -1,3 +1,38 @@
+// Package circuitbreaker implements the per-function circuit breaker that
+// protects the invocation pipeline from cascading failures.
+//
+// # State machine
+//
+// The breaker follows the standard three-state model:
+//
+//	Closed ──(error rate ≥ threshold)──► Open ──(OpenDuration elapsed)──► HalfOpen
+//	  ▲                                                                        │
+//	  └──────────────(all probes succeed)───────────────────────────────────────┘
+//	                  (any probe fails) ──────────────────────────────────► Open
+//
+// # Why sliding window, not counters
+//
+// A fixed counter resets on schedule regardless of traffic volume, which
+// means a burst of errors just before a reset window is silently lost.
+// A sliding window always reflects the last WindowDuration of traffic, so
+// the error rate is meaningful even under irregular load patterns.
+//
+// # Concurrency
+//
+// All public methods (Allow, RecordSuccess, RecordFailure, State) are safe
+// for concurrent use; they acquire the internal mutex for every call.
+// The Registry uses a separate read-write mutex so that the common
+// read path (Get for an existing breaker) does not contend with the rare
+// write path (new function registered or deleted).
+//
+// # Invariants
+//
+//   - The successes and failures slices contain only timestamps within the
+//     current sliding window; trimWindow is called after every write.
+//   - maxWindowEntries caps both slices to prevent unbounded memory growth
+//     under pathological load (e.g. thousands of errors per second).
+//   - halfOpenProbes counts the number of probe requests dispatched in the
+//     HalfOpen state; it is reset to 0 on every Open→HalfOpen transition.
 package circuitbreaker
 
 import (

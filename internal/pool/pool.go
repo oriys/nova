@@ -1,3 +1,48 @@
+// Package pool manages the lifecycle of warm VM instances that are shared
+// across invocations of the same function.
+//
+// # Design rationale
+//
+// Cold-starting a Firecracker microVM takes 100–500 ms. To amortise this
+// cost across many requests the pool keeps VMs alive between invocations.
+// A VM is returned to the warm set after each successful execution and is
+// only evicted when it becomes idle for longer than IdleTTL, fails a health
+// check ping, or the code hash changes (indicating a function update).
+//
+// # Pool topology
+//
+// One functionPool is maintained per unique "pool key" (a hash of function
+// configuration fields that affect the VM image). Functions that share
+// identical configuration (same runtime, memory, backend, layers) reuse the
+// same pool. The functionPoolKeys map tracks which key is active for each
+// function ID so the old pool can be cleaned up on config change.
+//
+// # Concurrency model
+//
+// Each functionPool has its own sync.RWMutex. Reads (takeWarmVMLocked,
+// Stats) take a read lock; writes (add/remove VM, code-change eviction)
+// take the write lock. A sync.Cond on the write lock is used to wake
+// goroutines that are waiting for a VM to become available.
+//
+// Atomic operations (maxReplicas, totalVMs, codeHash) are used for fields
+// that are read frequently on the hot path to avoid lock contention.
+//
+// The Pool itself uses sync.Map for its top-level pools and
+// functionPoolKeys maps because these are read-heavy and written rarely.
+//
+// # Invariants
+//
+//   - totalVMs always equals the sum of len(fp.vms) across all function pools.
+//   - fp.totalInflight always equals the sum of pvm.inflight for pvm in fp.vms.
+//   - A PooledVM is in fp.readySet if and only if pvm.inflight < pvm.maxConcurrent.
+//   - Once closing is set (via Shutdown), no new VMs are created.
+//
+// # Failure behaviour
+//
+// If VM creation fails, the error is returned to the caller directly; no
+// VM is added to the pool. The singleflight group ensures that concurrent
+// cold-start requests for the same function share a single creation attempt
+// rather than racing to create N identical VMs simultaneously.
 package pool
 
 import (
@@ -38,6 +83,12 @@ const (
 	DefaultMaxPreWarmWorkers   = 8
 )
 
+// PooledVM is a handle to a live VM that has been acquired from the pool.
+// It must be returned via Pool.Release when the invocation is complete, or
+// removed via Pool.EvictVM when the VM is known to be unhealthy.
+//
+// The inflight and maxConcurrent fields are owned by the pool and must only
+// be read or written while holding the enclosing functionPool's mutex.
 type PooledVM struct {
 	VM            *backend.VM
 	Client        backend.Client
@@ -48,7 +99,19 @@ type PooledVM struct {
 	maxConcurrent int
 }
 
-// functionPool holds VMs for a single function with its own lock
+// functionPool holds all VMs for a single pool key (a unique combination of
+// function configuration fields). Multiple function IDs may share the same
+// functionPool when their configuration is identical.
+//
+// # Locking discipline
+//
+// All fields except the atomic ones (maxReplicas, codeHash, desiredReplicas,
+// lastQueueWaitMs) must be accessed under mu. readyVMs and readySet are
+// derived views over vms and must be kept consistent with it; use
+// rebuildReadyVMLocked after any bulk modification.
+//
+// cond is bound to the write side of mu. Callers must hold mu.Lock() when
+// calling cond.Wait or cond.Signal/Broadcast.
 type functionPool struct {
 	vms             []*PooledVM
 	mu              sync.RWMutex // read-write lock reduces contention for read-heavy paths
@@ -57,16 +120,22 @@ type functionPool struct {
 	readyVMs        []*PooledVM
 	readySet        map[*PooledVM]struct{}
 	waiters         int          // number of goroutines waiting for a VM
-	cond            *sync.Cond   // condition variable for waiting
-	codeHash        atomic.Value // string: hash of code when VMs were created
+	cond            *sync.Cond   // condition variable for waiting; bound to mu (write lock)
+	codeHash        atomic.Value // stores a string: SHA-256 of code when VMs were created; always Store/Load as string
 	desiredReplicas atomic.Int32 // desired replica count set by autoscaler
 	lastQueueWaitMs atomic.Int64
-	functionRefs    map[string]struct{}
+	functionRefs    map[string]struct{} // function IDs sharing this pool key
 }
 
-// SnapshotCallback is called after a cold start to create a snapshot
+// SnapshotCallback is called after a cold start to create a VM snapshot that
+// can be restored on subsequent cold starts to reduce boot latency.
+// The callback is invoked asynchronously; failures are logged but not fatal.
 type SnapshotCallback func(ctx context.Context, vmID, funcID string) error
 
+// Pool is the central resource manager for VM instances.
+//
+// It is safe for concurrent use by multiple goroutines. The zero value is
+// not usable; always construct via NewPool.
 type Pool struct {
 	backend             backend.Backend
 	pools               sync.Map // map[string]*functionPool - per-configuration pools
@@ -95,6 +164,9 @@ type PoolConfig struct {
 	MaxPreWarmWorkers   int
 }
 
+// NewPool creates a Pool and starts the background cleanup and health-check
+// loops. The caller must call Shutdown to stop those loops and release VM
+// resources when the pool is no longer needed.
 func NewPool(b backend.Backend, cfg PoolConfig) *Pool {
 	if cfg.IdleTTL == 0 {
 		cfg.IdleTTL = DefaultIdleTTL
