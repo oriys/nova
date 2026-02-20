@@ -6,81 +6,144 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 )
 
-func (m *Manager) allocateCID() (uint32, error) {
-	m.cidMu.Lock()
-	defer m.cidMu.Unlock()
-	for i := 0; i < 1<<16; i++ {
-		cid := m.nextCID
-		m.nextCID++
-		if m.nextCID == 0 {
-			m.nextCID = 100
-		}
-		if _, ok := m.usedCIDs[cid]; ok {
-			continue
-		}
-		m.usedCIDs[cid] = struct{}{}
-		return cid, nil
+// resourcePool is a thread-safe free-list of pre-allocated resources.
+// It avoids linear scanning under high concurrency by maintaining a
+// ready-to-use pool of CIDs or IPs that can be acquired in O(1).
+type resourcePool[T comparable] struct {
+	mu       sync.Mutex
+	free     []T    // free-list (stack, LIFO for cache locality)
+	inUse    map[T]struct{}
+}
+
+func newResourcePool[T comparable]() *resourcePool[T] {
+	return &resourcePool[T]{
+		inUse: make(map[T]struct{}),
 	}
-	return 0, fmt.Errorf("no available vsock CIDs")
+}
+
+// fill adds items to the free list, skipping any already in use.
+func (p *resourcePool[T]) fill(items []T) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, item := range items {
+		if _, used := p.inUse[item]; !used {
+			p.free = append(p.free, item)
+		}
+	}
+}
+
+// acquire pops one item from the free list in O(1).
+func (p *resourcePool[T]) acquire() (T, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for len(p.free) > 0 {
+		last := len(p.free) - 1
+		item := p.free[last]
+		p.free = p.free[:last]
+		if _, used := p.inUse[item]; used {
+			continue // skip stale entries
+		}
+		p.inUse[item] = struct{}{}
+		return item, true
+	}
+	var zero T
+	return zero, false
+}
+
+// release returns an item to the free list.
+func (p *resourcePool[T]) release(item T) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if _, ok := p.inUse[item]; ok {
+		delete(p.inUse, item)
+		p.free = append(p.free, item)
+	}
+}
+
+// size returns the number of items currently available.
+func (p *resourcePool[T]) size() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.free)
+}
+
+// inUseCount returns the number of items currently in use.
+func (p *resourcePool[T]) inUseCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.inUse)
+}
+
+// initCIDPool pre-fills the CID resource pool with available CIDs.
+// CIDs 0-2 are reserved by the vsock spec; we start from 100.
+func (m *Manager) initCIDPool() {
+	const cidStart uint32 = 100
+	const cidCount = 4096 // pre-allocate up to 4096 CIDs
+	cids := make([]uint32, 0, cidCount)
+	for i := uint32(0); i < cidCount; i++ {
+		cids = append(cids, cidStart+i)
+	}
+	m.cidPool.fill(cids)
+}
+
+// initIPPool pre-fills the IP resource pool from the configured subnet.
+func (m *Manager) initIPPool() error {
+	baseIP, ipNet, err := net.ParseCIDR(m.config.Subnet)
+	if err != nil {
+		return fmt.Errorf("parse subnet: %w", err)
+	}
+	ones, bits := ipNet.Mask.Size()
+	if bits != 32 {
+		return fmt.Errorf("unsupported subnet mask: %d", bits)
+	}
+	hostCount := uint32(1) << uint32(32-ones)
+	if hostCount <= 3 {
+		return fmt.Errorf("subnet too small for VM allocation")
+	}
+	startOffset := uint32(2) // .1 is the bridge gateway
+	maxOffset := hostCount - 2
+	base := ipToUint32(baseIP)
+
+	ips := make([]string, 0, maxOffset-startOffset+1)
+	for offset := startOffset; offset <= maxOffset; offset++ {
+		ips = append(ips, uint32ToIP(base+offset))
+	}
+	m.ipPool.fill(ips)
+	return nil
+}
+
+func (m *Manager) allocateCID() (uint32, error) {
+	cid, ok := m.cidPool.acquire()
+	if !ok {
+		return 0, fmt.Errorf("no available vsock CIDs")
+	}
+	return cid, nil
 }
 
 // allocateIP returns next available IP in subnet (e.g., "172.30.0.2")
 func (m *Manager) allocateIP() (string, error) {
-	m.ipMu.Lock()
-	defer m.ipMu.Unlock()
-	baseIP, ipNet, err := net.ParseCIDR(m.config.Subnet)
-	if err != nil {
-		return "", fmt.Errorf("parse subnet: %w", err)
+	ip, ok := m.ipPool.acquire()
+	if !ok {
+		return "", fmt.Errorf("no available IPs in subnet")
 	}
-	ones, bits := ipNet.Mask.Size()
-	if bits != 32 {
-		return "", fmt.Errorf("unsupported subnet mask: %d", bits)
-	}
-	hostCount := uint32(1) << uint32(32-ones)
-	if hostCount <= 3 {
-		return "", fmt.Errorf("subnet too small for VM allocation")
-	}
-	startOffset := uint32(2)
-	maxOffset := hostCount - 2
-
-	base := ipToUint32(baseIP)
-	for i := uint32(0); i < maxOffset-startOffset+1; i++ {
-		offset := m.nextIP
-		if offset < startOffset || offset > maxOffset {
-			offset = startOffset
-		}
-		candidate := uint32ToIP(base + offset)
-		m.nextIP = offset + 1
-		if m.nextIP > maxOffset {
-			m.nextIP = startOffset
-		}
-		if _, ok := m.usedIPs[candidate]; ok {
-			continue
-		}
-		m.usedIPs[candidate] = struct{}{}
-		return candidate, nil
-	}
-	return "", fmt.Errorf("no available IPs in subnet")
+	return ip, nil
 }
 
 func (m *Manager) releaseCID(cid uint32) {
 	if cid == 0 {
 		return
 	}
-	m.cidMu.Lock()
-	delete(m.usedCIDs, cid)
-	m.cidMu.Unlock()
+	m.cidPool.release(cid)
 }
 
 func (m *Manager) releaseIP(ip string) {
 	if ip == "" {
 		return
 	}
-	m.ipMu.Lock()
-	delete(m.usedIPs, ip)
-	m.ipMu.Unlock()
+	m.ipPool.release(ip)
 }
 
 func ipToUint32(ip net.IP) uint32 {

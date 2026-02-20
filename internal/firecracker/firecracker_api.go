@@ -208,15 +208,15 @@ func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath
 	// Reserve the snapshot's CID to prevent conflicts.
 	// If the CID is already in use by another VM, the snapshot cannot be loaded.
 	// Note: We don't release the original CID here - the caller handles CID cleanup.
-	m.cidMu.Lock()
-	if _, inUse := m.usedCIDs[meta.VsockCID]; inUse && meta.VsockCID != originalCID {
-		m.cidMu.Unlock()
+	m.cidPool.mu.Lock()
+	if _, inUse := m.cidPool.inUse[meta.VsockCID]; inUse && meta.VsockCID != originalCID {
+		m.cidPool.mu.Unlock()
 		return fmt.Errorf("snapshot CID %d is already in use", meta.VsockCID)
 	}
 	if meta.VsockCID != originalCID {
-		m.usedCIDs[meta.VsockCID] = struct{}{}
+		m.cidPool.inUse[meta.VsockCID] = struct{}{}
 	}
-	m.cidMu.Unlock()
+	m.cidPool.mu.Unlock()
 
 	// Clean up stale vsock socket at the original path and update VM
 	_ = os.Remove(meta.VsockPath)
@@ -228,14 +228,14 @@ func (m *Manager) apiLoadSnapshot(ctx context.Context, vm *VM, snapPath, memPath
 	// so the restored VM will use that IP regardless of what we allocated.
 	if meta.GuestIP != "" {
 		newIP := vm.GuestIP
-		m.ipMu.Lock()
+		m.ipPool.mu.Lock()
 		// Reserve the snapshot's IP
-		m.usedIPs[meta.GuestIP] = struct{}{}
+		m.ipPool.inUse[meta.GuestIP] = struct{}{}
 		// Release the newly allocated IP (unless it's the same)
 		if newIP != meta.GuestIP {
-			delete(m.usedIPs, newIP)
+			delete(m.ipPool.inUse, newIP)
 		}
-		m.ipMu.Unlock()
+		m.ipPool.mu.Unlock()
 		vm.GuestIP = meta.GuestIP
 	}
 	if meta.GuestMAC != "" {
