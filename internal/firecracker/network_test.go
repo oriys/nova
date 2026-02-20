@@ -77,30 +77,34 @@ func TestResourcePool_FillSkipsDuplicates(t *testing.T) {
 	pool := newResourcePool[string]()
 	pool.fill([]string{"a", "b", "c"})
 
-	// Acquire "b"
-	pool.acquire()
-	pool.acquire()
-	b, _ := pool.acquire()
-
-	// Re-fill with all items — "b" is in use and should be skipped
-	pool.fill([]string{"a", "b", "c", "d"})
-
-	// We should be able to acquire "a", "c", "d" but not "b" (still in use)
-	got := make(map[string]struct{})
-	for {
+	// Acquire all three items
+	acquired := make([]string, 0, 3)
+	for i := 0; i < 3; i++ {
 		item, ok := pool.acquire()
 		if !ok {
-			break
+			t.Fatalf("expected to acquire item %d", i)
 		}
-		got[item] = struct{}{}
+		acquired = append(acquired, item)
 	}
-	if _, has := got[b]; has {
-		// b was in use, should not appear in new acquisitions unless it's not b
-		// Actually, b is in use - fill should skip it
+
+	// All three should be in use now
+	if pool.inUseCount() != 3 {
+		t.Fatalf("expected 3 in use, got %d", pool.inUseCount())
 	}
-	// b is still in use — not in the free list
-	if pool.inUseCount() != 4 {
-		// 3 originally acquired + items newly acquired
+
+	// Re-fill with overlapping items — in-use items should be skipped
+	pool.fill([]string{"a", "b", "c", "d"})
+
+	// Only "d" should be available (a, b, c are in use)
+	item, ok := pool.acquire()
+	if !ok || item != "d" {
+		t.Fatalf("expected to acquire 'd', got %q (ok=%v)", item, ok)
+	}
+
+	// Pool should be exhausted now
+	_, ok = pool.acquire()
+	if ok {
+		t.Fatal("expected pool to be exhausted")
 	}
 }
 
@@ -187,5 +191,61 @@ func TestAllocateIP(t *testing.T) {
 	}
 	if ip2 != ip {
 		t.Logf("re-acquired different IP (expected %s, got %s) — acceptable with LIFO", ip, ip2)
+	}
+}
+
+func TestResourcePool_TryReserve(t *testing.T) {
+	pool := newResourcePool[uint32]()
+	pool.fill([]uint32{10, 20, 30})
+
+	// Reserve 10 — should succeed
+	if !pool.tryReserve(10) {
+		t.Fatal("expected tryReserve(10) to succeed")
+	}
+	if pool.inUseCount() != 1 {
+		t.Fatalf("expected 1 in use, got %d", pool.inUseCount())
+	}
+
+	// Reserve 10 again — should fail (already in use)
+	if pool.tryReserve(10) {
+		t.Fatal("expected tryReserve(10) to fail for duplicate")
+	}
+
+	// Reserve 20 — should succeed
+	if !pool.tryReserve(20) {
+		t.Fatal("expected tryReserve(20) to succeed")
+	}
+}
+
+func TestResourcePool_SwapReserved(t *testing.T) {
+	pool := newResourcePool[string]()
+	pool.fill([]string{"a", "b", "c", "d"})
+
+	// Acquire "d" (LIFO)
+	old, ok := pool.acquire()
+	if !ok {
+		t.Fatal("expected to acquire item")
+	}
+
+	// Swap "d" for "a" — should succeed
+	if !pool.swapReserved(old, "a") {
+		t.Fatal("expected swapReserved to succeed")
+	}
+
+	// "a" should now be in use, "d" should be released
+	if pool.inUseCount() != 1 {
+		t.Fatalf("expected 1 in use, got %d", pool.inUseCount())
+	}
+
+	// Swap same item (no-op) — should succeed
+	if !pool.swapReserved("a", "a") {
+		t.Fatal("expected swapReserved with same item to succeed")
+	}
+
+	// Acquire "b" and try to swap to "a" — should fail (a is in use)
+	pool.acquire() // acquire some item
+	b, _ := pool.acquire()
+	if pool.swapReserved(b, "a") {
+		t.Fatal("expected swapReserved to fail when target is in use")
 	}
 }

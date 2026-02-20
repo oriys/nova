@@ -63,6 +63,49 @@ func (p *resourcePool[T]) release(item T) {
 	}
 }
 
+// tryReserve attempts to mark item as in-use without removing it from the free
+// list (it may not be there). Returns false if the item is already in use by
+// another caller. This is used during snapshot restore where the CID/IP from
+// the snapshot must be reserved if not already taken.
+func (p *resourcePool[T]) tryReserve(item T) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if _, used := p.inUse[item]; used {
+		return false
+	}
+	p.inUse[item] = struct{}{}
+	return true
+}
+
+// forceReserve marks item as in-use unconditionally. Use only when the caller
+// already knows the item is not in use elsewhere (e.g. snapshot restore where
+// the new CID equals the original CID that was already reserved).
+func (p *resourcePool[T]) forceReserve(item T) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.inUse[item] = struct{}{}
+}
+
+// swapReserved atomically reserves newItem and releases oldItem.
+// Returns false if newItem is already in use by a different caller.
+// When oldItem == newItem, this is a no-op that returns true.
+func (p *resourcePool[T]) swapReserved(oldItem, newItem T) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if oldItem == newItem {
+		return true
+	}
+	if _, used := p.inUse[newItem]; used {
+		return false
+	}
+	p.inUse[newItem] = struct{}{}
+	if _, ok := p.inUse[oldItem]; ok {
+		delete(p.inUse, oldItem)
+		p.free = append(p.free, oldItem)
+	}
+	return true
+}
+
 // size returns the number of items currently available.
 func (p *resourcePool[T]) size() int {
 	p.mu.Lock()
