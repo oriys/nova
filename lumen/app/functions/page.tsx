@@ -182,6 +182,7 @@ export default function FunctionsPage() {
   const router = useRouter()
   const createOpenedByQueryRef = useRef(false)
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const hasLoadedOnceRef = useRef(false)
   const [functions, setFunctions] = useState<FunctionData[]>([])
   const [rawFunctions, setRawFunctions] = useState<NovaFunction[]>([])
   const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([])
@@ -194,6 +195,8 @@ export default function FunctionsPage() {
   const [totalFunctions, setTotalFunctions] = useState(0)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasInvocations, setHasInvocations] = useState(false)
   const [hasGatewayRoutes, setHasGatewayRoutes] = useState(false)
@@ -263,7 +266,11 @@ export default function FunctionsPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      setLoading(true)
+      if (hasLoadedOnceRef.current) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
       setError(null)
 
       const offset = (page - 1) * pageSize
@@ -309,6 +316,11 @@ export default function FunctionsPage() {
       setError(toUserErrorMessage(err))
     } finally {
       setLoading(false)
+      setRefreshing(false)
+      if (!hasLoadedOnceRef.current) {
+        hasLoadedOnceRef.current = true
+        setHasLoadedOnce(true)
+      }
     }
   }, [debouncedSearchQuery, page, pageSize, runtimeFilter])
 
@@ -357,7 +369,7 @@ export default function FunctionsPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [searchQuery, statusFilter, runtimeFilter])
+  }, [debouncedSearchQuery, statusFilter, runtimeFilter])
 
   const totalPages = Math.max(1, Math.ceil(totalFunctions / pageSize))
   useEffect(() => {
@@ -700,7 +712,7 @@ export default function FunctionsPage() {
             <Button
               variant="outline"
               onClick={handleExportFunctions}
-              disabled={loading || ioBusy || filteredFunctions.length === 0}
+              disabled={(loading && !hasLoadedOnce) || ioBusy || filteredFunctions.length === 0}
             >
               <Download className="mr-2 h-4 w-4" />
               {selectedFunctionNames.size > 0 ? tf("exportSelected", { count: selectedFunctionNames.size }) : tf("exportFiltered")}
@@ -708,13 +720,13 @@ export default function FunctionsPage() {
             <Button
               variant="outline"
               onClick={() => importInputRef.current?.click()}
-              disabled={loading || ioBusy}
+              disabled={(loading && !hasLoadedOnce) || ioBusy}
             >
               <Upload className="mr-2 h-4 w-4" />
               {tf("importJson")}
             </Button>
-            <Button variant="outline" onClick={fetchData} disabled={loading || ioBusy}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            <Button variant="outline" onClick={fetchData} disabled={(loading && !hasLoadedOnce) || refreshing || ioBusy}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${(loading && !hasLoadedOnce) || refreshing ? "animate-spin" : ""}`} />
               {tc("refresh")}
             </Button>
             <Button onClick={() => setIsCreateOpen(true)} disabled={ioBusy}>
@@ -799,6 +811,7 @@ export default function FunctionsPage() {
             functions={pagedFunctions}
             onDelete={handleDelete}
             loading={loading}
+            refreshing={refreshing}
             selectedNames={selectedFunctionNames}
             onToggleSelect={toggleFunctionSelect}
             onToggleSelectAll={toggleFunctionSelectAll}

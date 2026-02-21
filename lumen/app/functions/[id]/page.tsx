@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useEffect, useMemo, useState, useCallback } from "react"
+import { use, useEffect, useMemo, useState, useCallback, useRef } from "react"
 import Link from "next/link"
 import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
@@ -89,6 +89,7 @@ export default function FunctionDetailPage({
   const [logsPageSize, setLogsPageSize] = useState(20)
   const [logsTotal, setLogsTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [invoking, setInvoking] = useState(false)
   const [invokeInput, setInvokeInput] = useState("{\n  \n}")
@@ -108,6 +109,7 @@ export default function FunctionDetailPage({
   const [editingSchedule, setEditingSchedule] = useState<ScheduleEntry | null>(null)
   const [editCron, setEditCron] = useState("")
   const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const loadedFunctionIDRef = useRef<string | null>(null)
 
   const refreshAsyncJobs = useCallback(async (functionName?: string) => {
     const targetName = functionName
@@ -126,7 +128,11 @@ export default function FunctionDetailPage({
 
   const fetchData = useCallback(async () => {
     try {
-      setLoading(true)
+      if (loadedFunctionIDRef.current !== id) {
+        setLoading(true)
+      } else {
+        setRefreshing(true)
+      }
       setError(null)
 
       // id could be function ID or name, try to get by name first
@@ -157,6 +163,8 @@ export default function FunctionDetailPage({
       setError(err instanceof Error ? err.message : t("loadFailed"))
     } finally {
       setLoading(false)
+      setRefreshing(false)
+      loadedFunctionIDRef.current = id
     }
   }, [id, logsPage, logsPageSize, refreshAsyncJobs, requestedLogID, t])
 
@@ -316,8 +324,8 @@ export default function FunctionDetailPage({
           </div>
 
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
-              <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
+            <Button variant="outline" size="sm" onClick={fetchData} disabled={loading || refreshing}>
+              <RefreshCw className={cn("mr-2 h-4 w-4", (loading || refreshing) && "animate-spin")} />
               {t("refresh")}
             </Button>
             <Button
@@ -428,7 +436,7 @@ export default function FunctionDetailPage({
             <FunctionLogs
               logs={logs}
               onRefresh={fetchData}
-              loading={loading}
+              loading={loading || refreshing}
               highlightedRequestId={requestedLogID || undefined}
               page={logsPage}
               pageSize={logsPageSize}

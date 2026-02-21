@@ -17,6 +17,7 @@ interface FunctionsTableProps {
   functions: FunctionData[]
   onDelete: (name: string) => void
   loading?: boolean
+  refreshing?: boolean
   selectedNames?: Set<string>
   onToggleSelect?: (name: string, checked: boolean) => void
   onToggleSelectAll?: (checked: boolean, names: string[]) => void
@@ -26,6 +27,7 @@ export function FunctionsTable({
   functions,
   onDelete,
   loading,
+  refreshing,
   selectedNames,
   onToggleSelect,
   onToggleSelectAll,
@@ -83,7 +85,12 @@ export function FunctionsTable({
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden">
+    <div className="relative rounded-xl border border-border bg-card overflow-hidden">
+      {refreshing && (
+        <div className="pointer-events-none absolute right-3 top-3 z-10 rounded-md bg-card/90 p-1.5 shadow-sm">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
