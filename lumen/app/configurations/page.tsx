@@ -86,6 +86,10 @@ export default function ConfigurationsPage() {
   const [poolTTL, setPoolTTL] = useState("60")
   const [logLevel, setLogLevel] = useState("info")
   const [maxGlobalVMs, setMaxGlobalVMs] = useState("0")
+  const [runtimePoolEnabled, setRuntimePoolEnabled] = useState("true")
+  const [runtimePoolSize, setRuntimePoolSize] = useState("1")
+  const [runtimePoolRuntimes, setRuntimePoolRuntimes] = useState("python,node,go")
+  const [runtimePoolRefillInterval, setRuntimePoolRefillInterval] = useState("30s")
   const [dirty, setDirty] = useState(false)
 
   // AI Settings
@@ -173,6 +177,13 @@ export default function ConfigurationsPage() {
       if (configData["pool_ttl"]) setPoolTTL(configData["pool_ttl"])
       if (configData["log_level"]) setLogLevel(configData["log_level"])
       if (configData["max_global_vms"]) setMaxGlobalVMs(configData["max_global_vms"])
+      if (configData["runtime_pool_enabled"]) {
+        const enabled = ["1", "true", "yes", "on"].includes(configData["runtime_pool_enabled"].trim().toLowerCase())
+        setRuntimePoolEnabled(enabled ? "true" : "false")
+      }
+      if (configData["runtime_pool_size"]) setRuntimePoolSize(configData["runtime_pool_size"])
+      if (configData["runtime_pool_runtimes"]) setRuntimePoolRuntimes(configData["runtime_pool_runtimes"])
+      if (configData["runtime_pool_refill_interval"]) setRuntimePoolRefillInterval(configData["runtime_pool_refill_interval"])
       setDirty(false)
 
       // Apply AI config
@@ -251,6 +262,10 @@ export default function ConfigurationsPage() {
         pool_ttl: poolTTL,
         log_level: logLevel,
         max_global_vms: maxGlobalVMs,
+        runtime_pool_enabled: runtimePoolEnabled,
+        runtime_pool_size: runtimePoolSize,
+        runtime_pool_runtimes: runtimePoolRuntimes,
+        runtime_pool_refill_interval: runtimePoolRefillInterval,
       })
       setDirty(false)
       setSaved(true)
@@ -504,6 +519,59 @@ export default function ConfigurationsPage() {
               <p className="text-xs text-muted-foreground">
                 {tc("maxGlobalVMsHelp")}
               </p>
+            </div>
+
+            <div className="space-y-2 sm:col-span-2 pt-2">
+              <Label className="text-sm font-medium text-card-foreground">{tc("runtimeTemplatePool")}</Label>
+              <p className="text-xs text-muted-foreground">{tc("runtimeTemplatePoolHelp")}</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="runtimePoolEnabled">{tc("runtimePoolEnabled")}</Label>
+              <Select value={runtimePoolEnabled} onValueChange={(v) => { setRuntimePoolEnabled(v); setDirty(true); }}>
+                <SelectTrigger id="runtimePoolEnabled">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="true">{tc("enabled")}</SelectItem>
+                  <SelectItem value="false">{tc("disabled")}</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{tc("runtimePoolEnabledHelp")}</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="runtimePoolSize">{tc("runtimePoolSize")}</Label>
+              <Input
+                id="runtimePoolSize"
+                type="number"
+                value={runtimePoolSize}
+                onChange={(e) => { setRuntimePoolSize(e.target.value); setDirty(true); }}
+                min="1"
+              />
+              <p className="text-xs text-muted-foreground">{tc("runtimePoolSizeHelp")}</p>
+            </div>
+
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="runtimePoolRuntimes">{tc("runtimePoolRuntimes")}</Label>
+              <Input
+                id="runtimePoolRuntimes"
+                value={runtimePoolRuntimes}
+                onChange={(e) => { setRuntimePoolRuntimes(e.target.value); setDirty(true); }}
+                placeholder={tc("runtimePoolRuntimesPlaceholder")}
+              />
+              <p className="text-xs text-muted-foreground">{tc("runtimePoolRuntimesHelp")}</p>
+            </div>
+
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="runtimePoolRefillInterval">{tc("runtimePoolRefillInterval")}</Label>
+              <Input
+                id="runtimePoolRefillInterval"
+                value={runtimePoolRefillInterval}
+                onChange={(e) => { setRuntimePoolRefillInterval(e.target.value); setDirty(true); }}
+                placeholder="30s"
+              />
+              <p className="text-xs text-muted-foreground">{tc("runtimePoolRefillIntervalHelp")}</p>
             </div>
           </div>
           <div className="mt-4 flex items-center gap-3">

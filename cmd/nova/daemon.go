@@ -202,6 +202,57 @@ func daemonCmd() *cobra.Command {
 						logging.Op().Info("loaded max_global_vms from config", "value", n)
 					}
 				}
+				if v, ok := sysConfig["runtime_pool_enabled"]; ok {
+					if enabled, err := strconv.ParseBool(strings.TrimSpace(v)); err == nil {
+						cfg.RuntimePool.Enabled = enabled
+					}
+				}
+				if v, ok := sysConfig["runtime_pool_size"]; ok {
+					if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n > 0 {
+						cfg.RuntimePool.PoolSize = n
+					}
+				}
+				if v, ok := sysConfig["runtime_pool_refill_interval"]; ok {
+					if d, err := time.ParseDuration(strings.TrimSpace(v)); err == nil && d > 0 {
+						cfg.RuntimePool.RefillInterval = d.String()
+					}
+				}
+				if v, ok := sysConfig["runtime_pool_runtimes"]; ok {
+					trimmed := strings.TrimSpace(v)
+					if trimmed == "" {
+						cfg.RuntimePool.Runtimes = nil
+					} else {
+						parts := strings.Split(trimmed, ",")
+						runtimes := make([]string, 0, len(parts))
+						for _, part := range parts {
+							runtime := strings.TrimSpace(part)
+							if runtime != "" {
+								runtimes = append(runtimes, runtime)
+							}
+						}
+						cfg.RuntimePool.Runtimes = runtimes
+					}
+				}
+			}
+
+			// Initialize runtime template pool for reduced cold-start latency
+			if cfg.RuntimePool.Enabled && len(cfg.RuntimePool.Runtimes) > 0 {
+				refillInterval := 30 * time.Second
+				if cfg.RuntimePool.RefillInterval != "" {
+					if d, err := time.ParseDuration(cfg.RuntimePool.RefillInterval); err == nil {
+						refillInterval = d
+					}
+				}
+				tp := pool.NewRuntimeTemplatePool(be, pool.RuntimePoolConfig{
+					Enabled:        true,
+					PoolSize:       cfg.RuntimePool.PoolSize,
+					RefillInterval: refillInterval,
+					Runtimes:       cfg.RuntimePool.Runtimes,
+				})
+				p.SetTemplatePool(tp)
+				logging.Op().Info("runtime template pool enabled",
+					"runtimes", cfg.RuntimePool.Runtimes,
+					"pool_size", cfg.RuntimePool.PoolSize)
 			}
 
 			if cfg.AutoScale.Enabled {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -200,6 +201,37 @@ func daemonCmd() *cobra.Command {
 					if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 						p.SetMaxGlobalVMs(n)
 						logging.Op().Info("loaded max_global_vms from config", "value", n)
+					}
+				}
+				if v, ok := sysConfig["runtime_pool_enabled"]; ok {
+					if enabled, err := strconv.ParseBool(strings.TrimSpace(v)); err == nil {
+						cfg.RuntimePool.Enabled = enabled
+					}
+				}
+				if v, ok := sysConfig["runtime_pool_size"]; ok {
+					if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n > 0 {
+						cfg.RuntimePool.PoolSize = n
+					}
+				}
+				if v, ok := sysConfig["runtime_pool_refill_interval"]; ok {
+					if d, err := time.ParseDuration(strings.TrimSpace(v)); err == nil && d > 0 {
+						cfg.RuntimePool.RefillInterval = d.String()
+					}
+				}
+				if v, ok := sysConfig["runtime_pool_runtimes"]; ok {
+					trimmed := strings.TrimSpace(v)
+					if trimmed == "" {
+						cfg.RuntimePool.Runtimes = nil
+					} else {
+						parts := strings.Split(trimmed, ",")
+						runtimes := make([]string, 0, len(parts))
+						for _, part := range parts {
+							runtime := strings.TrimSpace(part)
+							if runtime != "" {
+								runtimes = append(runtimes, runtime)
+							}
+						}
+						cfg.RuntimePool.Runtimes = runtimes
 					}
 				}
 			}
