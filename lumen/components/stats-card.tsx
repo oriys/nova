@@ -21,7 +21,7 @@ export function StatsCard({
   return (
     <div
       className={cn(
-        "rounded-xl border border-border bg-card p-6 transition-shadow hover:shadow-md",
+        "rounded-xl border border-border bg-card p-6 transition-all hover:shadow-[0_8px_24px_-6px_oklch(0.596_0.145_163_/_0.08)] active:scale-[0.98] active:-translate-y-[1px]",
         className
       )}
     >
