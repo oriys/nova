@@ -2214,7 +2214,12 @@
     "system": "系統",
     "created": "建立時間",
     "principal": "主體",
-    "scope": "範圍"
+    "scope": "範圍",
+    "permissionBindings": "權限綁定",
+    "noBindings": "未找到權限綁定",
+    "colPermission": "權限",
+    "colApiRoutes": "API 路由",
+    "colUiButtons": "UI 按鈕"
   },
   "volumesPage": {
     "createVolume": "建立儲存卷",

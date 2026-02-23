@@ -166,6 +166,11 @@ func (s *PostgresStore) CreateTenant(ctx context.Context, tenant *TenantRecord) 
 		return nil, err
 	}
 
+	// Assign the basic system role to the new tenant.
+	if err := seedTenantBasicRole(ctx, tx, tenantID); err != nil {
+		return nil, err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit tenant create tx: %w", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/oriys/nova/internal/auth"
+	"github.com/oriys/nova/internal/authz"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/store"
 )
@@ -16,6 +17,10 @@ type RBACHandler struct {
 }
 
 func (h *RBACHandler) RegisterRoutes(mux *http.ServeMux) {
+	// Permission bindings & effective permissions (read-only, no rbac:manage required)
+	mux.HandleFunc("GET /rbac/permission-bindings", h.ListPermissionBindings)
+	mux.HandleFunc("GET /rbac/my-permissions", h.GetMyPermissions)
+
 	// Roles
 	mux.HandleFunc("POST /rbac/roles", h.CreateRole)
 	mux.HandleFunc("GET /rbac/roles", h.ListRoles)
@@ -361,6 +366,133 @@ func (h *RBACHandler) DeleteRoleAssignment(w http.ResponseWriter, r *http.Reques
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": id})
+}
+
+// ─── Permission Bindings & Effective Permissions ────────────────────────────
+
+// ListPermissionBindings returns the full permission → API routes → UI buttons
+// mapping.  This is a read-only, public-within-auth endpoint.
+func (h *RBACHandler) ListPermissionBindings(w http.ResponseWriter, r *http.Request) {
+	bindings := authz.BuildPermissionBindings()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(bindings)
+}
+
+// EffectivePermissionsResponse is the response for GET /rbac/my-permissions.
+type EffectivePermissionsResponse struct {
+	Subject           string            `json:"subject"`
+	TenantID          string            `json:"tenant_id"`
+	Permissions       []string          `json:"permissions"`
+	DBRoles           []string          `json:"db_roles"`
+	ButtonPermissions map[string]bool   `json:"button_permissions"`
+	MenuPermissions   map[string]bool   `json:"menu_permissions"`
+}
+
+// GetMyPermissions returns the effective permissions for the current user.
+// It combines: identity policies (JWT/API key) + DB RBAC role assignments +
+// tenant-level button/menu permissions.
+func (h *RBACHandler) GetMyPermissions(w http.ResponseWriter, r *http.Request) {
+	identity := auth.GetIdentity(r.Context())
+	if identity == nil {
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	scope := store.TenantScopeFromContext(r.Context())
+	tenantID := scope.TenantID
+	if tenantID == "" {
+		tenantID = store.DefaultTenantID
+	}
+
+	resp := EffectivePermissionsResponse{
+		Subject:  identity.Subject,
+		TenantID: tenantID,
+	}
+
+	// 1. Collect permissions from identity policies (hardcoded role map).
+	permSet := make(map[string]bool)
+	for _, pb := range identity.Policies {
+		if pb.Effect == domain.EffectDeny {
+			continue
+		}
+		if pb.Role == domain.RoleAdmin {
+			// Admin gets all permissions.
+			for _, perms := range domain.RolePermissions {
+				for _, p := range perms {
+					permSet[string(p)] = true
+				}
+			}
+			break
+		}
+		if perms, ok := domain.RolePermissions[pb.Role]; ok {
+			for _, p := range perms {
+				permSet[string(p)] = true
+			}
+		}
+	}
+
+	// 2. Resolve DB RBAC role assignments.
+	dbPerms, err := h.Store.ResolveEffectivePermissions(r.Context(), tenantID, identity.Subject)
+	if err == nil {
+		for _, code := range dbPerms {
+			permSet[code] = true
+		}
+	}
+
+	// Collect DB role IDs for reference.
+	dbRoleAssignments, err := h.Store.ListRoleAssignmentsByPrincipal(
+		r.Context(), tenantID, domain.PrincipalUser, identity.Subject, 100, 0,
+	)
+	if err == nil {
+		for _, ra := range dbRoleAssignments {
+			resp.DBRoles = append(resp.DBRoles, ra.RoleID)
+		}
+	}
+	// Also include tenant-level group assignments.
+	groupAssignments, err := h.Store.ListRoleAssignmentsByPrincipal(
+		r.Context(), tenantID, domain.PrincipalGroup, tenantID, 100, 0,
+	)
+	if err == nil {
+		for _, ra := range groupAssignments {
+			resp.DBRoles = append(resp.DBRoles, ra.RoleID)
+		}
+	}
+
+	// 3. Build sorted permission list.
+	codes := make([]string, 0, len(permSet))
+	for code := range permSet {
+		codes = append(codes, code)
+	}
+	sortStrings(codes)
+	resp.Permissions = codes
+
+	// 4. Fetch tenant-level button permissions.
+	resp.ButtonPermissions = make(map[string]bool)
+	if btnPerms, err := h.Store.ListTenantButtonPermissions(r.Context(), tenantID); err == nil {
+		for _, bp := range btnPerms {
+			resp.ButtonPermissions[bp.PermissionKey] = bp.Enabled && permSet[bp.PermissionKey]
+		}
+	}
+
+	// 5. Fetch tenant-level menu permissions.
+	resp.MenuPermissions = make(map[string]bool)
+	if menuPerms, err := h.Store.ListTenantMenuPermissions(r.Context(), tenantID); err == nil {
+		for _, mp := range menuPerms {
+			resp.MenuPermissions[mp.MenuKey] = mp.Enabled
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// sortStrings sorts a slice of strings in place.
+func sortStrings(s []string) {
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j-1] > s[j]; j-- {
+			s[j-1], s[j] = s[j], s[j-1]
+		}
+	}
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

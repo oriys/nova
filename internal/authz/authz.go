@@ -1,6 +1,7 @@
 package authz
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"path"
@@ -12,9 +13,16 @@ import (
 	"github.com/oriys/nova/internal/store"
 )
 
+// PermissionResolver looks up the effective permission codes for a given
+// tenant + subject from the database.  Satisfied by *store.Store.
+type PermissionResolver interface {
+	ResolveEffectivePermissions(ctx context.Context, tenantID, subject string) ([]string, error)
+}
+
 // Authorizer checks whether an identity has the required permission
 type Authorizer struct {
 	defaultRole domain.Role
+	resolver    PermissionResolver // optional; when set, DB RBAC is consulted
 }
 
 // New creates an Authorizer with the given default role
@@ -23,6 +31,12 @@ func New(defaultRole domain.Role) *Authorizer {
 		defaultRole = domain.RoleViewer
 	}
 	return &Authorizer{defaultRole: defaultRole}
+}
+
+// WithResolver sets an optional PermissionResolver for DB-backed RBAC.
+func (a *Authorizer) WithResolver(r PermissionResolver) *Authorizer {
+	a.resolver = r
+	return a
 }
 
 // Check verifies that identity holds perm, optionally scoped to resource.
@@ -65,7 +79,7 @@ func (a *Authorizer) Check(identity *auth.Identity, perm domain.Permission, reso
 		}
 	}
 
-	// Phase 2: Check ALLOW policies
+	// Phase 2: Check ALLOW policies (hardcoded role map)
 	for _, pb := range policies {
 		if pb.Effect == domain.EffectDeny {
 			continue // already processed
@@ -90,6 +104,43 @@ func (a *Authorizer) Check(identity *auth.Identity, perm domain.Permission, reso
 					return nil
 				}
 			}
+		}
+	}
+	return errForbidden
+}
+
+// CheckWithContext is like Check but also consults DB-stored RBAC role
+// assignments when a PermissionResolver is configured.
+func (a *Authorizer) CheckWithContext(ctx context.Context, identity *auth.Identity, perm domain.Permission, resource string) error {
+	// First try the in-memory policy check.
+	if err := a.Check(identity, perm, resource); err == nil {
+		return nil
+	}
+
+	// Fall through to DB RBAC if a resolver is available.
+	if a.resolver == nil || identity == nil {
+		return errForbidden
+	}
+
+	scope := store.TenantScopeFromContext(ctx)
+	if scope.TenantID == "" {
+		return errForbidden
+	}
+
+	codes, err := a.resolver.ResolveEffectivePermissions(ctx, scope.TenantID, identity.Subject)
+	if err != nil {
+		logging.Op().Warn("failed to resolve DB RBAC permissions",
+			"error", err,
+			"subject", identity.Subject,
+			"tenant_id", scope.TenantID,
+		)
+		return errForbidden
+	}
+
+	permStr := string(perm)
+	for _, code := range codes {
+		if code == permStr {
+			return nil
 		}
 	}
 	return errForbidden
@@ -291,6 +342,12 @@ func resolvePermission(method, path string) domain.Permission {
 		return domain.PermMetricsRead
 	}
 
+	// Special case: RBAC read-only endpoints accessible to any authenticated user.
+	// /rbac/my-permissions and /rbac/permission-bindings require only basic read.
+	if method == "GET" && (path == "/rbac/my-permissions" || path == "/rbac/permission-bindings") {
+		return domain.PermFunctionRead
+	}
+
 	for _, rp := range routeTable {
 		if rp.method != method {
 			continue
@@ -363,7 +420,7 @@ func Middleware(authorizer *Authorizer) func(http.Handler) http.Handler {
 			perm := resolvePermission(r.Method, r.URL.Path)
 			resource := extractResource(r.URL.Path)
 
-			if err := authorizer.Check(identity, perm, resource); err != nil {
+			if err := authorizer.CheckWithContext(r.Context(), identity, perm, resource); err != nil {
 				scope := store.TenantScopeFromContext(r.Context())
 				logging.Op().Warn("authorization denied",
 					"subject", identity.Subject,

@@ -304,6 +304,7 @@ type MetadataStore interface {
 	ListRoleAssignments(ctx context.Context, tenantID string, limit, offset int) ([]*RoleAssignmentRecord, error)
 	ListRoleAssignmentsByPrincipal(ctx context.Context, tenantID string, principalType domain.PrincipalType, principalID string, limit, offset int) ([]*RoleAssignmentRecord, error)
 	DeleteRoleAssignment(ctx context.Context, id string) error
+	ResolveEffectivePermissions(ctx context.Context, tenantID, subject string) ([]string, error)
 
 	// Tenant-level menu permissions
 	ListTenantMenuPermissions(ctx context.Context, tenantID string) ([]*MenuPermissionRecord, error)

@@ -177,7 +177,7 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 		// Add authorization middleware
 		if cfg.AuthCfg.Authorization.Enabled {
 			defaultRole := domain.Role(cfg.AuthCfg.Authorization.DefaultRole)
-			authorizer := authz.New(defaultRole)
+			authorizer := authz.New(defaultRole).WithResolver(cfg.Store)
 			handler = authz.Middleware(authorizer)(handler)
 			logging.Op().Info("authorization enabled", "default_role", cfg.AuthCfg.Authorization.DefaultRole)
 		}

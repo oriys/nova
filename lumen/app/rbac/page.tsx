@@ -27,6 +27,7 @@ import {
 import {
   rbacApi,
   tenantsApi,
+  type PermissionBindingInfo,
   type RBACPermission,
   type RBACRole,
   type RBACRoleAssignment,
@@ -35,7 +36,7 @@ import {
 import { cn } from "@/lib/utils"
 
 type RBACRecordTab = "roles" | "permissions" | "assignments"
-type Tab = RBACRecordTab | "tenants" | "menuPermissions" | "interfacePermissions"
+type Tab = RBACRecordTab | "tenants" | "menuPermissions" | "interfacePermissions" | "permissionBindings"
 
 const TAB_WITH_CREATE: Record<Tab, boolean> = {
   roles: true,
@@ -44,6 +45,7 @@ const TAB_WITH_CREATE: Record<Tab, boolean> = {
   tenants: true,
   menuPermissions: false,
   interfacePermissions: false,
+  permissionBindings: false,
 }
 
 export default function RBACPage() {
@@ -56,6 +58,7 @@ export default function RBACPage() {
   const [permissions, setPermissions] = useState<RBACPermission[]>([])
   const [assignments, setAssignments] = useState<RBACRoleAssignment[]>([])
   const [tenants, setTenants] = useState<TenantEntry[]>([])
+  const [bindings, setBindings] = useState<PermissionBindingInfo[]>([])
   const [selectedTenant, setSelectedTenant] = useState("")
 
   const [loading, setLoading] = useState(true)
@@ -100,6 +103,11 @@ export default function RBACPage() {
       if (tab === "assignments") {
         const data = await rbacApi.listRoleAssignments()
         setAssignments(data || [])
+        return
+      }
+      if (tab === "permissionBindings") {
+        const data = await rbacApi.listPermissionBindings()
+        setBindings(data || [])
         return
       }
 
@@ -220,6 +228,7 @@ export default function RBACPage() {
     { key: "tenants", label: tr("tenants") },
     { key: "menuPermissions", label: tr("menuPermissions") },
     { key: "interfacePermissions", label: tr("interfacePermissions") },
+    { key: "permissionBindings", label: tr("permissionBindings") },
   ]
 
   const supportsCreate = TAB_WITH_CREATE[tab]
@@ -630,6 +639,75 @@ export default function RBACPage() {
                   ))}
               </>
             )}
+          </div>
+        )}
+        {tab === "permissionBindings" && (
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("colPermission")}</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("colDescription")}</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("colApiRoutes")}</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("colUiButtons")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  Array.from({ length: 3 }).map((_, index) => (
+                    <tr key={index} className="border-b border-border">
+                      <td colSpan={4} className="px-4 py-3">
+                        <div className="h-4 animate-pulse rounded bg-muted" />
+                      </td>
+                    </tr>
+                  ))
+                ) : bindings.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
+                      <ShieldCheck className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                      {tr("noBindings")}
+                    </td>
+                  </tr>
+                ) : (
+                  bindings.map((b) => (
+                    <tr key={b.permission} className="border-b border-border hover:bg-muted/50">
+                      <td className="px-4 py-3 font-mono text-sm font-medium">{b.permission}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{b.description}</td>
+                      <td className="px-4 py-3 text-sm">
+                        {b.api_routes.length > 0 ? (
+                          <div className="flex flex-col gap-1">
+                            {b.api_routes.map((r, i) => (
+                              <code key={i} className="text-xs">
+                                <span className="font-semibold text-blue-500">{r.method}</span>{" "}
+                                {r.path}
+                              </code>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {b.ui_buttons.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {b.ui_buttons.map((btn) => (
+                              <span
+                                key={btn}
+                                className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                              >
+                                {btn}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

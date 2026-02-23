@@ -2214,7 +2214,12 @@
     "system": "Système",
     "created": "Créé le",
     "principal": "Principal",
-    "scope": "Portée"
+    "scope": "Portée",
+    "permissionBindings": "Liaisons de permissions",
+    "noBindings": "Aucune liaison de permission trouvée",
+    "colPermission": "Permission",
+    "colApiRoutes": "Routes API",
+    "colUiButtons": "Boutons UI"
   },
   "volumesPage": {
     "createVolume": "Créer un volume",

@@ -2214,7 +2214,12 @@
     "system": "システム",
     "created": "作成日",
     "principal": "プリンシパル",
-    "scope": "スコープ"
+    "scope": "スコープ",
+    "permissionBindings": "権限バインディング",
+    "noBindings": "権限バインディングが見つかりません",
+    "colPermission": "権限",
+    "colApiRoutes": "APIルート",
+    "colUiButtons": "UIボタン"
   },
   "volumesPage": {
     "createVolume": "ボリュームを作成",

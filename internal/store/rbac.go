@@ -405,6 +405,42 @@ func (s *PostgresStore) ListRoleAssignmentsByPrincipal(ctx context.Context, tena
 	return assignments, rows.Err()
 }
 
+// ResolveEffectivePermissions returns the set of permission codes granted to a
+// subject within a tenant.  It looks up all role assignments where the
+// principal matches either:
+//   - (principal_type='user', principal_id=subject)
+//   - (principal_type='group', principal_id=tenantID)  -- tenant-wide role
+//
+// Then resolves the permissions from rbac_role_permissions.
+func (s *PostgresStore) ResolveEffectivePermissions(ctx context.Context, tenantID, subject string) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT DISTINCT p.code
+		FROM rbac_role_assignments ra
+		JOIN rbac_role_permissions rp ON rp.role_id = ra.role_id
+		JOIN rbac_permissions p ON p.id = rp.permission_id
+		WHERE ra.tenant_id = $1
+		  AND (
+		    (ra.principal_type = 'user'  AND ra.principal_id = $2) OR
+		    (ra.principal_type = 'group' AND ra.principal_id = $1)
+		  )
+		ORDER BY p.code
+	`, tenantID, subject)
+	if err != nil {
+		return nil, fmt.Errorf("resolve effective permissions: %w", err)
+	}
+	defer rows.Close()
+
+	var codes []string
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			return nil, fmt.Errorf("scan effective permission: %w", err)
+		}
+		codes = append(codes, code)
+	}
+	return codes, rows.Err()
+}
+
 func (s *PostgresStore) DeleteRoleAssignment(ctx context.Context, id string) error {
 	ct, err := s.pool.Exec(ctx, `DELETE FROM rbac_role_assignments WHERE id = $1`, id)
 	if err != nil {

@@ -2214,7 +2214,12 @@
     "system": "系统",
     "created": "创建时间",
     "principal": "主体",
-    "scope": "范围"
+    "scope": "范围",
+    "permissionBindings": "权限绑定",
+    "noBindings": "未找到权限绑定",
+    "colPermission": "权限",
+    "colApiRoutes": "API 路由",
+    "colUiButtons": "UI 按钮"
   },
   "volumesPage": {
     "createVolume": "创建存储卷",

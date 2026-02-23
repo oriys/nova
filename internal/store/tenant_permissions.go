@@ -65,6 +65,69 @@ var DefaultTenantOnlyButtonPermKeys = map[string]bool{
 	"rbac:manage":    true, // RBAC management is platform-admin only
 }
 
+// ─── System Roles ───────────────────────────────────────────────────────────
+
+const (
+	SystemRoleAdminID = "system:admin"
+	SystemRoleBasicID = "system:basic"
+)
+
+// AllPermissionCodes lists every permission code that should be seeded into
+// the rbac_permissions table.
+var AllPermissionCodes = []struct {
+	Code         string
+	ResourceType string
+	Action       string
+	Description  string
+}{
+	{"function:create", "function", "create", "Create functions"},
+	{"function:read", "function", "read", "View functions"},
+	{"function:update", "function", "update", "Update functions"},
+	{"function:delete", "function", "delete", "Delete functions"},
+	{"function:invoke", "function", "invoke", "Invoke functions"},
+	{"runtime:read", "runtime", "read", "View runtimes"},
+	{"runtime:write", "runtime", "write", "Manage runtimes"},
+	{"config:read", "config", "read", "View platform configuration"},
+	{"config:write", "config", "write", "Modify platform configuration"},
+	{"snapshot:read", "snapshot", "read", "View snapshots"},
+	{"snapshot:write", "snapshot", "write", "Manage snapshots"},
+	{"apikey:manage", "apikey", "manage", "Manage API keys"},
+	{"secret:manage", "secret", "manage", "Manage secrets"},
+	{"workflow:manage", "workflow", "manage", "Manage workflows"},
+	{"workflow:invoke", "workflow", "invoke", "Invoke workflows"},
+	{"schedule:manage", "schedule", "manage", "Manage schedules"},
+	{"gateway:manage", "gateway", "manage", "Manage gateway routes"},
+	{"log:read", "log", "read", "View logs"},
+	{"metrics:read", "metrics", "read", "View metrics"},
+	{"app:publish", "app", "publish", "Publish applications"},
+	{"app:read", "app", "read", "View applications"},
+	{"app:install", "app", "install", "Install applications"},
+	{"app:manage", "app", "manage", "Manage applications"},
+	{"rbac:manage", "rbac", "manage", "Manage RBAC roles and assignments"},
+}
+
+// basicRolePermissions lists the permission codes granted to the basic tenant
+// role. Platform-admin-only permissions are excluded.
+var basicRolePermissions = map[string]bool{
+	"function:create": true,
+	"function:read":   true,
+	"function:update": true,
+	"function:delete": true,
+	"function:invoke": true,
+	"runtime:read":    true,
+	"snapshot:read":   true,
+	"snapshot:write":  true,
+	"apikey:manage":   true,
+	"secret:manage":   true,
+	"workflow:manage": true,
+	"workflow:invoke": true,
+	"schedule:manage": true,
+	"log:read":        true,
+	"metrics:read":    true,
+	"app:read":        true,
+	"app:install":     true,
+}
+
 // AllButtonPermissionKeys defines every button-level permission the UI can check.
 var AllButtonPermissionKeys = []string{
 	"function:create",
@@ -311,4 +374,114 @@ func (s *PostgresStore) FixNonDefaultTenantButtonPermissions(ctx context.Context
 		return 0, fmt.Errorf("fix non-default tenant button permissions: %w", err)
 	}
 	return ct.RowsAffected(), nil
+}
+
+// ─── System Role Seeding ────────────────────────────────────────────────────
+
+// seedSystemRolesAndPermissions seeds rbac_permissions, the two system roles
+// (admin & basic), their permission mappings, and the default-tenant admin
+// assignment.  It is idempotent (ON CONFLICT DO NOTHING everywhere).
+func seedSystemRolesAndPermissions(ctx context.Context, exec dbExecer) error {
+	// 1. Seed all permission rows.
+	for _, p := range AllPermissionCodes {
+		if _, err := exec.Exec(ctx, `
+			INSERT INTO rbac_permissions (id, code, resource_type, action, description, created_at)
+			VALUES ($1, $2, $3, $4, $5, NOW())
+			ON CONFLICT (id) DO NOTHING
+		`, p.Code, p.Code, p.ResourceType, p.Action, p.Description); err != nil {
+			return fmt.Errorf("seed permission %s: %w", p.Code, err)
+		}
+	}
+
+	// 2. Seed system roles.
+	for _, role := range []struct {
+		id   string
+		name string
+	}{
+		{SystemRoleAdminID, "admin"},
+		{SystemRoleBasicID, "basic"},
+	} {
+		if _, err := exec.Exec(ctx, `
+			INSERT INTO rbac_roles (id, tenant_id, name, is_system, created_at, updated_at)
+			VALUES ($1, $2, $3, TRUE, NOW(), NOW())
+			ON CONFLICT (id) DO NOTHING
+		`, role.id, DefaultTenantID, role.name); err != nil {
+			return fmt.Errorf("seed system role %s: %w", role.name, err)
+		}
+	}
+
+	// 3. Map permissions to roles.
+	for _, p := range AllPermissionCodes {
+		// admin gets every permission
+		if _, err := exec.Exec(ctx, `
+			INSERT INTO rbac_role_permissions (role_id, permission_id)
+			VALUES ($1, $2)
+			ON CONFLICT DO NOTHING
+		`, SystemRoleAdminID, p.Code); err != nil {
+			return fmt.Errorf("map admin permission %s: %w", p.Code, err)
+		}
+
+		// basic gets only the non-platform-admin permissions
+		if basicRolePermissions[p.Code] {
+			if _, err := exec.Exec(ctx, `
+				INSERT INTO rbac_role_permissions (role_id, permission_id)
+				VALUES ($1, $2)
+				ON CONFLICT DO NOTHING
+			`, SystemRoleBasicID, p.Code); err != nil {
+				return fmt.Errorf("map basic permission %s: %w", p.Code, err)
+			}
+		}
+	}
+
+	// 4. Assign admin role to default tenant.
+	if _, err := exec.Exec(ctx, `
+		INSERT INTO rbac_role_assignments
+			(id, tenant_id, principal_type, principal_id, role_id, scope_type, scope_id, created_by, created_at)
+		VALUES ($1, $2, 'group', $2, $3, 'tenant', $2, 'system', NOW())
+		ON CONFLICT (id) DO NOTHING
+	`, "system:default:admin", DefaultTenantID, SystemRoleAdminID); err != nil {
+		return fmt.Errorf("assign admin role to default tenant: %w", err)
+	}
+
+	return nil
+}
+
+// seedTenantBasicRole assigns the basic system role to a tenant.
+// exec may be a pool or transaction.
+func seedTenantBasicRole(ctx context.Context, exec dbExecer, tenantID string) error {
+	assignmentID := "system:" + tenantID + ":basic"
+	if _, err := exec.Exec(ctx, `
+		INSERT INTO rbac_role_assignments
+			(id, tenant_id, principal_type, principal_id, role_id, scope_type, scope_id, created_by, created_at)
+		VALUES ($1, $2, 'group', $2, $3, 'tenant', $2, 'system', NOW())
+		ON CONFLICT (id) DO NOTHING
+	`, assignmentID, tenantID, SystemRoleBasicID); err != nil {
+		return fmt.Errorf("assign basic role to tenant %s: %w", tenantID, err)
+	}
+	return nil
+}
+
+// SeedBasicRoleForExistingTenants assigns the basic role to all non-default
+// tenants that don't already have it.  Idempotent.
+func (s *PostgresStore) SeedBasicRoleForExistingTenants(ctx context.Context) (int64, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id FROM tenants WHERE id != $1
+	`, DefaultTenantID)
+	if err != nil {
+		return 0, fmt.Errorf("list non-default tenants: %w", err)
+	}
+	defer rows.Close()
+
+	var count int64
+	for rows.Next() {
+		var tid string
+		if err := rows.Scan(&tid); err != nil {
+			return count, fmt.Errorf("scan tenant id: %w", err)
+		}
+		if err := seedTenantBasicRole(ctx, s.pool, tid); err != nil {
+			return count, err
+		}
+		count++
+	}
+	return count, rows.Err()
 }

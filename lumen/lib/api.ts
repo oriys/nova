@@ -295,6 +295,29 @@ export interface ButtonPermission {
   created_at: string;
 }
 
+// ─── Permission Bindings & Effective Permissions ────────────────────────────
+
+export interface RouteBinding {
+  method: string;
+  path: string;
+}
+
+export interface PermissionBindingInfo {
+  permission: string;
+  description: string;
+  api_routes: RouteBinding[];
+  ui_buttons: string[];
+}
+
+export interface EffectivePermissions {
+  subject: string;
+  tenant_id: string;
+  permissions: string[];
+  db_roles: string[];
+  button_permissions: Record<string, boolean>;
+  menu_permissions: Record<string, boolean>;
+}
+
 export interface LogEntry {
   id: string;
   request_id?: string;
@@ -2767,6 +2790,13 @@ export const rbacApi = {
     request<{ status: string; id: string }>(`/rbac/assignments/${id}`, {
       method: "DELETE",
     }),
+
+  // Permission Bindings & Effective Permissions
+  listPermissionBindings: () =>
+    request<PermissionBindingInfo[]>("/rbac/permission-bindings"),
+
+  getMyPermissions: () =>
+    request<EffectivePermissions>("/rbac/my-permissions"),
 };
 
 // ─── API Docs Types ─────────────────────────────────────────────────────────

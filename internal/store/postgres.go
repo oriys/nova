@@ -909,6 +909,11 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		}
 	}
 
+	// Seed system RBAC roles (admin & basic), permissions, and default-tenant assignment.
+	if err := seedSystemRolesAndPermissions(ctx, tx); err != nil {
+		return err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit schema transaction: %w", err)
 	}
@@ -917,6 +922,11 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 	// non-default tenants that were seeded before this restriction existed.
 	if _, err := s.FixNonDefaultTenantButtonPermissions(ctx); err != nil {
 		return fmt.Errorf("fix non-default tenant button permissions: %w", err)
+	}
+
+	// One-time migration: assign basic role to existing non-default tenants.
+	if _, err := s.SeedBasicRoleForExistingTenants(ctx); err != nil {
+		return fmt.Errorf("seed basic role for existing tenants: %w", err)
 	}
 
 	return nil
