@@ -912,6 +912,13 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit schema transaction: %w", err)
 	}
+
+	// One-time migration: disable platform-admin-only button permissions for
+	// non-default tenants that were seeded before this restriction existed.
+	if _, err := s.FixNonDefaultTenantButtonPermissions(ctx); err != nil {
+		return fmt.Errorf("fix non-default tenant button permissions: %w", err)
+	}
+
 	return nil
 }
 

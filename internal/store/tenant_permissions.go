@@ -55,6 +55,16 @@ var DefaultTenantOnlyMenuKeys = map[string]bool{
 	"rbac":           true,
 }
 
+// DefaultTenantOnlyButtonPermKeys are button-level permissions reserved for
+// the default (platform) tenant.  Non-default tenants get these disabled
+// because the underlying resources are platform-global.
+var DefaultTenantOnlyButtonPermKeys = map[string]bool{
+	"runtime:write":  true, // runtimes are shared across tenants
+	"config:write":   true, // platform configuration is global
+	"gateway:manage": true, // gateway routing is platform-level
+	"rbac:manage":    true, // RBAC management is platform-admin only
+}
+
 // AllButtonPermissionKeys defines every button-level permission the UI can check.
 var AllButtonPermissionKeys = []string{
 	"function:create",
@@ -250,12 +260,17 @@ func seedMenuPermissions(ctx context.Context, exec dbExecer, tenantID string) er
 // seedButtonPermissions inserts the default button permissions using the given
 // executor (a pool or transaction).
 func seedButtonPermissions(ctx context.Context, exec dbExecer, tenantID string) error {
+	isDefault := tenantID == DefaultTenantID
 	for _, key := range AllButtonPermissionKeys {
+		enabled := true
+		if !isDefault && DefaultTenantOnlyButtonPermKeys[key] {
+			enabled = false
+		}
 		_, err := exec.Exec(ctx, `
 			INSERT INTO tenant_button_permissions (tenant_id, permission_key, enabled, created_at)
-			VALUES ($1, $2, TRUE, NOW())
+			VALUES ($1, $2, $3, NOW())
 			ON CONFLICT (tenant_id, permission_key) DO NOTHING
-		`, tenantID, key)
+		`, tenantID, key, enabled)
 		if err != nil {
 			return fmt.Errorf("seed button permission %s for tenant %s: %w", key, tenantID, err)
 		}
@@ -271,7 +286,29 @@ func (s *PostgresStore) SeedDefaultMenuPermissions(ctx context.Context, tenantID
 }
 
 // SeedDefaultButtonPermissions inserts the default set of button permissions
-// for a tenant. All button permissions are enabled by default.
+// for a tenant. The default tenant gets all buttons enabled; other tenants
+// get everything except platform-admin-only buttons.
 func (s *PostgresStore) SeedDefaultButtonPermissions(ctx context.Context, tenantID string) error {
 	return seedButtonPermissions(ctx, s.pool, tenantID)
+}
+
+// FixNonDefaultTenantButtonPermissions disables platform-admin-only button
+// permissions for all non-default tenants. This is a one-time migration for
+// tenants created before the restricted seeding was introduced.
+func (s *PostgresStore) FixNonDefaultTenantButtonPermissions(ctx context.Context) (int64, error) {
+	keys := make([]string, 0, len(DefaultTenantOnlyButtonPermKeys))
+	for k := range DefaultTenantOnlyButtonPermKeys {
+		keys = append(keys, k)
+	}
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE tenant_button_permissions
+		SET enabled = FALSE
+		WHERE tenant_id != $1
+		  AND permission_key = ANY($2)
+		  AND enabled = TRUE
+	`, DefaultTenantID, keys)
+	if err != nil {
+		return 0, fmt.Errorf("fix non-default tenant button permissions: %w", err)
+	}
+	return ct.RowsAffected(), nil
 }
