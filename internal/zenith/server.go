@@ -29,6 +29,9 @@ const defaultBodyLimit = 10 << 20 // 10MB
 type Config struct {
 	NovaURL       string
 	CometGRPCAddr string
+	CoronaURL     string
+	NebulaURL     string
+	AuroraURL     string
 	Timeout       time.Duration
 }
 
@@ -57,6 +60,27 @@ func New(cfg Config) (*Server, error) {
 	}
 	if strings.TrimSpace(cfg.CometGRPCAddr) == "" {
 		return nil, fmt.Errorf("comet gRPC address is required")
+	}
+	if strings.TrimSpace(cfg.CoronaURL) != "" {
+		u, err := parseTargetURL(cfg.CoronaURL)
+		if err != nil {
+			return nil, fmt.Errorf("parse corona URL: %w", err)
+		}
+		cfg.CoronaURL = u.String()
+	}
+	if strings.TrimSpace(cfg.NebulaURL) != "" {
+		u, err := parseTargetURL(cfg.NebulaURL)
+		if err != nil {
+			return nil, fmt.Errorf("parse nebula URL: %w", err)
+		}
+		cfg.NebulaURL = u.String()
+	}
+	if strings.TrimSpace(cfg.AuroraURL) != "" {
+		u, err := parseTargetURL(cfg.AuroraURL)
+		if err != nil {
+			return nil, fmt.Errorf("parse aurora URL: %w", err)
+		}
+		cfg.AuroraURL = u.String()
 	}
 
 	novaTarget, err := parseTargetURL(cfg.NovaURL)
@@ -279,6 +303,29 @@ func (s *Server) handleCompositeHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	for _, dep := range []struct {
+		name string
+		url  string
+	}{
+		{name: "corona", url: s.cfg.CoronaURL},
+		{name: "nebula", url: s.cfg.NebulaURL},
+		{name: "aurora", url: s.cfg.AuroraURL},
+	} {
+		if strings.TrimSpace(dep.url) == "" {
+			continue
+		}
+		status, err := s.checkHTTPComponent(ctx, dep.url)
+		if err != nil {
+			components[dep.name] = "unhealthy: " + err.Error()
+			allHealthy = false
+			continue
+		}
+		components[dep.name] = status
+		if status != "healthy" {
+			allHealthy = false
+		}
+	}
+
 	if !postgresKnown {
 		postgresHealthy = allHealthy
 	}
@@ -366,6 +413,62 @@ func (s *Server) fetchCometPoolStats(ctx context.Context) (int64, *int64, error)
 		}
 	}
 	return activeVMs, totalPoolsPtr, nil
+}
+
+func (s *Server) checkHTTPComponent(ctx context.Context, baseURL string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseURL, "/")+"/health", nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, defaultBodyLimit))
+	if err != nil {
+		return "", fmt.Errorf("read response body: %w", err)
+	}
+	if len(body) == 0 {
+		return "healthy", nil
+	}
+
+	payload := map[string]any{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		// Some services may return plain text; treat HTTP 2xx as healthy.
+		return "healthy", nil
+	}
+
+	rawStatus, ok := payload["status"]
+	if !ok {
+		return "healthy", nil
+	}
+
+	statusValue, ok := rawStatus.(string)
+	if !ok {
+		return "healthy", nil
+	}
+	status := strings.ToLower(strings.TrimSpace(statusValue))
+	switch status {
+	case "", "ok", "healthy":
+		return "healthy", nil
+	case "degraded":
+		return "degraded", nil
+	case "error", "down", "unhealthy":
+		return "unhealthy", nil
+	default:
+		if strings.HasPrefix(status, "healthy") {
+			return "healthy", nil
+		}
+		if strings.HasPrefix(status, "unhealthy") {
+			return "unhealthy", nil
+		}
+		return status, nil
+	}
 }
 
 func extractPostgresHealth(payload map[string]any) (bool, bool) {

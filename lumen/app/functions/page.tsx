@@ -193,6 +193,7 @@ export default function FunctionsPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [totalFunctions, setTotalFunctions] = useState(0)
+  const [paginationTotal, setPaginationTotal] = useState(0)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -274,21 +275,13 @@ export default function FunctionsPage() {
       setError(null)
 
       const offset = (page - 1) * pageSize
-      const [funcPage, metrics, rts, routes] = await Promise.all([
-        functionsApi.listPage(
-          debouncedSearchQuery || undefined,
-          pageSize,
-          offset,
-          runtimeFilter === "all" ? undefined : runtimeFilter
-        ),
+      const [metrics, rts, routes] = await Promise.all([
         metricsApi.global(),
         runtimesApi.list(),
         gatewayApi.listRoutes().catch(() => []),
       ])
 
-      const funcs = funcPage.items
-      // Transform functions with their metrics
-      const transformedFuncs = funcs.map((fn) => {
+      const transformWithMetrics = (fn: NovaFunction) => {
         const funcMetrics = metrics.functions?.[fn.id]
         return transformFunction(fn, funcMetrics ? {
           function_id: fn.id,
@@ -296,18 +289,71 @@ export default function FunctionsPage() {
           invocations: funcMetrics,
           pool: { active_vms: 0, busy_vms: 0, idle_vms: 0 },
         } : undefined)
-      })
+      }
 
-      setFunctions(transformedFuncs)
-      setRawFunctions(funcs)
-      setTotalFunctions(funcPage.total)
+      let pageItems: NovaFunction[] = []
+      let transformedPage: FunctionData[] = []
+      let backendTotal = 0
+      let currentPaginationTotal = 0
+
+      if (statusFilter === "all") {
+        const funcPage = await functionsApi.listPage(
+          debouncedSearchQuery || undefined,
+          pageSize,
+          offset,
+          runtimeFilter === "all" ? undefined : runtimeFilter
+        )
+
+        pageItems = funcPage.items
+        transformedPage = pageItems.map(transformWithMetrics)
+        backendTotal = funcPage.total
+        currentPaginationTotal = funcPage.total
+      } else {
+        const runtimeValue = runtimeFilter === "all" ? undefined : runtimeFilter
+        const allFunctions: NovaFunction[] = []
+        let allTotal = 0
+        let nextOffset = 0
+        const batchSize = Math.max(100, pageSize)
+
+        while (true) {
+          const result = await functionsApi.listPage(
+            debouncedSearchQuery || undefined,
+            batchSize,
+            nextOffset,
+            runtimeValue
+          )
+          if (nextOffset === 0) {
+            allTotal = result.total
+          }
+          allFunctions.push(...result.items)
+          nextOffset += result.items.length
+          if (allFunctions.length >= allTotal || result.items.length === 0) {
+            break
+          }
+        }
+
+        const filteredPairs = allFunctions
+          .map((fn) => ({ raw: fn, transformed: transformWithMetrics(fn) }))
+          .filter((pair) => pair.transformed.status === statusFilter)
+
+        currentPaginationTotal = filteredPairs.length
+        const pagedPairs = filteredPairs.slice(offset, offset + pageSize)
+        pageItems = pagedPairs.map((pair) => pair.raw)
+        transformedPage = pagedPairs.map((pair) => pair.transformed)
+        backendTotal = allTotal
+      }
+
+      setFunctions(transformedPage)
+      setRawFunctions(pageItems)
+      setTotalFunctions(backendTotal)
+      setPaginationTotal(currentPaginationTotal)
       setRuntimes(rts.map(transformRuntime))
       const nextHasInvocations = (metrics.invocations?.total || 0) > 0
       const nextHasGatewayRoutes = (routes?.length || 0) > 0
       setHasInvocations(nextHasInvocations)
       setHasGatewayRoutes(nextHasGatewayRoutes)
       syncOnboardingStateFromData({
-        hasFunctionCreated: funcPage.total > 0,
+        hasFunctionCreated: backendTotal > 0,
         hasFunctionInvoked: nextHasInvocations,
         hasGatewayRouteCreated: nextHasGatewayRoutes,
       })
@@ -322,7 +368,7 @@ export default function FunctionsPage() {
         setHasLoadedOnce(true)
       }
     }
-  }, [debouncedSearchQuery, page, pageSize, runtimeFilter])
+  }, [debouncedSearchQuery, page, pageSize, runtimeFilter, statusFilter])
 
   useEffect(() => {
     fetchData()
@@ -371,7 +417,7 @@ export default function FunctionsPage() {
     setPage(1)
   }, [debouncedSearchQuery, statusFilter, runtimeFilter])
 
-  const totalPages = Math.max(1, Math.ceil(totalFunctions / pageSize))
+  const totalPages = Math.max(1, Math.ceil(paginationTotal / pageSize))
   useEffect(() => {
     if (page > totalPages) setPage(totalPages)
   }, [page, totalPages])
@@ -616,8 +662,9 @@ export default function FunctionsPage() {
     !loading &&
     totalFunctions === 0 &&
     !searchQuery.trim() &&
-    runtimeFilter === "all"
-  const noFilterResult = !loading && statusFilter === "all" && totalFunctions === 0
+    runtimeFilter === "all" &&
+    statusFilter === "all"
+  const noFilterResult = !loading && !noFunctions && paginationTotal === 0
 
   return (
     <DashboardLayout>
@@ -818,9 +865,9 @@ export default function FunctionsPage() {
           />
         )}
 
-        {!loading && filteredFunctions.length > 0 && (
+        {!loading && paginationTotal > 0 && (
           <Pagination
-            totalItems={totalFunctions}
+            totalItems={paginationTotal}
             page={page}
             pageSize={pageSize}
             onPageChange={setPage}

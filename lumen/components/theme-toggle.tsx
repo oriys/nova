@@ -1,12 +1,14 @@
 "use client"
 
 import { useTheme } from "next-themes"
+import { useTranslations } from "next-intl"
 import { useEffect, useState, useRef } from "react"
 import { Sun, Moon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme()
+  const t = useTranslations("header")
   const [mounted, setMounted] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
 
@@ -58,6 +60,7 @@ export function ThemeToggle() {
   if (!mounted) return null
 
   const isDark = resolvedTheme === "dark"
+  const toggleLabel = isDark ? t("switchToLightMode") : t("switchToDarkMode")
 
   return (
     <Button
@@ -65,7 +68,8 @@ export function ThemeToggle() {
       variant="ghost"
       size="icon"
       onClick={toggleTheme}
-      title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      aria-label={toggleLabel}
+      title={toggleLabel}
     >
       {isDark ? (
         <Sun className="h-5 w-5 text-muted-foreground" />

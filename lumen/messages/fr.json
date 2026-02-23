@@ -467,7 +467,14 @@
     "notificationFilterAll": "Toutes",
     "notificationFilterUnread": "Non lues",
     "notificationMarkRead": "Marquer comme lue",
-    "notificationOpenFunction": "Ouvrir la fonction"
+    "notificationOpenFunction": "Ouvrir la fonction",
+    "userMenu": "Menu utilisateur",
+    "unknownUser": "Utilisateur inconnu",
+    "superAdminAllTenants": "Super admin : tous les locataires",
+    "tenantsValue": "Locataires : {tenants}",
+    "signOut": "Se déconnecter",
+    "switchToLightMode": "Passer en mode clair",
+    "switchToDarkMode": "Passer en mode sombre"
   },
   "scopeSwitcher": {
     "failedToLoad": "Échec du chargement des options de locataire.",
@@ -638,6 +645,7 @@
     "coldStartRate": "Taux de démarrage à froid",
     "coldWarmRatio": "{cold} à froid / {warm} à chaud",
     "vmPool": "Pool de VM",
+    "poolCount": "Nombre de pools",
     "activeVms": "{count} VM actives",
     "vmLifecycle": "Cycle de vie VM",
     "vmsCreated": "{count} créées",

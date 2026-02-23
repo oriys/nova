@@ -335,6 +335,13 @@ export default function DashboardPage() {
           data={timeSeries}
           range={timeRange}
           onRangeChange={handleRangeChange}
+          vmMetrics={systemMetrics ? {
+            activeVms: healthStatus?.components?.pool?.active_vms ?? 0,
+            totalPools: healthStatus?.components?.pool?.total_pools ?? 0,
+            created: systemMetrics.vms.created,
+            stopped: systemMetrics.vms.stopped,
+            crashed: systemMetrics.vms.crashed,
+          } : undefined}
         />
 
         {/* Heatmap */}

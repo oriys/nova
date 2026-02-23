@@ -717,14 +717,14 @@ export function Header({ title, description }: HeaderProps) {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label="User menu" title="User menu">
+            <Button variant="ghost" size="icon" aria-label={t("userMenu")} title={t("userMenu")}>
               <User className="h-5 w-5 text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel className="space-y-0.5">
               <div className="text-sm font-medium text-foreground">
-                {session?.displayName || "Unknown user"}
+                {session?.displayName || t("unknownUser")}
               </div>
               <div className="text-xs text-muted-foreground">
                 @{session?.username || "-"}
@@ -735,8 +735,8 @@ export function Header({ title, description }: HeaderProps) {
               <span className="inline-flex items-center gap-1">
                 <Shield className="h-3.5 w-3.5" />
                 {session?.canAccessAllTenants
-                  ? "Super admin: all tenants"
-                  : `Tenants: ${session?.tenantIds.join(", ") || "-"}`}
+                  ? t("superAdminAllTenants")
+                  : t("tenantsValue", { tenants: session?.tenantIds.join(", ") || "-" })}
               </span>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -747,7 +747,7 @@ export function Header({ title, description }: HeaderProps) {
               }}
             >
               <LogOut className="h-4 w-4" />
-              Sign out
+              {t("signOut")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

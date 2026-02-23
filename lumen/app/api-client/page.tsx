@@ -177,6 +177,7 @@ function KeyValueEditor({
             type="checkbox"
             checked={pair.enabled}
             onChange={(e) => update(pair.id, "enabled", e.target.checked)}
+            aria-label={`${keyPlaceholder} ${pair.key || pair.id}`}
             className="h-4 w-4 rounded border-border accent-primary"
           />
           <Input

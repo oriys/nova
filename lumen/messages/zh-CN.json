@@ -467,7 +467,14 @@
     "notificationFilterAll": "全部",
     "notificationFilterUnread": "未读",
     "notificationMarkRead": "标记已读",
-    "notificationOpenFunction": "打开函数"
+    "notificationOpenFunction": "打开函数",
+    "userMenu": "用户菜单",
+    "unknownUser": "未知用户",
+    "superAdminAllTenants": "超级管理员：全部租户",
+    "tenantsValue": "租户：{tenants}",
+    "signOut": "退出登录",
+    "switchToLightMode": "切换到浅色模式",
+    "switchToDarkMode": "切换到深色模式"
   },
   "scopeSwitcher": {
     "failedToLoad": "加载租户选项失败。",
@@ -638,6 +645,7 @@
     "coldStartRate": "冷启动率",
     "coldWarmRatio": "{cold} 次冷启动 / {warm} 次热启动",
     "vmPool": "虚拟机池",
+    "poolCount": "池数量",
     "activeVms": "{count} 个活跃虚拟机",
     "vmLifecycle": "虚拟机生命周期",
     "vmsCreated": "已创建 {count}",

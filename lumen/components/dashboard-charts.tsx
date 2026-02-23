@@ -41,26 +41,34 @@ interface DashboardChartsProps {
   range: TimeRange
   onRangeChange: (range: TimeRange) => void
   loading?: boolean
+  vmMetrics?: {
+    activeVms: number
+    totalPools: number
+    created: number
+    stopped: number
+    crashed: number
+  }
 }
 
 function formatTime(iso: string, range: TimeRange): string {
   const d = new Date(iso)
   // For ranges <= 1h, show HH:mm:ss; for larger ranges show HH:mm
   if (range === "1m" || range === "5m" || range === "15m") {
-    return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })
   }
   if (range === "3d" || range === "7d" || range === "21d") {
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " " +
-      d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " +
+      d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false })
   }
   if (range === "12h" || range === "24h") {
-    return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })
+    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false })
   }
-  return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
+  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
 }
 
-export function DashboardCharts({ data, range, onRangeChange, loading }: DashboardChartsProps) {
+export function DashboardCharts({ data, range, onRangeChange, loading, vmMetrics }: DashboardChartsProps) {
   const t = useTranslations("charts")
+  const td = useTranslations("dashboard")
   const formattedData = data.map((d) => ({
     ...d,
     time: formatTime(d.time, range),
@@ -110,6 +118,31 @@ export function DashboardCharts({ data, range, onRangeChange, loading }: Dashboa
   return (
     <div className="space-y-4">
       <div className="flex justify-end">{rangeSelector}</div>
+      {vmMetrics && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <h3 className="text-sm font-semibold text-card-foreground">{td("vmPool")}</h3>
+            <p className="mt-2 text-lg font-semibold text-card-foreground">
+              {td("activeVms", { count: vmMetrics.activeVms })}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {td("poolCount")}: {vmMetrics.totalPools}
+            </p>
+          </div>
+          <div className="rounded-xl border border-border bg-card p-4">
+            <h3 className="text-sm font-semibold text-card-foreground">{td("vmLifecycle")}</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {td("vmsCreated", { count: vmMetrics.created })}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {td("vmsStopped", { count: vmMetrics.stopped })}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {td("vmsCrashed", { count: vmMetrics.crashed })}
+            </p>
+          </div>
+        </div>
+      )}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Invocations Chart */}
         <div className="rounded-xl border border-border bg-card p-6">

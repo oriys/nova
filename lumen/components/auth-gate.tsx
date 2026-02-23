@@ -2,6 +2,7 @@
 
 import { PropsWithChildren, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import {
   AUTH_CHANGED_EVENT,
   getAuthSession,
@@ -23,6 +24,7 @@ function isSafeRedirectTarget(target: string | null): target is string {
 }
 
 export function AuthGate({ children }: PropsWithChildren) {
+  const tc = useTranslations("common");
   const router = useRouter();
   const pathname = usePathname() || "/";
   const searchParams = useSearchParams();
@@ -67,7 +69,16 @@ export function AuthGate({ children }: PropsWithChildren) {
   }, [authVersion, nextParam, pathname, queryString, router]);
 
   if (!ready) {
-    return null;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div
+          role="status"
+          aria-live="polite"
+          aria-label={tc("loading")}
+          className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"
+        />
+      </div>
+    );
   }
 
   return <>{children}</>;

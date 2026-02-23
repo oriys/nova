@@ -467,7 +467,14 @@
     "notificationFilterAll": "全部",
     "notificationFilterUnread": "未讀",
     "notificationMarkRead": "標示已讀",
-    "notificationOpenFunction": "開啟函數"
+    "notificationOpenFunction": "開啟函數",
+    "userMenu": "使用者選單",
+    "unknownUser": "未知使用者",
+    "superAdminAllTenants": "超級管理員：全部租戶",
+    "tenantsValue": "租戶：{tenants}",
+    "signOut": "登出",
+    "switchToLightMode": "切換到淺色模式",
+    "switchToDarkMode": "切換到深色模式"
   },
   "scopeSwitcher": {
     "failedToLoad": "載入租戶選項失敗。",
@@ -638,6 +645,7 @@
     "coldStartRate": "冷啟動率",
     "coldWarmRatio": "{cold} 次冷啟動 / {warm} 次熱啟動",
     "vmPool": "虛擬機池",
+    "poolCount": "池數量",
     "activeVms": "{count} 個活躍虛擬機",
     "vmLifecycle": "虛擬機生命週期",
     "vmsCreated": "已建立 {count}",

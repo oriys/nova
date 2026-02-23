@@ -19,6 +19,9 @@ func serveCmd() *cobra.Command {
 		listenAddr    string
 		novaURL       string
 		cometGRPCAddr string
+		coronaURL     string
+		nebulaURL     string
+		auroraURL     string
 		timeout       time.Duration
 		logLevel      string
 	)
@@ -34,6 +37,9 @@ func serveCmd() *cobra.Command {
 			handler, err := zenith.New(zenith.Config{
 				NovaURL:       novaURL,
 				CometGRPCAddr: cometGRPCAddr,
+				CoronaURL:     coronaURL,
+				NebulaURL:     nebulaURL,
+				AuroraURL:     auroraURL,
 				Timeout:       timeout,
 			})
 			if err != nil {
@@ -48,7 +54,15 @@ func serveCmd() *cobra.Command {
 
 			errCh := make(chan error, 1)
 			go func() {
-				logging.Op().Info("Zenith gateway started", "addr", listenAddr, "nova", novaURL, "comet_grpc", cometGRPCAddr)
+				logging.Op().Info(
+					"Zenith gateway started",
+					"addr", listenAddr,
+					"nova", novaURL,
+					"comet_grpc", cometGRPCAddr,
+					"corona", coronaURL,
+					"nebula", nebulaURL,
+					"aurora", auroraURL,
+				)
 				if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 					errCh <- err
 				}
@@ -75,6 +89,9 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&listenAddr, "listen", ":8080", "Zenith listen address")
 	cmd.Flags().StringVar(&novaURL, "nova-url", "http://127.0.0.1:8081", "Nova control plane base URL")
 	cmd.Flags().StringVar(&cometGRPCAddr, "comet-grpc", "127.0.0.1:9090", "Comet gRPC address")
+	cmd.Flags().StringVar(&coronaURL, "corona-url", "", "Corona scheduler base URL (optional, used for health aggregation)")
+	cmd.Flags().StringVar(&nebulaURL, "nebula-url", "", "Nebula event bus base URL (optional, used for health aggregation)")
+	cmd.Flags().StringVar(&auroraURL, "aurora-url", "", "Aurora observability base URL (optional, used for health aggregation)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Second, "Upstream timeout")
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level")
 

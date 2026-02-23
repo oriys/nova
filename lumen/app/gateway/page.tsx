@@ -1043,6 +1043,7 @@ export default function GatewayPage() {
                       type="checkbox"
                       checked={allFilteredSelected}
                       onChange={(event) => toggleSelectAllRoutes(event.target.checked)}
+                      aria-label={g("table.id")}
                       className="h-4 w-4 rounded border-border"
                     />
                   </th>
@@ -1081,6 +1082,7 @@ export default function GatewayPage() {
                         type="checkbox"
                         checked={selectedRouteIDs.has(route.id)}
                         onChange={(event) => toggleSelectRoute(route.id, event.target.checked)}
+                        aria-label={`${g("table.id")} ${route.id}`}
                         className="h-4 w-4 rounded border-border"
                       />
                     </td>

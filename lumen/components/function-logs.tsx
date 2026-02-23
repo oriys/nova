@@ -159,13 +159,13 @@ export function FunctionLogs({
             filteredLogs.map((log) => {
               const config = levelConfig[log.level]
               const timestamp = new Date(log.timestamp)
-              const formattedTime = timestamp.toLocaleTimeString("en-US", {
+              const formattedTime = timestamp.toLocaleTimeString(undefined, {
                 hour: "2-digit",
                 minute: "2-digit",
                 second: "2-digit",
                 fractionalSecondDigits: 3,
               })
-              const formattedDate = timestamp.toLocaleDateString("en-US", {
+              const formattedDate = timestamp.toLocaleDateString(undefined, {
                 month: "short",
                 day: "numeric",
               })

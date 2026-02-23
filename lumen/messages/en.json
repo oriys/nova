@@ -479,7 +479,14 @@
     "notificationFilterAll": "All",
     "notificationFilterUnread": "Unread",
     "notificationMarkRead": "Mark read",
-    "notificationOpenFunction": "Open function"
+    "notificationOpenFunction": "Open function",
+    "userMenu": "User menu",
+    "unknownUser": "Unknown user",
+    "superAdminAllTenants": "Super admin: all tenants",
+    "tenantsValue": "Tenants: {tenants}",
+    "signOut": "Sign out",
+    "switchToLightMode": "Switch to light mode",
+    "switchToDarkMode": "Switch to dark mode"
   },
   "scopeSwitcher": {
     "failedToLoad": "Failed to load tenant options.",
@@ -650,6 +657,7 @@
     "coldStartRate": "Cold Start Rate",
     "coldWarmRatio": "{cold} cold / {warm} warm",
     "vmPool": "VM Pool",
+    "poolCount": "Pools",
     "activeVms": "{count} active VMs",
     "vmLifecycle": "VM Lifecycle",
     "vmsCreated": "{count} created",

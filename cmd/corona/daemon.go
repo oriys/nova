@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/oriys/nova/internal/backend"
 	"github.com/oriys/nova/internal/config"
@@ -26,8 +28,9 @@ import (
 
 func daemonCmd() *cobra.Command {
 	var (
-		logLevel  string
-		cometAddr string
+		logLevel   string
+		cometAddr  string
+		listenAddr string
 	)
 
 	cmd := &cobra.Command{
@@ -161,18 +164,45 @@ func daemonCmd() *cobra.Command {
 				logging.Op().Info("autoscaler enabled (local mode)")
 			}
 
+			var httpServer *http.Server
+			if listenAddr != "" {
+				mux := http.NewServeMux()
+				mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					_, _ = w.Write([]byte(`{"status":"ok","service":"corona"}`))
+				})
+				httpServer = &http.Server{
+					Addr:    listenAddr,
+					Handler: mux,
+				}
+				go func() {
+					logging.Op().Info("Corona HTTP endpoint started", "addr", listenAddr)
+					if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+						logging.Op().Error("corona HTTP server error", "error", err)
+					}
+				}()
+			}
+
 			logging.Op().Info("Corona scheduler/placement plane started")
 
 			sigCh := make(chan os.Signal, 1)
 			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 			<-sigCh
 			logging.Op().Info("shutdown signal received")
+
+			if httpServer != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = httpServer.Shutdown(ctx)
+			}
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level")
 	cmd.Flags().StringVar(&cometAddr, "comet-grpc", "", "Comet gRPC address for remote invocation (e.g. comet:9090)")
+	cmd.Flags().StringVar(&listenAddr, "listen", "", "HTTP listen address for /health (optional)")
 
 	return cmd
 }

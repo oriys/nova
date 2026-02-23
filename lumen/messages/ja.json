@@ -467,7 +467,14 @@
     "notificationFilterAll": "すべて",
     "notificationFilterUnread": "未読",
     "notificationMarkRead": "既読にする",
-    "notificationOpenFunction": "関数を開く"
+    "notificationOpenFunction": "関数を開く",
+    "userMenu": "ユーザーメニュー",
+    "unknownUser": "不明なユーザー",
+    "superAdminAllTenants": "スーパー管理者：全テナント",
+    "tenantsValue": "テナント：{tenants}",
+    "signOut": "サインアウト",
+    "switchToLightMode": "ライトモードに切り替え",
+    "switchToDarkMode": "ダークモードに切り替え"
   },
   "scopeSwitcher": {
     "failedToLoad": "テナントオプションの読み込みに失敗しました。",
@@ -638,6 +645,7 @@
     "coldStartRate": "コールドスタート率",
     "coldWarmRatio": "コールド {cold} / ウォーム {warm}",
     "vmPool": "VMプール",
+    "poolCount": "プール数",
     "activeVms": "アクティブVM {count} 台",
     "vmLifecycle": "VMライフサイクル",
     "vmsCreated": "作成 {count}",

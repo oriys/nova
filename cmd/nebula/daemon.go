@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -33,8 +34,9 @@ import (
 
 func daemonCmd() *cobra.Command {
 	var (
-		logLevel  string
-		cometAddr string
+		logLevel   string
+		cometAddr  string
+		listenAddr string
 	)
 
 	cmd := &cobra.Command{
@@ -231,9 +233,9 @@ func daemonCmd() *cobra.Command {
 				BatchSize:    cfg.Queue.BatchSize,
 				Notifier:     notifier,
 				Adaptive: asyncqueue.AdaptiveConfig{
-					Enabled:       cfg.Queue.AdaptiveEnabled,
-					MinWorkers:    cfg.Queue.AdaptiveMinWorkers,
-					MaxWorkers:    cfg.Queue.AdaptiveMaxWorkers,
+					Enabled:         cfg.Queue.AdaptiveEnabled,
+					MinWorkers:      cfg.Queue.AdaptiveMinWorkers,
+					MaxWorkers:      cfg.Queue.AdaptiveMaxWorkers,
 					MinPollInterval: cfg.Queue.AdaptiveMinPoll,
 					MaxPollInterval: cfg.Queue.AdaptiveMaxPoll,
 					ProbeInterval:   cfg.Queue.AdaptiveProbeInterval,
@@ -256,12 +258,38 @@ func daemonCmd() *cobra.Command {
 			outboxRelay.Start()
 			defer outboxRelay.Stop()
 
+			var httpServer *http.Server
+			if listenAddr != "" {
+				mux := http.NewServeMux()
+				mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					_, _ = w.Write([]byte(`{"status":"ok","service":"nebula"}`))
+				})
+				httpServer = &http.Server{
+					Addr:    listenAddr,
+					Handler: mux,
+				}
+				go func() {
+					logging.Op().Info("Nebula HTTP endpoint started", "addr", listenAddr)
+					if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+						logging.Op().Error("nebula HTTP server error", "error", err)
+					}
+				}()
+			}
+
 			logging.Op().Info("Nebula event ingestion plane started")
 
 			sigCh := make(chan os.Signal, 1)
 			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 			<-sigCh
 			logging.Op().Info("shutdown signal received")
+
+			if httpServer != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = httpServer.Shutdown(ctx)
+			}
 
 			if localExec != nil {
 				localExec.Shutdown(10 * time.Second)
@@ -272,6 +300,7 @@ func daemonCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level")
 	cmd.Flags().StringVar(&cometAddr, "comet-grpc", "", "Comet gRPC address for remote invocation (e.g. comet:9090)")
+	cmd.Flags().StringVar(&listenAddr, "listen", "", "HTTP listen address for /health (optional)")
 
 	return cmd
 }

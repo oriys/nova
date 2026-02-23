@@ -37,7 +37,7 @@ export function FunctionsTable({
   const allSelected = functions.length > 0 && functions.every((fn) => selectedNames?.has(fn.name))
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
+    return new Date(dateString).toLocaleDateString(undefined, {
       month: "short",
       day: "numeric",
       hour: "2-digit",
@@ -100,6 +100,7 @@ export function FunctionsTable({
                   type="checkbox"
                   checked={allSelected}
                   onChange={(event) => onToggleSelectAll?.(event.target.checked, functions.map((fn) => fn.name))}
+                  aria-label={`${t("actions")} ${t("function")}`}
                   className="h-4 w-4 rounded border-border"
                 />
               </th>
@@ -146,6 +147,7 @@ export function FunctionsTable({
                     type="checkbox"
                     checked={checked}
                     onChange={(event) => onToggleSelect?.(fn.name, event.target.checked)}
+                    aria-label={`${t("function")} ${fn.name}`}
                     className="h-4 w-4 rounded border-border"
                   />
                 </td>
