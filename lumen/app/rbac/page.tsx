@@ -1,11 +1,14 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useTranslations } from "next-intl"
+import { ShieldCheck, Plus, Trash2, RefreshCw } from "lucide-react"
+
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
+import { TenantButtonPermissionsPanel } from "@/components/tenant-button-permissions-panel"
+import { TenantMenuPermissionsPanel } from "@/components/tenant-menu-permissions-panel"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogContent,
@@ -13,21 +16,48 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { rbacApi } from "@/lib/api"
-import type { RBACRole, RBACPermission, RBACRoleAssignment } from "@/lib/api"
-import { ShieldCheck, Plus, Trash2, RefreshCw } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  rbacApi,
+  tenantsApi,
+  type RBACPermission,
+  type RBACRole,
+  type RBACRoleAssignment,
+  type TenantEntry,
+} from "@/lib/api"
 import { cn } from "@/lib/utils"
 
-type Tab = "roles" | "permissions" | "assignments"
+type RBACRecordTab = "roles" | "permissions" | "assignments"
+type Tab = RBACRecordTab | "tenants" | "menuPermissions" | "interfacePermissions"
+
+const TAB_WITH_CREATE: Record<Tab, boolean> = {
+  roles: true,
+  permissions: true,
+  assignments: true,
+  tenants: true,
+  menuPermissions: false,
+  interfacePermissions: false,
+}
 
 export default function RBACPage() {
   const t = useTranslations("pages")
   const tr = useTranslations("rbacPage")
   const tc = useTranslations("common")
+
   const [tab, setTab] = useState<Tab>("roles")
   const [roles, setRoles] = useState<RBACRole[]>([])
   const [permissions, setPermissions] = useState<RBACPermission[]>([])
   const [assignments, setAssignments] = useState<RBACRoleAssignment[]>([])
+  const [tenants, setTenants] = useState<TenantEntry[]>([])
+  const [selectedTenant, setSelectedTenant] = useState("")
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -46,30 +76,54 @@ export default function RBACPage() {
   const [assignRoleId, setAssignRoleId] = useState("")
   const [assignScopeType, setAssignScopeType] = useState("")
   const [assignScopeId, setAssignScopeId] = useState("")
+  // Tenant form
+  const [tenantId, setTenantId] = useState("")
+  const [tenantName, setTenantName] = useState("")
+  const [tenantStatus, setTenantStatus] = useState("active")
+  const [tenantTier, setTenantTier] = useState("default")
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
+
       if (tab === "roles") {
         const data = await rbacApi.listRoles()
         setRoles(data || [])
-      } else if (tab === "permissions") {
+        return
+      }
+      if (tab === "permissions") {
         const data = await rbacApi.listPermissions()
         setPermissions(data || [])
-      } else {
+        return
+      }
+      if (tab === "assignments") {
         const data = await rbacApi.listRoleAssignments()
         setAssignments(data || [])
+        return
+      }
+
+      const tenantList = await tenantsApi.list()
+      setTenants(tenantList || [])
+
+      if (tenantList.length === 0) {
+        setSelectedTenant("")
+        return
+      }
+
+      const hasSelected = Boolean(selectedTenant) && tenantList.some((tenant) => tenant.id === selectedTenant)
+      if (!hasSelected) {
+        setSelectedTenant(tenantList[0].id)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : tr("failedToLoad"))
     } finally {
       setLoading(false)
     }
-  }, [tab, tr])
+  }, [selectedTenant, tab, tr])
 
   useEffect(() => {
-    fetchData()
+    void fetchData()
   }, [fetchData])
 
   const resetForm = () => {
@@ -83,24 +137,58 @@ export default function RBACPage() {
     setAssignRoleId("")
     setAssignScopeType("")
     setAssignScopeId("")
+    setTenantId("")
+    setTenantName("")
+    setTenantStatus("active")
+    setTenantTier("default")
   }
 
   const handleCreate = async () => {
     try {
       setCreating(true)
+
       if (tab === "roles") {
         if (!roleName.trim()) return
         await rbacApi.createRole({ id: crypto.randomUUID(), name: roleName.trim() })
       } else if (tab === "permissions") {
         if (!permCode.trim()) return
-        await rbacApi.createPermission({ id: crypto.randomUUID(), code: permCode.trim(), resource_type: permResource, action: permAction, description: permDesc })
-      } else {
-        if (!assignPrincipalType.trim() || !assignPrincipalId.trim() || !assignRoleId.trim() || !assignScopeType.trim()) return
-        await rbacApi.createRoleAssignment({ id: crypto.randomUUID(), principal_type: assignPrincipalType.trim(), principal_id: assignPrincipalId.trim(), role_id: assignRoleId.trim(), scope_type: assignScopeType.trim(), scope_id: assignScopeId || undefined })
+        await rbacApi.createPermission({
+          id: crypto.randomUUID(),
+          code: permCode.trim(),
+          resource_type: permResource,
+          action: permAction,
+          description: permDesc,
+        })
+      } else if (tab === "assignments") {
+        if (
+          !assignPrincipalType.trim() ||
+          !assignPrincipalId.trim() ||
+          !assignRoleId.trim() ||
+          !assignScopeType.trim()
+        ) {
+          return
+        }
+        await rbacApi.createRoleAssignment({
+          id: crypto.randomUUID(),
+          principal_type: assignPrincipalType.trim(),
+          principal_id: assignPrincipalId.trim(),
+          role_id: assignRoleId.trim(),
+          scope_type: assignScopeType.trim(),
+          scope_id: assignScopeId || undefined,
+        })
+      } else if (tab === "tenants") {
+        if (!tenantId.trim()) return
+        await tenantsApi.create({
+          id: tenantId.trim(),
+          ...(tenantName.trim() ? { name: tenantName.trim() } : {}),
+          ...(tenantStatus.trim() ? { status: tenantStatus.trim() } : {}),
+          ...(tenantTier.trim() ? { tier: tenantTier.trim() } : {}),
+        })
       }
+
       setDialogOpen(false)
       resetForm()
-      fetchData()
+      await fetchData()
     } catch (err) {
       setError(err instanceof Error ? err.message : tr("failedToCreate"))
     } finally {
@@ -110,10 +198,16 @@ export default function RBACPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      if (tab === "roles") await rbacApi.deleteRole(id)
-      else if (tab === "permissions") await rbacApi.deletePermission(id)
-      else await rbacApi.deleteRoleAssignment(id)
-      fetchData()
+      if (tab === "roles") {
+        await rbacApi.deleteRole(id)
+      } else if (tab === "permissions") {
+        await rbacApi.deletePermission(id)
+      } else if (tab === "assignments") {
+        await rbacApi.deleteRoleAssignment(id)
+      } else if (tab === "tenants") {
+        await tenantsApi.delete(id)
+      }
+      await fetchData()
     } catch (err) {
       setError(err instanceof Error ? err.message : tr("failedToDelete"))
     }
@@ -123,219 +217,421 @@ export default function RBACPage() {
     { key: "roles", label: tr("roles") },
     { key: "permissions", label: tr("permissions") },
     { key: "assignments", label: tr("assignments") },
+    { key: "tenants", label: tr("tenants") },
+    { key: "menuPermissions", label: tr("menuPermissions") },
+    { key: "interfacePermissions", label: tr("interfacePermissions") },
   ]
 
-  const createLabel = tab === "roles" ? tr("createRole") : tab === "permissions" ? tr("createPermission") : tr("createAssignment")
+  const supportsCreate = TAB_WITH_CREATE[tab]
+  const createLabel =
+    tab === "roles"
+      ? tr("createRole")
+      : tab === "permissions"
+        ? tr("createPermission")
+        : tab === "assignments"
+          ? tr("createAssignment")
+          : tr("createTenant")
 
   return (
     <DashboardLayout>
       <Header title={t("rbac.title")} description={t("rbac.description")} />
 
-      <div className="p-6 space-y-6">
+      <div className="space-y-6 p-6">
         {error && (
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive text-sm">
+          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
             {error}
           </div>
         )}
 
-        <div className="flex items-center gap-2">
-          {tabs.map((t) => (
+        <div className="flex flex-wrap items-center gap-2">
+          {tabs.map((item) => (
             <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
+              key={item.key}
+              onClick={() => setTab(item.key)}
               className={cn(
-                "px-4 py-2 text-sm font-medium rounded-lg transition-colors",
-                tab === t.key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
+                "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+                tab === item.key
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:bg-muted/80"
               )}
             >
-              {t.label}
+              {item.label}
             </button>
           ))}
         </div>
 
         <div className="flex items-center justify-between">
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm">
-                <Plus className="mr-2 h-4 w-4" />
-                {createLabel}
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>{createLabel}</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                {tab === "roles" && (
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">{tr("name")}</label>
-                    <Input value={roleName} onChange={(e) => setRoleName(e.target.value)} placeholder={tr("name")} />
-                  </div>
-                )}
-                {tab === "permissions" && (
-                  <>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">{tr("code")}</label>
-                      <Input value={permCode} onChange={(e) => setPermCode(e.target.value)} placeholder={tr("code")} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">{tr("resourceType")}</label>
-                      <Input value={permResource} onChange={(e) => setPermResource(e.target.value)} placeholder={tr("resourceType")} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">{tr("action")}</label>
-                      <Input value={permAction} onChange={(e) => setPermAction(e.target.value)} placeholder={tr("action")} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">{tr("description")}</label>
-                      <Input value={permDesc} onChange={(e) => setPermDesc(e.target.value)} placeholder={tr("description")} />
-                    </div>
-                  </>
-                )}
-                {tab === "assignments" && (
-                  <>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">{tr("principalType")}</label>
-                      <Input value={assignPrincipalType} onChange={(e) => setAssignPrincipalType(e.target.value)} placeholder={tr("principalType")} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">{tr("principalId")}</label>
-                      <Input value={assignPrincipalId} onChange={(e) => setAssignPrincipalId(e.target.value)} placeholder={tr("principalId")} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">{tr("roleId")}</label>
-                      <Input value={assignRoleId} onChange={(e) => setAssignRoleId(e.target.value)} placeholder={tr("roleId")} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">{tr("scopeType")}</label>
-                      <Input value={assignScopeType} onChange={(e) => setAssignScopeType(e.target.value)} placeholder={tr("scopeType")} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">{tr("scopeId")}</label>
-                      <Input value={assignScopeId} onChange={(e) => setAssignScopeId(e.target.value)} placeholder={tr("scopeId")} />
-                    </div>
-                  </>
-                )}
-                <Button className="w-full" onClick={handleCreate} disabled={creating}>
-                  {creating ? tr("creating") : tc("create")}
+          {supportsCreate ? (
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <Plus className="mr-2 h-4 w-4" />
+                  {createLabel}
                 </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{createLabel}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  {tab === "roles" && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">{tr("name")}</label>
+                      <Input
+                        value={roleName}
+                        onChange={(event) => setRoleName(event.target.value)}
+                        placeholder={tr("name")}
+                      />
+                    </div>
+                  )}
 
-          <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
+                  {tab === "permissions" && (
+                    <>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">{tr("code")}</label>
+                        <Input
+                          value={permCode}
+                          onChange={(event) => setPermCode(event.target.value)}
+                          placeholder={tr("code")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">{tr("resourceType")}</label>
+                        <Input
+                          value={permResource}
+                          onChange={(event) => setPermResource(event.target.value)}
+                          placeholder={tr("resourceType")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">{tr("action")}</label>
+                        <Input
+                          value={permAction}
+                          onChange={(event) => setPermAction(event.target.value)}
+                          placeholder={tr("action")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">{tr("description")}</label>
+                        <Input
+                          value={permDesc}
+                          onChange={(event) => setPermDesc(event.target.value)}
+                          placeholder={tr("description")}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {tab === "assignments" && (
+                    <>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">{tr("principalType")}</label>
+                        <Input
+                          value={assignPrincipalType}
+                          onChange={(event) => setAssignPrincipalType(event.target.value)}
+                          placeholder={tr("principalType")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">{tr("principalId")}</label>
+                        <Input
+                          value={assignPrincipalId}
+                          onChange={(event) => setAssignPrincipalId(event.target.value)}
+                          placeholder={tr("principalId")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">{tr("roleId")}</label>
+                        <Input
+                          value={assignRoleId}
+                          onChange={(event) => setAssignRoleId(event.target.value)}
+                          placeholder={tr("roleId")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">{tr("scopeType")}</label>
+                        <Input
+                          value={assignScopeType}
+                          onChange={(event) => setAssignScopeType(event.target.value)}
+                          placeholder={tr("scopeType")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">{tr("scopeId")}</label>
+                        <Input
+                          value={assignScopeId}
+                          onChange={(event) => setAssignScopeId(event.target.value)}
+                          placeholder={tr("scopeId")}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {tab === "tenants" && (
+                    <>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">{tr("tenantId")}</label>
+                        <Input
+                          value={tenantId}
+                          onChange={(event) => setTenantId(event.target.value)}
+                          placeholder={tr("tenantIdPlaceholder")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">{tr("tenantName")}</label>
+                        <Input
+                          value={tenantName}
+                          onChange={(event) => setTenantName(event.target.value)}
+                          placeholder={tr("tenantNamePlaceholder")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">{tr("tenantStatus")}</label>
+                        <Input
+                          value={tenantStatus}
+                          onChange={(event) => setTenantStatus(event.target.value)}
+                          placeholder="active"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">{tr("tenantTier")}</label>
+                        <Input
+                          value={tenantTier}
+                          onChange={(event) => setTenantTier(event.target.value)}
+                          placeholder="default"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <Button className="w-full" onClick={handleCreate} disabled={creating}>
+                    {creating ? tr("creating") : tc("create")}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          ) : (
+            <div />
+          )}
+
+          <Button variant="outline" size="sm" onClick={() => void fetchData()} disabled={loading}>
             <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
             {tc("refresh")}
           </Button>
         </div>
 
-        <div className="rounded-xl border border-border bg-card overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border">
-                {tab === "roles" && (
-                  <>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("name")}</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("system")}</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("created")}</th>
-                  </>
-                )}
-                {tab === "permissions" && (
-                  <>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("code")}</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("resourceType")}</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("action")}</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("description")}</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("created")}</th>
-                  </>
-                )}
-                {tab === "assignments" && (
-                  <>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("principal")}</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("roleId")}</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("scope")}</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("created")}</th>
-                  </>
-                )}
-                <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">{tc("actions")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                Array.from({ length: 3 }).map((_, i) => (
-                  <tr key={i} className="border-b border-border">
-                    <td colSpan={6} className="px-4 py-3">
-                      <div className="h-4 bg-muted rounded animate-pulse" />
-                    </td>
-                  </tr>
-                ))
-              ) : tab === "roles" && roles.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
-                    <ShieldCheck className="mx-auto h-8 w-8 mb-2 opacity-50" />
-                    {tr("noRoles")}
-                  </td>
+        {(tab === "roles" || tab === "permissions" || tab === "assignments" || tab === "tenants") && (
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border">
+                  {tab === "roles" && (
+                    <>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("name")}</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("system")}</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("created")}</th>
+                    </>
+                  )}
+
+                  {tab === "permissions" && (
+                    <>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("code")}</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("resourceType")}</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("action")}</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("description")}</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("created")}</th>
+                    </>
+                  )}
+
+                  {tab === "assignments" && (
+                    <>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("principal")}</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("roleId")}</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("scope")}</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("created")}</th>
+                    </>
+                  )}
+
+                  {tab === "tenants" && (
+                    <>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("tenantId")}</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("tenantName")}</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("tenantStatus")}</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("tenantTier")}</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{tr("created")}</th>
+                    </>
+                  )}
+
+                  <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">{tc("actions")}</th>
                 </tr>
-              ) : tab === "permissions" && permissions.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                    <ShieldCheck className="mx-auto h-8 w-8 mb-2 opacity-50" />
-                    {tr("noPermissions")}
-                  </td>
-                </tr>
-              ) : tab === "assignments" && assignments.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                    <ShieldCheck className="mx-auto h-8 w-8 mb-2 opacity-50" />
-                    {tr("noAssignments")}
-                  </td>
-                </tr>
-              ) : tab === "roles" ? (
-                roles.map((role) => (
-                  <tr key={role.id} className="border-b border-border hover:bg-muted/50">
-                    <td className="px-4 py-3 text-sm font-medium">{role.name}</td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{role.is_system ? "✓" : "—"}</td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{new Date(role.created_at).toLocaleDateString()}</td>
-                    <td className="px-4 py-3 text-right">
-                      <Button variant="ghost" size="sm" onClick={() => handleDelete(role.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+              </thead>
+
+              <tbody>
+                {loading ? (
+                  Array.from({ length: 3 }).map((_, index) => (
+                    <tr key={index} className="border-b border-border">
+                      <td colSpan={6} className="px-4 py-3">
+                        <div className="h-4 animate-pulse rounded bg-muted" />
+                      </td>
+                    </tr>
+                  ))
+                ) : tab === "roles" && roles.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
+                      <ShieldCheck className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                      {tr("noRoles")}
                     </td>
                   </tr>
-                ))
-              ) : tab === "permissions" ? (
-                permissions.map((perm) => (
-                  <tr key={perm.id} className="border-b border-border hover:bg-muted/50">
-                    <td className="px-4 py-3 text-sm font-medium font-mono">{perm.code}</td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{perm.resource_type}</td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{perm.action}</td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{perm.description}</td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{new Date(perm.created_at).toLocaleDateString()}</td>
-                    <td className="px-4 py-3 text-right">
-                      <Button variant="ghost" size="sm" onClick={() => handleDelete(perm.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                ) : tab === "permissions" && permissions.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                      <ShieldCheck className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                      {tr("noPermissions")}
                     </td>
                   </tr>
-                ))
-              ) : (
-                assignments.map((a) => (
-                  <tr key={a.id} className="border-b border-border hover:bg-muted/50">
-                    <td className="px-4 py-3 text-sm font-medium">{a.principal_type}:{a.principal_id}</td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{a.role_id}</td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{a.scope_type}{a.scope_id ? `:${a.scope_id}` : ""}</td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{new Date(a.created_at).toLocaleDateString()}</td>
-                    <td className="px-4 py-3 text-right">
-                      <Button variant="ghost" size="sm" onClick={() => handleDelete(a.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                ) : tab === "assignments" && assignments.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                      <ShieldCheck className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                      {tr("noAssignments")}
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : tab === "tenants" && tenants.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                      <ShieldCheck className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                      {tr("noTenants")}
+                    </td>
+                  </tr>
+                ) : tab === "roles" ? (
+                  roles.map((role) => (
+                    <tr key={role.id} className="border-b border-border hover:bg-muted/50">
+                      <td className="px-4 py-3 text-sm font-medium">{role.name}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{role.is_system ? "✓" : "—"}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">
+                        {new Date(role.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void handleDelete(role.id)}
+                          disabled={role.is_system}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                ) : tab === "permissions" ? (
+                  permissions.map((permission) => (
+                    <tr key={permission.id} className="border-b border-border hover:bg-muted/50">
+                      <td className="px-4 py-3 font-mono text-sm font-medium">{permission.code}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{permission.resource_type}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{permission.action}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{permission.description}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">
+                        {new Date(permission.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button variant="ghost" size="sm" onClick={() => void handleDelete(permission.id)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                ) : tab === "assignments" ? (
+                  assignments.map((assignment) => (
+                    <tr key={assignment.id} className="border-b border-border hover:bg-muted/50">
+                      <td className="px-4 py-3 text-sm font-medium">
+                        {assignment.principal_type}:{assignment.principal_id}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{assignment.role_id}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">
+                        {assignment.scope_type}
+                        {assignment.scope_id ? `:${assignment.scope_id}` : ""}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">
+                        {new Date(assignment.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button variant="ghost" size="sm" onClick={() => void handleDelete(assignment.id)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  tenants.map((tenant) => (
+                    <tr key={tenant.id} className="border-b border-border hover:bg-muted/50">
+                      <td className="px-4 py-3 text-sm font-medium">{tenant.id}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{tenant.name || tenant.id}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{tenant.status}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{tenant.tier}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">
+                        {new Date(tenant.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void handleDelete(tenant.id)}
+                          disabled={tenant.id === "default"}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {(tab === "menuPermissions" || tab === "interfacePermissions") && (
+          <div className="space-y-4">
+            {loading ? (
+              <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
+                {tc("loading")}
+              </div>
+            ) : tenants.length === 0 ? (
+              <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
+                {tr("noTenants")}
+              </div>
+            ) : (
+              <>
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">{tr("tenantId")}</label>
+                    <Select value={selectedTenant} onValueChange={setSelectedTenant}>
+                      <SelectTrigger className="w-full sm:w-80">
+                        <SelectValue placeholder={tr("selectTenant")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {tenants.map((tenant) => (
+                          <SelectItem key={tenant.id} value={tenant.id}>
+                            {tenant.name ? `${tenant.name} (${tenant.id})` : tenant.id}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {selectedTenant &&
+                  (tab === "menuPermissions" ? (
+                    <TenantMenuPermissionsPanel key={`menu-${selectedTenant}`} tenantId={selectedTenant} />
+                  ) : (
+                    <TenantButtonPermissionsPanel
+                      key={`interface-${selectedTenant}`}
+                      tenantId={selectedTenant}
+                    />
+                  ))}
+              </>
+            )}
+          </div>
+        )}
       </div>
     </DashboardLayout>
   )

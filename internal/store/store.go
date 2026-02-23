@@ -302,7 +302,7 @@ type MetadataStore interface {
 	CreateRoleAssignment(ctx context.Context, ra *RoleAssignmentRecord) (*RoleAssignmentRecord, error)
 	GetRoleAssignment(ctx context.Context, id string) (*RoleAssignmentRecord, error)
 	ListRoleAssignments(ctx context.Context, tenantID string, limit, offset int) ([]*RoleAssignmentRecord, error)
-	ListRoleAssignmentsByPrincipal(ctx context.Context, tenantID string, principalType domain.PrincipalType, principalID string) ([]*RoleAssignmentRecord, error)
+	ListRoleAssignmentsByPrincipal(ctx context.Context, tenantID string, principalType domain.PrincipalType, principalID string, limit, offset int) ([]*RoleAssignmentRecord, error)
 	DeleteRoleAssignment(ctx context.Context, id string) error
 
 	// Tenant-level menu permissions

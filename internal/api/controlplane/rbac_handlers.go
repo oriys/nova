@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/store"
 )
@@ -43,10 +44,8 @@ func (h *RBACHandler) RegisterRoutes(mux *http.ServeMux) {
 
 func (h *RBACHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ID       string `json:"id"`
-		TenantID string `json:"tenant_id"`
-		Name     string `json:"name"`
-		IsSystem bool   `json:"is_system"`
+		ID   string `json:"id"`
+		Name string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -57,11 +56,12 @@ func (h *RBACHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	scope := store.TenantScopeFromContext(r.Context())
 	role, err := h.Store.CreateRole(r.Context(), &store.RoleRecord{
 		ID:       req.ID,
-		TenantID: req.TenantID,
+		TenantID: scope.TenantID,
 		Name:     req.Name,
-		IsSystem: req.IsSystem,
+		IsSystem: false,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), rbacHTTPStatus(err))
@@ -85,11 +85,11 @@ func (h *RBACHandler) GetRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RBACHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.URL.Query().Get("tenant_id")
+	scope := store.TenantScopeFromContext(r.Context())
 	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
 	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
 
-	roles, err := h.Store.ListRoles(r.Context(), tenantID, limit, offset)
+	roles, err := h.Store.ListRoles(r.Context(), scope.TenantID, limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -215,6 +215,17 @@ func (h *RBACHandler) AssignPermissionToRole(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Validate role exists
+	if _, err := h.Store.GetRole(r.Context(), roleID); err != nil {
+		http.Error(w, "role not found: "+roleID, http.StatusNotFound)
+		return
+	}
+	// Validate permission exists
+	if _, err := h.Store.GetPermission(r.Context(), req.PermissionID); err != nil {
+		http.Error(w, "permission not found: "+req.PermissionID, http.StatusNotFound)
+		return
+	}
+
 	if err := h.Store.AssignPermissionToRole(r.Context(), roleID, req.PermissionID); err != nil {
 		http.Error(w, err.Error(), rbacHTTPStatus(err))
 		return
@@ -240,13 +251,11 @@ func (h *RBACHandler) RevokePermissionFromRole(w http.ResponseWriter, r *http.Re
 func (h *RBACHandler) CreateRoleAssignment(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ID            string `json:"id"`
-		TenantID      string `json:"tenant_id"`
 		PrincipalType string `json:"principal_type"`
 		PrincipalID   string `json:"principal_id"`
 		RoleID        string `json:"role_id"`
 		ScopeType     string `json:"scope_type"`
 		ScopeID       string `json:"scope_id"`
-		CreatedBy     string `json:"created_by"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -261,15 +270,29 @@ func (h *RBACHandler) CreateRoleAssignment(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Validate role exists
+	if _, err := h.Store.GetRole(r.Context(), req.RoleID); err != nil {
+		http.Error(w, "role not found: "+req.RoleID, http.StatusNotFound)
+		return
+	}
+
+	scope := store.TenantScopeFromContext(r.Context())
+
+	// Derive created_by from authenticated identity
+	createdBy := ""
+	if identity := auth.GetIdentity(r.Context()); identity != nil {
+		createdBy = identity.Subject
+	}
+
 	ra, err := h.Store.CreateRoleAssignment(r.Context(), &store.RoleAssignmentRecord{
 		ID:            req.ID,
-		TenantID:      req.TenantID,
+		TenantID:      scope.TenantID,
 		PrincipalType: domain.PrincipalType(req.PrincipalType),
 		PrincipalID:   req.PrincipalID,
 		RoleID:        req.RoleID,
 		ScopeType:     domain.ScopeType(req.ScopeType),
 		ScopeID:       req.ScopeID,
-		CreatedBy:     req.CreatedBy,
+		CreatedBy:     createdBy,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), rbacHTTPStatus(err))
@@ -292,7 +315,7 @@ func (h *RBACHandler) GetRoleAssignment(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *RBACHandler) ListRoleAssignments(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.URL.Query().Get("tenant_id")
+	scope := store.TenantScopeFromContext(r.Context())
 	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
 	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
 
@@ -305,7 +328,7 @@ func (h *RBACHandler) ListRoleAssignments(w http.ResponseWriter, r *http.Request
 			http.Error(w, "invalid principal_type: must be user, group, or service_account", http.StatusBadRequest)
 			return
 		}
-		assignments, err := h.Store.ListRoleAssignmentsByPrincipal(r.Context(), tenantID, domain.PrincipalType(principalType), principalID)
+		assignments, err := h.Store.ListRoleAssignmentsByPrincipal(r.Context(), scope.TenantID, domain.PrincipalType(principalType), principalID, limit, offset)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -313,12 +336,12 @@ func (h *RBACHandler) ListRoleAssignments(w http.ResponseWriter, r *http.Request
 		if assignments == nil {
 			assignments = []*store.RoleAssignmentRecord{}
 		}
-		pagedAssignments, total := paginateSliceWindow(assignments, limit, offset)
-		writePaginatedList(w, limit, offset, len(pagedAssignments), int64(total), pagedAssignments)
+		total := estimatePaginatedTotal(limit, offset, len(assignments))
+		writePaginatedList(w, limit, offset, len(assignments), total, assignments)
 		return
 	}
 
-	assignments, err := h.Store.ListRoleAssignments(r.Context(), tenantID, limit, offset)
+	assignments, err := h.Store.ListRoleAssignments(r.Context(), scope.TenantID, limit, offset)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

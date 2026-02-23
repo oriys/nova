@@ -11,7 +11,6 @@ export const AUTH_CHANGED_EVENT = "nova:auth-changed";
 const AUTH_DISABLED = false;
 const TENANT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const API_BASE = "/api";
-const API_BASE = "/api";
 
 type UserRole = "super-admin" | "operator" | "viewer";
 

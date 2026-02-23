@@ -368,7 +368,13 @@ func (s *PostgresStore) ListRoleAssignments(ctx context.Context, tenantID string
 	return assignments, rows.Err()
 }
 
-func (s *PostgresStore) ListRoleAssignmentsByPrincipal(ctx context.Context, tenantID string, principalType domain.PrincipalType, principalID string) ([]*RoleAssignmentRecord, error) {
+func (s *PostgresStore) ListRoleAssignmentsByPrincipal(ctx context.Context, tenantID string, principalType domain.PrincipalType, principalID string, limit, offset int) ([]*RoleAssignmentRecord, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	tid := strings.TrimSpace(tenantID)
 	if tid == "" {
 		tid = DefaultTenantID
@@ -378,7 +384,8 @@ func (s *PostgresStore) ListRoleAssignmentsByPrincipal(ctx context.Context, tena
 		FROM rbac_role_assignments
 		WHERE tenant_id = $1 AND principal_type = $2 AND principal_id = $3
 		ORDER BY created_at DESC
-	`, tid, string(principalType), principalID)
+		LIMIT $4 OFFSET $5
+	`, tid, string(principalType), principalID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list role assignments by principal: %w", err)
 	}

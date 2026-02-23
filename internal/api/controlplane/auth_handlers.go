@@ -119,12 +119,17 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify password
+	// Verify password. For bootstrap tenants with empty password hash, allow
+	// tenant-id-as-password once and persist the hashed password.
 	if tenant.PasswordHash == "" {
-		writeAuthError(w, http.StatusUnauthorized, "invalid tenant or password")
-		return
-	}
-	if err := bcrypt.CompareHashAndPassword([]byte(tenant.PasswordHash), []byte(req.Password)); err != nil {
+		if req.Password != tenant.ID {
+			writeAuthError(w, http.StatusUnauthorized, "invalid tenant or password")
+			return
+		}
+		if hash, hashErr := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost); hashErr == nil {
+			_ = h.Store.SetTenantPasswordHash(r.Context(), tenant.ID, string(hash))
+		}
+	} else if err := bcrypt.CompareHashAndPassword([]byte(tenant.PasswordHash), []byte(req.Password)); err != nil {
 		writeAuthError(w, http.StatusUnauthorized, "invalid tenant or password")
 		return
 	}
