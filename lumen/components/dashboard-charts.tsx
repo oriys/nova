@@ -18,6 +18,11 @@ export interface TimeSeriesData {
   invocations: number
   errors: number
   avgDuration: number
+  activeVms?: number
+  totalPools?: number
+  vmsCreated?: number
+  vmsStopped?: number
+  vmsCrashed?: number
 }
 
 export const TIME_RANGES = [
@@ -73,6 +78,22 @@ export function DashboardCharts({ data, range, onRangeChange, loading, vmMetrics
     ...d,
     time: formatTime(d.time, range),
   }))
+  const hasVmTimeSeries = formattedData.some(
+    (d) =>
+      d.activeVms != null ||
+      d.totalPools != null ||
+      d.vmsCreated != null ||
+      d.vmsStopped != null ||
+      d.vmsCrashed != null
+  )
+  const vmSeriesData = formattedData.map((d, index) => ({
+    ...d,
+    activeVms: d.activeVms ?? (!hasVmTimeSeries && index === formattedData.length - 1 ? vmMetrics?.activeVms ?? 0 : 0),
+    totalPools: d.totalPools ?? (!hasVmTimeSeries && index === formattedData.length - 1 ? vmMetrics?.totalPools ?? 0 : 0),
+    vmsCreated: d.vmsCreated ?? (!hasVmTimeSeries && index === formattedData.length - 1 ? vmMetrics?.created ?? 0 : 0),
+    vmsStopped: d.vmsStopped ?? (!hasVmTimeSeries && index === formattedData.length - 1 ? vmMetrics?.stopped ?? 0 : 0),
+    vmsCrashed: d.vmsCrashed ?? (!hasVmTimeSeries && index === formattedData.length - 1 ? vmMetrics?.crashed ?? 0 : 0),
+  }))
 
   const rangeSelector = (
     <div className="inline-flex items-center rounded-lg border border-border bg-muted/50 p-0.5 gap-0.5">
@@ -118,32 +139,155 @@ export function DashboardCharts({ data, range, onRangeChange, loading, vmMetrics
   return (
     <div className="space-y-4">
       <div className="flex justify-end">{rangeSelector}</div>
-      {vmMetrics && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-xl border border-border bg-card p-4">
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* VM Pool Chart */}
+        <div className="rounded-xl border border-border bg-card p-6">
+          <div className="mb-4">
             <h3 className="text-sm font-semibold text-card-foreground">{td("vmPool")}</h3>
-            <p className="mt-2 text-lg font-semibold text-card-foreground">
-              {td("activeVms", { count: vmMetrics.activeVms })}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {td("poolCount")}: {vmMetrics.totalPools}
-            </p>
           </div>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <h3 className="text-sm font-semibold text-card-foreground">{td("vmLifecycle")}</h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {td("vmsCreated", { count: vmMetrics.created })}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {td("vmsStopped", { count: vmMetrics.stopped })}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {td("vmsCrashed", { count: vmMetrics.crashed })}
-            </p>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={vmSeriesData}>
+                <defs>
+                  <linearGradient id="activeVmsGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--foreground)" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="var(--foreground)" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="poolCountGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis
+                  dataKey="time"
+                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                  axisLine={{ stroke: "var(--border)" }}
+                  tickLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "var(--popover)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "8px",
+                    fontSize: "12px",
+                    color: "var(--popover-foreground)",
+                  }}
+                  formatter={(value: number, _name: string, item: { dataKey?: string | number }) => {
+                    const numeric = Math.round(Number(value) || 0)
+                    const key = String(item?.dataKey ?? "")
+                    if (key === "activeVms") {
+                      return [numeric, td("activeVms", { count: numeric })]
+                    }
+                    return [numeric, td("poolCount")]
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="activeVms"
+                  stroke="var(--foreground)"
+                  strokeWidth={2}
+                  fill="url(#activeVmsGradient)"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="totalPools"
+                  stroke="var(--primary)"
+                  strokeWidth={2}
+                  fill="url(#poolCountGradient)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         </div>
-      )}
-      <div className="grid gap-6 lg:grid-cols-2">
+
+        {/* VM Lifecycle Chart */}
+        <div className="rounded-xl border border-border bg-card p-6">
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-card-foreground">{td("vmLifecycle")}</h3>
+          </div>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={vmSeriesData}>
+                <defs>
+                  <linearGradient id="vmsCreatedGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--foreground)" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="var(--foreground)" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="vmsStoppedGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--muted-foreground)" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="var(--muted-foreground)" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="vmsCrashedGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--destructive)" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="var(--destructive)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis
+                  dataKey="time"
+                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                  axisLine={{ stroke: "var(--border)" }}
+                  tickLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "var(--popover)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "8px",
+                    fontSize: "12px",
+                    color: "var(--popover-foreground)",
+                  }}
+                  formatter={(value: number, _name: string, item: { dataKey?: string | number }) => {
+                    const numeric = Math.round(Number(value) || 0)
+                    const key = String(item?.dataKey ?? "")
+                    if (key === "vmsCreated") {
+                      return [numeric, td("vmsCreated", { count: numeric })]
+                    }
+                    if (key === "vmsStopped") {
+                      return [numeric, td("vmsStopped", { count: numeric })]
+                    }
+                    return [numeric, td("vmsCrashed", { count: numeric })]
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="vmsCreated"
+                  stroke="var(--foreground)"
+                  strokeWidth={2}
+                  fill="url(#vmsCreatedGradient)"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="vmsStopped"
+                  stroke="var(--muted-foreground)"
+                  strokeWidth={2}
+                  fill="url(#vmsStoppedGradient)"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="vmsCrashed"
+                  stroke="var(--destructive)"
+                  strokeWidth={2}
+                  fill="url(#vmsCrashedGradient)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
         {/* Invocations Chart */}
         <div className="rounded-xl border border-border bg-card p-6">
           <div className="mb-4">

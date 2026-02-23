@@ -427,6 +427,18 @@
     "notifications": {
       "title": "通知センター",
       "description": "システム通知の表示と管理"
+    },
+    "triggers": {
+      "title": "トリガー",
+      "description": "関数を自動的に呼び出すイベントトリガーを管理"
+    },
+    "cluster": {
+      "title": "クラスター",
+      "description": "クラスターノードとその健全性状態を監視"
+    },
+    "alerts": {
+      "title": "アラート",
+      "description": "SLOアラートとシステム通知"
     }
   },
   "common": {
@@ -822,6 +834,7 @@
     "runtimePoolRuntimesPlaceholder": "python,node,go",
     "runtimePoolRuntimesHelp": "カンマ区切りのランタイム一覧（NOVA_RUNTIME_POOL_RUNTIMES に相当）。",
     "runtimePoolRefillInterval": "テンプレート補充間隔",
+    "runtimePoolRefillIntervalPlaceholder": "30s",
     "runtimePoolRefillIntervalHelp": "30s や 1m などの Go duration 形式（NOVA_RUNTIME_POOL_REFILL_INTERVAL に相当）。",
     "saving": "保存中…",
     "saveSettings": "設定を保存",
@@ -966,6 +979,11 @@
     "pasteJobId": "非同期ジョブ ID を貼り付け…",
     "query": "検索",
     "allStatuses": "すべてのステータス",
+    "groupBy": {
+      "none": "グループ化なし",
+      "function": "関数ごとにグループ化",
+      "workflow": "ワークフローごとにグループ化"
+    },
     "refreshList": "リストを更新",
     "scopeNote": "クエリはテナント/ネームスペーススコープです。ジョブ ID が他のスコープに存在する場合、このページでは見つかりません。",
     "jobDetail": "ジョブ詳細",
@@ -989,6 +1007,8 @@
     "view": "表示",
     "pause": "一時停止",
     "resume": "再開",
+    "pauseGlobal": "全体を一時停止",
+    "resumeGlobal": "全体を再開",
     "delete": "削除",
     "retry": "リトライ",
     "unexpectedError": "Unexpected error.",
@@ -2235,6 +2255,8 @@
     "title": "トリガー",
     "description": "関数を自動的に呼び出すイベントトリガーを管理",
     "createTrigger": "トリガーを作成",
+    "namePlaceholder": "my-trigger",
+    "functionNamePlaceholder": "my-function",
     "failedToLoad": "トリガーの読み込みに失敗しました",
     "noTriggers": "トリガーが構成されていません",
     "noTriggersDescription": "外部イベントで関数を自動的に呼び出すトリガーを作成してください",

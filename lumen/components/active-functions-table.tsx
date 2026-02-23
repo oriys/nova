@@ -14,6 +14,7 @@ interface ActiveFunctionsTableProps {
 
 export function ActiveFunctionsTable({ functions, loading }: ActiveFunctionsTableProps) {
   const t = useTranslations("activeFunctionsTable")
+  const tf = useTranslations("functionsPage")
 
   if (loading) {
     return (
@@ -103,7 +104,13 @@ export function ActiveFunctionsTable({ functions, loading }: ActiveFunctionsTabl
                         fn.status === "inactive" && "bg-muted text-muted-foreground border-0"
                       )}
                     >
-                      {fn.status}
+                      {fn.status === "active"
+                        ? tf("active")
+                        : fn.status === "inactive"
+                          ? tf("inactive")
+                          : fn.status === "error"
+                            ? tf("error")
+                            : fn.status}
                     </Badge>
                   </td>
                   <td className="px-6 py-4 text-right">

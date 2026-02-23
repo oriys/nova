@@ -33,6 +33,7 @@ export function FunctionsTable({
   onToggleSelectAll,
 }: FunctionsTableProps) {
   const t = useTranslations("functionsTable")
+  const tf = useTranslations("functionsPage")
   const tc = useTranslations("common")
   const allSelected = functions.length > 0 && functions.every((fn) => selectedNames?.has(fn.name))
 
@@ -180,7 +181,13 @@ export function FunctionsTable({
                       fn.status === "inactive" && "bg-muted text-muted-foreground border-0"
                     )}
                   >
-                    {fn.status}
+                    {fn.status === "active"
+                      ? tf("active")
+                      : fn.status === "inactive"
+                        ? tf("inactive")
+                        : fn.status === "error"
+                          ? tf("error")
+                          : fn.status}
                   </Badge>
                 </td>
                 <td className="px-6 py-4">

@@ -36,6 +36,7 @@ import { useHealth, type HealthLevel } from "@/lib/hooks/use-health"
 import {
   AUTH_CHANGED_EVENT,
   getAuthSession,
+  isAuthDisabled,
   logout,
   type AuthSession,
 } from "@/lib/auth"
@@ -396,8 +397,10 @@ export function Header({ title, description }: HeaderProps) {
 
   const handleLogout = () => {
     logout()
-    setSession(null)
-    router.replace("/login")
+    setSession(getAuthSession())
+    if (!isAuthDisabled()) {
+      router.replace("/login")
+    }
   }
 
   const showSearchDropdown = searchFocused && query.trim().length > 0

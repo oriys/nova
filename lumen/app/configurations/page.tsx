@@ -569,7 +569,7 @@ export default function ConfigurationsPage() {
                 id="runtimePoolRefillInterval"
                 value={runtimePoolRefillInterval}
                 onChange={(e) => { setRuntimePoolRefillInterval(e.target.value); setDirty(true); }}
-                placeholder="30s"
+                placeholder={tc("runtimePoolRefillIntervalPlaceholder")}
               />
               <p className="text-xs text-muted-foreground">{tc("runtimePoolRefillIntervalHelp")}</p>
             </div>

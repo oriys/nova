@@ -376,9 +376,9 @@ export default function AsyncInvocationsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">No Grouping</SelectItem>
-                <SelectItem value="function">Group by Function</SelectItem>
-                <SelectItem value="workflow">Group by Workflow</SelectItem>
+                <SelectItem value="none">{ta("groupBy.none")}</SelectItem>
+                <SelectItem value="function">{ta("groupBy.function")}</SelectItem>
+                <SelectItem value="workflow">{ta("groupBy.workflow")}</SelectItem>
               </SelectContent>
             </Select>
 
@@ -394,7 +394,7 @@ export default function AsyncInvocationsPage() {
               ) : (
                 <Pause className="mr-2 h-4 w-4" />
               )}
-              {globalPaused ? "Resume Global" : "Pause Global"}
+              {globalPaused ? ta("resumeGlobal") : ta("pauseGlobal")}
             </Button>
 
             <Button variant="outline" onClick={handleRefresh} disabled={loadingList}>

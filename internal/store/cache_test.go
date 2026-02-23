@@ -33,6 +33,16 @@ type stubMetadataStore struct {
 	layers  []*domain.Layer
 }
 
+type functionPaginationStub struct {
+	stubMetadataStore
+
+	listFilteredCalls  atomic.Int64
+	countFilteredCalls atomic.Int64
+
+	filtered []*domain.Function
+	total    int64
+}
+
 func (s *stubMetadataStore) Close() error                      { return nil }
 func (s *stubMetadataStore) Ping(_ context.Context) error      { return nil }
 
@@ -98,6 +108,16 @@ func (s *stubMetadataStore) DeleteFunctionFiles(_ context.Context, _ string) err
 func (s *stubMetadataStore) SetFunctionLayers(_ context.Context, _ string, _ []string) error   { return nil }
 func (s *stubMetadataStore) SaveRuntime(_ context.Context, _ *RuntimeRecord) error             { return nil }
 func (s *stubMetadataStore) DeleteRuntime(_ context.Context, _ string) error                   { return nil }
+
+func (s *functionPaginationStub) ListFunctionsFiltered(_ context.Context, _, _ string, _, _ int) ([]*domain.Function, error) {
+	s.listFilteredCalls.Add(1)
+	return s.filtered, nil
+}
+
+func (s *functionPaginationStub) CountFunctionsFiltered(_ context.Context, _, _ string) (int64, error) {
+	s.countFilteredCalls.Add(1)
+	return s.total, nil
+}
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
@@ -366,5 +386,37 @@ func TestCachedStore_DefaultTTL(t *testing.T) {
 	cached := NewCachedMetadataStore(nil, 0)
 	if cached.ttl != DefaultCacheTTL {
 		t.Fatalf("expected default TTL %v, got %v", DefaultCacheTTL, cached.ttl)
+	}
+}
+
+func TestCachedStore_FunctionPagination_Delegates(t *testing.T) {
+	stub := &functionPaginationStub{
+		filtered: []*domain.Function{{ID: "f1", Name: "hello"}},
+		total:    42,
+	}
+	cached := NewCachedMetadataStore(stub, time.Second)
+	ctx := context.Background()
+
+	items, err := cached.ListFunctionsFiltered(ctx, "hel", "python", 20, 0)
+	if err != nil {
+		t.Fatalf("unexpected list error: %v", err)
+	}
+	if len(items) != 1 || items[0].Name != "hello" {
+		t.Fatalf("unexpected list result: %#v", items)
+	}
+
+	total, err := cached.CountFunctionsFiltered(ctx, "hel", "python")
+	if err != nil {
+		t.Fatalf("unexpected count error: %v", err)
+	}
+	if total != 42 {
+		t.Fatalf("expected total 42, got %d", total)
+	}
+
+	if stub.listFilteredCalls.Load() != 1 {
+		t.Fatalf("expected list delegate call count 1, got %d", stub.listFilteredCalls.Load())
+	}
+	if stub.countFilteredCalls.Load() != 1 {
+		t.Fatalf("expected count delegate call count 1, got %d", stub.countFilteredCalls.Load())
 	}
 }

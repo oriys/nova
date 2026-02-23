@@ -427,6 +427,18 @@
     "notifications": {
       "title": "Notifications",
       "description": "Afficher et gérer les notifications système"
+    },
+    "triggers": {
+      "title": "Déclencheurs",
+      "description": "Gérer les déclencheurs d'événements qui invoquent automatiquement des fonctions"
+    },
+    "cluster": {
+      "title": "Cluster",
+      "description": "Surveiller les nœuds du cluster et leur état de santé"
+    },
+    "alerts": {
+      "title": "Alertes",
+      "description": "Alertes SLO et notifications système"
     }
   },
   "common": {
@@ -822,6 +834,7 @@
     "runtimePoolRuntimesPlaceholder": "python,node,go",
     "runtimePoolRuntimesHelp": "Liste de runtimes séparés par des virgules (équivalent à NOVA_RUNTIME_POOL_RUNTIMES).",
     "runtimePoolRefillInterval": "Intervalle de rechargement des templates",
+    "runtimePoolRefillIntervalPlaceholder": "30s",
     "runtimePoolRefillIntervalHelp": "Format de durée Go, par ex. 30s ou 1m (équivalent à NOVA_RUNTIME_POOL_REFILL_INTERVAL).",
     "saving": "Enregistrement…",
     "saveSettings": "Enregistrer les paramètres",
@@ -966,6 +979,11 @@
     "pasteJobId": "Collez l'ID de tâche asynchrone…",
     "query": "Rechercher",
     "allStatuses": "Tous les statuts",
+    "groupBy": {
+      "none": "Aucun regroupement",
+      "function": "Regrouper par fonction",
+      "workflow": "Regrouper par workflow"
+    },
     "refreshList": "Actualiser la liste",
     "scopeNote": "La requête est limitée au tenant/namespace actuel. Si l'ID de tâche existe dans un autre scope, cette page retourne introuvable.",
     "jobDetail": "Détail de la tâche",
@@ -989,6 +1007,8 @@
     "view": "Voir",
     "pause": "Pause",
     "resume": "Reprendre",
+    "pauseGlobal": "Pause globale",
+    "resumeGlobal": "Reprise globale",
     "delete": "Supprimer",
     "retry": "Réessayer",
     "unexpectedError": "Unexpected error.",
@@ -2235,6 +2255,8 @@
     "title": "Déclencheurs",
     "description": "Gérer les déclencheurs d'événements qui invoquent automatiquement des fonctions",
     "createTrigger": "Créer un déclencheur",
+    "namePlaceholder": "my-trigger",
+    "functionNamePlaceholder": "my-function",
     "failedToLoad": "Échec du chargement des déclencheurs",
     "noTriggers": "Aucun déclencheur configuré",
     "noTriggersDescription": "Créez un déclencheur pour invoquer automatiquement des fonctions sur des événements externes",

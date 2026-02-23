@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useMemo, useRef } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import { metricsApi, type HeatmapPoint } from "@/lib/api"
 
 const CELL_SIZE = 13
@@ -8,8 +9,6 @@ const CELL_GAP = 3
 const CELL_ROUND = 2
 const LABEL_OFFSET = 36
 const GRID_TOP_OFFSET = 18
-const DAY_LABELS = ["Mon", "", "Wed", "", "Fri", "", "Sun"]
-const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 const TOOLTIP_MIN_WIDTH = 120
 const TOOLTIP_PADDING_X = 10
 const TOOLTIP_CHAR_WIDTH = 6.4
@@ -27,11 +26,31 @@ function getColor(count: number, max: number): string {
 }
 
 export function GlobalHeatmap() {
+  const locale = useLocale()
+  const tc = useTranslations("common")
+  const td = useTranslations("dashboard")
+  const tch = useTranslations("charts")
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(0)
   const [data, setData] = useState<HeatmapPoint[]>([])
   const [loading, setLoading] = useState(true)
   const [tooltip, setTooltip] = useState<{ x: number; y: number; date: string; count: number } | null>(null)
+  const dayLabels = useMemo(() => {
+    const formatter = new Intl.DateTimeFormat(locale, { weekday: "short" })
+    const monday = new Date(Date.UTC(2024, 0, 1))
+    return [0, 1, 2, 3, 4, 5, 6].map((day) => {
+      if (day % 2 === 1) return ""
+      const date = new Date(monday)
+      date.setUTCDate(monday.getUTCDate() + day)
+      return formatter.format(date)
+    })
+  }, [locale])
+  const monthLabels = useMemo(() => {
+    const formatter = new Intl.DateTimeFormat(locale, { month: "short" })
+    return Array.from({ length: 12 }, (_, month) =>
+      formatter.format(new Date(Date.UTC(2024, month, 1)))
+    )
+  }, [locale])
 
   useEffect(() => {
     const el = containerRef.current
@@ -112,7 +131,7 @@ export function GlobalHeatmap() {
 
         const month = current.getMonth()
         if (day === 0 && month !== lastMonth) {
-          markers.push({ label: MONTH_LABELS[month], col: week })
+          markers.push({ label: monthLabels[month], col: week })
           lastMonth = month
         }
 
@@ -126,29 +145,25 @@ export function GlobalHeatmap() {
   const svgWidth = weeks * (CELL_SIZE + CELL_GAP) + LABEL_OFFSET
   const svgHeight = 7 * (CELL_SIZE + CELL_GAP) + 24
 
-  const periodLabel = numWeeks <= 13 ? `last ${numWeeks} weeks`
-    : numWeeks <= 52 ? "last year"
-    : `last ${Math.round(numWeeks / 52 * 10) / 10} years`
-
   const isInitialLoading = data.length === 0 && (loading || numWeeks === 0)
 
   return (
     <div ref={containerRef} className="rounded-xl border border-border bg-card p-6 min-h-[226px]">
       {isInitialLoading ? (
         <div className="h-[178px] flex items-center justify-center">
-          <span className="text-sm text-muted-foreground animate-pulse">Loading heatmap...</span>
+          <span className="text-sm text-muted-foreground animate-pulse">{tc("loading")}</span>
         </div>
       ) : (
         <div className={loading ? "opacity-50 pointer-events-none transition-opacity" : "transition-opacity"}>
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-sm font-semibold text-card-foreground">Invocation Activity</h3>
+              <h3 className="text-sm font-semibold text-card-foreground">{tch("functionInvocations")}</h3>
               <p className="text-xs text-muted-foreground">
-                {totalInvocations.toLocaleString()} total invocations across all functions in the {periodLabel}
+                {td("totalInvocations")} · {totalInvocations.toLocaleString()}
               </p>
             </div>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span>Less</span>
+              <span aria-hidden="true">-</span>
               <svg width={CELL_SIZE} height={CELL_SIZE}>
                 <rect width={CELL_SIZE} height={CELL_SIZE} rx={CELL_ROUND} fill="var(--muted)" />
               </svg>
@@ -162,7 +177,7 @@ export function GlobalHeatmap() {
                   />
                 </svg>
               ))}
-              <span>More</span>
+              <span aria-hidden="true">+</span>
             </div>
           </div>
 
@@ -185,7 +200,7 @@ export function GlobalHeatmap() {
                 </text>
               ))}
 
-              {DAY_LABELS.map((label, i) => (
+              {dayLabels.map((label, i) => (
                 label ? (
                   <text
                     key={i}
@@ -222,7 +237,7 @@ export function GlobalHeatmap() {
               ))}
 
               {tooltip && (() => {
-                const label = `${tooltip.count} invocation${tooltip.count !== 1 ? "s" : ""} on ${tooltip.date}`
+                const label = `${tooltip.date} · ${tooltip.count} ${tch("invocations")}`
                 const tooltipWidth = Math.max(
                   TOOLTIP_MIN_WIDTH,
                   label.length * TOOLTIP_CHAR_WIDTH + TOOLTIP_PADDING_X * 2

@@ -7,6 +7,7 @@ import {
 
 const AUTH_STORAGE_KEY = "nova.auth.session";
 export const AUTH_CHANGED_EVENT = "nova:auth-changed";
+const AUTH_DISABLED = true;
 
 type UserRole = "super-admin" | "operator" | "viewer";
 
@@ -63,6 +64,15 @@ const LOGIN_ACCOUNT_HINTS: LoginAccountHint[] = [
   { username: "ops", password: "ops", note: "Member of default/team-a/team-b" },
   { username: "dev", password: "dev", note: "Member of team-a/team-b" },
 ];
+
+const AUTH_DISABLED_SESSION: AuthSession = {
+  username: "local",
+  displayName: "Local Admin",
+  role: "super-admin",
+  canAccessAllTenants: true,
+  tenantIds: [DEFAULT_TENANT_ID],
+  loggedInAt: "1970-01-01T00:00:00.000Z",
+};
 
 function normalizeUsername(username: string): string {
   return username.trim().toLowerCase();
@@ -130,6 +140,9 @@ function parseStoredSession(raw: string | null): AuthSession | null {
 }
 
 export function getAuthSession(): AuthSession | null {
+  if (AUTH_DISABLED) {
+    return AUTH_DISABLED_SESSION;
+  }
   if (typeof window === "undefined") {
     return null;
   }
@@ -141,7 +154,7 @@ export function getAuthSession(): AuthSession | null {
 }
 
 export function isAuthenticated(): boolean {
-  return Boolean(getAuthSession());
+  return AUTH_DISABLED || Boolean(getAuthSession());
 }
 
 export function isSuperUser(session: AuthSession | null = getAuthSession()): boolean {
@@ -169,6 +182,9 @@ export function filterTenantsForSession<T extends { id: string }>(
   tenants: T[],
   session: AuthSession | null = getAuthSession(),
 ): T[] {
+  if (AUTH_DISABLED) {
+    return tenants;
+  }
   if (!session) {
     return [];
   }
@@ -180,6 +196,9 @@ export function filterTenantsForSession<T extends { id: string }>(
 }
 
 export function syncTenantScopeWithSession(session: AuthSession | null = getAuthSession()): void {
+  if (AUTH_DISABLED) {
+    return;
+  }
   if (typeof window === "undefined") {
     return;
   }
@@ -210,6 +229,10 @@ export function syncTenantScopeWithSession(session: AuthSession | null = getAuth
 }
 
 export function login(username: string, password: string): AuthSession {
+  if (AUTH_DISABLED) {
+    emitAuthChanged(AUTH_DISABLED_SESSION);
+    return AUTH_DISABLED_SESSION;
+  }
   if (typeof window === "undefined") {
     throw new Error("Login is only available in browser.");
   }
@@ -232,6 +255,10 @@ export function login(username: string, password: string): AuthSession {
 }
 
 export function logout(): void {
+  if (AUTH_DISABLED) {
+    emitAuthChanged(AUTH_DISABLED_SESSION);
+    return;
+  }
   if (typeof window === "undefined") {
     return;
   }
@@ -245,5 +272,12 @@ export function logout(): void {
 }
 
 export function getLoginAccountHints(): LoginAccountHint[] {
+  if (AUTH_DISABLED) {
+    return [];
+  }
   return LOGIN_ACCOUNT_HINTS.slice();
+}
+
+export function isAuthDisabled(): boolean {
+  return AUTH_DISABLED;
 }

@@ -58,6 +58,11 @@ type invocationPaginationDelegate interface {
 	GetAllInvocationLogsSummaryFiltered(ctx context.Context, search, functionName string, success *bool) (*InvocationLogSummary, error)
 }
 
+type functionPaginationDelegate interface {
+	ListFunctionsFiltered(ctx context.Context, query, runtime string, limit, offset int) ([]*domain.Function, error)
+	CountFunctionsFiltered(ctx context.Context, query, runtime string) (int64, error)
+}
+
 type asyncInvocationPaginationDelegate interface {
 	CountAsyncInvocations(ctx context.Context, statuses []AsyncInvocationStatus) (int64, error)
 	CountFunctionAsyncInvocations(ctx context.Context, functionID string, statuses []AsyncInvocationStatus) (int64, error)
@@ -212,6 +217,22 @@ func (c *CachedMetadataStore) GetFunctionLayers(ctx context.Context, funcID stri
 }
 
 // ─── uncached pagination delegates ──────────────────────────────────────────
+
+func (c *CachedMetadataStore) ListFunctionsFiltered(ctx context.Context, query, runtime string, limit, offset int) ([]*domain.Function, error) {
+	store, ok := c.MetadataStore.(functionPaginationDelegate)
+	if !ok {
+		return nil, fmt.Errorf("list functions filtered not supported")
+	}
+	return store.ListFunctionsFiltered(ctx, query, runtime, limit, offset)
+}
+
+func (c *CachedMetadataStore) CountFunctionsFiltered(ctx context.Context, query, runtime string) (int64, error) {
+	store, ok := c.MetadataStore.(functionPaginationDelegate)
+	if !ok {
+		return 0, fmt.Errorf("count functions filtered not supported")
+	}
+	return store.CountFunctionsFiltered(ctx, query, runtime)
+}
 
 func (c *CachedMetadataStore) CountInvocationLogs(ctx context.Context, functionID string) (int64, error) {
 	store, ok := c.MetadataStore.(invocationPaginationDelegate)

@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react"
+import { useTranslations } from "next-intl"
 import { Building2, Check, Eye, FolderTree, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -28,6 +29,10 @@ function validScopePart(value: string): boolean {
 }
 
 export function TenantSwitcher() {
+  const tPage = useTranslations("pages")
+  const tScope = useTranslations("scopeSwitcher")
+  const tq = useTranslations("quotaManagement")
+  const tc = useTranslations("common")
   const [loading, setLoading] = useState(true)
   const [mutating, setMutating] = useState(false)
   const [error, setError] = useState("")
@@ -325,16 +330,16 @@ export function TenantSwitcher() {
       <div className="rounded-xl border border-border bg-card p-6">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-card-foreground">Tenant Scope</h3>
+            <h3 className="text-lg font-semibold text-card-foreground">{tPage("tenancy.title")}</h3>
             <p className="text-xs text-muted-foreground mt-1">
-              Switch and manage tenant/namespace for all API requests.
+              {tPage("tenancy.description")}
             </p>
           </div>
           <Button
             variant="ghost"
             size="icon"
             className="h-7 w-7"
-            title="Refresh tenant and namespace list"
+            title={tScope("refreshTenantList")}
             onClick={() => void loadScopeOptions(currentTenant, currentNamespace)}
             disabled={loading || mutating}
           >
@@ -344,18 +349,20 @@ export function TenantSwitcher() {
 
         <div className="space-y-4">
           <div className="rounded-lg border border-border bg-muted/20 p-3">
-            <div className="text-xs uppercase tracking-wide text-muted-foreground">Current Selected</div>
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">
+              {tScope("currentScope", { scope: `${currentTenant}/${currentNamespace}` })}
+            </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <span className="rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
-                Tenant: {currentTenant}
+                {tScope("tenant")}: {currentTenant}
               </span>
               <span className="rounded-md bg-foreground/5 px-2 py-1 text-xs font-medium text-foreground">
-                Namespace: {currentNamespace}
+                {tScope("namespace")}: {currentNamespace}
               </span>
             </div>
             {selectedTenant && selectedTenant.name !== selectedTenant.id && (
               <div className="mt-2 text-xs text-muted-foreground">
-                Name: <span className="text-foreground">{selectedTenant.name}</span>
+                <span className="text-foreground">{selectedTenant.name}</span>
               </div>
             )}
           </div>
@@ -364,17 +371,17 @@ export function TenantSwitcher() {
             <div className="flex items-center justify-between">
               <div className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                 <Building2 className="h-3.5 w-3.5" />
-                Tenants
+                {tScope("tenant")}
               </div>
               {canManageTenants && (
                 <Button
                   variant="outline"
                   size="icon"
                   className="h-7 w-7"
-                  title="Create tenant"
+                  title={`${tc("create")} ${tScope("tenant")}`}
                   onClick={() => setCreateTenantOpen(true)}
                   disabled={loading || mutating}
-                  aria-label="Create tenant"
+                  aria-label={`${tc("create")} ${tScope("tenant")}`}
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </Button>
@@ -383,7 +390,7 @@ export function TenantSwitcher() {
 
             <div className="rounded-md border border-border overflow-hidden">
               {tenants.length === 0 ? (
-                <div className="px-3 py-4 text-xs text-muted-foreground">No tenants found.</div>
+                <div className="px-3 py-4 text-xs text-muted-foreground">{tq("noTenants")}</div>
               ) : (
                 tenants.map((tenant) => (
                   <div
@@ -474,7 +481,7 @@ export function TenantSwitcher() {
             <div className="flex items-center justify-between">
               <div className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                 <FolderTree className="h-3.5 w-3.5" />
-                Namespace
+                {tScope("namespace")}
               </div>
               <div className="flex items-center gap-0.5">
                 <Button
@@ -519,7 +526,7 @@ export function TenantSwitcher() {
               disabled={loading || mutating || namespaces.length === 0}
             >
               <SelectTrigger className="h-8 w-full text-xs">
-                <SelectValue placeholder="Select namespace" />
+                <SelectValue placeholder={tScope("selectNamespace")} />
               </SelectTrigger>
               <SelectContent align="start">
                 {namespaces.map((namespace) => (

@@ -427,6 +427,18 @@
     "notifications": {
       "title": "通知中心",
       "description": "檢視和管理系統通知"
+    },
+    "triggers": {
+      "title": "觸發器",
+      "description": "管理自動呼叫函數的事件觸發器"
+    },
+    "cluster": {
+      "title": "叢集",
+      "description": "監控叢集節點及其健康狀態"
+    },
+    "alerts": {
+      "title": "告警",
+      "description": "SLO告警與系統通知"
     }
   },
   "common": {
@@ -822,6 +834,7 @@
     "runtimePoolRuntimesPlaceholder": "python,node,go",
     "runtimePoolRuntimesHelp": "以逗號分隔的執行時清單（等同於 NOVA_RUNTIME_POOL_RUNTIMES）。",
     "runtimePoolRefillInterval": "模板補充間隔",
+    "runtimePoolRefillIntervalPlaceholder": "30s",
     "runtimePoolRefillIntervalHelp": "Go 時長格式，例如 30s 或 1m（等同於 NOVA_RUNTIME_POOL_REFILL_INTERVAL）。",
     "saving": "儲存中…",
     "saveSettings": "儲存設定",
@@ -966,6 +979,11 @@
     "pasteJobId": "貼上非同步任務 ID…",
     "query": "查詢",
     "allStatuses": "所有狀態",
+    "groupBy": {
+      "none": "不分組",
+      "function": "按函式分組",
+      "workflow": "按工作流分組"
+    },
     "refreshList": "重新整理列表",
     "scopeNote": "查詢範圍限定為目前租戶/命名空間。如果任務 ID 存在於其他範圍，本頁將顯示未找到。",
     "jobDetail": "任務詳情",
@@ -989,6 +1007,8 @@
     "view": "檢視",
     "pause": "暫停",
     "resume": "恢復",
+    "pauseGlobal": "全域暫停",
+    "resumeGlobal": "全域恢復",
     "delete": "刪除",
     "retry": "重試",
     "unexpectedError": "Unexpected error.",
@@ -2235,6 +2255,8 @@
     "title": "觸發器",
     "description": "管理自動呼叫函數的事件觸發器",
     "createTrigger": "建立觸發器",
+    "namePlaceholder": "my-trigger",
+    "functionNamePlaceholder": "my-function",
     "failedToLoad": "載入觸發器失敗",
     "noTriggers": "尚無觸發器",
     "noTriggersDescription": "建立觸發器以在外部事件上自動呼叫函數",

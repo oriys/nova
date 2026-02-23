@@ -96,6 +96,11 @@ export default function DashboardPage() {
         invocations: point.invocations,
         errors: point.errors,
         avgDuration: point.avg_duration,
+        activeVms: point.active_vms,
+        totalPools: point.total_pools,
+        vmsCreated: point.vms_created,
+        vmsStopped: point.vms_stopped,
+        vmsCrashed: point.vms_crashed,
       }))
       setTimeSeries(chartData)
 

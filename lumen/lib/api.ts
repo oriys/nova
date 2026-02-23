@@ -1733,6 +1733,11 @@ export interface TimeSeriesPoint {
   invocations: number;
   errors: number;
   avg_duration: number;
+  active_vms?: number;
+  total_pools?: number;
+  vms_created?: number;
+  vms_stopped?: number;
+  vms_crashed?: number;
 }
 
 export interface HeatmapPoint {

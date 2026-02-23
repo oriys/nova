@@ -107,7 +107,7 @@ export default function TriggersPage() {
                   <Input
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
-                    placeholder="my-trigger"
+                    placeholder={tt("namePlaceholder")}
                   />
                 </div>
                 <div className="space-y-2">
@@ -127,7 +127,7 @@ export default function TriggersPage() {
                   <Input
                     value={newFunctionName}
                     onChange={(e) => setNewFunctionName(e.target.value)}
-                    placeholder="my-function"
+                    placeholder={tt("functionNamePlaceholder")}
                   />
                 </div>
                 <div className="flex items-center gap-2">
