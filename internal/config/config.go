@@ -339,6 +339,7 @@ func DefaultConfig() *Config {
 				"/health/live",
 				"/health/ready",
 				"/health/startup",
+				"/auth/*",
 			},
 		},
 		RateLimit: RateLimitConfig{

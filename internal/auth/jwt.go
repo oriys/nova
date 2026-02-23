@@ -280,3 +280,29 @@ func extractPoliciesFromClaims(claims map[string]any) []domain.PolicyBinding {
 
 	return policies
 }
+
+// base64URLEncode encodes bytes to base64url without padding.
+func base64URLEncode(data []byte) string {
+	return base64.RawURLEncoding.EncodeToString(data)
+}
+
+// SignToken creates a signed HS256 JWT with the given claims.
+// The hmacKey must be the same secret used by JWTAuthenticator for validation.
+func SignToken(hmacKey []byte, claims map[string]any) (string, error) {
+	header := map[string]string{"alg": "HS256", "typ": "JWT"}
+	headerJSON, err := json.Marshal(header)
+	if err != nil {
+		return "", fmt.Errorf("marshal header: %w", err)
+	}
+	claimsJSON, err := json.Marshal(claims)
+	if err != nil {
+		return "", fmt.Errorf("marshal claims: %w", err)
+	}
+	headerB64 := base64URLEncode(headerJSON)
+	claimsB64 := base64URLEncode(claimsJSON)
+	signingInput := headerB64 + "." + claimsB64
+	mac := hmac.New(sha256.New, hmacKey)
+	mac.Write([]byte(signingInput))
+	signature := mac.Sum(nil)
+	return signingInput + "." + base64URLEncode(signature), nil
+}

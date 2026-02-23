@@ -6,30 +6,14 @@ import {
 } from "@/lib/tenant-scope";
 
 const AUTH_STORAGE_KEY = "nova.auth.session";
-const AUTH_CREDENTIALS_STORAGE_KEY = "nova.auth.credentials";
+const AUTH_TOKEN_KEY = "nova.auth.token";
 export const AUTH_CHANGED_EVENT = "nova:auth-changed";
 const AUTH_DISABLED = false;
 const TENANT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const API_BASE = "/api";
+const API_BASE = "/api";
 
 type UserRole = "super-admin" | "operator" | "viewer";
-
-interface TenantRecord {
-  id: string;
-  name?: string;
-}
-
-interface StoredCredential {
-  tenant_id: string;
-  password: string;
-  display_name?: string;
-  updated_at: string;
-}
-
-interface CredentialStore {
-  version: 1;
-  records: Record<string, StoredCredential>;
-}
 
 export interface AuthSession {
   username: string;
@@ -45,11 +29,6 @@ export interface LoginAccountHint {
   password: string;
   note: string;
 }
-
-const EMPTY_CREDENTIAL_STORE: CredentialStore = {
-  version: 1,
-  records: {},
-};
 
 function normalizeTenantID(tenantID: string): string {
   return tenantID.trim();
@@ -67,105 +46,6 @@ function normalizeTenantIDs(tenantIDs: string[] | undefined): string[] {
     }
   });
   return Array.from(unique);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function parseCredentialStore(raw: string | null): CredentialStore {
-  if (!raw) {
-    return { ...EMPTY_CREDENTIAL_STORE, records: {} };
-  }
-  try {
-    const parsed = JSON.parse(raw) as Partial<CredentialStore>;
-    if (!parsed || parsed.version !== 1 || !isRecord(parsed.records)) {
-      return { ...EMPTY_CREDENTIAL_STORE, records: {} };
-    }
-    const records: Record<string, StoredCredential> = {};
-    Object.entries(parsed.records).forEach(([key, value]) => {
-      if (!isRecord(value)) {
-        return;
-      }
-      const tenantID = typeof value.tenant_id === "string" ? normalizeTenantID(value.tenant_id) : "";
-      const password = typeof value.password === "string" ? value.password : "";
-      const updatedAt = typeof value.updated_at === "string" ? value.updated_at : "";
-      if (!tenantID || !password || !updatedAt) {
-        return;
-      }
-      records[key] = {
-        tenant_id: tenantID,
-        password,
-        display_name: typeof value.display_name === "string" ? value.display_name : undefined,
-        updated_at: updatedAt,
-      };
-    });
-    return { version: 1, records };
-  } catch {
-    return { ...EMPTY_CREDENTIAL_STORE, records: {} };
-  }
-}
-
-function credentialStoreKey(tenantID: string): string {
-  return normalizeTenantID(tenantID).toLowerCase();
-}
-
-function readCredentialStore(): CredentialStore {
-  if (typeof window === "undefined") {
-    return { ...EMPTY_CREDENTIAL_STORE, records: {} };
-  }
-  try {
-    return parseCredentialStore(window.localStorage.getItem(AUTH_CREDENTIALS_STORAGE_KEY));
-  } catch {
-    return { ...EMPTY_CREDENTIAL_STORE, records: {} };
-  }
-}
-
-function writeCredentialStore(store: CredentialStore): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.setItem(AUTH_CREDENTIALS_STORAGE_KEY, JSON.stringify(store));
-}
-
-function readTenantCredential(tenantID: string): StoredCredential | null {
-  const normalized = normalizeTenantID(tenantID);
-  if (!normalized) {
-    return null;
-  }
-  const store = readCredentialStore();
-  return store.records[credentialStoreKey(normalized)] || null;
-}
-
-function upsertTenantCredential(tenantID: string, password: string, displayName?: string): void {
-  const normalizedTenantID = normalizeTenantID(tenantID);
-  if (!normalizedTenantID || !password) {
-    return;
-  }
-  const store = readCredentialStore();
-  store.records[credentialStoreKey(normalizedTenantID)] = {
-    tenant_id: normalizedTenantID,
-    password,
-    display_name: displayName?.trim() || undefined,
-    updated_at: new Date().toISOString(),
-  };
-  writeCredentialStore(store);
-}
-
-function defaultPasswordForTenant(tenantID: string): string {
-  return tenantID;
-}
-
-function toSession(tenant: TenantRecord): AuthSession {
-  const isDefaultTenant = tenant.id === DEFAULT_TENANT_ID;
-  return {
-    username: tenant.id,
-    displayName: tenant.name?.trim() || tenant.id,
-    role: isDefaultTenant ? "super-admin" : "operator",
-    canAccessAllTenants: isDefaultTenant,
-    tenantIds: normalizeTenantIDs([tenant.id]),
-    loggedInAt: new Date().toISOString(),
-  };
 }
 
 async function requestAuthAPI<T>(path: string, options?: RequestInit): Promise<T> {
@@ -212,50 +92,6 @@ async function requestAuthAPI<T>(path: string, options?: RequestInit): Promise<T
     return undefined as T;
   }
   return JSON.parse(raw) as T;
-}
-
-function parseTenantsPayload(payload: unknown): TenantRecord[] {
-  const rows: unknown[] = Array.isArray(payload)
-    ? payload
-    : isRecord(payload) && Array.isArray(payload.items)
-      ? payload.items
-      : [];
-
-  const tenants: TenantRecord[] = [];
-  rows.forEach((row) => {
-    if (!isRecord(row) || typeof row.id !== "string") {
-      return;
-    }
-    const id = normalizeTenantID(row.id);
-    if (!id) {
-      return;
-    }
-    tenants.push({
-      id,
-      name: typeof row.name === "string" ? row.name : undefined,
-    });
-  });
-  return tenants;
-}
-
-async function listTenantsRaw(): Promise<TenantRecord[]> {
-  const payload = await requestAuthAPI<unknown>("/tenants?limit=500");
-  return parseTenantsPayload(payload);
-}
-
-async function resolveTenant(tenantID: string): Promise<TenantRecord> {
-  const normalizedTenantID = normalizeTenantID(tenantID);
-  if (!normalizedTenantID || !TENANT_ID_PATTERN.test(normalizedTenantID)) {
-    throw new Error("Tenant ID format is invalid.");
-  }
-  const tenants = await listTenantsRaw();
-  const tenant =
-    tenants.find((item) => item.id === normalizedTenantID) ||
-    tenants.find((item) => item.id.toLowerCase() === normalizedTenantID.toLowerCase());
-  if (!tenant) {
-    throw new Error(`Tenant '${normalizedTenantID}' not found.`);
-  }
-  return tenant;
 }
 
 function emitAuthChanged(session: AuthSession | null): void {
@@ -390,20 +226,24 @@ export async function login(username: string, password: string): Promise<AuthSes
     throw new Error("Password is required.");
   }
 
-  const tenant = await resolveTenant(requestedTenantID);
-  const storedCredential = readTenantCredential(tenant.id);
-  const expectedPassword = storedCredential?.password ?? defaultPasswordForTenant(tenant.id);
-  if (password !== expectedPassword) {
-    throw new Error("Invalid tenant password.");
-  }
-
-  const session = toSession({
-    id: tenant.id,
-    name: storedCredential?.display_name || tenant.name,
+  const result = await requestAuthAPI<{ token: string; tenant_id: string }>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ tenant_id: requestedTenantID, password }),
   });
 
+  const isDefaultTenant = result.tenant_id === DEFAULT_TENANT_ID;
+  const session: AuthSession = {
+    username: result.tenant_id,
+    displayName: result.tenant_id,
+    role: isDefaultTenant ? "super-admin" : "operator",
+    canAccessAllTenants: isDefaultTenant,
+    tenantIds: normalizeTenantIDs([result.tenant_id]),
+    loggedInAt: new Date().toISOString(),
+  };
+
+  window.localStorage.setItem(AUTH_TOKEN_KEY, result.token);
   window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
-  setTenantScope({ tenantId: tenant.id, namespace: DEFAULT_NAMESPACE });
+  setTenantScope({ tenantId: result.tenant_id, namespace: DEFAULT_NAMESPACE });
   emitAuthChanged(session);
   return session;
 }
@@ -427,24 +267,30 @@ export async function registerTenant(
     throw new Error("Password is required.");
   }
 
-  const existingTenants = await listTenantsRaw();
-  const exists = existingTenants.some(
-    (item) => item.id === normalizedTenantID || item.id.toLowerCase() === normalizedTenantID.toLowerCase(),
-  );
-  if (exists) {
-    throw new Error(`Tenant '${normalizedTenantID}' already exists.`);
-  }
-
-  await requestAuthAPI<TenantRecord>("/tenants", {
+  const result = await requestAuthAPI<{ token: string; tenant_id: string }>("/auth/register", {
     method: "POST",
     body: JSON.stringify({
-      id: normalizedTenantID,
-      ...(displayName?.trim() ? { name: displayName.trim() } : {}),
+      tenant_id: normalizedTenantID,
+      password,
+      ...(displayName?.trim() ? { display_name: displayName.trim() } : {}),
     }),
   });
 
-  upsertTenantCredential(normalizedTenantID, password, displayName);
-  return login(normalizedTenantID, password);
+  const isDefaultTenant = result.tenant_id === DEFAULT_TENANT_ID;
+  const session: AuthSession = {
+    username: result.tenant_id,
+    displayName: displayName?.trim() || result.tenant_id,
+    role: isDefaultTenant ? "super-admin" : "operator",
+    canAccessAllTenants: isDefaultTenant,
+    tenantIds: normalizeTenantIDs([result.tenant_id]),
+    loggedInAt: new Date().toISOString(),
+  };
+
+  window.localStorage.setItem(AUTH_TOKEN_KEY, result.token);
+  window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+  setTenantScope({ tenantId: result.tenant_id, namespace: DEFAULT_NAMESPACE });
+  emitAuthChanged(session);
+  return session;
 }
 
 export function logout(): void {
@@ -452,54 +298,30 @@ export function logout(): void {
     return;
   }
   window.localStorage.removeItem(AUTH_STORAGE_KEY);
+  window.localStorage.removeItem(AUTH_TOKEN_KEY);
   syncTenantScopeWithSession(null);
   emitAuthChanged(null);
 }
 
 export async function getLoginAccountHints(): Promise<LoginAccountHint[]> {
-  let tenants: TenantRecord[] = [];
+  return [
+    {
+      username: DEFAULT_TENANT_ID,
+      password: "",
+      note: "Default Tenant",
+    },
+  ];
+}
+
+export function getAuthToken(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
   try {
-    tenants = await listTenantsRaw();
+    return window.localStorage.getItem(AUTH_TOKEN_KEY);
   } catch {
-    const store = readCredentialStore();
-    tenants = Object.values(store.records).map((record) => ({
-      id: record.tenant_id,
-      name: record.display_name,
-    }));
+    return null;
   }
-
-  const deduped = new Map<string, TenantRecord>();
-  tenants.forEach((tenant) => {
-    const id = normalizeTenantID(tenant.id);
-    if (!id || deduped.has(id.toLowerCase())) {
-      return;
-    }
-    deduped.set(id.toLowerCase(), { id, name: tenant.name });
-  });
-
-  if (!deduped.has(DEFAULT_TENANT_ID.toLowerCase())) {
-    deduped.set(DEFAULT_TENANT_ID.toLowerCase(), {
-      id: DEFAULT_TENANT_ID,
-      name: "Default Tenant",
-    });
-  }
-
-  return Array.from(deduped.values())
-    .sort((a, b) => a.id.localeCompare(b.id))
-    .slice(0, 12)
-    .map((tenant) => {
-      const storedCredential = readTenantCredential(tenant.id);
-      const password = storedCredential?.password ?? defaultPasswordForTenant(tenant.id);
-      const noteParts = [
-        tenant.name && tenant.name !== tenant.id ? tenant.name : "",
-        `default password: ${tenant.id}`,
-      ].filter(Boolean);
-      return {
-        username: tenant.id,
-        password,
-        note: noteParts.join(" · "),
-      };
-    });
 }
 
 export function isAuthDisabled(): boolean {

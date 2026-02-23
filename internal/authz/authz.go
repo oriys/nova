@@ -206,6 +206,49 @@ var routeTable = []routePermission{
 	{"POST", "/rbac/", domain.PermRBACManage},
 	{"GET", "/rbac/", domain.PermRBACManage},
 	{"DELETE", "/rbac/", domain.PermRBACManage},
+
+	// Triggers
+	{"POST", "/triggers", domain.PermFunctionUpdate},
+	{"GET", "/triggers", domain.PermFunctionRead},
+	{"PATCH", "/triggers/", domain.PermFunctionUpdate},
+	{"DELETE", "/triggers/", domain.PermFunctionDelete},
+
+	// Layers
+	{"POST", "/layers", domain.PermConfigWrite},
+	{"GET", "/layers", domain.PermConfigRead},
+	{"DELETE", "/layers/", domain.PermConfigWrite},
+
+	// Volumes
+	{"POST", "/volumes", domain.PermConfigWrite},
+	{"GET", "/volumes", domain.PermConfigRead},
+	{"DELETE", "/volumes/", domain.PermConfigWrite},
+
+	// Cluster nodes
+	{"POST", "/cluster/", domain.PermConfigWrite},
+	{"GET", "/cluster/", domain.PermConfigRead},
+	{"DELETE", "/cluster/", domain.PermConfigWrite},
+
+	// Backends
+	{"GET", "/backends", domain.PermConfigRead},
+
+	// Async invocations
+	{"GET", "/async-invocations", domain.PermFunctionRead},
+	{"GET", "/async-invocations/", domain.PermFunctionRead},
+
+	// Invocations / stats
+	{"GET", "/invocations", domain.PermLogRead},
+	{"GET", "/stats", domain.PermMetricsRead},
+
+	// Cost
+	{"GET", "/cost/", domain.PermMetricsRead},
+
+	// Database access
+	{"POST", "/db-resources", domain.PermConfigWrite},
+	{"GET", "/db-resources", domain.PermConfigRead},
+	{"PATCH", "/db-resources/", domain.PermConfigWrite},
+	{"DELETE", "/db-resources/", domain.PermConfigWrite},
+	{"PUT", "/db-resources/", domain.PermConfigWrite},
+	{"DELETE", "/db-bindings/", domain.PermConfigWrite},
 }
 
 // resolvePermission determines the required permission for a request.

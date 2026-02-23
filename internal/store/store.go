@@ -80,6 +80,7 @@ type MetadataStore interface {
 	CreateTenant(ctx context.Context, tenant *TenantRecord) (*TenantRecord, error)
 	UpdateTenant(ctx context.Context, id string, update *TenantUpdate) (*TenantRecord, error)
 	DeleteTenant(ctx context.Context, id string) error
+	SetTenantPasswordHash(ctx context.Context, id, passwordHash string) error
 
 	ListNamespaces(ctx context.Context, tenantID string, limit, offset int) ([]*NamespaceRecord, error)
 	GetNamespace(ctx context.Context, tenantID, name string) (*NamespaceRecord, error)

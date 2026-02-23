@@ -11,12 +11,13 @@ import (
 
 // TenantRecord represents a tenant configuration record.
 type TenantRecord struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Status    string    `json:"status"`
-	Tier      string    `json:"tier"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Status       string    `json:"status"`
+	Tier         string    `json:"tier"`
+	PasswordHash string    `json:"-"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // TenantUpdate contains mutable tenant fields.
@@ -48,7 +49,7 @@ func (s *PostgresStore) ListTenants(ctx context.Context, limit, offset int) ([]*
 		offset = 0
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, status, tier, created_at, updated_at
+		SELECT id, name, status, tier, password_hash, created_at, updated_at
 		FROM tenants
 		ORDER BY id
 		LIMIT $1 OFFSET $2
@@ -66,6 +67,7 @@ func (s *PostgresStore) ListTenants(ctx context.Context, limit, offset int) ([]*
 			&tenant.Name,
 			&tenant.Status,
 			&tenant.Tier,
+			&tenant.PasswordHash,
 			&tenant.CreatedAt,
 			&tenant.UpdatedAt,
 		); err != nil {
@@ -87,7 +89,7 @@ func (s *PostgresStore) GetTenant(ctx context.Context, id string) (*TenantRecord
 
 	var tenant TenantRecord
 	err = s.pool.QueryRow(ctx, `
-		SELECT id, name, status, tier, created_at, updated_at
+		SELECT id, name, status, tier, password_hash, created_at, updated_at
 		FROM tenants
 		WHERE id = $1
 	`, tenantID).Scan(
@@ -95,6 +97,7 @@ func (s *PostgresStore) GetTenant(ctx context.Context, id string) (*TenantRecord
 		&tenant.Name,
 		&tenant.Status,
 		&tenant.Tier,
+		&tenant.PasswordHash,
 		&tenant.CreatedAt,
 		&tenant.UpdatedAt,
 	)
@@ -137,9 +140,9 @@ func (s *PostgresStore) CreateTenant(ctx context.Context, tenant *TenantRecord) 
 	defer tx.Rollback(ctx)
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO tenants (id, name, status, tier, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, NOW(), NOW())
-	`, tenantID, name, status, tier)
+		INSERT INTO tenants (id, name, status, tier, password_hash, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+	`, tenantID, name, status, tier, tenant.PasswordHash)
 	if err != nil {
 		return nil, fmt.Errorf("create tenant: %w", err)
 	}
@@ -216,6 +219,23 @@ func (s *PostgresStore) UpdateTenant(ctx context.Context, id string, update *Ten
 	}
 
 	return s.GetTenant(ctx, tenantID)
+}
+
+func (s *PostgresStore) SetTenantPasswordHash(ctx context.Context, id, passwordHash string) error {
+	tenantID, err := validateScopeIdentifier("tenant id", id)
+	if err != nil {
+		return err
+	}
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE tenants SET password_hash = $2, updated_at = NOW() WHERE id = $1
+	`, tenantID, passwordHash)
+	if err != nil {
+		return fmt.Errorf("set tenant password: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("tenant not found: %s", tenantID)
+	}
+	return nil
 }
 
 func (s *PostgresStore) DeleteTenant(ctx context.Context, id string) error {

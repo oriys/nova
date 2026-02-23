@@ -1,7 +1,7 @@
 // nova API client
 // Connects to the nova backend at /api (proxied via Next.js rewrites)
 import { getTenantScopeHeaders } from "@/lib/tenant-scope";
-import { filterTenantsForSession } from "@/lib/auth";
+import { filterTenantsForSession, getAuthToken } from "@/lib/auth";
 
 const API_BASE = "/api";
 
@@ -756,6 +756,10 @@ function buildNovaHeaders(options?: RequestInit): Headers {
   const tenantHeaders = getTenantScopeHeaders();
   headers.set("X-Nova-Tenant", tenantHeaders["X-Nova-Tenant"]);
   headers.set("X-Nova-Namespace", tenantHeaders["X-Nova-Namespace"]);
+  const token = getAuthToken();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
   return headers;
 }
 
@@ -1691,6 +1695,10 @@ export const runtimesApi = {
     const tenantHeaders = getTenantScopeHeaders();
     headers.set("X-Nova-Tenant", tenantHeaders["X-Nova-Tenant"]);
     headers.set("X-Nova-Namespace", tenantHeaders["X-Nova-Namespace"]);
+    const token = getAuthToken();
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
 
     const response = await fetch(`${API_BASE}/runtimes/upload`, {
       method: "POST",

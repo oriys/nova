@@ -107,6 +107,9 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 			VolumeManager:   cfg.VolumeManager,
 			AIService:       cfg.AIService,
 		}
+		if cfg.AuthCfg != nil && cfg.AuthCfg.JWT.Secret != "" {
+			cpHandler.JWTSecret = cfg.AuthCfg.JWT.Secret
+		}
 		cpHandler.RegisterRoutes(mux)
 	}
 

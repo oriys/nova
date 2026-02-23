@@ -40,6 +40,7 @@ type Handler struct {
 	LayerManager    *layer.Manager  // Optional: for shared dependency layers
 	VolumeManager   *volume.Manager // Optional: for persistent volume management
 	AIService       *ai.Service     // Optional: for AI-powered code operations
+	JWTSecret       string          // HS256 JWT signing key for auth endpoints
 }
 
 // RegisterRoutes registers all control plane routes on the given mux.
@@ -158,6 +159,12 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// RBAC management
 	rbacHandler := &RBACHandler{Store: h.Store}
 	rbacHandler.RegisterRoutes(mux)
+
+	// Authentication (register/login/logout/change-password)
+	if h.JWTSecret != "" {
+		authHandler := &AuthHandler{Store: h.Store, JWTSecret: h.JWTSecret}
+		authHandler.RegisterRoutes(mux)
+	}
 
 	// Schedules
 	schedHandler := &ScheduleHandler{Store: h.Store, Scheduler: h.Scheduler}

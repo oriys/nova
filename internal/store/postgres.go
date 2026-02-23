@@ -71,6 +71,7 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			name TEXT NOT NULL,
 			status TEXT NOT NULL DEFAULT 'active',
 			tier TEXT NOT NULL DEFAULT 'default',
+			password_hash TEXT NOT NULL DEFAULT '',
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
@@ -877,6 +878,9 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		// pg_trgm GIN index for ILIKE text search on function names
 		`CREATE EXTENSION IF NOT EXISTS pg_trgm`,
 		`CREATE INDEX IF NOT EXISTS idx_functions_name_trgm ON functions USING gin(name gin_trgm_ops)`,
+
+		// Migration: add password_hash column to tenants for server-side authentication
+		`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT ''`,
 	}
 
 	for _, stmt := range stmts {
