@@ -376,7 +376,7 @@ func (a *Agent) startPersistentProcess() error {
 		cmd = exec.Command(resolveBinary(bunPath, "bun"), "run", "/tmp/_bootstrap.js", "--persistent")
 	case "lua":
 		cmd = exec.Command(resolveBinary(luaPath, "lua"), "/tmp/_bootstrap.lua", "--persistent")
-	case "go", "rust":
+	case "go", "rust", "c", "cpp":
 		cmd = exec.Command(CodePath, "--persistent")
 	case "wasm":
 		cmd = exec.Command(resolveBinary(wasmtimePath, "wasmtime"), CodePath, "--", "--persistent")
@@ -595,7 +595,7 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID s
 			cmd = exec.CommandContext(ctx, resolveBinary(bunPath, "bun"), "run", "/tmp/_bootstrap.js", "/tmp/input.json")
 		case "lua":
 			cmd = exec.CommandContext(ctx, resolveBinary(luaPath, "lua"), "/tmp/_bootstrap.lua", "/tmp/input.json")
-		case "go", "rust", "zig", "swift":
+		case "go", "rust", "zig", "swift", "c", "cpp":
 			cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
 		case "wasm":
 			cmd = exec.CommandContext(ctx, resolveBinary(wasmtimePath, "wasmtime"), CodePath, "--", "/tmp/input.json")
@@ -718,7 +718,7 @@ func (a *Agent) handleStreamingExec(conn net.Conn, req *ExecPayload) (*Message, 
 			cmd = exec.CommandContext(ctx, resolveBinary(nodePath, "node"), "/tmp/_bootstrap.js", "/tmp/input.json")
 		case "ruby":
 			cmd = exec.CommandContext(ctx, resolveBinary(rubyPath, "ruby"), "/tmp/_bootstrap.rb", "/tmp/input.json")
-		case "go", "rust", "zig", "swift":
+		case "go", "rust", "zig", "swift", "c", "cpp":
 			cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
 		default:
 			errMsg := fmt.Sprintf("streaming not supported for runtime: %s", a.function.Runtime)
