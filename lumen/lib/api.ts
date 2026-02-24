@@ -1154,6 +1154,25 @@ export const functionsApi = {
     request<{ status: string; function_name: string }>(`/functions/${encodeURIComponent(name)}/test-suite`, {
       method: "DELETE",
     }),
+
+  prewarm: (name: string) =>
+    request<{ status: string }>(`/functions/${encodeURIComponent(name)}/prewarm`, {
+      method: "POST",
+    }),
+
+  getState: (name: string) =>
+    request<Record<string, unknown>>(`/functions/${encodeURIComponent(name)}/state`),
+
+  putState: (name: string, state: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/functions/${encodeURIComponent(name)}/state`, {
+      method: "PUT",
+      body: JSON.stringify(state),
+    }),
+
+  deleteState: (name: string) =>
+    request<{ status: string }>(`/functions/${encodeURIComponent(name)}/state`, {
+      method: "DELETE",
+    }),
 };
 
 // Tenant and namespace management API
@@ -1963,6 +1982,20 @@ export const asyncInvocationsApi = {
     }),
 
   summary: () => request<AsyncInvocationSummary>("/async-invocations/summary"),
+
+  listDlq: async (limit: number = 50, offset?: number) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (typeof offset === "number" && offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    return requestPaged<AsyncInvocationJob>(`/async-invocations/dlq?${params.toString()}`);
+  },
+
+  retryAllDlq: () =>
+    request<{ status: string; count: number }>("/async-invocations/dlq/retry-all", {
+      method: "POST",
+    }),
 };
 
 // Health API

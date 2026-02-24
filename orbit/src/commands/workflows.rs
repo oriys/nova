@@ -47,6 +47,13 @@ pub enum WorkflowsCmd {
         #[arg(long)]
         input: Option<String>,
     },
+    /// Invoke a workflow asynchronously
+    InvokeAsync {
+        name: String,
+        /// Input JSON
+        #[arg(long)]
+        input: Option<String>,
+    },
     /// Manage workflow runs
     Runs {
         #[command(subcommand)]
@@ -216,6 +223,19 @@ pub async fn run(cmd: WorkflowsCmd, client: &NovaClient, output_format: &str) ->
             let result = client
                 .post(&format!("/workflows/{name}/run"), &body)
                 .await?;
+            output::render_single(&result, RUN_COLUMNS, output_format);
+        }
+        WorkflowsCmd::InvokeAsync { name, input } => {
+            let mut body = json!({});
+            if let Some(inp) = input {
+                let parsed: serde_json::Value = serde_json::from_str(&inp)
+                    .map_err(|e| crate::error::OrbitError::Input(format!("Invalid JSON: {e}")))?;
+                body["input"] = parsed;
+            }
+            let result = client
+                .post(&format!("/workflows/{name}/invoke-async"), &body)
+                .await?;
+            output::print_success("Workflow invoked asynchronously.");
             output::render_single(&result, RUN_COLUMNS, output_format);
         }
         WorkflowsCmd::Runs { cmd } => match cmd {

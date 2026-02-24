@@ -6,19 +6,32 @@ mod output;
 
 use clap::{Parser, Subcommand};
 use commands::{
+    ai::AiCmd,
     apikeys::ApiKeysCmd,
     async_invocations::GlobalAsyncCmd,
+    cluster::ClusterCmd,
     config_cmd::ConfigCmd,
     cost::CostCmd,
+    diagnostics::DiagnosticsCmd,
+    dlq::DlqCmd,
+    docs::DocsCmd,
     events::{DeliveriesCmd, SubscriptionsCmd, TopicsCmd},
     functions::FunctionsCmd,
     gateway::GatewayCmd,
     health::HealthCmd,
     layers::LayersCmd,
     metrics::MetricsCmd,
+    notifications::NotificationsCmd,
+    rate_limit::RateLimitCmd,
+    rbac::RbacCmd,
     runtimes::RuntimesCmd,
     secrets::SecretsCmd,
+    slo::SloCmd,
+    state::StateCmd,
+    tenant_perms::{ButtonPermsCmd, MenuPermsCmd},
     tenants::TenantsCmd,
+    triggers::TriggersCmd,
+    volumes::{MountsCmd, VolumesCmd},
     workflows::WorkflowsCmd,
 };
 
@@ -148,6 +161,83 @@ enum Commands {
         #[command(subcommand)]
         cmd: CostCmd,
     },
+    /// SLO policy management
+    Slo {
+        #[command(subcommand)]
+        cmd: SloCmd,
+    },
+    /// Volume management
+    Volumes {
+        #[command(subcommand)]
+        cmd: VolumesCmd,
+    },
+    /// Function volume mounts
+    Mounts {
+        #[command(subcommand)]
+        cmd: MountsCmd,
+    },
+    /// Trigger management
+    Triggers {
+        #[command(subcommand)]
+        cmd: TriggersCmd,
+    },
+    /// Function diagnostics
+    Diagnostics {
+        #[command(subcommand)]
+        cmd: DiagnosticsCmd,
+    },
+    /// Function state management
+    State {
+        #[command(subcommand)]
+        cmd: StateCmd,
+    },
+    /// Dead letter queue
+    Dlq {
+        #[command(subcommand)]
+        cmd: DlqCmd,
+    },
+    /// List backends
+    Backends,
+    /// Manage tenant menu permissions
+    MenuPerms {
+        #[command(subcommand)]
+        cmd: MenuPermsCmd,
+    },
+    /// Manage tenant button permissions
+    ButtonPerms {
+        #[command(subcommand)]
+        cmd: ButtonPermsCmd,
+    },
+    /// Manage cluster nodes
+    Cluster {
+        #[command(subcommand)]
+        cmd: ClusterCmd,
+    },
+    /// Manage RBAC roles, permissions, and assignments
+    Rbac {
+        #[command(subcommand)]
+        cmd: RbacCmd,
+    },
+    /// Manage notifications
+    Notifications {
+        #[command(subcommand)]
+        cmd: NotificationsCmd,
+    },
+    /// AI operations
+    Ai {
+        #[command(subcommand)]
+        cmd: AiCmd,
+    },
+    /// Manage documentation
+    Docs {
+        #[command(subcommand)]
+        cmd: DocsCmd,
+    },
+    /// Manage rate limit template
+    RateLimit {
+        #[command(subcommand)]
+        cmd: RateLimitCmd,
+    },
     /// Show version
     Version,
 }
@@ -198,6 +288,32 @@ async fn main() {
             commands::async_invocations::run_global(cmd, &nova, &output_format).await
         }
         Commands::Cost { cmd } => commands::cost::run(cmd, &nova, &output_format).await,
+        Commands::Slo { cmd } => commands::slo::run(cmd, &nova, &output_format).await,
+        Commands::Volumes { cmd } => commands::volumes::run(cmd, &nova, &output_format).await,
+        Commands::Mounts { cmd } => commands::volumes::run_mounts(cmd, &nova, &output_format).await,
+        Commands::Triggers { cmd } => commands::triggers::run(cmd, &nova, &output_format).await,
+        Commands::Diagnostics { cmd } => {
+            commands::diagnostics::run(cmd, &nova, &output_format).await
+        }
+        Commands::State { cmd } => commands::state::run(cmd, &nova, &output_format).await,
+        Commands::Dlq { cmd } => commands::dlq::run(cmd, &nova, &output_format).await,
+        Commands::Backends => commands::backends::run(&nova, &output_format).await,
+        Commands::MenuPerms { cmd } => {
+            commands::tenant_perms::run_menu(cmd, &nova, &output_format).await
+        }
+        Commands::ButtonPerms { cmd } => {
+            commands::tenant_perms::run_button(cmd, &nova, &output_format).await
+        }
+        Commands::Cluster { cmd } => commands::cluster::run(cmd, &nova, &output_format).await,
+        Commands::Rbac { cmd } => commands::rbac::run(cmd, &nova, &output_format).await,
+        Commands::Notifications { cmd } => {
+            commands::notifications::run(cmd, &nova, &output_format).await
+        }
+        Commands::Ai { cmd } => commands::ai::run(cmd, &nova, &output_format).await,
+        Commands::Docs { cmd } => commands::docs::run(cmd, &nova, &output_format).await,
+        Commands::RateLimit { cmd } => {
+            commands::rate_limit::run(cmd, &nova, &output_format).await
+        }
         Commands::Version => {
             println!("orbit {}", env!("CARGO_PKG_VERSION"));
             Ok(())

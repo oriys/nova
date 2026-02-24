@@ -58,6 +58,10 @@ type CancelWorkflowRunArgs struct {
 	Name string `json:"name" jsonschema:"Workflow name"`
 	ID   string `json:"id" jsonschema:"Run ID"`
 }
+type InvokeWorkflowAsyncArgs struct {
+	Name  string          `json:"name" jsonschema:"Workflow name"`
+	Input json.RawMessage `json:"input,omitempty" jsonschema:"Input JSON"`
+}
 
 func RegisterWorkflowTools(s *mcp.Server, c *NovaClient) {
 	addToolHelper(s, &mcp.Tool{Name: "nova_create_workflow", Description: "Create a new workflow (DAG)"}, c,
@@ -123,5 +127,14 @@ func RegisterWorkflowTools(s *mcp.Server, c *NovaClient) {
 	addToolHelper(s, &mcp.Tool{Name: "nova_cancel_workflow_run", Description: "Cancel a running workflow"}, c,
 		func(ctx context.Context, args CancelWorkflowRunArgs, c *NovaClient) (json.RawMessage, error) {
 			return c.Post(ctx, fmt.Sprintf("/workflows/%s/runs/%s/cancel", args.Name, args.ID), map[string]any{})
+		})
+
+	addToolHelper(s, &mcp.Tool{Name: "nova_invoke_workflow_async", Description: "Invoke a workflow asynchronously"}, c,
+		func(ctx context.Context, args InvokeWorkflowAsyncArgs, c *NovaClient) (json.RawMessage, error) {
+			body := map[string]any{}
+			if args.Input != nil {
+				body["input"] = args.Input
+			}
+			return c.Post(ctx, fmt.Sprintf("/workflows/%s/invoke-async", args.Name), body)
 		})
 }

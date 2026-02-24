@@ -23,6 +23,10 @@ type DeleteRuntimeArgs struct {
 	ID string `json:"id" jsonschema:"Runtime ID"`
 }
 
+type UploadRuntimeArgs struct {
+	ImagePath string `json:"image_path" jsonschema:"Path to the runtime rootfs image file"`
+}
+
 func RegisterRuntimeTools(s *mcp.Server, c *NovaClient) {
 	addToolHelper(s, &mcp.Tool{
 		Name:        "nova_list_runtimes",
@@ -44,5 +48,12 @@ func RegisterRuntimeTools(s *mcp.Server, c *NovaClient) {
 		Description: "Delete a custom runtime",
 	}, c, func(ctx context.Context, args DeleteRuntimeArgs, c *NovaClient) (json.RawMessage, error) {
 		return c.Delete(ctx, fmt.Sprintf("/runtimes/%s", args.ID))
+	})
+
+	addToolHelper(s, &mcp.Tool{
+		Name:        "nova_upload_runtime",
+		Description: "Upload a runtime rootfs image",
+	}, c, func(ctx context.Context, args UploadRuntimeArgs, c *NovaClient) (json.RawMessage, error) {
+		return c.Post(ctx, "/runtimes/upload", map[string]any{"image_path": args.ImagePath})
 	})
 }
