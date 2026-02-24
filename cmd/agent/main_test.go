@@ -11,6 +11,7 @@ func TestNormalizeRuntime(t *testing.T) {
 		{"go1.23", "go"},
 		{"python3.12", "python"},
 		{"node24", "node"},
+		{"graalvm21", "graalvm"},
 		{"wasm", "wasm"},
 	}
 

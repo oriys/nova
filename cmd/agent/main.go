@@ -616,7 +616,7 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID s
 			cmd = exec.CommandContext(ctx, resolveBinary(bunPath, "bun"), "run", "/tmp/_bootstrap.js", "/tmp/input.json")
 		case "lua":
 			cmd = exec.CommandContext(ctx, resolveBinary(luaPath, "lua"), "/tmp/_bootstrap.lua", "/tmp/input.json")
-		case "go", "rust", "zig", "swift", "c", "cpp":
+		case "go", "rust", "zig", "swift", "c", "cpp", "graalvm":
 			cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
 		case "wasm":
 			cmd = exec.CommandContext(ctx, resolveBinary(wasmtimePath, "wasmtime"), CodePath, "--", "/tmp/input.json")
@@ -739,7 +739,7 @@ func (a *Agent) handleStreamingExec(conn net.Conn, req *ExecPayload) (*Message, 
 			cmd = exec.CommandContext(ctx, resolveBinary(nodePath, "node"), "/tmp/_bootstrap.js", "/tmp/input.json")
 		case "ruby":
 			cmd = exec.CommandContext(ctx, resolveBinary(rubyPath, "ruby"), "/tmp/_bootstrap.rb", "/tmp/input.json")
-		case "go", "rust", "zig", "swift", "c", "cpp":
+		case "go", "rust", "zig", "swift", "c", "cpp", "graalvm":
 			cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
 		default:
 			errMsg := fmt.Sprintf("streaming not supported for runtime: %s", a.function.Runtime)
@@ -833,14 +833,14 @@ func (a *Agent) handleStreamingExec(conn net.Conn, req *ExecPayload) (*Message, 
 func enrichExecError(err error, runtime string) error {
 	var pathErr *os.PathError
 	if errors.As(err, &pathErr) && errors.Is(pathErr.Err, syscall.ENOEXEC) {
-		if runtime == "go" || runtime == "rust" || runtime == "zig" || runtime == "swift" {
+		if runtime == "go" || runtime == "rust" || runtime == "zig" || runtime == "swift" || runtime == "graalvm" {
 			return fmt.Errorf("%w (exec format error: /code/handler must be a Linux executable for the VM architecture, e.g. x86_64-unknown-linux-musl)", err)
 		}
 		return fmt.Errorf("%w (exec format error: check shebang and executable format of /code/handler)", err)
 	}
 	if errors.As(err, &pathErr) && errors.Is(pathErr.Err, syscall.ENOENT) && pathErr.Path == CodePath {
 		if _, statErr := os.Stat(CodePath); statErr == nil {
-			if runtime == "go" || runtime == "rust" || runtime == "zig" || runtime == "swift" {
+			if runtime == "go" || runtime == "rust" || runtime == "zig" || runtime == "swift" || runtime == "graalvm" {
 				return fmt.Errorf("%w (/code/handler exists but required dynamic loader is missing; build a static Linux binary, e.g. Rust target x86_64-unknown-linux-musl)", err)
 			}
 			return fmt.Errorf("%w (/code/handler exists but its interpreter is missing; check shebang/interpreter path)", err)
@@ -1089,6 +1089,8 @@ func normalizeRuntime(rt string) string {
 		return "swift"
 	case strings.HasPrefix(rt, "zig"):
 		return "zig"
+	case strings.HasPrefix(rt, "graalvm"):
+		return "graalvm"
 	default:
 		return rt
 	}
