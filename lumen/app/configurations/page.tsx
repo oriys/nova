@@ -69,6 +69,83 @@ function formatComponentLabel(name: string, fallbackLabel: string): string {
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
+type FeatureFlagKey =
+  | "gatewayEnabled"
+  | "grpcEnabled"
+  | "tracingEnabled"
+  | "outputCaptureEnabled"
+  | "authEnabled"
+  | "authJwtEnabled"
+  | "authApiKeysEnabled"
+  | "authzEnabled"
+  | "rateLimitEnabled"
+  | "secretsEnabled"
+  | "networkPolicyEnabled"
+  | "autoScaleEnabled"
+  | "layersEnabled"
+  | "volumesEnabled"
+  | "queueAdaptiveEnabled"
+  | "cacheRedisEnabled"
+  | "cacheInvalidationEnabled"
+
+type FeatureFlagValue = "true" | "false"
+
+type FeatureFlagField = {
+  key: FeatureFlagKey
+  configKey: string
+  id: string
+}
+
+const defaultFeatureFlags: Record<FeatureFlagKey, FeatureFlagValue> = {
+  gatewayEnabled: "true",
+  grpcEnabled: "false",
+  tracingEnabled: "false",
+  outputCaptureEnabled: "false",
+  authEnabled: "false",
+  authJwtEnabled: "false",
+  authApiKeysEnabled: "false",
+  authzEnabled: "false",
+  rateLimitEnabled: "false",
+  secretsEnabled: "false",
+  networkPolicyEnabled: "false",
+  autoScaleEnabled: "false",
+  layersEnabled: "false",
+  volumesEnabled: "false",
+  queueAdaptiveEnabled: "false",
+  cacheRedisEnabled: "false",
+  cacheInvalidationEnabled: "false",
+}
+
+const featureFlagFields: FeatureFlagField[] = [
+  { key: "gatewayEnabled", configKey: "gateway_enabled", id: "featureGatewayEnabled" },
+  { key: "grpcEnabled", configKey: "grpc_enabled", id: "featureGrpcEnabled" },
+  { key: "tracingEnabled", configKey: "tracing_enabled", id: "featureTracingEnabled" },
+  { key: "outputCaptureEnabled", configKey: "output_capture_enabled", id: "featureOutputCaptureEnabled" },
+  { key: "authEnabled", configKey: "auth_enabled", id: "featureAuthEnabled" },
+  { key: "authJwtEnabled", configKey: "auth_jwt_enabled", id: "featureAuthJwtEnabled" },
+  { key: "authApiKeysEnabled", configKey: "auth_apikeys_enabled", id: "featureAuthApiKeysEnabled" },
+  { key: "authzEnabled", configKey: "authz_enabled", id: "featureAuthzEnabled" },
+  { key: "rateLimitEnabled", configKey: "rate_limit_enabled", id: "featureRateLimitEnabled" },
+  { key: "secretsEnabled", configKey: "secrets_enabled", id: "featureSecretsEnabled" },
+  { key: "networkPolicyEnabled", configKey: "network_policy_enabled", id: "featureNetworkPolicyEnabled" },
+  { key: "autoScaleEnabled", configKey: "auto_scale_enabled", id: "featureAutoScaleEnabled" },
+  { key: "layersEnabled", configKey: "layers_enabled", id: "featureLayersEnabled" },
+  { key: "volumesEnabled", configKey: "volumes_enabled", id: "featureVolumesEnabled" },
+  { key: "queueAdaptiveEnabled", configKey: "queue_adaptive_enabled", id: "featureQueueAdaptiveEnabled" },
+  { key: "cacheRedisEnabled", configKey: "cache_redis_enabled", id: "featureCacheRedisEnabled" },
+  { key: "cacheInvalidationEnabled", configKey: "cache_invalidation", id: "featureCacheInvalidationEnabled" },
+]
+
+function parseConfigBool(value: string | undefined, fallback: boolean): FeatureFlagValue {
+  if (typeof value !== "string") {
+    return fallback ? "true" : "false"
+  }
+  const normalized = value.trim().toLowerCase()
+  if (["1", "true", "yes", "on"].includes(normalized)) return "true"
+  if (["0", "false", "no", "off"].includes(normalized)) return "false"
+  return fallback ? "true" : "false"
+}
+
 export default function ConfigurationsPage() {
   const t = useTranslations("pages")
   const tc = useTranslations("configurations")
@@ -90,6 +167,7 @@ export default function ConfigurationsPage() {
   const [runtimePoolSize, setRuntimePoolSize] = useState("1")
   const [runtimePoolRuntimes, setRuntimePoolRuntimes] = useState("python,node,go")
   const [runtimePoolRefillInterval, setRuntimePoolRefillInterval] = useState("30s")
+  const [featureFlags, setFeatureFlags] = useState<Record<FeatureFlagKey, FeatureFlagValue>>(defaultFeatureFlags)
   const [dirty, setDirty] = useState(false)
 
   // AI Settings
@@ -184,6 +262,15 @@ export default function ConfigurationsPage() {
       if (configData["runtime_pool_size"]) setRuntimePoolSize(configData["runtime_pool_size"])
       if (configData["runtime_pool_runtimes"]) setRuntimePoolRuntimes(configData["runtime_pool_runtimes"])
       if (configData["runtime_pool_refill_interval"]) setRuntimePoolRefillInterval(configData["runtime_pool_refill_interval"])
+
+      const nextFeatureFlags: Record<FeatureFlagKey, FeatureFlagValue> = { ...defaultFeatureFlags }
+      for (const field of featureFlagFields) {
+        nextFeatureFlags[field.key] = parseConfigBool(
+          configData[field.configKey],
+          defaultFeatureFlags[field.key] === "true"
+        )
+      }
+      setFeatureFlags(nextFeatureFlags)
       setDirty(false)
 
       // Apply AI config
@@ -253,11 +340,33 @@ export default function ConfigurationsPage() {
     if (normalized === "unknown") return tc("unknown")
     return status
   }
+  const featureFlagTexts: Record<FeatureFlagKey, { label: string; help: string }> = {
+    gatewayEnabled: { label: tc("gatewayEnabled"), help: tc("gatewayEnabledHelp") },
+    grpcEnabled: { label: tc("grpcEnabled"), help: tc("grpcEnabledHelp") },
+    tracingEnabled: { label: tc("tracingEnabled"), help: tc("tracingEnabledHelp") },
+    outputCaptureEnabled: { label: tc("outputCaptureEnabled"), help: tc("outputCaptureEnabledHelp") },
+    authEnabled: { label: tc("authEnabled"), help: tc("authEnabledHelp") },
+    authJwtEnabled: { label: tc("authJwtEnabled"), help: tc("authJwtEnabledHelp") },
+    authApiKeysEnabled: { label: tc("authApiKeysEnabled"), help: tc("authApiKeysEnabledHelp") },
+    authzEnabled: { label: tc("authzEnabled"), help: tc("authzEnabledHelp") },
+    rateLimitEnabled: { label: tc("rateLimitEnabled"), help: tc("rateLimitEnabledHelp") },
+    secretsEnabled: { label: tc("secretsEnabled"), help: tc("secretsEnabledHelp") },
+    networkPolicyEnabled: { label: tc("networkPolicyEnabled"), help: tc("networkPolicyEnabledHelp") },
+    autoScaleEnabled: { label: tc("autoScaleEnabled"), help: tc("autoScaleEnabledHelp") },
+    layersEnabled: { label: tc("layersEnabled"), help: tc("layersEnabledHelp") },
+    volumesEnabled: { label: tc("volumesEnabled"), help: tc("volumesEnabledHelp") },
+    queueAdaptiveEnabled: { label: tc("queueAdaptiveEnabled"), help: tc("queueAdaptiveEnabledHelp") },
+    cacheRedisEnabled: { label: tc("cacheRedisEnabled"), help: tc("cacheRedisEnabledHelp") },
+    cacheInvalidationEnabled: { label: tc("cacheInvalidationEnabled"), help: tc("cacheInvalidationEnabledHelp") },
+  }
 
   const handleSave = async () => {
     try {
       setSaving(true)
       setSaved(false)
+      const featurePayload = Object.fromEntries(
+        featureFlagFields.map((field) => [field.configKey, featureFlags[field.key]])
+      ) as Record<string, string>
       await configApi.update({
         pool_ttl: poolTTL,
         log_level: logLevel,
@@ -266,6 +375,7 @@ export default function ConfigurationsPage() {
         runtime_pool_size: runtimePoolSize,
         runtime_pool_runtimes: runtimePoolRuntimes,
         runtime_pool_refill_interval: runtimePoolRefillInterval,
+        ...featurePayload,
       })
       setDirty(false)
       setSaved(true)
@@ -347,6 +457,11 @@ export default function ConfigurationsPage() {
     } finally {
       setPromptSaving(false)
     }
+  }
+
+  const setFeatureFlagValue = (key: FeatureFlagKey, value: FeatureFlagValue) => {
+    setFeatureFlags((prev) => ({ ...prev, [key]: value }))
+    setDirty(true)
   }
 
   if (error) {
@@ -574,6 +689,64 @@ export default function ConfigurationsPage() {
               <p className="text-xs text-muted-foreground">{tc("runtimePoolRefillIntervalHelp")}</p>
             </div>
           </div>
+          <div className="mt-4 flex items-center gap-3">
+            <Button
+              variant="outline"
+              onClick={handleSave}
+              disabled={saving || !dirty}
+            >
+              {saving ? (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  {tc("saving")}
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  {tc("saveSettings")}
+                </>
+              )}
+            </Button>
+            {saved && (
+              <span className="flex items-center gap-1 text-sm text-success">
+                <CheckCircle className="h-4 w-4" />
+                {tc("saved")}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Feature Flags */}
+        <div className="rounded-xl border border-border bg-card p-6">
+          <h3 className="text-lg font-semibold text-card-foreground mb-2">
+            {tc("featureFlags")}
+          </h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            {tc("featureFlagsHelp")}
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {featureFlagFields.map((field) => (
+              <div key={field.key} className="space-y-2">
+                <Label htmlFor={field.id}>{featureFlagTexts[field.key].label}</Label>
+                <Select
+                  value={featureFlags[field.key]}
+                  onValueChange={(value) => setFeatureFlagValue(field.key, value as FeatureFlagValue)}
+                >
+                  <SelectTrigger id={field.id}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">{tc("enabled")}</SelectItem>
+                    <SelectItem value="false">{tc("disabled")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{featureFlagTexts[field.key].help}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-xs text-muted-foreground">
+            {tc("restartRequired")}
+          </p>
           <div className="mt-4 flex items-center gap-3">
             <Button
               variant="outline"

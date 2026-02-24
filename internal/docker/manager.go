@@ -167,11 +167,6 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 		args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", port, agentPort))
 	}
 
-	// Add environment variables
-	for k, v := range fn.EnvVars {
-		args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
-	}
-
 	args = append(args, image)
 
 	logging.Op().Debug("creating Docker container", "image", image, "name", containerName, "port", port)
@@ -286,10 +281,6 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 		args = append(args, "--network", m.config.Network)
 	} else {
 		args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", port, agentPort))
-	}
-
-	for k, v := range fn.EnvVars {
-		args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
 	}
 
 	args = append(args, image)
@@ -478,18 +469,10 @@ func (c *Client) Init(fn *domain.Function) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	payload, _ := json.Marshal(&backend.InitPayload{
-		Runtime:         string(fn.Runtime),
-		Handler:         fn.Handler,
-		EnvVars:         fn.EnvVars,
-		Command:         fn.RuntimeCommand,
-		Extension:       fn.RuntimeExtension,
-		Mode:            string(fn.Mode),
-		FunctionName:    fn.Name,
-		FunctionVersion: fn.Version,
-		MemoryMB:        fn.MemoryMB,
-		TimeoutS:        fn.TimeoutS,
-	})
+	payload, err := backend.MarshalInitPayload(fn)
+	if err != nil {
+		return fmt.Errorf("marshal init payload: %w", err)
+	}
 	c.initPayload = payload
 
 	if err := c.redialAndInit(5 * time.Second); err != nil {

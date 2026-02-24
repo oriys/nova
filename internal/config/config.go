@@ -128,12 +128,12 @@ type StaticAPIKey struct {
 
 // RateLimitConfig holds rate limiting settings
 type RateLimitConfig struct {
-	Enabled  bool                       `json:"enabled"`  // Default: false
-	Backend  string                     `json:"backend"`  // "postgres" (default), "redis"
-	Tiers    map[string]TierLimitConfig `json:"tiers"`    // Named rate limit tiers
-	Default  TierLimitConfig            `json:"default"`  // Default tier for unauthenticated/unmatched
-	RedisAddr string                    `json:"redis_addr"` // Redis address for "redis" backend
-	RedisDB   int                       `json:"redis_db"`   // Redis database number
+	Enabled   bool                       `json:"enabled"`    // Default: false
+	Backend   string                     `json:"backend"`    // "postgres" (default), "redis"
+	Tiers     map[string]TierLimitConfig `json:"tiers"`      // Named rate limit tiers
+	Default   TierLimitConfig            `json:"default"`    // Default tier for unauthenticated/unmatched
+	RedisAddr string                     `json:"redis_addr"` // Redis address for "redis" backend
+	RedisDB   int                        `json:"redis_db"`   // Redis database number
 }
 
 // TierLimitConfig holds rate limit settings for a tier
@@ -183,10 +183,10 @@ type AutoScaleConfig struct {
 // SLOConfig holds SLO evaluation and alerting settings.
 type SLOConfig struct {
 	Enabled             bool          `json:"enabled"`
-	Interval            time.Duration `json:"interval"`              // default 30s
-	NotificationTimeout time.Duration `json:"notification_timeout"`  // default 10s
-	DefaultWindowS      int           `json:"default_window_s"`      // default 900
-	DefaultMinSamples   int           `json:"default_min_samples"`   // default 20
+	Interval            time.Duration `json:"interval"`               // default 30s
+	NotificationTimeout time.Duration `json:"notification_timeout"`   // default 10s
+	DefaultWindowS      int           `json:"default_window_s"`       // default 900
+	DefaultMinSamples   int           `json:"default_min_samples"`    // default 20
 	AutoHealMaxReplicas int           `json:"auto_heal_max_replicas"` // default 10
 }
 
@@ -201,11 +201,11 @@ type QueueConfig struct {
 
 	// Adaptive concurrency control: dynamically adjust workers, poll interval,
 	// and batch size based on queue depth and throughput.
-	AdaptiveEnabled     bool          `json:"adaptive_enabled"`      // Enable adaptive scaling (default: false)
-	AdaptiveMinWorkers  int           `json:"adaptive_min_workers"`  // Minimum worker count (default: 4)
-	AdaptiveMaxWorkers  int           `json:"adaptive_max_workers"`  // Maximum worker count (default: 256)
-	AdaptiveMinPoll     time.Duration `json:"adaptive_min_poll"`     // Minimum poll interval (default: 20ms)
-	AdaptiveMaxPoll     time.Duration `json:"adaptive_max_poll"`     // Maximum poll interval (default: 500ms)
+	AdaptiveEnabled       bool          `json:"adaptive_enabled"`        // Enable adaptive scaling (default: false)
+	AdaptiveMinWorkers    int           `json:"adaptive_min_workers"`    // Minimum worker count (default: 4)
+	AdaptiveMaxWorkers    int           `json:"adaptive_max_workers"`    // Maximum worker count (default: 256)
+	AdaptiveMinPoll       time.Duration `json:"adaptive_min_poll"`       // Minimum poll interval (default: 20ms)
+	AdaptiveMaxPoll       time.Duration `json:"adaptive_max_poll"`       // Maximum poll interval (default: 500ms)
 	AdaptiveProbeInterval time.Duration `json:"adaptive_probe_interval"` // How often to re-evaluate parameters (default: 2s)
 }
 
@@ -358,7 +358,7 @@ func DefaultConfig() *Config {
 			DefaultIsolation: "none",
 		},
 		Gateway: GatewayConfig{
-			Enabled: false,
+			Enabled: true,
 		},
 		AutoScale: AutoScaleConfig{
 			Enabled:  false,
@@ -991,7 +991,82 @@ func LoadFromEnv(cfg *Config) {
 	}
 }
 
+// ApplyStoreOverrides applies config values loaded from the system config store.
+// Values are best-effort: malformed entries are ignored and existing defaults remain.
+func ApplyStoreOverrides(cfg *Config, values map[string]string) {
+	if cfg == nil || len(values) == 0 {
+		return
+	}
+
+	applyBool := func(key string, setter func(bool)) {
+		v, ok := values[key]
+		if !ok {
+			return
+		}
+		if parsed, ok := parseStoreBool(v); ok {
+			setter(parsed)
+		}
+	}
+
+	applyBool("tracing_enabled", func(b bool) { cfg.Observability.Tracing.Enabled = b })
+	applyBool("output_capture_enabled", func(b bool) { cfg.Observability.OutputCapture.Enabled = b })
+	applyBool("grpc_enabled", func(b bool) { cfg.GRPC.Enabled = b })
+	applyBool("auth_enabled", func(b bool) { cfg.Auth.Enabled = b })
+	applyBool("auth_jwt_enabled", func(b bool) { cfg.Auth.JWT.Enabled = b })
+	applyBool("auth_apikeys_enabled", func(b bool) { cfg.Auth.APIKeys.Enabled = b })
+	applyBool("authz_enabled", func(b bool) { cfg.Auth.Authorization.Enabled = b })
+	applyBool("rate_limit_enabled", func(b bool) { cfg.RateLimit.Enabled = b })
+	applyBool("secrets_enabled", func(b bool) { cfg.Secrets.Enabled = b })
+	applyBool("network_policy_enabled", func(b bool) { cfg.NetworkPolicy.Enabled = b })
+	applyBool("gateway_enabled", func(b bool) { cfg.Gateway.Enabled = b })
+	applyBool("auto_scale_enabled", func(b bool) { cfg.AutoScale.Enabled = b })
+	applyBool("layers_enabled", func(b bool) { cfg.Layers.Enabled = b })
+	applyBool("volumes_enabled", func(b bool) { cfg.Volumes.Enabled = b })
+	applyBool("queue_adaptive_enabled", func(b bool) { cfg.Queue.AdaptiveEnabled = b })
+	applyBool("cache_redis_enabled", func(b bool) { cfg.Cache.RedisEnabled = b })
+	applyBool("cache_invalidation", func(b bool) { cfg.Cache.Invalidation = b })
+	applyBool("runtime_pool_enabled", func(b bool) { cfg.RuntimePool.Enabled = b })
+
+	if v, ok := values["runtime_pool_size"]; ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n > 0 {
+			cfg.RuntimePool.PoolSize = n
+		}
+	}
+	if v, ok := values["runtime_pool_refill_interval"]; ok {
+		if d, err := time.ParseDuration(strings.TrimSpace(v)); err == nil && d > 0 {
+			cfg.RuntimePool.RefillInterval = d.String()
+		}
+	}
+	if v, ok := values["runtime_pool_runtimes"]; ok {
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			cfg.RuntimePool.Runtimes = nil
+		} else {
+			parts := strings.Split(trimmed, ",")
+			runtimes := make([]string, 0, len(parts))
+			for _, part := range parts {
+				runtime := strings.TrimSpace(part)
+				if runtime != "" {
+					runtimes = append(runtimes, runtime)
+				}
+			}
+			cfg.RuntimePool.Runtimes = runtimes
+		}
+	}
+}
+
 func parseBool(s string) bool {
 	s = strings.ToLower(s)
 	return s == "true" || s == "1" || s == "yes"
+}
+
+func parseStoreBool(s string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "true", "1", "yes", "on":
+		return true, true
+	case "false", "0", "no", "off":
+		return false, true
+	default:
+		return false, false
+	}
 }

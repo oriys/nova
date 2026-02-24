@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/oriys/nova/internal/backend"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/metrics"
 )
@@ -34,34 +35,13 @@ type VsockMessage struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
-type InitPayload struct {
-	Runtime         string            `json:"runtime"`
-	Handler         string            `json:"handler"`
-	EnvVars         map[string]string `json:"env_vars"`
-	Command         []string          `json:"command,omitempty"`
-	Extension       string            `json:"extension,omitempty"`
-	Mode            string            `json:"mode,omitempty"`
-	FunctionName    string            `json:"function_name,omitempty"`
-	FunctionVersion int               `json:"function_version,omitempty"`
-	MemoryMB        int               `json:"memory_mb,omitempty"`
-	TimeoutS        int               `json:"timeout_s,omitempty"`
-	LayerCount      int               `json:"layer_count,omitempty"`
-	VolumeMounts    []VolumeMountInfo `json:"volume_mounts,omitempty"`
-}
-
-// VolumeMountInfo tells the agent where to mount a volume drive inside the VM.
-type VolumeMountInfo struct {
-	MountPath string `json:"mount_path"` // guest mount point (e.g., /mnt/data)
-	ReadOnly  bool   `json:"read_only"`
-}
-
 type ExecPayload struct {
 	RequestID   string          `json:"request_id"`
 	Input       json.RawMessage `json:"input"`
 	TimeoutS    int             `json:"timeout_s"`
 	TraceParent string          `json:"traceparent,omitempty"` // W3C TraceContext
 	TraceState  string          `json:"tracestate,omitempty"`  // W3C TraceContext
-	Stream      bool            `json:"stream,omitempty"`       // Enable streaming response
+	Stream      bool            `json:"stream,omitempty"`      // Enable streaming response
 }
 
 type RespPayload struct {
@@ -222,29 +202,10 @@ func (c *VsockClient) Init(fn *domain.Function) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Build volume mount info for the agent
-	var volumeMounts []VolumeMountInfo
-	for _, rm := range fn.ResolvedMounts {
-		volumeMounts = append(volumeMounts, VolumeMountInfo{
-			MountPath: rm.MountPath,
-			ReadOnly:  rm.ReadOnly,
-		})
+	payload, err := backend.MarshalInitPayload(fn)
+	if err != nil {
+		return fmt.Errorf("marshal init payload: %w", err)
 	}
-
-	payload, _ := json.Marshal(&InitPayload{
-		Runtime:         string(fn.Runtime),
-		Handler:         fn.Handler,
-		EnvVars:         fn.EnvVars,
-		Command:         fn.RuntimeCommand,
-		Extension:       fn.RuntimeExtension,
-		Mode:            string(fn.Mode),
-		FunctionName:    fn.Name,
-		FunctionVersion: fn.Version,
-		MemoryMB:        fn.MemoryMB,
-		TimeoutS:        fn.TimeoutS,
-		LayerCount:      len(fn.LayerPaths),
-		VolumeMounts:    volumeMounts,
-	})
 	c.initPayload = payload
 	if err := c.redialAndInitLocked(5 * time.Second); err != nil {
 		return err
