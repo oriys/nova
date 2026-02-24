@@ -1055,9 +1055,9 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 				`jar cfe /work/handler.jar Main -C . . && ` +
 				`cp /work/handler.jar /work/handler`
 	case domain.RuntimeC:
-		return "gcc:14", "cd /work && gcc -static -o handler *.c"
+		return "gcc:14", "cd /work && gcc -std=c11 -O2 -static -o handler *.c"
 	case domain.RuntimeCpp:
-		return "gcc:14", "cd /work && g++ -static -o handler *.cpp"
+		return "gcc:14", "cd /work && g++ -std=c++17 -O2 -static -o handler *.cpp"
 	default:
 		return "", ""
 	}

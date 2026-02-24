@@ -165,10 +165,10 @@ func runtimeFamily(runtime string) string {
 		return "custom"
 	case strings.HasPrefix(rt, "cpp"):
 		return "cpp"
-	case rt == "r":
-		return "r"
 	case rt == "c":
 		return "c"
+	case rt == "r":
+		return "r"
 	default:
 		return rt
 	}
