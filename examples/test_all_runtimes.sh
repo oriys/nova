@@ -1,109 +1,94 @@
 #!/bin/bash
-# test_all_runtimes.sh - Build and test hello functions for all supported runtimes.
+# test_all_runtimes.sh - Seed and test functions for all supported runtimes.
 #
-# Supported (VM): python, go, rust, wasm, node, ruby, java, php, deno, bun
-#
-# Prerequisites:
-#   - nova daemon running (VM mode)
-#   - Toolchains (optional, auto-skip if missing):
-#       - Go (for go)
-#       - Rust + musl target (for rust):  rustup target add x86_64-unknown-linux-musl
-#       - Rust + WASI target (for wasm):  rustup target add wasm32-wasip1 (or wasm32-wasi)
-#       - JDK (for java): javac + jar
+# Uses control-plane compilation (Docker toolchains), so no local Go/Rust/JDK/GCC
+# installation is required.
 
 set -euxo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_DIR="${SCRIPT_DIR}/build"
+API_URL="${NOVA_API_URL:-http://localhost:9000}"
 
-echo "=========================================="
-echo "  Building runtime fixtures"
-echo "=========================================="
-
-"${SCRIPT_DIR}/build_runtime_fixtures.sh"
-
-register_or_update() {
+invoke_with_retry() {
   local name="$1"
-  local runtime="$2"
-  local code="$3"
+  local payload="$2"
+  local retries="${3:-90}"
 
   echo ""
-  echo "--- Registering ${name} (${runtime}) ---"
-  nova register "${name}" --runtime "${runtime}" --code "${code}" 2>/dev/null || \
-    nova update "${name}" --code "${code}"
+  echo "--- Invoking ${name} ---"
+
+  for attempt in $(seq 1 "${retries}"); do
+    local resp
+    resp="$(curl -sS -X POST "${API_URL}/functions/${name}/invoke" \
+      -H "Content-Type: application/json" \
+      -d "${payload}")"
+    local err=""
+    err="$(echo "${resp}" | jq -r '.error // empty' 2>/dev/null || true)"
+
+    if [ -n "${err}" ] && echo "${err}" | grep -q "still compiling"; then
+      sleep 2
+      continue
+    fi
+
+    echo "${resp}" | jq .
+    if [ -n "${err}" ]; then
+      return 1
+    fi
+    return 0
+  done
+
+  echo "timed out waiting for compilation: ${name}"
+  return 1
 }
 
-echo ""
 echo "=========================================="
-echo "  Registering functions"
+echo "  Seeding Runtime Functions"
 echo "=========================================="
-
-register_or_update "hello-python" "python" "${BUILD_DIR}/python/handler"
-register_or_update "hello-go" "go" "${BUILD_DIR}/go/handler"
-register_or_update "hello-node" "node" "${BUILD_DIR}/node/handler"
-register_or_update "hello-ruby" "ruby" "${BUILD_DIR}/ruby/handler"
-register_or_update "hello-php" "php" "${BUILD_DIR}/php/handler"
-register_or_update "hello-deno" "deno" "${BUILD_DIR}/deno/handler"
-register_or_update "hello-bun" "bun" "${BUILD_DIR}/bun/handler"
-
-if [[ -f "${BUILD_DIR}/rust/handler" ]]; then
-  register_or_update "hello-rust" "rust" "${BUILD_DIR}/rust/handler"
-else
-  echo ""
-  echo "--- Skipping hello-rust (artifact missing) ---"
-fi
-
-if [[ -f "${BUILD_DIR}/wasm/handler" ]]; then
-  register_or_update "hello-wasm" "wasm" "${BUILD_DIR}/wasm/handler"
-else
-  echo ""
-  echo "--- Skipping hello-wasm (artifact missing) ---"
-fi
-
-if [[ -f "${BUILD_DIR}/java/handler" ]]; then
-  register_or_update "hello-java" "java" "${BUILD_DIR}/java/handler"
-else
-  echo ""
-  echo "--- Skipping hello-java (artifact missing) ---"
-fi
+SKIP_WORKFLOWS=1 "${SCRIPT_DIR}/../scripts/seed-functions.sh" "${API_URL}"
 
 echo ""
 echo "=========================================="
-echo "  Testing (cold start)"
+echo "  Testing (Simple + Complex)"
 echo "=========================================="
 
-nova invoke hello-python --payload '{"name": "Python"}'
-nova invoke hello-go --payload '{"name": "Gopher"}'
-nova invoke hello-node --payload '{"name": "Node"}'
-nova invoke hello-ruby --payload '{"name": "Ruby"}'
-nova invoke hello-php --payload '{"name": "PHP"}'
-nova invoke hello-deno --payload '{"name": "Deno"}'
-nova invoke hello-bun --payload '{"name": "Bun"}'
-
-if nova get hello-rust &>/dev/null; then
-  nova invoke hello-rust --payload '{"name": "Rustacean"}'
-fi
-if nova get hello-wasm &>/dev/null; then
-  nova invoke hello-wasm --payload '{"name": "Wasm"}'
-fi
-if nova get hello-java &>/dev/null; then
-  nova invoke hello-java --payload '{"name": "Java"}'
-fi
+invoke_with_retry "hello-python" '{"name":"Python"}'
+invoke_with_retry "fibonacci" '{"n":10}'
+invoke_with_retry "hello-node" '{"name":"Node"}'
+invoke_with_retry "json-transform" '{"operation":"keys","data":{"a":1,"b":2}}'
+invoke_with_retry "hello-go" '{"name":"Gopher"}'
+invoke_with_retry "sum-array-go" '{"numbers":[1,2,3,4]}'
+invoke_with_retry "hello-rust" '{"name":"Rustacean"}'
+invoke_with_retry "number-stats-rust" '{"numbers":[1,2,3,4]}'
+invoke_with_retry "hello-java" '{"name":"Java"}'
+invoke_with_retry "number-stats-java" '{"numbers":[10,20,30]}'
+invoke_with_retry "hello-kotlin" '{"name":"Kotlin"}'
+invoke_with_retry "word-stats-kotlin" '{"text":"Nova nova seed runtime"}'
+invoke_with_retry "hello-scala" '{"name":"Scala"}'
+invoke_with_retry "number-stats-scala" '{"numbers":[1,2,3.5]}'
+invoke_with_retry "hello-c" '{"name":"C"}'
+invoke_with_retry "payload-stats-c" '{"payload":{"n":123}}'
+invoke_with_retry "hello-cpp" '{"name":"Cpp"}'
+invoke_with_retry "number-stats-cpp" '{"numbers":[2,4,8]}'
+invoke_with_retry "hello-ruby" '{"name":"Ruby"}'
+invoke_with_retry "word-count" '{"text":"nova runtime seed seed"}'
+invoke_with_retry "hello-php" '{"name":"PHP"}'
+invoke_with_retry "array-stats" '{"numbers":[3,6,9]}'
+invoke_with_retry "hello-deno" '{"name":"Deno"}'
+invoke_with_retry "base64-codec" '{"operation":"encode","data":"nova"}'
+invoke_with_retry "hello-bun" '{"name":"Bun"}'
+invoke_with_retry "hash-generator" '{"data":"nova","algorithm":"sha256"}'
 
 echo ""
 echo "=========================================="
 echo "  Warm reuse (3 rapid requests each)"
 echo "=========================================="
 
-for fn in hello-python hello-go hello-node hello-ruby hello-php hello-deno hello-bun hello-rust hello-wasm hello-java; do
-  if ! nova get "${fn}" &>/dev/null; then
-    continue
-  fi
+for fn in hello-python hello-node hello-go hello-rust hello-java hello-kotlin hello-scala hello-c hello-cpp hello-ruby hello-php hello-deno hello-bun; do
   echo ""
   echo "--- ${fn} ---"
-  for i in 1 2 3; do
-    nova invoke "${fn}" --payload "{\"name\": \"${fn}-${i}\"}" >/dev/null
-    echo "ok ${i}"
+  for run_idx in 1 2 3; do
+    invoke_with_retry "${fn}" "{\"name\":\"${fn}-${run_idx}\"}" >/dev/null
+    echo "ok ${run_idx}"
   done
 done
 
