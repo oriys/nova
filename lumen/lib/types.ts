@@ -107,6 +107,7 @@ const RUNTIME_DISPLAY_NAMES: Record<string, string> = {
   php: "PHP 8.4.17",
   deno: "Deno 2.6.7",
   bun: "Bun 1.3.8",
+  graalvm: "GraalVM 21.0.2",
 };
 
 // Runtime icons for display
@@ -120,6 +121,7 @@ const RUNTIME_ICONS: Record<string, string> = {
   php: "php",
   deno: "deno",
   bun: "bun",
+  graalvm: "java",
 };
 
 // Transform backend function to frontend display format

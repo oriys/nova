@@ -431,6 +431,13 @@ rustflags = ["-C", "target-feature=+crt-static"]
 				return err
 			}
 		}
+
+	case domain.RuntimeGraalVM:
+		if _, ok := files["Main.java"]; !ok {
+			if err := os.WriteFile(filepath.Join(workDir, "Main.java"), []byte(javaWrapperMain), 0644); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
@@ -495,8 +502,9 @@ func baseRuntimeID(runtime domain.Runtime) domain.Runtime {
 		"swift":  domain.RuntimeSwift,
 		"zig":    domain.RuntimeZig,
 		"scala":  domain.RuntimeScala,
-		"c":      domain.RuntimeC,
-		"cpp":    domain.RuntimeCpp,
+		"c":       domain.RuntimeC,
+		"cpp":     domain.RuntimeCpp,
+		"graalvm": domain.RuntimeGraalVM,
 	}
 	for prefix, base := range prefixMap {
 		if strings.HasPrefix(rt, prefix) {
@@ -535,6 +543,7 @@ func compilerDockerImages() []string {
 		domain.RuntimeScala,
 		domain.RuntimeC,
 		domain.RuntimeCpp,
+		domain.RuntimeGraalVM,
 	}
 
 	set := make(map[string]struct{}, len(compiledRuntimes)+4)
@@ -1125,6 +1134,15 @@ rustflags = ["-C", "target-feature=+crt-static"]
 		if err := os.WriteFile(filepath.Join(workDir, "main.cpp"), []byte(cppWrapperMain), 0644); err != nil {
 			return err
 		}
+	case domain.RuntimeGraalVM:
+		// Save user code as Handler.java (same convention as Java)
+		if err := os.WriteFile(filepath.Join(workDir, "Handler.java"), []byte(sourceCode), 0644); err != nil {
+			return err
+		}
+		// Generate wrapper Main.java
+		if err := os.WriteFile(filepath.Join(workDir, "Main.java"), []byte(javaWrapperMain), 0644); err != nil {
+			return err
+		}
 	default:
 		ext := runtimeExtension(runtime)
 		if err := os.WriteFile(filepath.Join(workDir, "handler"+ext), []byte(sourceCode), 0644); err != nil {
@@ -1161,6 +1179,9 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 		return "gcc:14", "cd /work && gcc -std=c11 -O2 -static -o handler *.c"
 	case domain.RuntimeCpp:
 		return "gcc:14", "cd /work && g++ -std=c++17 -O2 -static -o handler *.cpp"
+	case domain.RuntimeGraalVM:
+		return "ghcr.io/graalvm/native-image-community:21",
+			"cd /work && javac *.java && native-image --static --no-fallback -o handler Main"
 	default:
 		return "", ""
 	}
@@ -1195,6 +1216,7 @@ func RuntimeExtension(runtime domain.Runtime) string {
 		domain.RuntimeScala:  ".scala",
 		domain.RuntimeC:      ".c",
 		domain.RuntimeCpp:    ".cpp",
+		domain.RuntimeGraalVM: ".java",
 	}
 	if ext, ok := exts[rt]; ok {
 		return ext

@@ -329,7 +329,7 @@ func rootfsForRuntime(rt domain.Runtime) string {
 	case r == string(domain.RuntimeBun) || strings.HasPrefix(r, "bun"):
 		return "bun.ext4"
 	default:
-		// Go, Rust, Zig, Swift use base. (Swift might need more, but base is current)
+		// Go, Rust, Zig, Swift, GraalVM use base. (Static native binaries)
 		return "base.ext4"
 	}
 }

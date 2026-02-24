@@ -19,6 +19,7 @@ func TestCompilerDockerImages_UniqueAndSorted(t *testing.T) {
 		"eclipse-temurin:21-jdk",
 		"euantorano/zig:0.13.0",
 		"gcc:14",
+		"ghcr.io/graalvm/native-image-community:21",
 		"golang:1.23-alpine",
 		"node:20-slim",
 		"python:3.12-slim",

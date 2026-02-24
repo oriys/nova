@@ -78,6 +78,15 @@ public class Handler {
     }
 }
 `,
+  graalvm: `import java.util.*;
+
+public class Handler {
+    public static Object handler(String event, Map<String, Object> context) {
+        String name = event.contains("name") ? "User" : "World";
+        return "{\\"message\\": \\"Hello, " + name + "!\\"}";
+    }
+}
+`,
   ruby: `def handler(event, context)
   name = event['name'] || 'World'
   { message: "Hello, #{name}!" }
@@ -104,7 +113,7 @@ module.exports = { handler };
 }
 
 // Runtimes that require compilation
-const COMPILED_RUNTIMES = ['go', 'rust', 'java', 'kotlin', 'swift', 'zig', 'scala']
+const COMPILED_RUNTIMES = ['go', 'rust', 'java', 'kotlin', 'swift', 'zig', 'scala', 'graalvm']
 
 const AWS_FUNCTION_NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
 const AWS_MODULE_HANDLER_PATTERN = /^[A-Za-z0-9_./-]+\.[A-Za-z0-9_$][A-Za-z0-9_$.]*$/
@@ -113,7 +122,7 @@ const AWS_EXECUTABLE_HANDLER_PATTERN = /^[A-Za-z0-9_/-]{1,128}$/
 
 // Get base runtime from versioned ID (e.g., "python3.11" -> "python")
 function getBaseRuntime(runtimeId: string): string {
-  const prefixes = ['python', 'node', 'go', 'rust', 'java', 'ruby', 'php', 'deno', 'bun']
+  const prefixes = ['python', 'node', 'go', 'rust', 'graalvm', 'java', 'ruby', 'php', 'deno', 'bun']
   for (const prefix of prefixes) {
     if (runtimeId.startsWith(prefix)) return prefix
   }
@@ -130,7 +139,7 @@ function getDefaultHandler(runtimeId: string): string {
   if (base === "java" || base === "kotlin" || base === "scala") {
     return "example.Handler::handleRequest"
   }
-  if (base === "go" || base === "rust" || base === "swift" || base === "zig" || base === "wasm") {
+  if (base === "go" || base === "rust" || base === "swift" || base === "zig" || base === "wasm" || base === "graalvm") {
     return "handler"
   }
   return "main.handler"
@@ -234,7 +243,7 @@ function validateAwsCreateInput(params: {
     }
     return null
   }
-  if (base === "go" || base === "rust" || base === "swift" || base === "zig" || base === "wasm") {
+  if (base === "go" || base === "rust" || base === "swift" || base === "zig" || base === "wasm" || base === "graalvm") {
     if (!AWS_EXECUTABLE_HANDLER_PATTERN.test(handler)) {
       return "validationCompiledHandler"
     }
@@ -535,6 +544,7 @@ export function CreateFunctionDialog({
     { id: "php", name: "PHP", version: "8.4.17", status: "available" as const, functionsCount: 0, icon: "php" },
     { id: "deno", name: "Deno", version: "2.6.7", status: "available" as const, functionsCount: 0, icon: "deno" },
     { id: "bun", name: "Bun", version: "1.3.8", status: "available" as const, functionsCount: 0, icon: "bun" },
+    { id: "graalvm", name: "GraalVM", version: "21.0.2", status: "available" as const, functionsCount: 0, icon: "java" },
   ]
 
   // Render compile status view after creation

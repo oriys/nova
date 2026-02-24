@@ -54,6 +54,7 @@ const (
 	RuntimeScala    Runtime = "scala"
 	RuntimeC        Runtime = "c"
 	RuntimeCpp      Runtime = "cpp"
+	RuntimeGraalVM  Runtime = "graalvm"
 	RuntimeCustom   Runtime = "custom"
 	RuntimeProvided Runtime = "provided"
 )
@@ -128,7 +129,7 @@ func (r Runtime) IsValid() bool {
 		RuntimeNode: true, RuntimeRuby: true, RuntimeJava: true, RuntimeDeno: true, RuntimeBun: true,
 		RuntimePHP: true, RuntimeElixir: true, RuntimeKotlin: true, RuntimeSwift: true,
 		RuntimeZig: true, RuntimeLua: true, RuntimePerl: true, RuntimeR: true, RuntimeJulia: true, RuntimeScala: true,
-		RuntimeC: true, RuntimeCpp: true, RuntimeCustom: true, RuntimeProvided: true,
+		RuntimeC: true, RuntimeCpp: true, RuntimeGraalVM: true, RuntimeCustom: true, RuntimeProvided: true,
 	}
 	if validRuntimes[r] {
 		return true
@@ -448,6 +449,7 @@ func NeedsCompilation(runtime Runtime) bool {
 		RuntimeScala:  true,
 		RuntimeC:      true,
 		RuntimeCpp:    true,
+		RuntimeGraalVM: true,
 	}
 	if compiledRuntimes[runtime] {
 		return true

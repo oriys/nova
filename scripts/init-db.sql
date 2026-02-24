@@ -92,7 +92,8 @@ INSERT INTO runtimes (id, name, version, status) VALUES
     ('ruby', 'Ruby', '3.4.8', 'available'),
     ('php', 'PHP', '8.4.17', 'available'),
     ('deno', 'Deno', '2.6.7', 'available'),
-    ('bun', 'Bun', '1.3.8', 'available')
+    ('bun', 'Bun', '1.3.8', 'available'),
+    ('graalvm', 'GraalVM', '21.0.2', 'available')
 ON CONFLICT (id) DO NOTHING;
 
 -- Insert default config values

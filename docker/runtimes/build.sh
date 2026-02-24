@@ -14,7 +14,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 if [ "$#" -gt 0 ]; then
     RUNTIMES=("$@")
 else
-    RUNTIMES=(base python node ruby java php lua deno bun wasm)
+    RUNTIMES=(base python node ruby java php lua deno bun wasm graalvm)
 fi
 
 HOST_ARCH="$(uname -m)"
