@@ -25,6 +25,7 @@ export PATH
 
 INSTALL_DIR="/opt/nova"
 NOVA_CACHE_DIR="${NOVA_CACHE_DIR:-/var/cache/nova/downloads}"
+NOVA_ROOTFS_CACHE_DIR="${NOVA_CACHE_DIR}/rootfs"
 FC_VERSION="latest"
 ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.3-x86_64.tar.gz"
 WASMTIME_VERSION="v41.0.1"
@@ -995,6 +996,113 @@ write_rootfs_manifest() {
     write_manifest "$(rootfs_manifest_path)" "$(rootfs_build_fingerprint)"
 }
 
+# ─── Per-image rootfs caching ────────────────────────────
+# Each rootfs image is cached individually in NOVA_ROOTFS_CACHE_DIR, keyed by
+# a fingerprint derived from its specific build inputs.  This allows images
+# whose composition has not changed to be restored instantly from cache even
+# after cleanup_previous_build_artifacts removes the installed copies.
+#
+# Fingerprint inputs per image:
+#   ALL images     : agent binary hash + build function body hash
+#   base           : (no extra – uses hardcoded 32 MB size)
+#   python/node/ruby/php/lua : ALPINE_URL + ROOTFS_SIZE_MB
+#   java           : ALPINE_URL + ROOTFS_SIZE_JAVA_MB
+#   wasm           : ALPINE_URL + WASMTIME_VERSION + ROOTFS_SIZE_MB
+#   deno           : ALPINE_URL + DENO_VERSION + ROOTFS_SIZE_MB
+#   bun            : ALPINE_URL + BUN_VERSION + ROOTFS_SIZE_MB
+
+# Compute a fingerprint for a single rootfs image based on its build inputs.
+rootfs_image_fingerprint() {
+    local name="$1"
+    local agent_hash
+    agent_hash="$(hash_file "${AGENT_BIN}" 2>/dev/null || echo "missing-agent")"
+
+    # Hash the build function body + shared helpers to detect logic changes.
+    local fn_hash
+    fn_hash="$(
+        declare -f "build_${name}_rootfs"
+        declare -f prepare_chroot_dev
+        declare -f cleanup_chroot_dev
+    )"
+    fn_hash="$(printf '%s' "${fn_hash}" | hash_stdin)"
+
+    # Include version/config variables that the build function references.
+    local vars=""
+    case "${name}" in
+        base)  vars="" ;;
+        java)  vars="alpine=${ALPINE_URL};size=${ROOTFS_SIZE_JAVA_MB}" ;;
+        wasm)  vars="alpine=${ALPINE_URL};wasmtime=${WASMTIME_VERSION};size=${ROOTFS_SIZE_MB}" ;;
+        deno)  vars="alpine=${ALPINE_URL};deno=${DENO_VERSION};size=${ROOTFS_SIZE_MB}" ;;
+        bun)   vars="alpine=${ALPINE_URL};bun=${BUN_VERSION};size=${ROOTFS_SIZE_MB}" ;;
+        *)     vars="alpine=${ALPINE_URL};size=${ROOTFS_SIZE_MB}" ;;
+    esac
+
+    hash_string "${name};agent=${agent_hash};fn=${fn_hash};${vars}"
+}
+
+# Try to restore a single rootfs image from the build cache.
+# Returns 0 if restored successfully, 1 on cache miss.
+restore_cached_rootfs() {
+    local name="$1"
+    local output="${INSTALL_DIR}/rootfs/${name}.ext4"
+    local fingerprint
+    fingerprint="$(rootfs_image_fingerprint "${name}")"
+    local cached="${NOVA_ROOTFS_CACHE_DIR}/${name}.ext4.${fingerprint}"
+
+    if [[ -f "${cached}" ]]; then
+        log "Using cached ${name}.ext4"
+        cp "${cached}" "${output}"
+        return 0
+    fi
+    return 1
+}
+
+# Save a single rootfs image to the build cache, removing stale entries.
+cache_rootfs_image() {
+    local name="$1"
+    local output="${INSTALL_DIR}/rootfs/${name}.ext4"
+    if [[ ! -f "${output}" ]]; then
+        warn "Cannot cache ${name}.ext4: build output not found"
+        return 1
+    fi
+    local fingerprint
+    fingerprint="$(rootfs_image_fingerprint "${name}")"
+
+    mkdir -p "${NOVA_ROOTFS_CACHE_DIR}"
+
+    # Remove stale caches for this image (different fingerprints).
+    shopt -s nullglob
+    local stale
+    for stale in "${NOVA_ROOTFS_CACHE_DIR}/${name}.ext4."*; do
+        [[ "${stale}" == "${NOVA_ROOTFS_CACHE_DIR}/${name}.ext4.${fingerprint}" ]] && continue
+        rm -f "${stale}"
+    done
+    shopt -u nullglob
+
+    cp "${output}" "${NOVA_ROOTFS_CACHE_DIR}/${name}.ext4.${fingerprint}"
+}
+
+# Wrapper: restore from cache if possible, otherwise build and cache the result.
+_build_or_restore_rootfs() {
+    local name="$1"
+    if restore_cached_rootfs "${name}"; then
+        return 0
+    fi
+    "build_${name}_rootfs"
+    cache_rootfs_image "${name}"
+}
+
+build_or_restore_base_rootfs()   { _build_or_restore_rootfs base; }
+build_or_restore_python_rootfs() { _build_or_restore_rootfs python; }
+build_or_restore_wasm_rootfs()   { _build_or_restore_rootfs wasm; }
+build_or_restore_node_rootfs()   { _build_or_restore_rootfs node; }
+build_or_restore_ruby_rootfs()   { _build_or_restore_rootfs ruby; }
+build_or_restore_java_rootfs()   { _build_or_restore_rootfs java; }
+build_or_restore_php_rootfs()    { _build_or_restore_rootfs php; }
+build_or_restore_lua_rootfs()    { _build_or_restore_rootfs lua; }
+build_or_restore_deno_rootfs()   { _build_or_restore_rootfs deno; }
+build_or_restore_bun_rootfs()    { _build_or_restore_rootfs bun; }
+
 # Pre-download shared assets so parallel rootfs builds don't race on downloads.
 precache_rootfs_downloads() {
     log "Pre-caching shared downloads for parallel rootfs builds..."
@@ -1015,6 +1123,7 @@ precache_rootfs_downloads() {
 
 # Build all rootfs images in parallel.
 # Dependency order is preserved at stage level (this runs only after binaries are deployed).
+# Each image is individually cached: only images whose composition changed are rebuilt.
 build_rootfs_images() {
     if rootfs_is_up_to_date; then
         log "Rootfs artifacts unchanged, skipping rebuild"
@@ -1024,18 +1133,18 @@ build_rootfs_images() {
     # Pre-cache downloads to avoid redundant parallel fetches.
     precache_rootfs_downloads
 
-    log "Building rootfs images in parallel..."
+    log "Building rootfs images in parallel (cached images will be restored)..."
     run_parallel_functions \
-        build_base_rootfs \
-        build_python_rootfs \
-        build_wasm_rootfs \
-        build_node_rootfs \
-        build_ruby_rootfs \
-        build_java_rootfs \
-        build_php_rootfs \
-        build_lua_rootfs \
-        build_deno_rootfs \
-        build_bun_rootfs
+        build_or_restore_base_rootfs \
+        build_or_restore_python_rootfs \
+        build_or_restore_wasm_rootfs \
+        build_or_restore_node_rootfs \
+        build_or_restore_ruby_rootfs \
+        build_or_restore_java_rootfs \
+        build_or_restore_php_rootfs \
+        build_or_restore_lua_rootfs \
+        build_or_restore_deno_rootfs \
+        build_or_restore_bun_rootfs
 
     write_rootfs_manifest
     log "Updated rootfs build manifest"
