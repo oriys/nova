@@ -242,7 +242,7 @@ func (c *Compiler) compileWithFiles(ctx context.Context, fn *domain.Function, fi
 
 	logging.Op().Info("starting multi-file compilation", "function", fn.Name, "runtime", fn.Runtime, "image", image, "files", len(files))
 
-	createArgs := dockerCreateArgs(containerName, image, buildCmd)
+	createArgs := dockerCreateArgs(containerName, image, buildCmd, fn.Runtime)
 	createCmd := exec.CommandContext(ctx, "docker", createArgs...)
 	var createStderr bytes.Buffer
 	createCmd.Stderr = &createStderr
@@ -961,7 +961,7 @@ func (c *Compiler) compile(ctx context.Context, fn *domain.Function, sourceCode 
 	// Force linux/amd64 platform — compiled binaries must run in x86_64 VMs/containers.
 	// Without this, ARM hosts pull ARM images and cross-compilation may fail
 	// (e.g., Rust proc-macros need host-native toolchain).
-	createArgs := dockerCreateArgs(containerName, image, buildCmd)
+	createArgs := dockerCreateArgs(containerName, image, buildCmd, fn.Runtime)
 	createCmd := exec.CommandContext(ctx, "docker", createArgs...)
 	var createStderr bytes.Buffer
 	createCmd.Stderr = &createStderr
@@ -1187,18 +1187,39 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 	}
 }
 
-func dockerCreateArgs(containerName, image, buildCmd string) []string {
+func dockerCreateArgs(containerName, image, buildCmd string, runtime domain.Runtime) []string {
+	platform := resolveCompilePlatform(runtime)
+
 	// Force shell entrypoint so images with custom ENTRYPOINT (e.g. GraalVM native-image)
 	// run our build script instead of interpreting "cd" as tool arguments.
-	return []string{
+	args := []string{
 		"create",
-		"--platform", "linux/amd64",
 		"--network", "host",
 		"--name", containerName,
 		"--entrypoint", "/bin/sh",
 		image,
 		"-c", buildCmd,
 	}
+	if strings.TrimSpace(platform) != "" {
+		args = append([]string{"create", "--platform", platform}, args[1:]...)
+	}
+	return args
+}
+
+func resolveCompilePlatform(runtime domain.Runtime) string {
+	// Default to amd64 for compatibility with x86_64 microVM backends.
+	platform := strings.TrimSpace(os.Getenv("NOVA_COMPILE_PLATFORM"))
+	if platform == "" {
+		platform = "linux/amd64"
+	}
+	// Allow GraalVM to be compiled for a different platform in Docker backend
+	// to avoid cross-arch emulation startup overhead on ARM hosts.
+	if runtime == domain.RuntimeGraalVM {
+		if graal := strings.TrimSpace(os.Getenv("NOVA_GRAALVM_COMPILE_PLATFORM")); graal != "" {
+			platform = graal
+		}
+	}
+	return platform
 }
 
 func runtimeExtension(runtime domain.Runtime) string {

@@ -46,6 +46,9 @@ services:
       NOVA_MASTER_KEY: "1710f674b5e29cd55bba9c1481625ac255886d763ed7dd6aeab8b21382910d1e"
       NOVA_AUTH_JWT_SECRET: "nova-dev-jwt-secret"
       NOVA_RUN_DIR: /var/lib/nova/run
+      # Optional override (e.g. linux/arm64 on Apple Silicon) to avoid
+      # GraalVM x86_64 emulation startup overhead in Docker backend.
+      NOVA_GRAALVM_COMPILE_PLATFORM: ${NOVA_GRAALVM_COMPILE_PLATFORM:-}
     depends_on:
       postgres:
         condition: service_healthy
