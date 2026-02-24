@@ -197,6 +197,35 @@ run_sequential_functions() {
     done
 }
 
+# Run functions in parallel and wait for all to complete.
+# Fails if any background job exits non-zero.
+run_parallel_functions() {
+    local pids=()
+    local fns=()
+    local fn
+    for fn in "$@"; do
+        info "  [start] ${fn} (parallel)"
+        "${fn}" &
+        pids+=($!)
+        fns+=("${fn}")
+    done
+
+    local failed=0
+    local i
+    for i in "${!pids[@]}"; do
+        if ! wait "${pids[$i]}"; then
+            warn "  [FAIL] ${fns[$i]}"
+            failed=$((failed + 1))
+        else
+            log "  [done] ${fns[$i]}"
+        fi
+    done
+
+    if [[ ${failed} -gt 0 ]]; then
+        err "${failed} parallel job(s) failed"
+    fi
+}
+
 # ─── Checks ──────────────────────────────────────────────
 check_root() {
     [[ $EUID -eq 0 ]] || err "This script must be run as root: sudo $0"
@@ -966,7 +995,25 @@ write_rootfs_manifest() {
     write_manifest "$(rootfs_manifest_path)" "$(rootfs_build_fingerprint)"
 }
 
-# Build all rootfs images sequentially.
+# Pre-download shared assets so parallel rootfs builds don't race on downloads.
+precache_rootfs_downloads() {
+    log "Pre-caching shared downloads for parallel rootfs builds..."
+    # Alpine minirootfs is used by 9 out of 10 rootfs builders.
+    cached_curl_pipe "${ALPINE_URL}" "alpine-minirootfs.tar.gz" > /dev/null
+    # Wasmtime and Deno/Bun archives are each used by one builder,
+    # but pre-caching avoids download contention during parallel builds.
+    cached_curl \
+        "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
+        /dev/null "wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz"
+    cached_curl \
+        "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" \
+        /dev/null "deno-${DENO_VERSION}-x86_64-unknown-linux-gnu.zip"
+    cached_curl \
+        "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/bun-linux-x64-musl.zip" \
+        /dev/null "bun-${BUN_VERSION}-linux-x64-musl.zip"
+}
+
+# Build all rootfs images in parallel.
 # Dependency order is preserved at stage level (this runs only after binaries are deployed).
 build_rootfs_images() {
     if rootfs_is_up_to_date; then
@@ -974,26 +1021,21 @@ build_rootfs_images() {
         return 0
     fi
 
-    local builders=(
-        build_base_rootfs
-        build_python_rootfs
-        build_wasm_rootfs
-        build_node_rootfs
-        build_ruby_rootfs
-        build_java_rootfs
-        build_php_rootfs
-        build_lua_rootfs
-        build_deno_rootfs
-        build_bun_rootfs
-    )
+    # Pre-cache downloads to avoid redundant parallel fetches.
+    precache_rootfs_downloads
 
-    log "Building rootfs images sequentially..."
-    local fn
-    for fn in "${builders[@]}"; do
-        info "  [start] ${fn}"
-        "${fn}"
-        log "  [done] ${fn}"
-    done
+    log "Building rootfs images in parallel..."
+    run_parallel_functions \
+        build_base_rootfs \
+        build_python_rootfs \
+        build_wasm_rootfs \
+        build_node_rootfs \
+        build_ruby_rootfs \
+        build_java_rootfs \
+        build_php_rootfs \
+        build_lua_rootfs \
+        build_deno_rootfs \
+        build_bun_rootfs
 
     write_rootfs_manifest
     log "Updated rootfs build manifest"
@@ -1418,17 +1460,17 @@ main() {
     install_postgres
     setup_database
 
-    # Firecracker install and kernel download.
-    log "Running Firecracker + kernel setup..."
-    run_sequential_functions install_firecracker download_kernel
+    # Firecracker install and kernel download (independent, run in parallel).
+    log "Running Firecracker + kernel setup in parallel..."
+    run_parallel_functions install_firecracker download_kernel
 
     # Deploy backend binaries first (so agent is available for rootfs)
     deploy_backend_services
     cleanup_deploy_build_binaries
 
-    # Build steps run sequentially for reliability.
-    log "Running rootfs build + Lumen build..."
-    run_sequential_functions build_rootfs_images deploy_lumen_frontend
+    # Rootfs builds and Lumen frontend build are independent; run in parallel.
+    log "Running rootfs build + Lumen build in parallel..."
+    run_parallel_functions build_rootfs_images deploy_lumen_frontend
 
     # Set KVM permissions
     chmod 666 /dev/kvm 2>/dev/null || true
