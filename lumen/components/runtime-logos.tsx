@@ -24,7 +24,10 @@ const DEVICON_CLASSES: Record<string, string> = {
   typescript: "devicon-typescript-plain",
   javascript: "devicon-javascript-plain",
   c: "devicon-c-plain",
+  cpp: "devicon-cplusplus-plain",
+  "c++": "devicon-cplusplus-plain",
   cplusplus: "devicon-cplusplus-plain",
+  graalvm: "devicon-java-plain",
   csharp: "devicon-csharp-plain",
   haskell: "devicon-haskell-plain",
   clojure: "devicon-clojure-plain",
@@ -53,15 +56,37 @@ export const RUNTIME_COLORS: Record<string, string> = {
   r: "bg-[#276DC3]",
   julia: "bg-[#9558B2]",
   wasm: "bg-[#654FF0]",
+  cpp: "bg-[#00599C]",
+  graalvm: "bg-[#ED8B00]",
 }
 
 // Get base runtime from versioned ID (e.g., "python3.11" -> "python")
 function getBaseRuntime(runtimeId: string): string {
-  const prefixes = ['python', 'go', 'node', 'rust', 'ruby', 'java', 'php', 'scala']
-  for (const prefix of prefixes) {
-    if (runtimeId.startsWith(prefix)) return prefix
+  const normalized = runtimeId.toLowerCase()
+  if (normalized === "c++") {
+    return "cpp"
   }
-  return runtimeId
+
+  const prefixes = [
+    "python",
+    "go",
+    "node",
+    "rust",
+    "ruby",
+    "java",
+    "php",
+    "scala",
+    "kotlin",
+    "deno",
+    "bun",
+    "graalvm",
+    "cpp",
+    "c",
+  ]
+  for (const prefix of prefixes) {
+    if (normalized.startsWith(prefix)) return prefix
+  }
+  return normalized
 }
 
 export function getDeviconClass(runtimeId: string): string | null {
