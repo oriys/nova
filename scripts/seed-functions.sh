@@ -47,6 +47,7 @@ create_function() {
     local memory="${4:-128}"
     local timeout="${5:-30}"
     local handler="${6:-}"
+    local create_payload
 
     if [ -z "${handler}" ]; then
         case "${runtime}" in
@@ -62,16 +63,32 @@ create_function() {
         esac
     fi
 
-    curl -sf -X POST "${API_URL}/functions" \
-        -H "Content-Type: application/json" \
-        -d "{
+    create_payload="{
             \"name\": \"${name}\",
             \"runtime\": \"${runtime}\",
             \"handler\": \"${handler}\",
             \"memory_mb\": ${memory},
             \"timeout_s\": ${timeout},
             \"code\": ${code}
-        }" >/dev/null 2>&1 && log "  Created: ${name} (${runtime})" || warn "  Skipped: ${name} (may already exist)"
+        }"
+
+    if curl -sf -X POST "${API_URL}/functions" \
+        -H "Content-Type: application/json" \
+        -d "${create_payload}" >/dev/null 2>&1; then
+        log "  Created: ${name} (${runtime})"
+        return
+    fi
+
+    if curl -sf -X PUT "${API_URL}/functions/${name}/code" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"code\": ${code}
+        }" >/dev/null 2>&1; then
+        log "  Updated: ${name} (${runtime})"
+        return
+    fi
+
+    warn "  Skipped: ${name} (create/update failed)"
 }
 
 main() {
@@ -173,13 +190,13 @@ main() {
 
         create_function "hello-kotlin" "kotlin" '"object Handler {\n    fun handler(event: String, context: Map<String, Any>): Any {\n        val name = Regex(\"\\\"name\\\"\\\\s*:\\\\s*\\\"([^\\\"]+)\\\"\").find(event)?.groupValues?.get(1) ?: \"World\"\n        return \"{\\\"message\\\":\\\"Hello, \" + name + \"!\\\",\\\"runtime\\\":\\\"kotlin\\\"}\"\n    }\n}"' 256
 
-        create_function "word-stats-kotlin" "kotlin" '"object Handler {\n    fun handler(event: String, context: Map<String, Any>): Any {\n        val words = Regex(\"[A-Za-z0-9_]+\").findAll(event).map { it.value.lowercase() }.toList()\n        val unique = words.toSet().size\n        return \"{\\\"words\\\":\" + words.size + \",\\\"unique\\\":\" + unique + \"}\"\n    }\n}"' 256
+        create_function "word-stats-kotlin" "kotlin" '"object Handler {\n    fun handler(event: String, context: Map<String, Any>): Any {\n        val words = Regex(\"[A-Za-z0-9_]+\").findAll(event).map { it.value.toLowerCase() }.toList()\n        val unique = words.toSet().size\n        return \"{\\\"words\\\":\" + words.size + \",\\\"unique\\\":\" + unique + \"}\"\n    }\n}"' 256
 
         info "Creating Scala functions (will be compiled)..."
 
-        create_function "hello-scala" "scala" '"object Handler {\n  def handler(event: String, context: Map[String, Any]): Any = {\n    val namePattern = \"\\\"name\\\"\\\\s*:\\\\s*\\\"([^\\\"]+)\\\"\".r\n    val name = namePattern.findFirstMatchIn(Option(event).getOrElse(\"\")).map(_.group(1)).getOrElse(\"World\")\n    s\"{\\\"message\\\":\\\"Hello, ${name}!\\\",\\\"runtime\\\":\\\"scala\\\"}\"\n  }\n}"' 256
+        create_function "hello-scala" "scala" '"object Handler {\n  def handler(event: String, context: Map[String, Any]): Any = {\n    val namePattern = \"\\\"name\\\"\\\\s*:\\\\s*\\\"([^\\\"]+)\\\"\".r\n    val name = namePattern.findFirstMatchIn(Option(event).getOrElse(\"\")).map(_.group(1)).getOrElse(\"World\")\n    \"{\\\"message\\\":\\\"Hello, \" + name + \"!\\\",\\\"runtime\\\":\\\"scala\\\"}\"\n  }\n}"' 256
 
-        create_function "number-stats-scala" "scala" '"object Handler {\n  def handler(event: String, context: Map[String, Any]): Any = {\n    val numbers = \"-?\\\\d+(?:\\\\.\\\\d+)?\".r.findAllIn(Option(event).getOrElse(\"\")).toList.map(_.toDouble)\n    val sum = numbers.sum\n    val avg = if (numbers.nonEmpty) sum / numbers.size else 0.0\n    f\"{\\\"count\\\":${numbers.size},\\\"sum\\\":$sum%.2f,\\\"avg\\\":$avg%.2f}\"\n  }\n}"' 256
+        create_function "number-stats-scala" "scala" '"object Handler {\n  def handler(event: String, context: Map[String, Any]): Any = {\n    val numbers = \"-?\\\\d+(?:\\\\.\\\\d+)?\".r.findAllIn(Option(event).getOrElse(\"\")).toList.map(_.toDouble)\n    val sum = numbers.sum\n    val avg = if (numbers.nonEmpty) sum / numbers.size else 0.0\n    \"{\\\"count\\\":\" + numbers.size + \",\\\"sum\\\":\" + \"%.2f\".format(sum) + \",\\\"avg\\\":\" + \"%.2f\".format(avg) + \"}\"\n  }\n}"' 256
 
         info "Creating C functions (will be compiled)..."
 
