@@ -78,6 +78,13 @@ export function DashboardCharts({ data, range, onRangeChange, loading, vmMetrics
     ...d,
     time: formatTime(d.time, range),
   }))
+  const errorRateData = formattedData.map((d) => {
+    const rate = d.invocations > 0 ? (d.errors / d.invocations) * 100 : 0
+    return {
+      ...d,
+      errorRatePct: Number(rate.toFixed(2)),
+    }
+  })
   const hasVmTimeSeries = formattedData.some(
     (d) =>
       d.activeVms != null ||
@@ -119,6 +126,18 @@ export function DashboardCharts({ data, range, onRangeChange, loading, vmMetrics
       <div className="space-y-4">
         <div className="flex justify-end">{rangeSelector}</div>
         <div className="grid gap-6 lg:grid-cols-2">
+          <div className="rounded-xl border border-border bg-card p-6">
+            <div className="mb-4">
+              <div className="h-5 w-32 bg-muted rounded animate-pulse" />
+            </div>
+            <div className="h-64 bg-muted/50 rounded animate-pulse" />
+          </div>
+          <div className="rounded-xl border border-border bg-card p-6">
+            <div className="mb-4">
+              <div className="h-5 w-32 bg-muted rounded animate-pulse" />
+            </div>
+            <div className="h-64 bg-muted/50 rounded animate-pulse" />
+          </div>
           <div className="rounded-xl border border-border bg-card p-6">
             <div className="mb-4">
               <div className="h-5 w-32 bg-muted rounded animate-pulse" />
@@ -311,6 +330,60 @@ export function DashboardCharts({ data, range, onRangeChange, loading, vmMetrics
                   name={t("avgDuration")}
                 />
               </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Error Rate Chart */}
+        <div className="rounded-xl border border-border bg-card p-6">
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-card-foreground">
+              {t("errorRateTrend")}
+            </h3>
+          </div>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={errorRateData}>
+                <defs>
+                  <linearGradient id="errorRateGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--destructive)" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="var(--destructive)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis
+                  dataKey="time"
+                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                  axisLine={{ stroke: "var(--border)" }}
+                  tickLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                  axisLine={false}
+                  tickLine={false}
+                  domain={[0, 100]}
+                  tickFormatter={(value: number) => `${Math.round(value)}%`}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "var(--popover)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "8px",
+                    fontSize: "12px",
+                    color: "var(--popover-foreground)",
+                  }}
+                  formatter={(value: number) => [`${Number(value).toFixed(2)}%`, t("errorRate")]}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="errorRatePct"
+                  stroke="var(--destructive)"
+                  strokeWidth={2}
+                  fill="url(#errorRateGradient)"
+                  name={t("errorRate")}
+                />
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>

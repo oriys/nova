@@ -706,7 +706,9 @@
     "invocations": "Invocations",
     "errorsLabel": "Errors",
     "avgExecutionTime": "Avg Execution Time (ms)",
-    "avgDuration": "Avg Duration"
+    "avgDuration": "Avg Duration",
+    "errorRateTrend": "Error Rate Trend (%)",
+    "errorRate": "Error Rate"
   },
   "pagination": {
     "zeroResults": "0 results",

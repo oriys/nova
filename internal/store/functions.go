@@ -339,7 +339,7 @@ func (s *PostgresStore) ListFunctionsFiltered(ctx context.Context, query, runtim
 	}
 
 	queryPattern := normalizeContainsPattern(query)
-	runtimePattern := normalizeContainsPattern(runtime)
+	runtimeExact := strings.TrimSpace(runtime)
 
 	rows, err := s.pool.Query(ctx, `
 		SELECT data
@@ -347,10 +347,10 @@ func (s *PostgresStore) ListFunctionsFiltered(ctx context.Context, query, runtim
 		WHERE tenant_id = $1
 		  AND namespace = $2
 		  AND ($3 = '' OR name ILIKE $3)
-		  AND ($4 = '' OR data->>'runtime' ILIKE $4)
+		  AND ($4 = '' OR LOWER(data->>'runtime') = LOWER($4))
 		ORDER BY name
 		LIMIT $5 OFFSET $6
-	`, scope.TenantID, scope.Namespace, queryPattern, runtimePattern, limit, offset)
+	`, scope.TenantID, scope.Namespace, queryPattern, runtimeExact, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list functions filtered: %w", err)
 	}
@@ -383,7 +383,7 @@ func (s *PostgresStore) ListFunctionsFiltered(ctx context.Context, query, runtim
 func (s *PostgresStore) CountFunctionsFiltered(ctx context.Context, query, runtime string) (int64, error) {
 	scope := tenantScopeFromContext(ctx)
 	queryPattern := normalizeContainsPattern(query)
-	runtimePattern := normalizeContainsPattern(runtime)
+	runtimeExact := strings.TrimSpace(runtime)
 
 	var total int64
 	if err := s.pool.QueryRow(ctx, `
@@ -392,8 +392,8 @@ func (s *PostgresStore) CountFunctionsFiltered(ctx context.Context, query, runti
 		WHERE tenant_id = $1
 		  AND namespace = $2
 		  AND ($3 = '' OR name ILIKE $3)
-		  AND ($4 = '' OR data->>'runtime' ILIKE $4)
-	`, scope.TenantID, scope.Namespace, queryPattern, runtimePattern).Scan(&total); err != nil {
+		  AND ($4 = '' OR LOWER(data->>'runtime') = LOWER($4))
+	`, scope.TenantID, scope.Namespace, queryPattern, runtimeExact).Scan(&total); err != nil {
 		return 0, fmt.Errorf("count functions filtered: %w", err)
 	}
 	return total, nil

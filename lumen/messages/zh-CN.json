@@ -706,7 +706,9 @@
     "invocations": "调用次数",
     "errorsLabel": "错误",
     "avgExecutionTime": "平均执行时间（毫秒）",
-    "avgDuration": "平均耗时"
+    "avgDuration": "平均耗时",
+    "errorRateTrend": "错误率趋势（%）",
+    "errorRate": "错误率"
   },
   "pagination": {
     "zeroResults": "0 个结果",
