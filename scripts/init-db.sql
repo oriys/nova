@@ -78,13 +78,17 @@ CREATE INDEX IF NOT EXISTS idx_invocation_logs_func_time ON invocation_logs(func
 -- Note: Sample functions are now created via API after Nova starts
 -- This ensures proper code compilation and storage in function_code table
 
--- Insert runtimes (10 most common languages, one version each)
+-- Insert built-in runtimes
 INSERT INTO runtimes (id, name, version, status) VALUES
     ('python', 'Python', '3.12.12', 'available'),
     ('node', 'Node.js', '24.13.0', 'available'),
     ('go', 'Go', '1.25.6', 'available'),
     ('rust', 'Rust', '1.93.0', 'available'),
     ('java', 'Java', '21.0.10', 'available'),
+    ('kotlin', 'Kotlin', '2.1.10', 'available'),
+    ('scala', 'Scala', '3.7.3', 'available'),
+    ('c', 'C', '14.2.0', 'available'),
+    ('cpp', 'C++', '14.2.0', 'available'),
     ('ruby', 'Ruby', '3.4.8', 'available'),
     ('php', 'PHP', '8.4.17', 'available'),
     ('deno', 'Deno', '2.6.7', 'available'),

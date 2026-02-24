@@ -22,6 +22,7 @@ import (
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
+	"github.com/oriys/nova/internal/pkg/safepath"
 )
 
 const (
@@ -130,7 +131,7 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 	// Write code to local code directory
 	if len(codeContent) > 0 {
 		handlerPath := filepath.Join(codeDir, "handler")
-		if err := os.WriteFile(handlerPath, codeContent, 0755); err != nil {
+		if err := os.WriteFile(handlerPath, codeContent, 0644); err != nil {
 			os.RemoveAll(codeDir)
 			return nil, fmt.Errorf("write code file: %w", err)
 		}
@@ -242,14 +243,17 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 
 	// Write all files to local code directory
 	for path, content := range files {
-		fullPath := filepath.Join(codeDir, path)
+		fullPath, err := safepath.Join(codeDir, path)
+		if err != nil {
+			os.RemoveAll(codeDir)
+			return nil, fmt.Errorf("unsafe file path %s: %w", path, err)
+		}
 		// Create parent directories if needed
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 			os.RemoveAll(codeDir)
 			return nil, fmt.Errorf("create dir for %s: %w", path, err)
 		}
-		// Make files executable by default
-		if err := os.WriteFile(fullPath, content, 0755); err != nil {
+		if err := os.WriteFile(fullPath, content, 0644); err != nil {
 			os.RemoveAll(codeDir)
 			return nil, fmt.Errorf("write file %s: %w", path, err)
 		}

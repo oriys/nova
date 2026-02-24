@@ -116,11 +116,11 @@ docker-backend:  ## Build Nova backend Docker image
 docker-frontend:  ## Build Lumen frontend Docker image
 	docker build -t lumen -f lumen/Dockerfile ./lumen
 
-docker-runtimes: $(AGENT_BIN)  ## Build all runtime Docker images
+docker-runtimes:  ## Build all runtime Docker images (agent compiled in Docker)
 	./docker/runtimes/build.sh $(PREFIX)
 
-docker-runtime-%: $(AGENT_BIN)  ## Build a single runtime image (e.g. make docker-runtime-python)
-	docker build -f docker/runtimes/Dockerfile.$* -t $(PREFIX)-$* .
+docker-runtime-%:  ## Build a single runtime image (e.g. make docker-runtime-python)
+	./docker/runtimes/build.sh $(PREFIX) $*
 
 # ─── VM Rootfs ────────────────────────────────────────────────────────────────
 
@@ -176,12 +176,20 @@ all: build orbit atlas frontend docker-backend docker-frontend docker-runtimes  
 
 # ─── Testing ──────────────────────────────────────────────────────────────────
 
-.PHONY: test test-unit test-integration env-up env-down
+.PHONY: test test-unit test-unit-docker test-integration env-up env-down
 
 test: test-unit  ## Run all tests (unit + available integration)
 
 test-unit:  ## Run unit tests (no external dependencies)
 	go test -short -count=1 ./internal/...
+
+test-unit-docker:  ## Run unit tests in Docker (no local Go toolchain)
+	docker run --rm \
+		-u $$(id -u):$$(id -g) \
+		-v $(PWD):/src \
+		-w /src \
+		golang:1.24-alpine \
+		sh -c 'mkdir -p /tmp/go-cache /tmp/go-mod && GOCACHE=/tmp/go-cache GOMODCACHE=/tmp/go-mod go test -short -count=1 ./internal/...'
 
 test-integration:  ## Run integration tests (requires env-up)
 	NOVA_PG_DSN=postgres://nova:nova@localhost:$${NOVA_TEST_PG_PORT:-5433}/nova?sslmode=disable \

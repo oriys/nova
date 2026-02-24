@@ -59,11 +59,11 @@ func (h *Handler) InvokeFunction(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 	if err := h.enforceIngressPolicy(r.Context(), r, fn); err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
+		safeError(w, "forbidden", http.StatusForbidden, err)
 		return
 	}
 
@@ -80,7 +80,7 @@ func (h *Handler) InvokeFunction(w http.ResponseWriter, r *http.Request) {
 	scope := store.TenantScopeFromContext(r.Context())
 	invQuotaDecision, err := h.Store.CheckAndConsumeTenantQuota(r.Context(), scope.TenantID, store.TenantDimensionInvocations, 1)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 	if invQuotaDecision != nil && !invQuotaDecision.Allowed {
@@ -146,7 +146,7 @@ func (h *Handler) InvokeFunction(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		http.Error(w, err.Error(), status)
+		safeError(w, "request failed", status, err)
 		return
 	}
 	metrics.RecordAdmissionResult(fn.Name, "accepted", "ok")
@@ -160,11 +160,11 @@ func (h *Handler) InvokeFunctionStream(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 	if err := h.enforceIngressPolicy(r.Context(), r, fn); err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
+		safeError(w, "forbidden", http.StatusForbidden, err)
 		return
 	}
 
@@ -182,7 +182,7 @@ func (h *Handler) InvokeFunctionStream(w http.ResponseWriter, r *http.Request) {
 	scope := store.TenantScopeFromContext(r.Context())
 	invQuotaDecision, err := h.Store.CheckAndConsumeTenantQuota(r.Context(), scope.TenantID, store.TenantDimensionInvocations, 1)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 	if invQuotaDecision != nil && !invQuotaDecision.Allowed {
@@ -221,7 +221,7 @@ func (h *Handler) InvokeFunctionStream(w http.ResponseWriter, r *http.Request) {
 	execErr := h.Exec.InvokeStream(r.Context(), name, payload, func(chunk []byte, isLast bool, err error) error {
 		if err != nil {
 			// Send error as SSE event
-			fmt.Fprintf(w, "event: error\ndata: %s\n\n", err.Error())
+			fmt.Fprintf(w, "event: error\ndata: invocation error\n\n")
 			flusher.Flush()
 			return err
 		}
@@ -275,7 +275,7 @@ func (h *Handler) InvokeFunctionStream(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Send error event
-		fmt.Fprintf(w, "event: error\ndata: %s\n\n", execErr.Error())
+		fmt.Fprintf(w, "event: error\ndata: invocation error\n\n")
 		flusher.Flush()
 		return
 	}
@@ -287,11 +287,11 @@ func (h *Handler) EnqueueAsyncFunction(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 	if err := h.enforceIngressPolicy(r.Context(), r, fn); err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
+		safeError(w, "forbidden", http.StatusForbidden, err)
 		return
 	}
 
@@ -311,12 +311,12 @@ func (h *Handler) EnqueueAsyncFunction(w http.ResponseWriter, r *http.Request) {
 	scope := store.TenantScopeFromContext(r.Context())
 	queueDepth, err := h.Store.GetTenantAsyncQueueDepth(r.Context(), scope.TenantID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 	queueQuotaDecision, err := h.Store.CheckTenantAbsoluteQuota(r.Context(), scope.TenantID, store.TenantDimensionAsyncQueueDepth, queueDepth+1)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 	if queueQuotaDecision != nil && !queueQuotaDecision.Allowed {
@@ -344,10 +344,10 @@ func (h *Handler) EnqueueAsyncFunction(w http.ResponseWriter, r *http.Request) {
 		enqueued, deduplicated, err := h.Store.EnqueueAsyncInvocationWithIdempotency(r.Context(), inv, idempotencyKey, ttl)
 		if err != nil {
 			if errors.Is(err, store.ErrInvalidIdempotencyKey) {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				safeError(w, "bad request", http.StatusBadRequest, err)
 				return
 			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			safeError(w, "internal error", http.StatusInternalServerError, err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -363,7 +363,7 @@ func (h *Handler) EnqueueAsyncFunction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Store.EnqueueAsyncInvocation(r.Context(), inv); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 

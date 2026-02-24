@@ -248,7 +248,11 @@ func TestCachedStore_SaveRuntime_Invalidates(t *testing.T) {
 
 func TestCachedStore_GetFunctionCode_CacheHit(t *testing.T) {
 	stub := &stubMetadataStore{
-		code: &domain.FunctionCode{FunctionID: "f1", SourceCode: "print('hi')"},
+		code: &domain.FunctionCode{
+			FunctionID:    "f1",
+			SourceCode:    "print('hi')",
+			CompileStatus: domain.CompileStatusNotRequired,
+		},
 	}
 	cached := NewCachedMetadataStore(stub, 1*time.Second)
 	ctx := context.Background()
@@ -261,9 +265,31 @@ func TestCachedStore_GetFunctionCode_CacheHit(t *testing.T) {
 	}
 }
 
+func TestCachedStore_GetFunctionCode_NonTerminalNotCached(t *testing.T) {
+	stub := &stubMetadataStore{
+		code: &domain.FunctionCode{
+			FunctionID:    "f1",
+			CompileStatus: domain.CompileStatusCompiling,
+		},
+	}
+	cached := NewCachedMetadataStore(stub, 10*time.Second)
+	ctx := context.Background()
+
+	_, _ = cached.GetFunctionCode(ctx, "f1")
+	_, _ = cached.GetFunctionCode(ctx, "f1")
+
+	if stub.codeCalls.Load() != 2 {
+		t.Fatalf("expected 2 code calls for non-terminal status, got %d", stub.codeCalls.Load())
+	}
+}
+
 func TestCachedStore_SaveFunctionCode_Invalidates(t *testing.T) {
 	stub := &stubMetadataStore{
-		code: &domain.FunctionCode{FunctionID: "f1", SourceCode: "print('hi')"},
+		code: &domain.FunctionCode{
+			FunctionID:    "f1",
+			SourceCode:    "print('hi')",
+			CompileStatus: domain.CompileStatusNotRequired,
+		},
 	}
 	cached := NewCachedMetadataStore(stub, 10*time.Second)
 	ctx := context.Background()
@@ -279,7 +305,10 @@ func TestCachedStore_SaveFunctionCode_Invalidates(t *testing.T) {
 
 func TestCachedStore_UpdateCompileResult_Invalidates(t *testing.T) {
 	stub := &stubMetadataStore{
-		code: &domain.FunctionCode{FunctionID: "f1"},
+		code: &domain.FunctionCode{
+			FunctionID:    "f1",
+			CompileStatus: domain.CompileStatusSuccess,
+		},
 	}
 	cached := NewCachedMetadataStore(stub, 10*time.Second)
 	ctx := context.Background()

@@ -16,10 +16,10 @@ func (h *Handler) GetAsyncInvocation(w http.ResponseWriter, r *http.Request) {
 	inv, err := h.Store.GetAsyncInvocation(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, store.ErrAsyncInvocationNotFound) {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			safeError(w, "not found", http.StatusNotFound, err)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -37,7 +37,7 @@ func (h *Handler) AsyncInvocationsSummary(w http.ResponseWriter, r *http.Request
 
 	summary, err := pagedStore.GetAsyncInvocationSummary(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 	if summary == nil {
@@ -54,13 +54,13 @@ func (h *Handler) ListAsyncInvocations(w http.ResponseWriter, r *http.Request) {
 	offset := parseLimitQuery(r.URL.Query().Get("offset"), 0, 0)
 	statuses, err := parseAsyncStatuses(r.URL.Query().Get("status"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		safeError(w, "bad request", http.StatusBadRequest, err)
 		return
 	}
 
 	invs, err := h.Store.ListAsyncInvocations(r.Context(), limit, offset, statuses)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 	if invs == nil {
@@ -80,7 +80,7 @@ func (h *Handler) ListFunctionAsyncInvocations(w http.ResponseWriter, r *http.Re
 	name := r.PathValue("name")
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 
@@ -88,13 +88,13 @@ func (h *Handler) ListFunctionAsyncInvocations(w http.ResponseWriter, r *http.Re
 	offset := parseLimitQuery(r.URL.Query().Get("offset"), 0, 0)
 	statuses, err := parseAsyncStatuses(r.URL.Query().Get("status"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		safeError(w, "bad request", http.StatusBadRequest, err)
 		return
 	}
 
 	invs, err := h.Store.ListFunctionAsyncInvocations(r.Context(), fn.ID, limit, offset, statuses)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 	if invs == nil {
@@ -123,14 +123,14 @@ func (h *Handler) RetryAsyncInvocation(w http.ResponseWriter, r *http.Request) {
 	inv, err := h.Store.RequeueAsyncInvocation(r.Context(), id, req.MaxAttempts)
 	if err != nil {
 		if errors.Is(err, store.ErrAsyncInvocationNotFound) {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			safeError(w, "not found", http.StatusNotFound, err)
 			return
 		}
 		if errors.Is(err, store.ErrAsyncInvocationNotDLQ) {
-			http.Error(w, err.Error(), http.StatusConflict)
+			safeError(w, "conflict", http.StatusConflict, err)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		safeError(w, "bad request", http.StatusBadRequest, err)
 		return
 	}
 
@@ -144,14 +144,14 @@ func (h *Handler) PauseAsyncInvocation(w http.ResponseWriter, r *http.Request) {
 	inv, err := h.Store.PauseAsyncInvocation(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, store.ErrAsyncInvocationNotFound) {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			safeError(w, "not found", http.StatusNotFound, err)
 			return
 		}
 		if errors.Is(err, store.ErrAsyncInvocationNotQueued) {
-			http.Error(w, err.Error(), http.StatusConflict)
+			safeError(w, "conflict", http.StatusConflict, err)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -165,14 +165,14 @@ func (h *Handler) ResumeAsyncInvocation(w http.ResponseWriter, r *http.Request) 
 	inv, err := h.Store.ResumeAsyncInvocation(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, store.ErrAsyncInvocationNotFound) {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			safeError(w, "not found", http.StatusNotFound, err)
 			return
 		}
 		if errors.Is(err, store.ErrAsyncInvocationNotPaused) {
-			http.Error(w, err.Error(), http.StatusConflict)
+			safeError(w, "conflict", http.StatusConflict, err)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -186,14 +186,14 @@ func (h *Handler) DeleteAsyncInvocation(w http.ResponseWriter, r *http.Request) 
 	err := h.Store.DeleteAsyncInvocation(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, store.ErrAsyncInvocationNotFound) {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			safeError(w, "not found", http.StatusNotFound, err)
 			return
 		}
 		if errors.Is(err, store.ErrAsyncInvocationNotDeletable) {
-			http.Error(w, err.Error(), http.StatusConflict)
+			safeError(w, "conflict", http.StatusConflict, err)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -205,7 +205,7 @@ func (h *Handler) PauseAsyncInvocationsByFunction(w http.ResponseWriter, r *http
 	functionID := r.PathValue("id")
 	count, err := h.Store.PauseAsyncInvocationsByFunction(r.Context(), functionID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -222,7 +222,7 @@ func (h *Handler) ResumeAsyncInvocationsByFunction(w http.ResponseWriter, r *htt
 	functionID := r.PathValue("id")
 	count, err := h.Store.ResumeAsyncInvocationsByFunction(r.Context(), functionID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -239,7 +239,7 @@ func (h *Handler) PauseAsyncInvocationsByWorkflow(w http.ResponseWriter, r *http
 	workflowID := r.PathValue("id")
 	count, err := h.Store.PauseAsyncInvocationsByWorkflow(r.Context(), workflowID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -256,7 +256,7 @@ func (h *Handler) ResumeAsyncInvocationsByWorkflow(w http.ResponseWriter, r *htt
 	workflowID := r.PathValue("id")
 	count, err := h.Store.ResumeAsyncInvocationsByWorkflow(r.Context(), workflowID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -272,7 +272,7 @@ func (h *Handler) ResumeAsyncInvocationsByWorkflow(w http.ResponseWriter, r *htt
 func (h *Handler) GetGlobalAsyncPause(w http.ResponseWriter, r *http.Request) {
 	paused, err := h.Store.GetGlobalAsyncPause(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -289,12 +289,12 @@ func (h *Handler) SetGlobalAsyncPause(w http.ResponseWriter, r *http.Request) {
 		Paused bool `json:"paused"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		safeError(w, "invalid JSON", http.StatusBadRequest, err)
 		return
 	}
 
 	if err := h.Store.SetGlobalAsyncPause(r.Context(), req.Paused); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -315,13 +315,13 @@ func (h *Handler) ListDLQInvocations(w http.ResponseWriter, r *http.Request) {
 
 	jobs, err := h.Store.ListAsyncInvocations(r.Context(), limit, offset, statuses)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
 	total, err := h.Store.CountAsyncInvocations(r.Context(), statuses)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -353,7 +353,7 @@ func (h *Handler) RetryAllDLQ(w http.ResponseWriter, r *http.Request) {
 	// List all DLQ items
 	dlqItems, err := h.Store.ListAsyncInvocations(r.Context(), 1000, 0, []store.AsyncInvocationStatus{store.AsyncInvocationStatusDLQ})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -383,7 +383,7 @@ func (h *Handler) ListWorkflowAsyncInvocations(w http.ResponseWriter, r *http.Re
 	// Get workflow to find workflowID
 	workflow, err := h.Store.GetWorkflowByName(r.Context(), workflowName)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 
@@ -398,13 +398,13 @@ func (h *Handler) ListWorkflowAsyncInvocations(w http.ResponseWriter, r *http.Re
 
 	jobs, err := h.Store.ListWorkflowAsyncInvocations(r.Context(), workflow.ID, limit, offset, statuses)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
 	total, err := h.Store.CountWorkflowAsyncInvocations(r.Context(), workflow.ID, statuses)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 

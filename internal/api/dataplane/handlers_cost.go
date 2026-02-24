@@ -17,7 +17,7 @@ func (h *Handler) GetPerformanceRecommendations(w http.ResponseWriter, r *http.R
 
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 
@@ -59,7 +59,7 @@ func (h *Handler) GetPerformanceRecommendations(w http.ResponseWriter, r *http.R
 	// Get recommendations
 	resp, err := adv.AnalyzePerformance(r.Context(), req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -72,7 +72,7 @@ func (h *Handler) FunctionCost(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 
@@ -86,7 +86,7 @@ func (h *Handler) FunctionCost(w http.ResponseWriter, r *http.Request) {
 
 	logs, err := h.Store.ListInvocationLogs(r.Context(), fn.ID, 10000, 0)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -128,7 +128,7 @@ func (h *Handler) CostSummary(w http.ResponseWriter, r *http.Request) {
 
 	functions, err := h.Store.ListFunctions(r.Context(), 1000, 0)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 

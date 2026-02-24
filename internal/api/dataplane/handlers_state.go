@@ -14,7 +14,7 @@ func (h *Handler) GetFunctionState(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 
@@ -22,11 +22,11 @@ func (h *Handler) GetFunctionState(w http.ResponseWriter, r *http.Request) {
 	if key != "" {
 		entry, err := h.Store.GetFunctionState(r.Context(), fn.ID, key)
 		if errors.Is(err, store.ErrFunctionStateNotFound) {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			safeError(w, "not found", http.StatusNotFound, err)
 			return
 		}
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			safeError(w, "internal error", http.StatusInternalServerError, err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -43,7 +43,7 @@ func (h *Handler) GetFunctionState(w http.ResponseWriter, r *http.Request) {
 		Offset: offset,
 	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 	if entries == nil {
@@ -60,7 +60,7 @@ func (h *Handler) PutFunctionState(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 
@@ -102,13 +102,13 @@ func (h *Handler) PutFunctionState(w http.ResponseWriter, r *http.Request) {
 	entry, err := h.Store.PutFunctionState(r.Context(), fn.ID, key, req.Value, opts)
 	switch {
 	case errors.Is(err, store.ErrFunctionStateVersionConflict):
-		http.Error(w, err.Error(), http.StatusConflict)
+		safeError(w, "conflict", http.StatusConflict, err)
 		return
 	case errors.Is(err, store.ErrFunctionStateNotFound):
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	case err != nil:
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -120,7 +120,7 @@ func (h *Handler) DeleteFunctionState(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 
@@ -131,7 +131,7 @@ func (h *Handler) DeleteFunctionState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Store.DeleteFunctionState(r.Context(), fn.ID, key); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

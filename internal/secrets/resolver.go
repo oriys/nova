@@ -29,7 +29,7 @@ func (r *Resolver) ResolveEnvVars(ctx context.Context, envVars map[string]string
 	for k, v := range envVars {
 		resolvedValue, err := r.ResolveValue(ctx, v)
 		if err != nil {
-			return nil, fmt.Errorf("resolve %s: %w", k, err)
+			return nil, fmt.Errorf("resolve env var: %w", err)
 		}
 		resolved[k] = resolvedValue
 	}
@@ -50,7 +50,7 @@ func (r *Resolver) ResolveValue(ctx context.Context, value string) (string, erro
 
 	secretValue, err := r.store.Get(ctx, secretName)
 	if err != nil {
-		return "", fmt.Errorf("get secret '%s': %w", secretName, err)
+		return "", fmt.Errorf("failed to resolve secret reference: %w", err)
 	}
 
 	return string(secretValue), nil

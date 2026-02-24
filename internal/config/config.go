@@ -84,9 +84,11 @@ type ObservabilityConfig struct {
 
 // GRPCConfig holds gRPC server settings
 type GRPCConfig struct {
-	Enabled bool   `json:"enabled"` // Default: false
-	Addr    string `json:"addr"`    // :9090
-	Mode    string `json:"mode"`    // unified (default), dataplane, controlplane
+	Enabled  bool   `json:"enabled"`   // Default: false
+	Addr     string `json:"addr"`      // :9090
+	Mode     string `json:"mode"`      // unified (default), dataplane, controlplane
+	CertFile string `json:"cert_file"` // TLS certificate file path
+	KeyFile  string `json:"key_file"`  // TLS key file path
 }
 
 // AuthConfig holds authentication settings

@@ -13,10 +13,20 @@ import (
 	"github.com/oriys/nova/internal/cluster"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
+	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/store"
 )
+
+// safeError writes a generic HTTP error to the client while logging the real
+// error server-side. This prevents internal details from leaking to callers.
+func safeError(w http.ResponseWriter, publicMsg string, status int, err error) {
+	if err != nil {
+		logging.Op().Error(publicMsg, "error", err, "status", status)
+	}
+	http.Error(w, publicMsg, status)
+}
 
 const (
 	defaultRangeSeconds             = 3600 // 1 hour

@@ -388,7 +388,7 @@ func (m *Manager) apiCall(ctx context.Context, vm *VM, method, path string, body
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return fmt.Errorf("api error %d: %s", resp.StatusCode, string(b))
 	}
 	return nil

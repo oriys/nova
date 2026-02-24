@@ -549,7 +549,10 @@ func (g *Gateway) handlePreflight(w http.ResponseWriter, r *http.Request, route 
 		}
 	}
 	if cors.AllowCredentials {
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		// CORS spec forbids Access-Control-Allow-Credentials with wildcard origin.
+		if w.Header().Get("Access-Control-Allow-Origin") != "*" {
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
 	}
 	if cors.MaxAge > 0 {
 		w.Header().Set("Access-Control-Max-Age", strconv.Itoa(cors.MaxAge))
@@ -566,7 +569,10 @@ func (g *Gateway) setCORSHeaders(w http.ResponseWriter, r *http.Request, route *
 	}
 	w.Header().Set("Access-Control-Allow-Origin", origin)
 	if cors.AllowCredentials {
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		// CORS spec forbids Access-Control-Allow-Credentials with wildcard origin.
+		if origin != "*" {
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
 	}
 	if len(cors.ExposeHeaders) > 0 {
 		w.Header().Set("Access-Control-Expose-Headers", strings.Join(cors.ExposeHeaders, ", "))
@@ -574,9 +580,15 @@ func (g *Gateway) setCORSHeaders(w http.ResponseWriter, r *http.Request, route *
 }
 
 // originAllowed checks if the request origin is in the allowed list.
+// Wildcard "*" is rejected when credentials are in use (enforced at the
+// call-site level in handlePreflight/setCORSHeaders); here we simply
+// match the origin against the allow-list.
 func originAllowed(allowed []string, origin string) bool {
 	for _, a := range allowed {
-		if a == "*" || strings.EqualFold(a, origin) {
+		if a == "*" {
+			return true
+		}
+		if strings.EqualFold(a, origin) {
 			return true
 		}
 	}

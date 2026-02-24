@@ -22,7 +22,7 @@ func (h *Handler) Logs(w http.ResponseWriter, r *http.Request) {
 
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 
@@ -51,7 +51,7 @@ func (h *Handler) Logs(w http.ResponseWriter, r *http.Request) {
 	offset := parseLimitQuery(r.URL.Query().Get("offset"), 0, 0)
 	entries, err := h.Store.ListInvocationLogs(r.Context(), fn.ID, tail, offset)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -77,7 +77,7 @@ func (h *Handler) StreamLogs(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 
@@ -175,7 +175,7 @@ func (h *Handler) ListAllInvocations(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 

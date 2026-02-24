@@ -15,6 +15,7 @@ import (
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/pkg/crypto"
+	"github.com/oriys/nova/internal/pkg/safepath"
 	"github.com/oriys/nova/internal/store"
 )
 
@@ -270,7 +271,10 @@ func (c *Compiler) compileWithFiles(ctx context.Context, fn *domain.Function, fi
 func (c *Compiler) writeSourceFilesFromMap(workDir string, runtime domain.Runtime, files map[string][]byte) error {
 	// Write all user-provided files first
 	for path, content := range files {
-		fullPath := filepath.Join(workDir, path)
+		fullPath, err := safepath.Join(workDir, path)
+		if err != nil {
+			return fmt.Errorf("unsafe file path %s: %w", path, err)
+		}
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 			return fmt.Errorf("create dir for %s: %w", path, err)
 		}
@@ -1040,14 +1044,14 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 	case domain.RuntimeJava:
 		return "eclipse-temurin:21-jdk", "cd /work && javac Main.java Handler.java && jar cfe handler.jar Main *.class && cp handler.jar handler"
 	case domain.RuntimeKotlin:
-		return "gradle:8-jdk21", "cd /work && kotlinc *.kt -include-runtime -d handler.jar && cp handler.jar handler"
+		return "eclipse-temurin:21-jdk", "apt-get update && apt-get install -y --no-install-recommends kotlin && cd /work && kotlinc *.kt -include-runtime -d handler.jar && cp handler.jar handler"
 	case domain.RuntimeSwift:
 		return "swift:5.10", "cd /work && swiftc -o handler -static-executable Handler.swift main.swift"
 	case domain.RuntimeZig:
 		return "euantorano/zig:0.13.0", "cd /work && zig build-exe main.zig -name handler -target x86_64-linux-musl"
 	case domain.RuntimeScala:
-		return "sbtscala/scala-sbt:eclipse-temurin-21.0.2_13_1.10.1_3.5.1",
-			`cd /work && scalac *.scala && ` +
+		return "eclipse-temurin:21-jdk",
+			`apt-get update && apt-get install -y --no-install-recommends scala && cd /work && scalac *.scala && ` +
 				`SCALA_LIB=$(find / -name "scala-library*.jar" 2>/dev/null | head -1) && ` +
 				`mkdir -p /tmp/fatjar && cd /tmp/fatjar && ` +
 				`jar xf "$SCALA_LIB" && ` +

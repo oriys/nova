@@ -19,7 +19,7 @@ func (h *Handler) PrewarmFunction(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 
@@ -44,7 +44,7 @@ func (h *Handler) PrewarmFunction(w http.ResponseWriter, r *http.Request) {
 
 	codeRecord, err := h.Store.GetFunctionCode(r.Context(), fn.ID)
 	if err != nil {
-		http.Error(w, "load function code: "+err.Error(), http.StatusInternalServerError)
+		safeError(w, "failed to load function code", http.StatusInternalServerError, err)
 		return
 	}
 	if codeRecord == nil {
@@ -59,7 +59,7 @@ func (h *Handler) PrewarmFunction(w http.ResponseWriter, r *http.Request) {
 
 	h.Pool.SetDesiredReplicas(fn.ID, target)
 	if err := h.Pool.EnsureReady(r.Context(), fn, codeContent); err != nil {
-		http.Error(w, "prewarm failed: "+err.Error(), http.StatusInternalServerError)
+		safeError(w, "prewarm failed", http.StatusInternalServerError, err)
 		return
 	}
 

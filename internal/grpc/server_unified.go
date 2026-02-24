@@ -11,6 +11,7 @@ import (
 "github.com/oriys/nova/internal/service"
 "github.com/oriys/nova/internal/store"
 "google.golang.org/grpc"
+"google.golang.org/grpc/credentials"
 "google.golang.org/grpc/health"
 "google.golang.org/grpc/health/grpc_health_v1"
 "google.golang.org/grpc/reflection"
@@ -27,6 +28,10 @@ listener     net.Listener
 // Config holds configuration for the unified gRPC server
 type Config struct {
 Address string
+
+// TLS settings (optional)
+CertFile string
+KeyFile  string
 
 // Data plane dependencies
 Store    *store.Store
@@ -47,12 +52,24 @@ dataPlane := NewDataPlaneServer(cfg.Store, cfg.Executor, cfg.Pool)
 controlPlane := NewControlPlaneServer(cfg.Store, cfg.FunctionService, cfg.Compiler)
 
 // Create gRPC server with interceptors
-grpcServer := grpc.NewServer(
+opts := []grpc.ServerOption{
 grpc.ChainUnaryInterceptor(
 loggingInterceptor,
 errorHandlingInterceptor,
 ),
-)
+}
+if cfg.CertFile != "" && cfg.KeyFile != "" {
+creds, err := credentials.NewServerTLSFromFile(cfg.CertFile, cfg.KeyFile)
+if err != nil {
+return nil, fmt.Errorf("load TLS credentials: %w", err)
+}
+opts = append(opts, grpc.Creds(creds))
+logging.Op().Info("unified gRPC TLS enabled", "cert", cfg.CertFile)
+} else {
+logging.Op().Warn("unified gRPC server running without TLS")
+}
+
+grpcServer := grpc.NewServer(opts...)
 
 // Register health service
 healthServer := health.NewServer()

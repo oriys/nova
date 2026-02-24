@@ -25,6 +25,7 @@ import (
 	"github.com/oriys/nova/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -66,14 +67,27 @@ func NewServer(s *store.Store, exec *executor.Executor, p *pool.Pool) *Server {
 	}
 }
 
-// Start starts the gRPC server on the given address
-func (s *Server) Start(addr string) error {
+// Start starts the gRPC server on the given address.
+// If certFile and keyFile are non-empty, TLS is enabled.
+func (s *Server) Start(addr string, certFile, keyFile string) error {
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
 
-	s.server = grpc.NewServer()
+	var opts []grpc.ServerOption
+	if certFile != "" && keyFile != "" {
+		creds, err := credentials.NewServerTLSFromFile(certFile, keyFile)
+		if err != nil {
+			return fmt.Errorf("load TLS credentials: %w", err)
+		}
+		opts = append(opts, grpc.Creds(creds))
+		logging.Op().Info("gRPC TLS enabled", "cert", certFile)
+	} else {
+		logging.Op().Warn("gRPC server running without TLS")
+	}
+
+	s.server = grpc.NewServer(opts...)
 	novapb.RegisterNovaServiceServer(s.server, s)
 
 	logging.Op().Info("gRPC server started", "addr", addr)
@@ -354,7 +368,7 @@ func (s *Server) ProxyHTTP(ctx context.Context, req *novapb.ProxyHTTPRequest) (*
 	resp := rec.Result()
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "read proxied response body: %v", err)
 	}

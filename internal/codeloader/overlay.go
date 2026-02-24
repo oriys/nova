@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/oriys/nova/internal/logging"
+	"github.com/oriys/nova/internal/pkg/safepath"
 )
 
 // OverlayStrategy implements Strategy using OverlayFS to share read-only
@@ -67,17 +68,20 @@ func (s *OverlayStrategy) Prepare(ctx context.Context, req PrepareRequest) (stri
 	// Write function code to the upper layer
 	if len(req.Files) > 0 {
 		for name, content := range req.Files {
-			path := filepath.Join(upperDir, name)
+			path, err := safepath.Join(upperDir, name)
+			if err != nil {
+				return "", fmt.Errorf("unsafe file path %s: %w", name, err)
+			}
 			if dir := filepath.Dir(path); dir != upperDir {
 				os.MkdirAll(dir, 0755)
 			}
-			if err := os.WriteFile(path, content, 0755); err != nil {
+			if err := os.WriteFile(path, content, 0644); err != nil {
 				return "", fmt.Errorf("write file %s: %w", name, err)
 			}
 		}
 	} else if len(req.Code) > 0 {
 		codePath := filepath.Join(upperDir, "handler")
-		if err := os.WriteFile(codePath, req.Code, 0755); err != nil {
+		if err := os.WriteFile(codePath, req.Code, 0644); err != nil {
 			return "", fmt.Errorf("write handler: %w", err)
 		}
 	}

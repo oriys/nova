@@ -176,8 +176,22 @@ func (c *CachedMetadataStore) GetFunctionCode(ctx context.Context, funcID string
 	if err != nil {
 		return nil, err
 	}
-	cachePut(&c.fnCode, funcID, fc, c.ttl)
+	// Only cache terminal compile states. In multi-instance deployments,
+	// pending/compiling can transition quickly and stale cache values would
+	// block invocation for up to TTL (default 60s) after compilation succeeds.
+	if fc != nil && isTerminalCompileStatus(fc.CompileStatus) {
+		cachePut(&c.fnCode, funcID, fc, c.ttl)
+	}
 	return fc, nil
+}
+
+func isTerminalCompileStatus(status domain.CompileStatus) bool {
+	switch status {
+	case domain.CompileStatusSuccess, domain.CompileStatusFailed, domain.CompileStatusNotRequired:
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *CachedMetadataStore) HasFunctionFiles(ctx context.Context, funcID string) (bool, error) {

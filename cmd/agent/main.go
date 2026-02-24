@@ -471,14 +471,18 @@ func (a *Agent) handleReload(payload json.RawMessage) (*Message, error) {
 
 	// 4. Write new files
 	for name, content := range req.Files {
-		path := filepath.Join(CodeMountPoint, name)
+		// Validate path to prevent traversal attacks
+		if filepath.IsAbs(name) || strings.Contains(filepath.Clean(name), "..") {
+			return nil, fmt.Errorf("unsafe file path: %s", name)
+		}
+		path := filepath.Join(CodeMountPoint, filepath.Clean(name))
 		// Create parent directories
 		if dir := filepath.Dir(path); dir != CodeMountPoint {
 			if err := os.MkdirAll(dir, 0755); err != nil {
 				return nil, fmt.Errorf("create dir for %s: %w", name, err)
 			}
 		}
-		if err := os.WriteFile(path, content, 0755); err != nil {
+		if err := os.WriteFile(path, content, 0644); err != nil {
 			return nil, fmt.Errorf("write file %s: %w", name, err)
 		}
 		fmt.Printf("[agent] Wrote file: %s (%d bytes)\n", name, len(content))
@@ -571,6 +575,18 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID s
 		args := append([]string(nil), a.function.Command...)
 		if len(args) == 0 {
 			return nil, "", "", fmt.Errorf("invalid command: empty")
+		}
+		// Validate the executable against allowed runtime binaries
+		exe := filepath.Base(args[0])
+		allowed := map[string]bool{
+			"python3": true, "python": true, "node": true, "ruby": true,
+			"php": true, "deno": true, "bun": true, "lua": true,
+			"java": true, "wasmtime": true, "dotnet": true, "swift": true,
+			"perl": true, "r": true, "Rscript": true, "julia": true,
+			"handler": true, "bootstrap": true,
+		}
+		if !allowed[exe] && !strings.HasPrefix(args[0], CodeMountPoint) {
+			return nil, "", "", fmt.Errorf("command not allowed: %s", args[0])
 		}
 		if a.function.Extension != "" {
 			args = append(args, CodePath+a.function.Extension)

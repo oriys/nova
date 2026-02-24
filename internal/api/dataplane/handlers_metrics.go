@@ -19,7 +19,7 @@ func (h *Handler) FunctionMetrics(w http.ResponseWriter, r *http.Request) {
 
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 
@@ -68,7 +68,7 @@ func (h *Handler) FunctionSLOStatus(w http.ResponseWriter, r *http.Request) {
 
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 
@@ -95,7 +95,7 @@ func (h *Handler) FunctionSLOStatus(w http.ResponseWriter, r *http.Request) {
 
 	snapshot, err := h.Store.GetFunctionSLOSnapshot(r.Context(), fn.ID, policy.WindowS)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 	resp.Snapshot = snapshot
@@ -122,7 +122,7 @@ func (h *Handler) FunctionDiagnostics(w http.ResponseWriter, r *http.Request) {
 
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 
@@ -132,7 +132,7 @@ func (h *Handler) FunctionDiagnostics(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := h.Store.ListInvocationLogs(r.Context(), fn.ID, sampleSize, 0)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -254,7 +254,7 @@ func (h *Handler) AnalyzeFunctionDiagnostics(w http.ResponseWriter, r *http.Requ
 
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 
@@ -264,7 +264,7 @@ func (h *Handler) AnalyzeFunctionDiagnostics(w http.ResponseWriter, r *http.Requ
 
 	entries, err := h.Store.ListInvocationLogs(r.Context(), fn.ID, sampleSize, 0)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -360,7 +360,7 @@ func (h *Handler) AnalyzeFunctionDiagnostics(w http.ResponseWriter, r *http.Requ
 	// Call AI service for analysis
 	analysis, err := h.AIService.AnalyzeDiagnostics(r.Context(), analysisReq)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		safeError(w, "internal error", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -373,7 +373,7 @@ func (h *Handler) FunctionHeatmap(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		safeError(w, "not found", http.StatusNotFound, err)
 		return
 	}
 

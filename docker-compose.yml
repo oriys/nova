@@ -22,6 +22,8 @@ services:
       context: .
       dockerfile: Dockerfile.rootfs
     container_name: nova-rootfs-builder
+    # privileged is required for loopback mount operations during rootfs build.
+    # In production, consider building rootfs images offline instead.
     privileged: true
     restart: "no"
     volumes:

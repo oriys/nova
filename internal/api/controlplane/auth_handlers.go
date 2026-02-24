@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/oriys/nova/internal/auth"
+	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/store"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -15,6 +17,37 @@ import (
 type AuthHandler struct {
 	Store     *store.Store
 	JWTSecret string // HS256 signing key (same as auth config jwt.secret)
+
+	// revokedTokens holds JTIs of revoked tokens with their expiry times.
+	revokedMu     sync.RWMutex
+	revokedTokens map[string]time.Time
+}
+
+// IsTokenRevoked checks if a token has been revoked by JTI or raw token.
+func (h *AuthHandler) IsTokenRevoked(tokenID string) bool {
+	h.revokedMu.RLock()
+	defer h.revokedMu.RUnlock()
+	if h.revokedTokens == nil {
+		return false
+	}
+	exp, ok := h.revokedTokens[tokenID]
+	if !ok {
+		return false
+	}
+	// Clean up expired entries lazily
+	if time.Now().After(exp) {
+		return false
+	}
+	return true
+}
+
+func (h *AuthHandler) revokeToken(tokenID string, expiry time.Time) {
+	h.revokedMu.Lock()
+	defer h.revokedMu.Unlock()
+	if h.revokedTokens == nil {
+		h.revokedTokens = make(map[string]time.Time)
+	}
+	h.revokedTokens[tokenID] = expiry
 }
 
 func (h *AuthHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -44,8 +77,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusBadRequest, "password is required")
 		return
 	}
-	if len(req.Password) < 4 {
-		writeAuthError(w, http.StatusBadRequest, "password must be at least 4 characters")
+	if len(req.Password) < 8 {
+		writeAuthError(w, http.StatusBadRequest, "password must be at least 8 characters")
 		return
 	}
 
@@ -115,21 +148,19 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	tenant, err := h.Store.GetTenant(r.Context(), tenantID)
 	if err != nil {
+		logging.Op().Warn("login failed: tenant not found", "tenant", tenantID, "ip", r.RemoteAddr)
 		writeAuthError(w, http.StatusUnauthorized, "invalid tenant or password")
 		return
 	}
 
-	// Verify password. For bootstrap tenants with empty password hash, allow
-	// tenant-id-as-password once and persist the hashed password.
+	// Verify password. For bootstrap tenants with empty password hash, reject
+	// login and require explicit password setup via registration.
 	if tenant.PasswordHash == "" {
-		if req.Password != tenant.ID {
-			writeAuthError(w, http.StatusUnauthorized, "invalid tenant or password")
-			return
-		}
-		if hash, hashErr := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost); hashErr == nil {
-			_ = h.Store.SetTenantPasswordHash(r.Context(), tenant.ID, string(hash))
-		}
+		logging.Op().Warn("login failed: bootstrap tenant without password", "tenant", tenantID, "ip", r.RemoteAddr)
+		writeAuthError(w, http.StatusUnauthorized, "tenant requires password setup, please register first")
+		return
 	} else if err := bcrypt.CompareHashAndPassword([]byte(tenant.PasswordHash), []byte(req.Password)); err != nil {
+		logging.Op().Warn("login failed: invalid password", "tenant", tenantID, "ip", r.RemoteAddr)
 		writeAuthError(w, http.StatusUnauthorized, "invalid tenant or password")
 		return
 	}
@@ -141,6 +172,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	logging.Op().Info("login successful", "tenant", tenantID, "ip", r.RemoteAddr)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"token":     token,
@@ -148,8 +181,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Logout handles POST /auth/logout (stateless JWT — client discards token)
+// Logout handles POST /auth/logout — revokes the current token.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	identity := auth.GetIdentity(r.Context())
+	if identity != nil && identity.Subject != "" {
+		// Revoke the token for 24 hours (matching token TTL)
+		h.revokeToken(identity.Subject+":"+r.Header.Get("Authorization"), time.Now().Add(24*time.Hour))
+		logging.Op().Info("user logged out", "tenant", identity.Subject)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -174,8 +213,8 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusBadRequest, "old_password and new_password are required")
 		return
 	}
-	if len(req.NewPassword) < 4 {
-		writeAuthError(w, http.StatusBadRequest, "new_password must be at least 4 characters")
+	if len(req.NewPassword) < 8 {
+		writeAuthError(w, http.StatusBadRequest, "new_password must be at least 8 characters")
 		return
 	}
 
@@ -205,7 +244,7 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.Store.SetTenantPasswordHash(r.Context(), tenantID, string(hash)); err != nil {
-		writeAuthError(w, http.StatusInternalServerError, err.Error())
+		writeAuthError(w, http.StatusInternalServerError, "failed to update password")
 		return
 	}
 
