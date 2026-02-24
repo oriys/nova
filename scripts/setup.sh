@@ -25,6 +25,7 @@ export PATH
 
 INSTALL_DIR="/opt/nova"
 NOVA_CACHE_DIR="${NOVA_CACHE_DIR:-/var/cache/nova/downloads}"
+NOVA_ROOTFS_CACHE_DIR="${NOVA_CACHE_DIR}/rootfs"
 FC_VERSION="latest"
 ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.3-x86_64.tar.gz"
 WASMTIME_VERSION="v41.0.1"
