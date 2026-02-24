@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { asyncInvocationsApi, type AsyncInvocationJob, type AsyncInvocationStatus, type AsyncInvocationSummary } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import { RefreshCw, Search, RotateCcw, ExternalLink, Loader2, Pause, Play, Trash2, Layers, Zap, CheckCircle2, AlertTriangle, PauseCircle } from "lucide-react"
+import { RefreshCw, Search, RotateCcw, ExternalLink, Loader2, Pause, Play, Trash2, Layers, Zap, CheckCircle2, AlertTriangle, PauseCircle, ChevronDown, ChevronUp } from "lucide-react"
 
 function toErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error && err.message.trim()) return err.message.trim()
@@ -248,8 +248,13 @@ export default function AsyncInvocationsPage() {
     return groups
   }, [jobs, groupBy])
 
-  const selectedPayload = useMemo(() => stringifyValue(selectedJob?.payload), [selectedJob])
-  const selectedOutput = useMemo(() => stringifyValue(selectedJob?.output), [selectedJob])
+  const handleRowToggle = useCallback((job: AsyncInvocationJob) => {
+    if (selectedJob?.id === job.id) {
+      setSelectedJob(null)
+      return
+    }
+    void handleLookup(job.id)
+  }, [handleLookup, selectedJob?.id])
 
   return (
     <DashboardLayout>
@@ -407,134 +412,6 @@ export default function AsyncInvocationsPage() {
           </p>
         </div>
 
-        {selectedJob && (
-          <div className="rounded-xl border border-border bg-card p-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-semibold text-foreground">{ta("jobDetail")}</h3>
-                {getStatusBadge(selectedJob.status, ta)}
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={`/functions/${encodeURIComponent(selectedJob.function_name)}`}>
-                    <ExternalLink className="mr-2 h-4 w-4" />
-                    {ta("openFunction")}
-                  </Link>
-                </Button>
-                {selectedJob.status === "dlq" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void handleRetry(selectedJob)}
-                    disabled={retryingID === selectedJob.id}
-                  >
-                    {retryingID === selectedJob.id ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <RotateCcw className="mr-2 h-4 w-4" />
-                    )}
-                    {ta("retry")}
-                  </Button>
-                )}
-                {selectedJob.status === "queued" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void handlePause(selectedJob)}
-                    disabled={pausingID === selectedJob.id}
-                  >
-                    {pausingID === selectedJob.id ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Pause className="mr-2 h-4 w-4" />
-                    )}
-                    {ta("pause")}
-                  </Button>
-                )}
-                {selectedJob.status === "paused" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void handleResume(selectedJob)}
-                    disabled={resumingID === selectedJob.id}
-                  >
-                    {resumingID === selectedJob.id ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Play className="mr-2 h-4 w-4" />
-                    )}
-                    {ta("resume")}
-                  </Button>
-                )}
-                {(selectedJob.status === "queued" || selectedJob.status === "paused") && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => void handleDelete(selectedJob)}
-                    disabled={deletingID === selectedJob.id}
-                  >
-                    {deletingID === selectedJob.id ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="mr-2 h-4 w-4" />
-                    )}
-                    {ta("delete")}
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <div>
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">{ta("jobId")}</div>
-                <div className="mt-1 break-all font-mono text-xs text-foreground">{selectedJob.id}</div>
-              </div>
-              <div>
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">{ta("function")}</div>
-                <div className="mt-1 text-sm text-foreground">{selectedJob.function_name}</div>
-              </div>
-              <div>
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">{ta("attempts")}</div>
-                <div className="mt-1 text-sm text-foreground">{selectedJob.attempt}/{selectedJob.max_attempts}</div>
-              </div>
-              <div>
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">{ta("nextRun")}</div>
-                <div className="mt-1 text-sm text-foreground">{formatDate(selectedJob.next_run_at)}</div>
-              </div>
-              <div>
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">{ta("requestId")}</div>
-                <div className="mt-1 break-all font-mono text-xs text-foreground">{selectedJob.request_id || "-"}</div>
-              </div>
-              <div>
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">{ta("updated")}</div>
-                <div className="mt-1 text-sm text-foreground">{formatDate(selectedJob.updated_at)}</div>
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-3 lg:grid-cols-2">
-              <div>
-                <div className="mb-1 text-sm font-medium text-foreground">{ta("payload")}</div>
-                <pre className="min-h-[140px] overflow-x-auto rounded-md border border-border bg-muted/30 p-3 text-xs text-foreground">
-                  {selectedPayload}
-                </pre>
-              </div>
-              <div>
-                <div className="mb-1 text-sm font-medium text-foreground">{ta("output")}</div>
-                <pre className="min-h-[140px] overflow-x-auto rounded-md border border-border bg-muted/30 p-3 text-xs text-foreground">
-                  {selectedOutput}
-                </pre>
-              </div>
-            </div>
-
-            {selectedJob.last_error && (
-              <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
-                {selectedJob.last_error}
-              </div>
-            )}
-          </div>
-        )}
-
         <div className="overflow-x-auto rounded-xl border border-border bg-card">
           <table className="w-full min-w-[980px]">
             <thead>
@@ -564,85 +441,181 @@ export default function AsyncInvocationsPage() {
                   </td>
                 </tr>
               ) : (
-                jobs.map((job) => (
-                  <tr key={job.id} className="border-b border-border hover:bg-muted/40">
-                    <td className="px-4 py-3 font-mono text-xs">{job.id}</td>
-                    <td className="px-4 py-3 text-sm">{job.function_name}</td>
-                    <td className="px-4 py-3">{getStatusBadge(job.status, ta)}</td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{job.attempt}/{job.max_attempts}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(job.created_at)}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(job.updated_at)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => void handleLookup(job.id)}
-                          disabled={loadingLookup}
-                        >
-                          {ta("view")}
-                        </Button>
-                        {job.status === "dlq" && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => void handleRetry(job)}
-                            disabled={retryingID === job.id}
-                          >
-                            {retryingID === job.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <RotateCcw className="h-4 w-4" />
+                jobs.map((job) => {
+                  const expanded = selectedJob?.id === job.id
+                  const detailJob = expanded ? selectedJob : null
+
+                  return (
+                    <Fragment key={job.id}>
+                      <tr
+                        className={cn("border-b border-border hover:bg-muted/40", expanded && "bg-muted/30")}
+                        onClick={() => handleRowToggle(job)}
+                      >
+                        <td className="px-4 py-3 font-mono text-xs">{job.id}</td>
+                        <td className="px-4 py-3 text-sm">{job.function_name}</td>
+                        <td className="px-4 py-3">{getStatusBadge(job.status, ta)}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{job.attempt}/{job.max_attempts}</td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(job.created_at)}</td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(job.updated_at)}</td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleRowToggle(job)
+                              }}
+                              disabled={loadingLookup}
+                              title={ta("view")}
+                              aria-label={ta("view")}
+                            >
+                              {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            </Button>
+                            {job.status === "dlq" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  void handleRetry(job)
+                                }}
+                                disabled={retryingID === job.id}
+                              >
+                                {retryingID === job.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <RotateCcw className="h-4 w-4" />
+                                )}
+                              </Button>
                             )}
-                          </Button>
-                        )}
-                        {job.status === "queued" && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => void handlePause(job)}
-                            disabled={pausingID === job.id}
-                          >
-                            {pausingID === job.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Pause className="h-4 w-4" />
+                            {job.status === "queued" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  void handlePause(job)
+                                }}
+                                disabled={pausingID === job.id}
+                              >
+                                {pausingID === job.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Pause className="h-4 w-4" />
+                                )}
+                              </Button>
                             )}
-                          </Button>
-                        )}
-                        {job.status === "paused" && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => void handleResume(job)}
-                            disabled={resumingID === job.id}
-                          >
-                            {resumingID === job.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Play className="h-4 w-4" />
+                            {job.status === "paused" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  void handleResume(job)
+                                }}
+                                disabled={resumingID === job.id}
+                              >
+                                {resumingID === job.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Play className="h-4 w-4" />
+                                )}
+                              </Button>
                             )}
-                          </Button>
-                        )}
-                        {(job.status === "queued" || job.status === "paused") && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => void handleDelete(job)}
-                            disabled={deletingID === job.id}
-                          >
-                            {deletingID === job.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-4 w-4" />
+                            {(job.status === "queued" || job.status === "paused") && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  void handleDelete(job)
+                                }}
+                                disabled={deletingID === job.id}
+                              >
+                                {deletingID === job.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </Button>
                             )}
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          </div>
+                        </td>
+                      </tr>
+
+                      {expanded && detailJob && (
+                        <tr className="border-b border-border bg-muted/20">
+                          <td className="px-4 pb-4" colSpan={7}>
+                            <div className="rounded-lg border border-border bg-card p-4">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <h3 className="text-base font-semibold text-foreground">{ta("jobDetail")}</h3>
+                                  {getStatusBadge(detailJob.status, ta)}
+                                </div>
+                                <Button variant="outline" size="sm" asChild>
+                                  <Link href={`/functions/${encodeURIComponent(detailJob.function_name)}`}>
+                                    <ExternalLink className="mr-2 h-4 w-4" />
+                                    {ta("openFunction")}
+                                  </Link>
+                                </Button>
+                              </div>
+
+                              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                <div>
+                                  <div className="text-xs uppercase tracking-wide text-muted-foreground">{ta("jobId")}</div>
+                                  <div className="mt-1 break-all font-mono text-xs text-foreground">{detailJob.id}</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs uppercase tracking-wide text-muted-foreground">{ta("function")}</div>
+                                  <div className="mt-1 text-sm text-foreground">{detailJob.function_name}</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs uppercase tracking-wide text-muted-foreground">{ta("attempts")}</div>
+                                  <div className="mt-1 text-sm text-foreground">{detailJob.attempt}/{detailJob.max_attempts}</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs uppercase tracking-wide text-muted-foreground">{ta("nextRun")}</div>
+                                  <div className="mt-1 text-sm text-foreground">{formatDate(detailJob.next_run_at)}</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs uppercase tracking-wide text-muted-foreground">{ta("requestId")}</div>
+                                  <div className="mt-1 break-all font-mono text-xs text-foreground">{detailJob.request_id || "-"}</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs uppercase tracking-wide text-muted-foreground">{ta("updated")}</div>
+                                  <div className="mt-1 text-sm text-foreground">{formatDate(detailJob.updated_at)}</div>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                                <div>
+                                  <div className="mb-1 text-sm font-medium text-foreground">{ta("payload")}</div>
+                                  <pre className="min-h-[140px] overflow-x-auto rounded-md border border-border bg-muted/30 p-3 text-xs text-foreground">
+                                    {stringifyValue(detailJob.payload)}
+                                  </pre>
+                                </div>
+                                <div>
+                                  <div className="mb-1 text-sm font-medium text-foreground">{ta("output")}</div>
+                                  <pre className="min-h-[140px] overflow-x-auto rounded-md border border-border bg-muted/30 p-3 text-xs text-foreground">
+                                    {stringifyValue(detailJob.output)}
+                                  </pre>
+                                </div>
+                              </div>
+
+                              {detailJob.last_error && (
+                                <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+                                  {detailJob.last_error}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })
               )}
             </tbody>
           </table>

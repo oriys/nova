@@ -153,7 +153,7 @@ func daemonCmd() *cobra.Command {
 					})
 				}
 				defer be.Shutdown()
-				invoker = executor.New(s, p)
+				invoker = executor.New(s, p, executor.WithPayloadPersistence(cfg.Observability.OutputCapture.Enabled))
 				logging.Op().Info("using local executor (no --comet-grpc specified)")
 			}
 

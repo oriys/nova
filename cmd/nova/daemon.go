@@ -280,6 +280,7 @@ func daemonCmd() *cobra.Command {
 				FlushInterval: cfg.Executor.LogFlushInterval,
 				Timeout:       cfg.Executor.LogTimeout,
 			}))
+			execOpts = append(execOpts, executor.WithPayloadPersistence(cfg.Observability.OutputCapture.Enabled))
 			exec := executor.New(s, p, execOpts...)
 
 			// Create workflow service and engine

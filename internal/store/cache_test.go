@@ -16,17 +16,19 @@ import (
 type stubMetadataStore struct {
 	MetadataStore // embed – uncalled methods will panic if exercised
 
-	fnByNameCalls  atomic.Int64
-	fnByIDCalls    atomic.Int64
-	runtimeCalls   atomic.Int64
-	codeCalls      atomic.Int64
-	hasFilesCalls  atomic.Int64
-	filesCalls     atomic.Int64
-	layersCalls    atomic.Int64
+	fnByNameCalls     atomic.Int64
+	fnByIDCalls       atomic.Int64
+	runtimeCalls      atomic.Int64
+	countRuntimeCalls atomic.Int64
+	codeCalls         atomic.Int64
+	hasFilesCalls     atomic.Int64
+	filesCalls        atomic.Int64
+	layersCalls       atomic.Int64
 
 	// configurable return values
 	fn      *domain.Function
 	rt      *RuntimeRecord
+	rtTotal int64
 	code    *domain.FunctionCode
 	hasF    bool
 	files   map[string][]byte
@@ -43,8 +45,8 @@ type functionPaginationStub struct {
 	total    int64
 }
 
-func (s *stubMetadataStore) Close() error                      { return nil }
-func (s *stubMetadataStore) Ping(_ context.Context) error      { return nil }
+func (s *stubMetadataStore) Close() error                 { return nil }
+func (s *stubMetadataStore) Ping(_ context.Context) error { return nil }
 
 func (s *stubMetadataStore) GetFunctionByName(_ context.Context, _ string) (*domain.Function, error) {
 	s.fnByNameCalls.Add(1)
@@ -70,6 +72,11 @@ func (s *stubMetadataStore) GetRuntime(_ context.Context, _ string) (*RuntimeRec
 	return s.rt, nil
 }
 
+func (s *stubMetadataStore) CountRuntimes(_ context.Context) (int64, error) {
+	s.countRuntimeCalls.Add(1)
+	return s.rtTotal, nil
+}
+
 func (s *stubMetadataStore) GetFunctionCode(_ context.Context, _ string) (*domain.FunctionCode, error) {
 	s.codeCalls.Add(1)
 	return s.code, nil
@@ -92,22 +99,26 @@ func (s *stubMetadataStore) GetFunctionLayers(_ context.Context, _ string) ([]*d
 
 // ─── write stubs (no-ops that allow invalidation to succeed) ────────────────
 
-func (s *stubMetadataStore) SaveFunction(_ context.Context, _ *domain.Function) error          { return nil }
+func (s *stubMetadataStore) SaveFunction(_ context.Context, _ *domain.Function) error { return nil }
 func (s *stubMetadataStore) UpdateFunction(_ context.Context, _ string, _ *FunctionUpdate) (*domain.Function, error) {
 	return s.fn, nil
 }
-func (s *stubMetadataStore) DeleteFunction(_ context.Context, _ string) error                  { return nil }
-func (s *stubMetadataStore) SaveFunctionCode(_ context.Context, _, _, _ string) error          { return nil }
-func (s *stubMetadataStore) UpdateFunctionCode(_ context.Context, _, _, _ string) error        { return nil }
+func (s *stubMetadataStore) DeleteFunction(_ context.Context, _ string) error           { return nil }
+func (s *stubMetadataStore) SaveFunctionCode(_ context.Context, _, _, _ string) error   { return nil }
+func (s *stubMetadataStore) UpdateFunctionCode(_ context.Context, _, _, _ string) error { return nil }
 func (s *stubMetadataStore) UpdateCompileResult(_ context.Context, _ string, _ []byte, _ string, _ domain.CompileStatus, _ string) error {
 	return nil
 }
-func (s *stubMetadataStore) DeleteFunctionCode(_ context.Context, _ string) error              { return nil }
-func (s *stubMetadataStore) SaveFunctionFiles(_ context.Context, _ string, _ map[string][]byte) error { return nil }
-func (s *stubMetadataStore) DeleteFunctionFiles(_ context.Context, _ string) error             { return nil }
-func (s *stubMetadataStore) SetFunctionLayers(_ context.Context, _ string, _ []string) error   { return nil }
-func (s *stubMetadataStore) SaveRuntime(_ context.Context, _ *RuntimeRecord) error             { return nil }
-func (s *stubMetadataStore) DeleteRuntime(_ context.Context, _ string) error                   { return nil }
+func (s *stubMetadataStore) DeleteFunctionCode(_ context.Context, _ string) error { return nil }
+func (s *stubMetadataStore) SaveFunctionFiles(_ context.Context, _ string, _ map[string][]byte) error {
+	return nil
+}
+func (s *stubMetadataStore) DeleteFunctionFiles(_ context.Context, _ string) error { return nil }
+func (s *stubMetadataStore) SetFunctionLayers(_ context.Context, _ string, _ []string) error {
+	return nil
+}
+func (s *stubMetadataStore) SaveRuntime(_ context.Context, _ *RuntimeRecord) error { return nil }
+func (s *stubMetadataStore) DeleteRuntime(_ context.Context, _ string) error       { return nil }
 
 func (s *functionPaginationStub) ListFunctionsFiltered(_ context.Context, _, _ string, _, _ int) ([]*domain.Function, error) {
 	s.listFilteredCalls.Add(1)
@@ -243,6 +254,22 @@ func TestCachedStore_SaveRuntime_Invalidates(t *testing.T) {
 
 	if stub.runtimeCalls.Load() != 2 {
 		t.Fatalf("expected 2 runtime calls after invalidation, got %d", stub.runtimeCalls.Load())
+	}
+}
+
+func TestCachedStore_CountRuntimes_Delegates(t *testing.T) {
+	stub := &stubMetadataStore{rtTotal: 13}
+	cached := NewCachedMetadataStore(stub, 1*time.Second)
+
+	total, err := cached.CountRuntimes(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if total != 13 {
+		t.Fatalf("expected total 13, got %d", total)
+	}
+	if stub.countRuntimeCalls.Load() != 1 {
+		t.Fatalf("expected 1 count call, got %d", stub.countRuntimeCalls.Load())
 	}
 }
 

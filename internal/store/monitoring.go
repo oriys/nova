@@ -133,7 +133,7 @@ func (s *PostgresStore) ListInvocationLogs(ctx context.Context, functionID strin
 	scope := tenantScopeFromContext(ctx)
 
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, tenant_id, namespace, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, created_at
+		SELECT id, tenant_id, namespace, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, created_at
 		FROM invocation_logs
 		WHERE tenant_id = $1 AND namespace = $2 AND function_id = $3
 		ORDER BY created_at DESC
@@ -148,11 +148,19 @@ func (s *PostgresStore) ListInvocationLogs(ctx context.Context, functionID strin
 	for rows.Next() {
 		var log InvocationLog
 		var errorMessage *string
-		if err := rows.Scan(&log.ID, &log.TenantID, &log.Namespace, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &log.CreatedAt); err != nil {
+		var input []byte
+		var output []byte
+		if err := rows.Scan(&log.ID, &log.TenantID, &log.Namespace, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &input, &output, &log.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan invocation log: %w", err)
 		}
 		if errorMessage != nil {
 			log.ErrorMessage = *errorMessage
+		}
+		if len(input) > 0 {
+			log.Input = input
+		}
+		if len(output) > 0 {
+			log.Output = output
 		}
 		logs = append(logs, &log)
 	}
@@ -185,7 +193,7 @@ func (s *PostgresStore) ListAllInvocationLogs(ctx context.Context, limit, offset
 	scope := tenantScopeFromContext(ctx)
 
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, tenant_id, namespace, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, created_at
+		SELECT id, tenant_id, namespace, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, created_at
 		FROM invocation_logs l
 		WHERE l.tenant_id = $1
 		  AND l.namespace = $2
@@ -208,11 +216,19 @@ func (s *PostgresStore) ListAllInvocationLogs(ctx context.Context, limit, offset
 	for rows.Next() {
 		var log InvocationLog
 		var errorMessage *string
-		if err := rows.Scan(&log.ID, &log.TenantID, &log.Namespace, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &log.CreatedAt); err != nil {
+		var input []byte
+		var output []byte
+		if err := rows.Scan(&log.ID, &log.TenantID, &log.Namespace, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &input, &output, &log.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan invocation log: %w", err)
 		}
 		if errorMessage != nil {
 			log.ErrorMessage = *errorMessage
+		}
+		if len(input) > 0 {
+			log.Input = input
+		}
+		if len(output) > 0 {
+			log.Output = output
 		}
 		logs = append(logs, &log)
 	}
@@ -270,7 +286,7 @@ func (s *PostgresStore) ListAllInvocationLogsFiltered(
 	functionName = strings.TrimSpace(functionName)
 
 	query := `
-		SELECT id, tenant_id, namespace, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, created_at
+		SELECT id, tenant_id, namespace, function_id, function_name, runtime, duration_ms, cold_start, success, error_message, input_size, output_size, input, output, created_at
 		FROM invocation_logs l
 		WHERE l.tenant_id = $1
 		  AND l.namespace = $2
@@ -313,11 +329,19 @@ func (s *PostgresStore) ListAllInvocationLogsFiltered(
 	for rows.Next() {
 		var log InvocationLog
 		var errorMessage *string
-		if err := rows.Scan(&log.ID, &log.TenantID, &log.Namespace, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &log.CreatedAt); err != nil {
+		var input []byte
+		var output []byte
+		if err := rows.Scan(&log.ID, &log.TenantID, &log.Namespace, &log.FunctionID, &log.FunctionName, &log.Runtime, &log.DurationMs, &log.ColdStart, &log.Success, &errorMessage, &log.InputSize, &log.OutputSize, &input, &output, &log.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan invocation log: %w", err)
 		}
 		if errorMessage != nil {
 			log.ErrorMessage = *errorMessage
+		}
+		if len(input) > 0 {
+			log.Input = input
+		}
+		if len(output) > 0 {
+			log.Output = output
 		}
 		logs = append(logs, &log)
 	}

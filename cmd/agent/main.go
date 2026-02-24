@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/oriys/nova/api/proto/agentpb"
+	"github.com/oriys/nova/internal/pkg/codefile"
 	"github.com/oriys/nova/internal/pkg/vsock"
 	"google.golang.org/protobuf/proto"
 )
@@ -482,7 +483,11 @@ func (a *Agent) handleReload(payload json.RawMessage) (*Message, error) {
 				return nil, fmt.Errorf("create dir for %s: %w", name, err)
 			}
 		}
-		if err := os.WriteFile(path, content, 0644); err != nil {
+		mode := os.FileMode(0644)
+		if codefile.ShouldBeExecutable(name, content) {
+			mode = 0755
+		}
+		if err := os.WriteFile(path, content, mode); err != nil {
 			return nil, fmt.Errorf("write file %s: %w", name, err)
 		}
 		fmt.Printf("[agent] Wrote file: %s (%d bytes)\n", name, len(content))
@@ -682,7 +687,7 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID s
 // handleStreamingExec executes function in streaming mode, sending chunks via MsgTypeStream
 func (a *Agent) handleStreamingExec(conn net.Conn, req *ExecPayload) (*Message, error) {
 	start := time.Now()
-	
+
 	// Select writer based on connection protocol
 	writer := writeMessage
 	if a.useProtobuf {
@@ -853,12 +858,12 @@ func (a *Agent) executePersistent(input json.RawMessage, timeoutS int) (json.Raw
 	req := map[string]interface{}{
 		"input": json.RawMessage(input),
 		"context": map[string]interface{}{
-			"request_id":      os.Getenv("NOVA_REQUEST_ID"),
-			"function_name":   a.function.FunctionName,
+			"request_id":       os.Getenv("NOVA_REQUEST_ID"),
+			"function_name":    a.function.FunctionName,
 			"function_version": a.function.FunctionVersion,
-			"memory_limit_mb": a.function.MemoryMB,
-			"timeout_s":       a.function.TimeoutS,
-			"runtime":         a.function.Runtime,
+			"memory_limit_mb":  a.function.MemoryMB,
+			"timeout_s":        a.function.TimeoutS,
+			"runtime":          a.function.Runtime,
 		},
 	}
 	reqBytes, _ := json.Marshal(req)
@@ -1167,17 +1172,17 @@ func pbToMessage(pb *agentpb.VsockMessage) (*Message, error) {
 			envVars = make(map[string]string)
 		}
 		payload := InitPayload{
-			Runtime:               p.Init.Runtime,
-			Handler:               p.Init.Handler,
-			EnvVars:               envVars,
-			Command:               p.Init.Command,
-			Extension:             p.Init.Extension,
-			Mode:                  ExecutionMode(p.Init.Mode),
-			FunctionName:          p.Init.FunctionName,
-			FunctionVersion:       int(p.Init.FunctionVersion),
-			MemoryMB:              int(p.Init.MemoryMb),
-			TimeoutS:              int(p.Init.TimeoutS),
-			LayerCount:            int(p.Init.LayerCount),
+			Runtime:         p.Init.Runtime,
+			Handler:         p.Init.Handler,
+			EnvVars:         envVars,
+			Command:         p.Init.Command,
+			Extension:       p.Init.Extension,
+			Mode:            ExecutionMode(p.Init.Mode),
+			FunctionName:    p.Init.FunctionName,
+			FunctionVersion: int(p.Init.FunctionVersion),
+			MemoryMB:        int(p.Init.MemoryMb),
+			TimeoutS:        int(p.Init.TimeoutS),
+			LayerCount:      int(p.Init.LayerCount),
 		}
 		data, err := json.Marshal(payload)
 		if err != nil {

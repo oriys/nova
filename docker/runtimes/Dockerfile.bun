@@ -6,16 +6,15 @@ USER root
 # Install nova-agent
 COPY bin/nova-agent /usr/local/bin/nova-agent
 
-# Create directories and non-root user
+# Create directories and reuse built-in bun user (uid/gid 1000)
 RUN mkdir -p /code /tmp && chmod 1777 /tmp && \
-    adduser --disabled-password --gecos "" --uid 1000 nova && \
-    chown nova:nova /code
+    chown bun:bun /code
 
 # Set environment for Docker mode
 ENV NOVA_AGENT_MODE=tcp
 ENV NOVA_SKIP_MOUNT=true
 
-USER nova
+USER bun
 
 EXPOSE 9999
 

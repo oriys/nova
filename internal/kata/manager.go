@@ -17,6 +17,7 @@ import (
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
+	"github.com/oriys/nova/internal/pkg/codefile"
 	"github.com/oriys/nova/internal/pkg/safepath"
 )
 
@@ -83,7 +84,11 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 	// Write code to local code directory
 	if len(codeContent) > 0 {
 		handlerPath := filepath.Join(codeDir, "handler")
-		if err := os.WriteFile(handlerPath, codeContent, 0644); err != nil {
+		mode := os.FileMode(0644)
+		if codefile.ShouldBeExecutable("handler", codeContent) {
+			mode = 0755
+		}
+		if err := os.WriteFile(handlerPath, codeContent, mode); err != nil {
 			os.RemoveAll(codeDir)
 			return nil, fmt.Errorf("write code file: %w", err)
 		}
@@ -120,7 +125,11 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 			os.RemoveAll(codeDir)
 			return nil, fmt.Errorf("create dir for %s: %w", path, err)
 		}
-		if err := os.WriteFile(fullPath, content, 0644); err != nil {
+		mode := os.FileMode(0644)
+		if codefile.ShouldBeExecutable(path, content) {
+			mode = 0755
+		}
+		if err := os.WriteFile(fullPath, content, mode); err != nil {
 			os.RemoveAll(codeDir)
 			return nil, fmt.Errorf("write file %s: %w", path, err)
 		}

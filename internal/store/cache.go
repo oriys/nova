@@ -69,6 +69,10 @@ type asyncInvocationPaginationDelegate interface {
 	GetAsyncInvocationSummary(ctx context.Context) (*AsyncInvocationSummary, error)
 }
 
+type runtimePaginationDelegate interface {
+	CountRuntimes(ctx context.Context) (int64, error)
+}
+
 // NewCachedMetadataStore returns a MetadataStore that caches hot-path reads.
 // Pass ttl <= 0 to use the default (60 s).
 func NewCachedMetadataStore(underlying MetadataStore, ttl time.Duration) *CachedMetadataStore {
@@ -246,6 +250,14 @@ func (c *CachedMetadataStore) CountFunctionsFiltered(ctx context.Context, query,
 		return 0, fmt.Errorf("count functions filtered not supported")
 	}
 	return store.CountFunctionsFiltered(ctx, query, runtime)
+}
+
+func (c *CachedMetadataStore) CountRuntimes(ctx context.Context) (int64, error) {
+	store, ok := c.MetadataStore.(runtimePaginationDelegate)
+	if !ok {
+		return 0, fmt.Errorf("count runtimes not supported")
+	}
+	return store.CountRuntimes(ctx)
 }
 
 func (c *CachedMetadataStore) CountInvocationLogs(ctx context.Context, functionID string) (int64, error) {

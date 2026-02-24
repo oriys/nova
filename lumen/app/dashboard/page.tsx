@@ -11,7 +11,7 @@ import { ActiveFunctionsTable } from "@/components/active-functions-table"
 import { RecentLogs } from "@/components/recent-logs"
 import { OnboardingFlow } from "@/components/onboarding-flow"
 import { ErrorBanner } from "@/components/ui/error-banner"
-import { Activity, Zap, AlertTriangle, Clock, RefreshCw, Snowflake, Server, HeartPulse, Timer, Cpu } from "lucide-react"
+import { Activity, Zap, AlertTriangle, Clock, RefreshCw, Snowflake, Server, HeartPulse, Timer } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { functionsApi, gatewayApi, metricsApi, healthApi, type GlobalMetrics, type HealthStatus } from "@/lib/api"
 import { transformFunction, transformLog, FunctionData, LogEntry } from "@/lib/types"
@@ -233,7 +233,7 @@ export default function DashboardPage() {
         {systemMetrics && (
           <div>
             <h3 className="mb-3 text-sm font-semibold text-card-foreground">{td("systemIndicators")}</h3>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
               <div className="rounded-xl border border-border bg-card p-4">
                 <div className="flex items-start justify-between">
                   <div>
@@ -276,23 +276,6 @@ export default function DashboardPage() {
                   </div>
                   <div className="rounded-lg bg-primary/10 p-2">
                     <Server className="h-4 w-4 text-primary" />
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-xl border border-border bg-card p-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">{td("vmLifecycle")}</p>
-                    <p className="mt-1 text-lg font-semibold text-card-foreground">
-                      {systemMetrics.vms.created}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {td("vmsCreated", { count: systemMetrics.vms.created })}
-                      {systemMetrics.vms.crashed > 0 && ` · ${td("vmsCrashed", { count: systemMetrics.vms.crashed })}`}
-                    </p>
-                  </div>
-                  <div className="rounded-lg bg-primary/10 p-2">
-                    <Cpu className="h-4 w-4 text-primary" />
                   </div>
                 </div>
               </div>

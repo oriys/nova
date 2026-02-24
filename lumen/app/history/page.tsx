@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { Fragment, useEffect, useState, useCallback } from "react"
 import { useTranslations } from "next-intl"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
@@ -33,6 +33,8 @@ import {
   Flame,
   RotateCcw,
   Loader2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toUserErrorMessage } from "@/lib/error-map"
@@ -47,8 +49,8 @@ interface InvocationRecord {
   coldStart: boolean
   input?: string
   output?: string
-  inputTitle?: string
-  outputTitle?: string
+  inputDetail?: string
+  outputDetail?: string
 }
 
 export default function HistoryPage() {
@@ -74,6 +76,7 @@ export default function HistoryPage() {
   const [error, setError] = useState<string | null>(null)
   const [replayingId, setReplayingId] = useState<string | null>(null)
   const [replayResult, setReplayResult] = useState<Record<string, string>>({})
+  const [expandedInvocationId, setExpandedInvocationId] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     try {
@@ -127,8 +130,8 @@ export default function HistoryPage() {
           coldStart: log.cold_start,
           input,
           output,
-          inputTitle: input ? prettyPayload(log.input) : th("noInputCaptured"),
-          outputTitle: output ? prettyPayload(log.output) : th("noOutputCaptured"),
+          inputDetail: input ? prettyPayload(log.input) : th("noInputCaptured"),
+          outputDetail: output ? prettyPayload(log.output) : th("noOutputCaptured"),
         }
       })
 
@@ -183,10 +186,22 @@ export default function HistoryPage() {
     if (page > totalPages) setPage(totalPages)
   }, [page, totalPages])
 
+  useEffect(() => {
+    if (!expandedInvocationId) return
+    const exists = invocations.some((inv) => inv.id === expandedInvocationId)
+    if (!exists) {
+      setExpandedInvocationId(null)
+    }
+  }, [expandedInvocationId, invocations])
+
   const formatTimestamp = (ts: string) => {
     const date = new Date(ts)
     return date.toLocaleString()
   }
+
+  const handleRowToggle = useCallback((invocationId: string) => {
+    setExpandedInvocationId((current) => (current === invocationId ? null : invocationId))
+  }, [])
 
   const successCount = invocationSummary.successes
   const failedCount = invocationSummary.failures
@@ -336,12 +351,6 @@ export default function HistoryPage() {
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
                     {th("colColdStart")}
                   </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
-                    {th("colInput")}
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
-                    {th("colOutput")}
-                  </th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">
                     {th("colActions")}
                   </th>
@@ -351,7 +360,7 @@ export default function HistoryPage() {
                 {loading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i} className="border-b border-border">
-                      <td colSpan={9} className="px-4 py-3">
+                      <td colSpan={7} className="px-4 py-3">
                         <div className="h-4 bg-muted rounded animate-pulse" />
                       </td>
                     </tr>
@@ -359,115 +368,226 @@ export default function HistoryPage() {
                 ) : invocations.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={9}
+                      colSpan={7}
                       className="px-4 py-8 text-center text-muted-foreground"
                     >
                       {th("noInvocations")}
                     </td>
                   </tr>
                 ) : (
-                  invocations.map((inv) => (
-                    <tr
-                      key={inv.id}
-                      className="border-b border-border hover:bg-muted/50"
-                    >
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          {inv.status === "success" ? (
-                            <CheckCircle className="h-4 w-4 text-success" />
-                          ) : (
-                            <XCircle className="h-4 w-4 text-destructive" />
-                          )}
-                          <Badge
-                            variant="secondary"
-                            className={cn(
-                              "text-xs",
-                              inv.status === "success"
-                                ? "bg-success/10 text-success border-0"
-                                : "bg-destructive/10 text-destructive border-0"
-                            )}
-                          >
-                            {inv.status === "success" ? th("success") : th("failed")}
-                          </Badge>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">
-                        {formatTimestamp(inv.timestamp)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Link
-                          href={`/functions/${inv.functionName}`}
-                          className="text-sm font-medium text-primary hover:underline"
+                  invocations.map((inv) => {
+                    const expanded = expandedInvocationId === inv.id
+
+                    return (
+                      <Fragment key={inv.id}>
+                        <tr
+                          className={cn("border-b border-border hover:bg-muted/50", expanded && "bg-muted/30")}
+                          onClick={() => handleRowToggle(inv.id)}
                         >
-                          {inv.functionName}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3">
-                        <code className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                          {inv.id.slice(0, 8)}...
-                        </code>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">
-                        {th("durationMs", { duration: inv.duration })}
-                      </td>
-                      <td className="px-4 py-3">
-                        {inv.coldStart ? (
-                          <Badge variant="secondary" className="text-xs bg-blue-500/10 text-blue-500 border-0">
-                            <Snowflake className="h-3 w-3 mr-1" />
-                            {th("cold")}
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-xs bg-orange-500/10 text-orange-500 border-0">
-                            <Flame className="h-3 w-3 mr-1" />
-                            {th("warm")}
-                          </Badge>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className="block max-w-[220px] truncate font-mono text-xs text-muted-foreground"
-                          title={inv.inputTitle}
-                        >
-                          {inv.input || "-"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className="block max-w-[220px] truncate font-mono text-xs text-muted-foreground"
-                          title={inv.outputTitle}
-                        >
-                          {inv.output || "-"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleReplay(inv)}
-                            disabled={replayingId === inv.id}
-                            title={th("replayInvocation")}
-                          >
-                            {replayingId === inv.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <RotateCcw className="h-4 w-4" />
-                            )}
-                          </Button>
-                          {replayResult[inv.id] && (
-                            <span className="text-xs text-muted-foreground max-w-[100px] truncate">
-                              {replayResult[inv.id]}
-                            </span>
-                          )}
-                          <Button variant="ghost" size="sm" asChild>
-                            <Link href={`/functions/${inv.functionName}`}>
-                              <ExternalLink className="h-4 w-4" />
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              {inv.status === "success" ? (
+                                <CheckCircle className="h-4 w-4 text-success" />
+                              ) : (
+                                <XCircle className="h-4 w-4 text-destructive" />
+                              )}
+                              <Badge
+                                variant="secondary"
+                                className={cn(
+                                  "text-xs",
+                                  inv.status === "success"
+                                    ? "bg-success/10 text-success border-0"
+                                    : "bg-destructive/10 text-destructive border-0"
+                                )}
+                              >
+                                {inv.status === "success" ? th("success") : th("failed")}
+                              </Badge>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">
+                            {formatTimestamp(inv.timestamp)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Link
+                              href={`/functions/${encodeURIComponent(inv.functionName)}`}
+                              className="text-sm font-medium text-primary hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {inv.functionName}
                             </Link>
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                          </td>
+                          <td className="px-4 py-3">
+                            <code className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                              {inv.id.slice(0, 8)}...
+                            </code>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">
+                            {th("durationMs", { duration: inv.duration })}
+                          </td>
+                          <td className="px-4 py-3">
+                            {inv.coldStart ? (
+                              <Badge variant="secondary" className="text-xs bg-blue-500/10 text-blue-500 border-0">
+                                <Snowflake className="h-3 w-3 mr-1" />
+                                {th("cold")}
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-xs bg-orange-500/10 text-orange-500 border-0">
+                                <Flame className="h-3 w-3 mr-1" />
+                                {th("warm")}
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleRowToggle(inv.id)
+                                }}
+                                title={th("view")}
+                                aria-label={th("view")}
+                              >
+                                {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  void handleReplay(inv)
+                                }}
+                                disabled={replayingId === inv.id}
+                                title={th("replayInvocation")}
+                              >
+                                {replayingId === inv.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <RotateCcw className="h-4 w-4" />
+                                )}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                asChild
+                              >
+                                <Link
+                                  href={`/functions/${encodeURIComponent(inv.functionName)}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <ExternalLink className="h-4 w-4" />
+                                </Link>
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                        {expanded && (
+                          <tr className="border-b border-border bg-muted/20">
+                            <td colSpan={7} className="px-4 pb-4">
+                              <div className="rounded-lg border border-border bg-card p-4">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <h3 className="text-base font-semibold text-foreground">
+                                      {th("invocationDetail")}
+                                    </h3>
+                                    <Badge
+                                      variant="secondary"
+                                      className={cn(
+                                        "text-xs",
+                                        inv.status === "success"
+                                          ? "bg-success/10 text-success border-0"
+                                          : "bg-destructive/10 text-destructive border-0"
+                                      )}
+                                    >
+                                      {inv.status === "success" ? th("success") : th("failed")}
+                                    </Badge>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {replayResult[inv.id] && (
+                                      <span className="text-xs text-muted-foreground">{replayResult[inv.id]}</span>
+                                    )}
+                                    <Button variant="outline" size="sm" asChild>
+                                      <Link href={`/functions/${encodeURIComponent(inv.functionName)}`}>
+                                        <ExternalLink className="mr-2 h-4 w-4" />
+                                        {th("openFunction")}
+                                      </Link>
+                                    </Button>
+                                  </div>
+                                </div>
+
+                                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                  <div>
+                                    <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                                      {th("colRequestId")}
+                                    </div>
+                                    <div className="mt-1 break-all font-mono text-xs text-foreground">{inv.id}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                                      {th("colFunction")}
+                                    </div>
+                                    <div className="mt-1 text-sm text-foreground">{inv.functionName}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                                      {th("colTimestamp")}
+                                    </div>
+                                    <div className="mt-1 text-sm text-foreground">{formatTimestamp(inv.timestamp)}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                                      {th("colDuration")}
+                                    </div>
+                                    <div className="mt-1 text-sm text-foreground">
+                                      {th("durationMs", { duration: inv.duration })}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                                      {th("colColdStart")}
+                                    </div>
+                                    <div className="mt-1 text-sm text-foreground">
+                                      {inv.coldStart ? th("cold") : th("warm")}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                                      {th("colStatus")}
+                                    </div>
+                                    <div className="mt-1 text-sm text-foreground">
+                                      {inv.status === "success" ? th("success") : th("failed")}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                                  <div>
+                                    <div className="mb-1 text-sm font-medium text-foreground">{th("colInput")}</div>
+                                    <textarea
+                                      className="h-52 w-full resize-y overflow-auto rounded-md border border-border bg-muted/30 p-3 font-mono text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                                      defaultValue={inv.inputDetail}
+                                      spellCheck={false}
+                                      wrap="off"
+                                    />
+                                  </div>
+                                  <div>
+                                    <div className="mb-1 text-sm font-medium text-foreground">{th("colOutput")}</div>
+                                    <textarea
+                                      className="h-52 w-full resize-y overflow-auto rounded-md border border-border bg-muted/30 p-3 font-mono text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                                      defaultValue={inv.outputDetail}
+                                      spellCheck={false}
+                                      wrap="off"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })
                 )}
               </tbody>
             </table>

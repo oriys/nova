@@ -255,6 +255,7 @@ func daemonCmd() *cobra.Command {
 					Timeout:       cfg.Executor.LogTimeout,
 				}),
 				executor.WithLogSink(sink),
+				executor.WithPayloadPersistence(cfg.Observability.OutputCapture.Enabled),
 			}
 			if secretsResolver != nil {
 				execOpts = append(execOpts, executor.WithSecretsResolver(secretsResolver))
