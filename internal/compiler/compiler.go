@@ -242,7 +242,7 @@ func (c *Compiler) compileWithFiles(ctx context.Context, fn *domain.Function, fi
 
 	logging.Op().Info("starting multi-file compilation", "function", fn.Name, "runtime", fn.Runtime, "image", image, "files", len(files))
 
-	createArgs := []string{"create", "--platform", "linux/amd64", "--network", "host", "--name", containerName, image, "sh", "-c", buildCmd}
+	createArgs := dockerCreateArgs(containerName, image, buildCmd)
 	createCmd := exec.CommandContext(ctx, "docker", createArgs...)
 	var createStderr bytes.Buffer
 	createCmd.Stderr = &createStderr
@@ -489,19 +489,19 @@ func findEntryPointFile(files map[string][]byte, runtime domain.Runtime, handler
 func baseRuntimeID(runtime domain.Runtime) domain.Runtime {
 	rt := string(runtime)
 	prefixMap := map[string]domain.Runtime{
-		"python": domain.RuntimePython,
-		"node":   domain.RuntimeNode,
-		"go":     domain.RuntimeGo,
-		"rust":   domain.RuntimeRust,
-		"ruby":   domain.RuntimeRuby,
-		"java":   domain.RuntimeJava,
-		"php":    domain.RuntimePHP,
-		"deno":   domain.RuntimeDeno,
-		"bun":    domain.RuntimeBun,
-		"kotlin": domain.RuntimeKotlin,
-		"swift":  domain.RuntimeSwift,
-		"zig":    domain.RuntimeZig,
-		"scala":  domain.RuntimeScala,
+		"python":  domain.RuntimePython,
+		"node":    domain.RuntimeNode,
+		"go":      domain.RuntimeGo,
+		"rust":    domain.RuntimeRust,
+		"ruby":    domain.RuntimeRuby,
+		"java":    domain.RuntimeJava,
+		"php":     domain.RuntimePHP,
+		"deno":    domain.RuntimeDeno,
+		"bun":     domain.RuntimeBun,
+		"kotlin":  domain.RuntimeKotlin,
+		"swift":   domain.RuntimeSwift,
+		"zig":     domain.RuntimeZig,
+		"scala":   domain.RuntimeScala,
 		"c":       domain.RuntimeC,
 		"cpp":     domain.RuntimeCpp,
 		"graalvm": domain.RuntimeGraalVM,
@@ -961,7 +961,7 @@ func (c *Compiler) compile(ctx context.Context, fn *domain.Function, sourceCode 
 	// Force linux/amd64 platform — compiled binaries must run in x86_64 VMs/containers.
 	// Without this, ARM hosts pull ARM images and cross-compilation may fail
 	// (e.g., Rust proc-macros need host-native toolchain).
-	createArgs := []string{"create", "--platform", "linux/amd64", "--network", "host", "--name", containerName, image, "sh", "-c", buildCmd}
+	createArgs := dockerCreateArgs(containerName, image, buildCmd)
 	createCmd := exec.CommandContext(ctx, "docker", createArgs...)
 	var createStderr bytes.Buffer
 	createCmd.Stderr = &createStderr
@@ -1187,6 +1187,20 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 	}
 }
 
+func dockerCreateArgs(containerName, image, buildCmd string) []string {
+	// Force shell entrypoint so images with custom ENTRYPOINT (e.g. GraalVM native-image)
+	// run our build script instead of interpreting "cd" as tool arguments.
+	return []string{
+		"create",
+		"--platform", "linux/amd64",
+		"--network", "host",
+		"--name", containerName,
+		"--entrypoint", "/bin/sh",
+		image,
+		"-c", buildCmd,
+	}
+}
+
 func runtimeExtension(runtime domain.Runtime) string {
 	return RuntimeExtension(runtime)
 }
@@ -1195,27 +1209,27 @@ func runtimeExtension(runtime domain.Runtime) string {
 func RuntimeExtension(runtime domain.Runtime) string {
 	rt := baseRuntimeID(runtime)
 	exts := map[domain.Runtime]string{
-		domain.RuntimePython: ".py",
-		domain.RuntimeGo:     ".go",
-		domain.RuntimeRust:   ".rs",
-		domain.RuntimeNode:   ".js",
-		domain.RuntimeRuby:   ".rb",
-		domain.RuntimeJava:   ".java",
-		domain.RuntimeDeno:   ".ts",
-		domain.RuntimeBun:    ".ts",
-		domain.RuntimeWasm:   ".wasm",
-		domain.RuntimePHP:    ".php",
-		domain.RuntimeElixir: ".exs",
-		domain.RuntimeKotlin: ".kt",
-		domain.RuntimeSwift:  ".swift",
-		domain.RuntimeZig:    ".zig",
-		domain.RuntimeLua:    ".lua",
-		domain.RuntimePerl:   ".pl",
-		domain.RuntimeR:      ".R",
-		domain.RuntimeJulia:  ".jl",
-		domain.RuntimeScala:  ".scala",
-		domain.RuntimeC:      ".c",
-		domain.RuntimeCpp:    ".cpp",
+		domain.RuntimePython:  ".py",
+		domain.RuntimeGo:      ".go",
+		domain.RuntimeRust:    ".rs",
+		domain.RuntimeNode:    ".js",
+		domain.RuntimeRuby:    ".rb",
+		domain.RuntimeJava:    ".java",
+		domain.RuntimeDeno:    ".ts",
+		domain.RuntimeBun:     ".ts",
+		domain.RuntimeWasm:    ".wasm",
+		domain.RuntimePHP:     ".php",
+		domain.RuntimeElixir:  ".exs",
+		domain.RuntimeKotlin:  ".kt",
+		domain.RuntimeSwift:   ".swift",
+		domain.RuntimeZig:     ".zig",
+		domain.RuntimeLua:     ".lua",
+		domain.RuntimePerl:    ".pl",
+		domain.RuntimeR:       ".R",
+		domain.RuntimeJulia:   ".jl",
+		domain.RuntimeScala:   ".scala",
+		domain.RuntimeC:       ".c",
+		domain.RuntimeCpp:     ".cpp",
 		domain.RuntimeGraalVM: ".java",
 	}
 	if ext, ok := exts[rt]; ok {
