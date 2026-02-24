@@ -317,7 +317,8 @@ func rootfsForRuntime(rt domain.Runtime) string {
 	case r == string(domain.RuntimeRuby) || strings.HasPrefix(r, "ruby"):
 		return "ruby.ext4"
 	case r == string(domain.RuntimeJava) || strings.HasPrefix(r, "java") ||
-		r == string(domain.RuntimeKotlin) || r == string(domain.RuntimeScala):
+		r == string(domain.RuntimeKotlin) || strings.HasPrefix(r, "kotlin") ||
+		r == string(domain.RuntimeScala) || strings.HasPrefix(r, "scala"):
 		return "java.ext4"
 	case r == string(domain.RuntimePHP) || strings.HasPrefix(r, "php"):
 		return "php.ext4"

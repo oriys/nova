@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -48,22 +49,22 @@ const (
 )
 
 type Config struct {
-	Backend             string // "firecracker", "docker", or "wasm"
-	FirecrackerBin      string
-	KernelPath          string
-	RootfsDir           string
-	SnapshotDir         string
-	SocketDir           string
-	VsockDir            string
-	LogDir              string
-	BridgeName          string
-	Subnet              string
-	BootTimeout         time.Duration
-	LogLevel            string // Firecracker log level: Error, Warning, Info, Debug
-	CodeDriveSizeMB     int    // Default code drive size in MB (default: 16)
-	MinCodeDriveSizeMB  int    // Minimum code drive size in MB (default: 4)
-	VsockPort           int    // Vsock port for guest agent (default: 9999)
-	MaxVsockMessageMB   int    // Maximum vsock message size in MB (default: 8)
+	Backend            string        `json:"backend"` // "firecracker", "docker", or "wasm"
+	FirecrackerBin     string        `json:"binary"`
+	KernelPath         string        `json:"kernel"`
+	RootfsDir          string        `json:"rootfs_dir"`
+	SnapshotDir        string        `json:"snapshot_dir"`
+	SocketDir          string        `json:"socket_dir"`
+	VsockDir           string        `json:"vsock_dir"`
+	LogDir             string        `json:"log_dir"`
+	BridgeName         string        `json:"bridge_name"`
+	Subnet             string        `json:"subnet"`
+	BootTimeout        time.Duration `json:"boot_timeout"`
+	LogLevel           string        `json:"log_level"`              // Firecracker log level: Error, Warning, Info, Debug
+	CodeDriveSizeMB    int           `json:"code_drive_size_mb"`     // Default code drive size in MB (default: 16)
+	MinCodeDriveSizeMB int           `json:"min_code_drive_size_mb"` // Minimum code drive size in MB (default: 4)
+	VsockPort          int           `json:"vsock_port"`             // Vsock port for guest agent (default: 9999)
+	MaxVsockMessageMB  int           `json:"max_vsock_message_mb"`   // Maximum vsock message size in MB (default: 8)
 }
 
 // NovaDir is the base installation directory for nova
@@ -134,6 +135,9 @@ func NewManager(cfg *Config) (*Manager, error) {
 			return nil, fmt.Errorf("create dir %s: %w", dir, err)
 		}
 	}
+	if err := validateConfigPaths(cfg); err != nil {
+		return nil, err
+	}
 
 	m := &Manager{
 		config:  cfg,
@@ -156,6 +160,53 @@ func NewManager(cfg *Config) (*Manager, error) {
 	}
 
 	return m, nil
+}
+
+func validateConfigPaths(cfg *Config) error {
+	if strings.TrimSpace(cfg.FirecrackerBin) == "" {
+		return fmt.Errorf("firecracker binary path is empty")
+	}
+	fcInfo, err := os.Stat(cfg.FirecrackerBin)
+	if err != nil {
+		return fmt.Errorf("firecracker binary not found at %s: %w", cfg.FirecrackerBin, err)
+	}
+	if fcInfo.IsDir() {
+		return fmt.Errorf("firecracker binary path is a directory: %s", cfg.FirecrackerBin)
+	}
+	if fcInfo.Mode()&0111 == 0 {
+		return fmt.Errorf("firecracker binary is not executable: %s", cfg.FirecrackerBin)
+	}
+
+	if strings.TrimSpace(cfg.KernelPath) == "" {
+		return fmt.Errorf("kernel path is empty")
+	}
+	kernelInfo, err := os.Stat(cfg.KernelPath)
+	if err != nil {
+		return fmt.Errorf("kernel image not found at %s: %w", cfg.KernelPath, err)
+	}
+	if kernelInfo.IsDir() {
+		return fmt.Errorf("kernel path is a directory: %s", cfg.KernelPath)
+	}
+
+	if strings.TrimSpace(cfg.RootfsDir) == "" {
+		return fmt.Errorf("rootfs directory path is empty")
+	}
+	rootfsInfo, err := os.Stat(cfg.RootfsDir)
+	if err != nil {
+		return fmt.Errorf("rootfs directory not found at %s: %w", cfg.RootfsDir, err)
+	}
+	if !rootfsInfo.IsDir() {
+		return fmt.Errorf("rootfs path is not a directory: %s", cfg.RootfsDir)
+	}
+	matches, err := filepath.Glob(filepath.Join(cfg.RootfsDir, "*.ext4"))
+	if err != nil {
+		return fmt.Errorf("scan rootfs directory %s: %w", cfg.RootfsDir, err)
+	}
+	if len(matches) == 0 {
+		return fmt.Errorf("no rootfs images (*.ext4) found in %s", cfg.RootfsDir)
+	}
+
+	return nil
 }
 
 // CreateVM boots a microVM for the given function.
@@ -567,6 +618,3 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 
 	return vm, nil
 }
-
-
-

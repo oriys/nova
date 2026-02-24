@@ -140,7 +140,13 @@ func daemonCmd() *cobra.Command {
 			} else {
 				// Fallback: local executor with its own backend/pool.
 				var fcAdapter *firecracker.Adapter
-				switch cfg.Firecracker.Backend {
+				backendName := cfg.Firecracker.Backend
+				if backendName == "" || backendName == "auto" {
+					detected := backend.DetectDefaultBackend()
+					backendName = string(detected)
+					logging.Op().Info("auto-detected backend", "backend", backendName)
+				}
+				switch backendName {
 				case "docker":
 					dockerMgr, err := docker.NewManager(&cfg.Docker)
 					if err != nil {

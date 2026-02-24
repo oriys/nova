@@ -1,9 +1,46 @@
 package firecracker
 
 import (
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 )
+
+func newManagerConfigForTest(t *testing.T) *Config {
+	t.Helper()
+	tmp := t.TempDir()
+
+	cfg := DefaultConfig()
+	cfg.SocketDir = filepath.Join(tmp, "sockets")
+	cfg.VsockDir = filepath.Join(tmp, "vsock")
+	cfg.LogDir = filepath.Join(tmp, "logs")
+	cfg.SnapshotDir = filepath.Join(tmp, "snapshots")
+	cfg.FirecrackerBin = filepath.Join(tmp, "bin", "firecracker")
+	cfg.KernelPath = filepath.Join(tmp, "kernel", "vmlinux")
+	cfg.RootfsDir = filepath.Join(tmp, "rootfs")
+
+	if err := os.MkdirAll(filepath.Dir(cfg.FirecrackerBin), 0755); err != nil {
+		t.Fatalf("mkdir firecracker bin dir: %v", err)
+	}
+	if err := os.WriteFile(cfg.FirecrackerBin, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatalf("write firecracker binary: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cfg.KernelPath), 0755); err != nil {
+		t.Fatalf("mkdir kernel dir: %v", err)
+	}
+	if err := os.WriteFile(cfg.KernelPath, []byte("kernel"), 0644); err != nil {
+		t.Fatalf("write kernel image: %v", err)
+	}
+	if err := os.MkdirAll(cfg.RootfsDir, 0755); err != nil {
+		t.Fatalf("mkdir rootfs dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg.RootfsDir, "base.ext4"), []byte("ext4"), 0644); err != nil {
+		t.Fatalf("write base.ext4: %v", err)
+	}
+
+	return cfg
+}
 
 func TestResourcePool_AcquireRelease(t *testing.T) {
 	pool := newResourcePool[uint32]()
@@ -131,11 +168,7 @@ func TestResourcePool_SizeAndInUseCount(t *testing.T) {
 }
 
 func TestAllocateCID(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.SocketDir = t.TempDir()
-	cfg.VsockDir = t.TempDir()
-	cfg.LogDir = t.TempDir()
-	cfg.SnapshotDir = t.TempDir()
+	cfg := newManagerConfigForTest(t)
 
 	mgr, err := NewManager(cfg)
 	if err != nil {
@@ -163,11 +196,7 @@ func TestAllocateCID(t *testing.T) {
 }
 
 func TestAllocateIP(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.SocketDir = t.TempDir()
-	cfg.VsockDir = t.TempDir()
-	cfg.LogDir = t.TempDir()
-	cfg.SnapshotDir = t.TempDir()
+	cfg := newManagerConfigForTest(t)
 	cfg.Subnet = "172.30.0.0/24"
 
 	mgr, err := NewManager(cfg)
