@@ -34,6 +34,7 @@ BUN_VERSION="bun-v1.3.8"
 ROOTFS_SIZE_MB=256
 ROOTFS_SIZE_JAVA_MB=512
 NODE_VERSION=20
+DOCKER_RUNTIME_IMAGE_PREFIX="${NOVA_DOCKER_IMAGE_PREFIX:-nova-runtime}"
 
 # Detect script directory (where binaries should be)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -491,6 +492,46 @@ install_nodejs() {
         err "Cannot install Node.js automatically. Please install Node.js ${NODE_VERSION}+ manually."
     fi
     log "Node.js $(node --version) installed"
+}
+
+prepare_docker_images() {
+    if ! command -v docker &>/dev/null; then
+        err "Docker is required to prepare runtime/compiler images. Please install Docker first."
+    fi
+
+    log "Preparing Docker images for runtime and compilation..."
+    local -a images=(
+        "${DOCKER_RUNTIME_IMAGE_PREFIX}-base"
+        "${DOCKER_RUNTIME_IMAGE_PREFIX}-python"
+        "${DOCKER_RUNTIME_IMAGE_PREFIX}-node"
+        "${DOCKER_RUNTIME_IMAGE_PREFIX}-ruby"
+        "${DOCKER_RUNTIME_IMAGE_PREFIX}-java"
+        "${DOCKER_RUNTIME_IMAGE_PREFIX}-php"
+        "${DOCKER_RUNTIME_IMAGE_PREFIX}-lua"
+        "${DOCKER_RUNTIME_IMAGE_PREFIX}-deno"
+        "${DOCKER_RUNTIME_IMAGE_PREFIX}-bun"
+        "${DOCKER_RUNTIME_IMAGE_PREFIX}-wasm"
+        "golang:1.23-alpine"
+        "rust:1.84-alpine"
+        "eclipse-temurin:21-jdk"  # java/kotlin/scala
+        "swift:5.10"
+        "euantorano/zig:0.13.0"
+        "gcc:14"                   # c/cpp
+        "python:3.12-slim"
+        "node:20-slim"
+        "ruby:3.3-slim"
+        "composer:2"
+    )
+
+    local image
+    for image in "${images[@]}"; do
+        if docker image inspect "${image}" >/dev/null 2>&1; then
+            info "  [cached] ${image}"
+            continue
+        fi
+        info "  [pull] ${image}"
+        docker pull "${image}"
+    done
 }
 
 # ─── PostgreSQL ──────────────────────────────────────────
@@ -1555,6 +1596,7 @@ main() {
 
     install_deps
     install_nodejs
+    prepare_docker_images
 
     # Reset previous installation state.
     reset_installation_state

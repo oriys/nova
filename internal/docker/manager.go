@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,8 +28,9 @@ import (
 )
 
 const (
-	agentPort      = 9999
-	defaultTimeout = 30 * time.Second
+	agentPort        = 9999
+	defaultTimeout   = 30 * time.Second
+	imagePullTimeout = 10 * time.Minute
 )
 
 // Config holds Docker backend configuration.
@@ -89,6 +91,12 @@ func NewManager(cfg *Config) (*Manager, error) {
 	// Verify docker is available
 	if err := exec.Command("docker", "version").Run(); err != nil {
 		return nil, fmt.Errorf("docker not available: %w", err)
+	}
+
+	pullCtx, cancel := context.WithTimeout(context.Background(), imagePullTimeout)
+	defer cancel()
+	if err := ensureDockerImages(pullCtx, runtimeDockerImages(cfg.ImagePrefix), dockerImageExists, dockerPullImage); err != nil {
+		return nil, err
 	}
 
 	return &Manager{
@@ -462,6 +470,86 @@ func imageForRuntime(rt domain.Runtime, prefix string) string {
 	default:
 		return prefix + "-base"
 	}
+}
+
+type imageInspectFunc func(ctx context.Context, image string) (bool, error)
+type imagePullFunc func(ctx context.Context, image string) error
+
+func runtimeDockerImages(prefix string) []string {
+	runtimes := []domain.Runtime{
+		domain.RuntimePython,
+		domain.RuntimeGo,
+		domain.RuntimeRust,
+		domain.RuntimeWasm,
+		domain.RuntimeNode,
+		domain.RuntimeRuby,
+		domain.RuntimeJava,
+		domain.RuntimeDeno,
+		domain.RuntimeBun,
+		domain.RuntimePHP,
+		domain.RuntimeElixir,
+		domain.RuntimeKotlin,
+		domain.RuntimeSwift,
+		domain.RuntimeZig,
+		domain.RuntimeLua,
+		domain.RuntimePerl,
+		domain.RuntimeR,
+		domain.RuntimeJulia,
+		domain.RuntimeScala,
+		domain.RuntimeC,
+		domain.RuntimeCpp,
+		domain.RuntimeCustom,
+		domain.RuntimeProvided,
+	}
+	set := make(map[string]struct{}, len(runtimes))
+	for _, rt := range runtimes {
+		set[imageForRuntime(rt, prefix)] = struct{}{}
+	}
+	images := make([]string, 0, len(set))
+	for image := range set {
+		images = append(images, image)
+	}
+	sort.Strings(images)
+	return images
+}
+
+func ensureDockerImages(ctx context.Context, images []string, inspect imageInspectFunc, pull imagePullFunc) error {
+	for _, image := range images {
+		exists, err := inspect(ctx, image)
+		if err != nil {
+			return fmt.Errorf("inspect docker image %s: %w", image, err)
+		}
+		if exists {
+			continue
+		}
+		logging.Op().Info("docker runtime image missing, pulling", "image", image)
+		if err := pull(ctx, image); err != nil {
+			return err
+		}
+		logging.Op().Info("docker runtime image ready", "image", image)
+	}
+	return nil
+}
+
+func dockerImageExists(ctx context.Context, image string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "docker", "image", "inspect", image)
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func dockerPullImage(ctx context.Context, image string) error {
+	cmd := exec.CommandContext(ctx, "docker", "pull", image)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("pull docker image %s: %w: %s", image, err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 // Client communicates with the agent inside a Docker container via TCP.

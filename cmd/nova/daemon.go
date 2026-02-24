@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -170,6 +171,11 @@ func daemonCmd() *cobra.Command {
 				be = libkrunMgr
 			default:
 				logging.Op().Info("using Firecracker backend")
+				if runtime.GOOS == "linux" {
+					if err := compiler.EnsureDockerToolchainReady(context.Background()); err != nil {
+						return fmt.Errorf("ensure compiler docker images: %w", err)
+					}
+				}
 				adapter, err := firecracker.NewAdapter(&cfg.Firecracker)
 				if err != nil {
 					return err

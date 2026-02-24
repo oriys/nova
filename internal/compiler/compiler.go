@@ -5,12 +5,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/logging"
@@ -21,10 +24,15 @@ import (
 
 // Compiler handles compilation of function source code using Docker containers.
 type Compiler struct {
-	store    store.MetadataStore
-	tmpDir   string
+	store     store.MetadataStore
+	tmpDir    string
 	depsCache sync.Map // hash -> map[string][]byte (cached dependencies)
 }
+
+const compilerImagePullTimeout = 10 * time.Minute
+
+type imageInspectFunc func(ctx context.Context, image string) (bool, error)
+type imagePullFunc func(ctx context.Context, image string) error
 
 // New creates a new Compiler instance.
 func New(s store.MetadataStore) *Compiler {
@@ -34,6 +42,20 @@ func New(s store.MetadataStore) *Compiler {
 		store:  s,
 		tmpDir: tmpDir,
 	}
+}
+
+// EnsureDockerToolchainReady verifies Docker and pre-pulls compiler/deps images.
+func EnsureDockerToolchainReady(ctx context.Context) error {
+	checkCtx, cancel := context.WithTimeout(ctx, compilerImagePullTimeout)
+	defer cancel()
+
+	if err := exec.CommandContext(checkCtx, "docker", "version").Run(); err != nil {
+		return fmt.Errorf("docker not available for compiler: %w", err)
+	}
+	if err := ensureDockerImages(checkCtx, compilerDockerImages(), dockerImageExists, dockerPullImage); err != nil {
+		return err
+	}
+	return nil
 }
 
 // CompileAsync starts an asynchronous compilation for a function.
@@ -500,6 +522,83 @@ func HasDependencyFiles(files map[string][]byte) bool {
 		}
 	}
 	return false
+}
+
+func compilerDockerImages() []string {
+	compiledRuntimes := []domain.Runtime{
+		domain.RuntimeGo,
+		domain.RuntimeRust,
+		domain.RuntimeJava,
+		domain.RuntimeKotlin,
+		domain.RuntimeSwift,
+		domain.RuntimeZig,
+		domain.RuntimeScala,
+		domain.RuntimeC,
+		domain.RuntimeCpp,
+	}
+
+	set := make(map[string]struct{}, len(compiledRuntimes)+4)
+	for _, rt := range compiledRuntimes {
+		image, _ := dockerCompileCommand(rt)
+		if image != "" {
+			set[image] = struct{}{}
+		}
+	}
+
+	for _, depImage := range []string{
+		"python:3.12-slim",
+		"node:20-slim",
+		"ruby:3.3-slim",
+		"composer:2",
+	} {
+		set[depImage] = struct{}{}
+	}
+
+	images := make([]string, 0, len(set))
+	for image := range set {
+		images = append(images, image)
+	}
+	sort.Strings(images)
+	return images
+}
+
+func ensureDockerImages(ctx context.Context, images []string, inspect imageInspectFunc, pull imagePullFunc) error {
+	for _, image := range images {
+		exists, err := inspect(ctx, image)
+		if err != nil {
+			return fmt.Errorf("inspect docker image %s: %w", image, err)
+		}
+		if exists {
+			continue
+		}
+		logging.Op().Info("compiler image missing, pulling", "image", image)
+		if err := pull(ctx, image); err != nil {
+			return err
+		}
+		logging.Op().Info("compiler image ready", "image", image)
+	}
+	return nil
+}
+
+func dockerImageExists(ctx context.Context, image string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "docker", "image", "inspect", image)
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func dockerPullImage(ctx context.Context, image string) error {
+	cmd := exec.CommandContext(ctx, "docker", "pull", image)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("pull docker image %s: %w: %s", image, err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 // installRubyDeps installs Ruby dependencies from Gemfile
