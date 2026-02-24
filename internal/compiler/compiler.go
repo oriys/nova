@@ -391,6 +391,20 @@ rustflags = ["-C", "target-feature=+crt-static"]
 				return err
 			}
 		}
+
+	case domain.RuntimeC:
+		if _, ok := files["main.c"]; !ok {
+			if err := os.WriteFile(filepath.Join(workDir, "main.c"), []byte(cWrapperMain), 0644); err != nil {
+				return err
+			}
+		}
+
+	case domain.RuntimeCpp:
+		if _, ok := files["main.cpp"]; !ok {
+			if err := os.WriteFile(filepath.Join(workDir, "main.cpp"), []byte(cppWrapperMain), 0644); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
@@ -418,6 +432,8 @@ func findEntryPointFile(files map[string][]byte, runtime domain.Runtime, handler
 		domain.RuntimePHP:    {"handler.php", "index.php", "main.php"},
 		domain.RuntimeDeno:   {"handler.ts", "main.ts", "index.ts"},
 		domain.RuntimeBun:    {"handler.ts", "handler.js", "index.ts", "index.js"},
+		domain.RuntimeC:      {"handler.c", "main.c"},
+		domain.RuntimeCpp:    {"handler.cpp", "main.cpp"},
 	}
 
 	if candidates, ok := entryPoints[baseRuntime]; ok {
@@ -453,6 +469,8 @@ func baseRuntimeID(runtime domain.Runtime) domain.Runtime {
 		"swift":  domain.RuntimeSwift,
 		"zig":    domain.RuntimeZig,
 		"scala":  domain.RuntimeScala,
+		"c":      domain.RuntimeC,
+		"cpp":    domain.RuntimeCpp,
 	}
 	for prefix, base := range prefixMap {
 		if strings.HasPrefix(rt, prefix) {
@@ -986,6 +1004,24 @@ rustflags = ["-C", "target-feature=+crt-static"]
 		if err := os.WriteFile(filepath.Join(workDir, "Main.scala"), []byte(scalaWrapperMain), 0644); err != nil {
 			return err
 		}
+	case domain.RuntimeC:
+		// Save user code as handler.c
+		if err := os.WriteFile(filepath.Join(workDir, "handler.c"), []byte(sourceCode), 0644); err != nil {
+			return err
+		}
+		// Generate wrapper main.c
+		if err := os.WriteFile(filepath.Join(workDir, "main.c"), []byte(cWrapperMain), 0644); err != nil {
+			return err
+		}
+	case domain.RuntimeCpp:
+		// Save user code as handler.cpp
+		if err := os.WriteFile(filepath.Join(workDir, "handler.cpp"), []byte(sourceCode), 0644); err != nil {
+			return err
+		}
+		// Generate wrapper main.cpp
+		if err := os.WriteFile(filepath.Join(workDir, "main.cpp"), []byte(cppWrapperMain), 0644); err != nil {
+			return err
+		}
 	default:
 		ext := runtimeExtension(runtime)
 		if err := os.WriteFile(filepath.Join(workDir, "handler"+ext), []byte(sourceCode), 0644); err != nil {
@@ -1004,20 +1040,24 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 	case domain.RuntimeJava:
 		return "eclipse-temurin:21-jdk", "cd /work && javac Main.java Handler.java && jar cfe handler.jar Main *.class && cp handler.jar handler"
 	case domain.RuntimeKotlin:
-		return "gradle:8-jdk21", "cd /work && kotlinc Main.kt Handler.kt -include-runtime -d handler.jar && cp handler.jar handler"
+		return "gradle:8-jdk21", "cd /work && kotlinc *.kt -include-runtime -d handler.jar && cp handler.jar handler"
 	case domain.RuntimeSwift:
 		return "swift:5.10", "cd /work && swiftc -o handler -static-executable Handler.swift main.swift"
 	case domain.RuntimeZig:
 		return "euantorano/zig:0.13.0", "cd /work && zig build-exe main.zig -name handler -target x86_64-linux-musl"
 	case domain.RuntimeScala:
 		return "sbtscala/scala-sbt:eclipse-temurin-21.0.2_13_1.10.1_3.5.1",
-			`cd /work && scalac Main.scala Handler.scala && ` +
+			`cd /work && scalac *.scala && ` +
 				`SCALA_LIB=$(find / -name "scala-library*.jar" 2>/dev/null | head -1) && ` +
 				`mkdir -p /tmp/fatjar && cd /tmp/fatjar && ` +
 				`jar xf "$SCALA_LIB" && ` +
 				`cp /work/*.class . && ` +
 				`jar cfe /work/handler.jar Main -C . . && ` +
 				`cp /work/handler.jar /work/handler`
+	case domain.RuntimeC:
+		return "gcc:14", "cd /work && gcc -std=c11 -O2 -static -o handler *.c"
+	case domain.RuntimeCpp:
+		return "gcc:14", "cd /work && g++ -std=c++17 -O2 -static -o handler *.cpp"
 	default:
 		return "", ""
 	}
@@ -1050,6 +1090,8 @@ func RuntimeExtension(runtime domain.Runtime) string {
 		domain.RuntimeR:      ".R",
 		domain.RuntimeJulia:  ".jl",
 		domain.RuntimeScala:  ".scala",
+		domain.RuntimeC:      ".c",
+		domain.RuntimeCpp:    ".cpp",
 	}
 	if ext, ok := exts[rt]; ok {
 		return ext
@@ -1280,5 +1322,96 @@ const scalaWrapperMain = `object Main {
     val result = Handler.handler(input, context)
     println(result)
   }
+}
+`
+
+// C: user writes const char* handler(const char* event, const char* context)
+const cWrapperMain = `#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+extern const char* handler(const char* event, const char* context);
+
+static char* read_file(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) { perror("open input"); exit(1); }
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char* buf = (char*)malloc(len + 1);
+    if (!buf) { perror("malloc"); exit(1); }
+    fread(buf, 1, len, f);
+    buf[len] = '\0';
+    fclose(f);
+    return buf;
+}
+
+static char* build_context(void) {
+    const char* rid = getenv("NOVA_REQUEST_ID");
+    const char* fname = getenv("NOVA_FUNCTION_NAME");
+    const char* fver = getenv("NOVA_FUNCTION_VERSION");
+    const char* mem = getenv("NOVA_MEMORY_LIMIT_MB");
+    const char* tout = getenv("NOVA_TIMEOUT_S");
+    const char* rt = getenv("NOVA_RUNTIME");
+    char* ctx = (char*)malloc(1024);
+    if (!ctx) { perror("malloc"); exit(1); }
+    snprintf(ctx, 1024,
+        "{\"request_id\":\"%s\",\"function_name\":\"%s\","
+        "\"function_version\":\"%s\",\"memory_limit_mb\":\"%s\","
+        "\"timeout_s\":\"%s\",\"runtime\":\"%s\"}",
+        rid ? rid : "", fname ? fname : "", fver ? fver : "",
+        mem ? mem : "0", tout ? tout : "0", rt ? rt : "");
+    return ctx;
+}
+
+int main(int argc, char* argv[]) {
+    if (argc < 2) { fprintf(stderr, "usage: handler <input.json>\n"); return 1; }
+    char* input = read_file(argv[1]);
+    char* ctx = build_context();
+    const char* result = handler(input, ctx);
+    printf("%s\n", result);
+    free(input);
+    free(ctx);
+    return 0;
+}
+`
+
+// C++: user writes std::string handler(const std::string& event, const std::string& context)
+const cppWrapperMain = `#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <cstdlib>
+
+extern std::string handler(const std::string& event, const std::string& context);
+
+static std::string read_file(const char* path) {
+    std::ifstream f(path);
+    if (!f) { std::cerr << "open input: " << path << std::endl; std::exit(1); }
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
+}
+
+static std::string build_context() {
+    auto env = [](const char* k) -> std::string {
+        const char* v = std::getenv(k);
+        return v ? v : "";
+    };
+    return std::string("{\"request_id\":\"") + env("NOVA_REQUEST_ID") +
+        "\",\"function_name\":\"" + env("NOVA_FUNCTION_NAME") +
+        "\",\"function_version\":\"" + env("NOVA_FUNCTION_VERSION") +
+        "\",\"memory_limit_mb\":\"" + (env("NOVA_MEMORY_LIMIT_MB").empty() ? "0" : env("NOVA_MEMORY_LIMIT_MB")) +
+        "\",\"timeout_s\":\"" + (env("NOVA_TIMEOUT_S").empty() ? "0" : env("NOVA_TIMEOUT_S")) +
+        "\",\"runtime\":\"" + env("NOVA_RUNTIME") + "\"}";
+}
+
+int main(int argc, char* argv[]) {
+    if (argc < 2) { std::cerr << "usage: handler <input.json>" << std::endl; return 1; }
+    std::string input = read_file(argv[1]);
+    std::string ctx = build_context();
+    std::string result = handler(input, ctx);
+    std::cout << result << std::endl;
+    return 0;
 }
 `

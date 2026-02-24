@@ -86,7 +86,7 @@ func defaultHandlerForRuntime(runtime string) string {
 	switch runtimeFamily(runtime) {
 	case "java", "kotlin", "scala":
 		return "example.Handler::handleRequest"
-	case "go", "rust", "swift", "zig", "wasm", "provided", "custom":
+	case "go", "rust", "swift", "zig", "wasm", "c", "cpp", "provided", "custom":
 		return "handler"
 	default:
 		return "main.handler"
@@ -107,7 +107,7 @@ func validateAWSHandlerFormat(runtime, handler string) error {
 		if !awsJavaHandlerPattern.MatchString(handler) {
 			return validationErrorf("invalid handler for %s: expected AWS Java style '<package>.<Class>::<method>'", runtime)
 		}
-	case "go", "rust", "swift", "zig", "wasm", "provided", "custom":
+	case "go", "rust", "swift", "zig", "wasm", "c", "cpp", "provided", "custom":
 		if !awsExecutableNamePattern.MatchString(handler) {
 			return validationErrorf("invalid handler for %s: expected executable entry name (letters/numbers/_-/)", runtime)
 		}
@@ -163,6 +163,10 @@ func runtimeFamily(runtime string) string {
 		return "provided"
 	case strings.HasPrefix(rt, "custom"):
 		return "custom"
+	case strings.HasPrefix(rt, "cpp"):
+		return "cpp"
+	case rt == "c":
+		return "c"
 	case rt == "r":
 		return "r"
 	default:
