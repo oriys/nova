@@ -31,7 +31,7 @@ wait_for_api() {
     local retries=30
     while ! curl -sf "${API_URL}/health" >/dev/null 2>&1; do
         retries=$((retries - 1))
-        if [[ ${retries} -eq 0 ]]; then
+        if [ "${retries}" -eq 0 ]; then
             warn "API not ready after 30 seconds, giving up"
             exit 1
         fi
@@ -48,12 +48,12 @@ create_function() {
     local timeout="${5:-30}"
     local handler="${6:-}"
 
-    if [[ -z "${handler}" ]]; then
+    if [ -z "${handler}" ]; then
         case "${runtime}" in
             java*|kotlin*|scala*)
                 handler="Handler::handler"
                 ;;
-            go*|rust*|swift*|zig*|wasm*|provided*|custom*)
+            go*|rust*|swift*|zig*|wasm*|provided*|custom*|c|cpp*)
                 handler="handler"
                 ;;
             *)
@@ -146,9 +146,9 @@ main() {
     create_function "hash-generator" "bun" '"const crypto = require(\"crypto\");\n\nfunction handler(event, context) {\n  const data = event.data || \"hello\";\n  const algorithm = event.algorithm || \"sha256\";\n  const hash = crypto.createHash(algorithm).update(data).digest(\"hex\");\n  return { data, algorithm, hash };\n}\n\nmodule.exports = { handler };"'
 
     # ─────────────────────────────────────────────────────────
-    # Compiled Languages (Go, Rust, Java)
+    # Compiled Languages (Go, Rust, Java, Kotlin, Scala, C, C++)
     # ─────────────────────────────────────────────────────────
-    if [[ "${SKIP_COMPILED}" == "1" ]]; then
+    if [ "${SKIP_COMPILED}" = "1" ]; then
         warn "Skipping compiled languages (SKIP_COMPILED=1)"
     else
         info "Creating Go functions (will be compiled)..."
@@ -161,9 +161,37 @@ main() {
 
         create_function "hello-rust" "rust" '"use serde::{Deserialize, Serialize};\nuse serde_json::Value;\n\n#[derive(Deserialize)]\nstruct Event {\n    name: Option<String>,\n}\n\n#[derive(Serialize)]\nstruct Response {\n    message: String,\n    runtime: String,\n}\n\npub fn handler(event: Value, _ctx: crate::context::Context) -> Result<Value, String> {\n    let e: Event = serde_json::from_value(event).map_err(|e| e.to_string())?;\n    let name = e.name.unwrap_or_else(|| \"World\".to_string());\n    let resp = Response {\n        message: format!(\"Hello, {}!\", name),\n        runtime: \"rust\".to_string(),\n    };\n    serde_json::to_value(&resp).map_err(|e| e.to_string())\n}"'
 
+        create_function "number-stats-rust" "rust" '"use serde_json::{json, Value};\n\npub fn handler(event: Value, _ctx: crate::context::Context) -> Result<Value, String> {\n    let numbers = event\n        .get(\"numbers\")\n        .and_then(|v| v.as_array())\n        .cloned()\n        .unwrap_or_else(|| vec![Value::from(1), Value::from(2), Value::from(3)]);\n\n    let mut sum = 0.0_f64;\n    for n in &numbers {\n        if let Some(v) = n.as_f64() {\n            sum += v;\n        }\n    }\n\n    let count = numbers.len() as f64;\n    let avg = if count > 0.0 { sum / count } else { 0.0 };\n    Ok(json!({\"count\": numbers.len(), \"sum\": sum, \"avg\": avg}))\n}"'
+
         info "Creating Java functions (will be compiled)..."
 
         create_function "hello-java" "java" '"import java.util.*;\n\npublic class Handler {\n    public static Object handler(String event, Map<String, Object> context) {\n        return \"{\\\"message\\\":\\\"Hello, World!\\\",\\\"runtime\\\":\\\"java\\\"}\";\n    }\n}"' 256
+
+        create_function "number-stats-java" "java" '"import java.util.Locale;\nimport java.util.Map;\nimport java.util.regex.Matcher;\nimport java.util.regex.Pattern;\n\npublic class Handler {\n    public static Object handler(String event, Map<String, Object> context) {\n        Pattern pattern = Pattern.compile(\"-?\\\\d+(?:\\\\.\\\\d+)?\");\n        Matcher matcher = pattern.matcher(event == null ? \"\" : event);\n        int count = 0;\n        double sum = 0.0;\n        while (matcher.find()) {\n            sum += Double.parseDouble(matcher.group());\n            count++;\n        }\n        double avg = count == 0 ? 0.0 : sum / count;\n        return String.format(Locale.US, \"{\\\"count\\\":%d,\\\"sum\\\":%.2f,\\\"avg\\\":%.2f}\", count, sum, avg);\n    }\n}"' 256
+
+        info "Creating Kotlin functions (will be compiled)..."
+
+        create_function "hello-kotlin" "kotlin" '"object Handler {\n    fun handler(event: String, context: Map<String, Any>): Any {\n        val name = Regex(\"\\\"name\\\"\\\\s*:\\\\s*\\\"([^\\\"]+)\\\"\").find(event)?.groupValues?.get(1) ?: \"World\"\n        return \"{\\\"message\\\":\\\"Hello, \" + name + \"!\\\",\\\"runtime\\\":\\\"kotlin\\\"}\"\n    }\n}"' 256
+
+        create_function "word-stats-kotlin" "kotlin" '"object Handler {\n    fun handler(event: String, context: Map<String, Any>): Any {\n        val words = Regex(\"[A-Za-z0-9_]+\").findAll(event).map { it.value.lowercase() }.toList()\n        val unique = words.toSet().size\n        return \"{\\\"words\\\":\" + words.size + \",\\\"unique\\\":\" + unique + \"}\"\n    }\n}"' 256
+
+        info "Creating Scala functions (will be compiled)..."
+
+        create_function "hello-scala" "scala" '"object Handler {\n  def handler(event: String, context: Map[String, Any]): Any = {\n    val namePattern = \"\\\"name\\\"\\\\s*:\\\\s*\\\"([^\\\"]+)\\\"\".r\n    val name = namePattern.findFirstMatchIn(Option(event).getOrElse(\"\")).map(_.group(1)).getOrElse(\"World\")\n    s\"{\\\"message\\\":\\\"Hello, ${name}!\\\",\\\"runtime\\\":\\\"scala\\\"}\"\n  }\n}"' 256
+
+        create_function "number-stats-scala" "scala" '"object Handler {\n  def handler(event: String, context: Map[String, Any]): Any = {\n    val numbers = \"-?\\\\d+(?:\\\\.\\\\d+)?\".r.findAllIn(Option(event).getOrElse(\"\")).toList.map(_.toDouble)\n    val sum = numbers.sum\n    val avg = if (numbers.nonEmpty) sum / numbers.size else 0.0\n    f\"{\\\"count\\\":${numbers.size},\\\"sum\\\":$sum%.2f,\\\"avg\\\":$avg%.2f}\"\n  }\n}"' 256
+
+        info "Creating C functions (will be compiled)..."
+
+        create_function "hello-c" "c" '"#include <stdio.h>\n#include <string.h>\n\nconst char* handler(const char* event, const char* context) {\n    static char result[256];\n    char name[96];\n    const char* source = event ? event : \"\";\n    const char* key = \"\\\"name\\\"\";\n    const char* pos = strstr(source, key);\n    snprintf(name, sizeof(name), \"World\");\n    if (pos) {\n        pos = strchr(pos + 6, 34);\n        if (pos) {\n            const char* start = pos + 1;\n            const char* end = strchr(start, 34);\n            if (end && end > start) {\n                size_t len = (size_t)(end - start);\n                if (len >= sizeof(name)) {\n                    len = sizeof(name) - 1;\n                }\n                memcpy(name, start, len);\n                name[len] = 0;\n            }\n        }\n    }\n    snprintf(result, sizeof(result), \"{\\\"message\\\":\\\"Hello, %s!\\\",\\\"runtime\\\":\\\"c\\\"}\", name);\n    return result;\n}"'
+
+        create_function "payload-stats-c" "c" '"#include <stdio.h>\n#include <string.h>\n\nconst char* handler(const char* event, const char* context) {\n    static char result[256];\n    const char* source = event ? event : \"\";\n    size_t len = strlen(source);\n    int braces = 0;\n    int digits = 0;\n\n    for (size_t i = 0; i < len; i++) {\n        unsigned char ch = (unsigned char)source[i];\n        if (ch == 123 || ch == 125) {\n            braces++;\n        }\n        if (ch >= 48 && ch <= 57) {\n            digits++;\n        }\n    }\n\n    snprintf(result, sizeof(result), \"{\\\"length\\\":%zu,\\\"braces\\\":%d,\\\"digits\\\":%d}\", len, braces, digits);\n    return result;\n}"'
+
+        info "Creating C++ functions (will be compiled)..."
+
+        create_function "hello-cpp" "cpp" '"#include <string>\n\nstd::string handler(const std::string& event, const std::string& context) {\n    std::string name = \"World\";\n    std::string key = \"\\\"name\\\"\";\n    std::size_t keyPos = event.find(key);\n    if (keyPos != std::string::npos) {\n        std::size_t firstQuote = event.find(\"\\\"\", keyPos + key.size());\n        if (firstQuote != std::string::npos) {\n            std::size_t secondQuote = event.find(\"\\\"\", firstQuote + 1);\n            if (secondQuote != std::string::npos && secondQuote > firstQuote + 1) {\n                name = event.substr(firstQuote + 1, secondQuote - firstQuote - 1);\n            }\n        }\n    }\n    return std::string(\"{\\\"message\\\":\\\"Hello, \") + name + \"!\\\",\\\"runtime\\\":\\\"cpp\\\"}\";\n}"'
+
+        create_function "number-stats-cpp" "cpp" '"#include <iomanip>\n#include <regex>\n#include <sstream>\n#include <string>\n\nstd::string handler(const std::string& event, const std::string& context) {\n    std::regex pattern(\"-?\\\\d+(?:\\\\.\\\\d+)?\");\n    auto begin = std::sregex_iterator(event.begin(), event.end(), pattern);\n    auto end = std::sregex_iterator();\n\n    int count = 0;\n    double sum = 0.0;\n    for (auto it = begin; it != end; ++it) {\n        sum += std::stod(it->str());\n        count++;\n    }\n\n    double avg = count == 0 ? 0.0 : sum / count;\n    std::ostringstream out;\n    out << std::fixed << std::setprecision(2);\n    out << \"{\\\"count\\\":\" << count << \",\\\"sum\\\":\" << sum << \",\\\"avg\\\":\" << avg << \"}\";\n    return out.str();\n}"'
 
     fi
 
@@ -185,7 +213,7 @@ main() {
     echo ""
 
     # Seed DAG workflows (multi-language pipelines)
-    if [[ "${SKIP_WORKFLOWS}" == "1" ]]; then
+    if [ "${SKIP_WORKFLOWS}" = "1" ]; then
         warn "Skipping workflow seeding (SKIP_WORKFLOWS=1)"
     else
         SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
