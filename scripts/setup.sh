@@ -1061,7 +1061,10 @@ restore_cached_rootfs() {
 cache_rootfs_image() {
     local name="$1"
     local output="${INSTALL_DIR}/rootfs/${name}.ext4"
-    [[ -f "${output}" ]] || return 0
+    if [[ ! -f "${output}" ]]; then
+        warn "Cannot cache ${name}.ext4: build output not found"
+        return 1
+    fi
     local fingerprint
     fingerprint="$(rootfs_image_fingerprint "${name}")"
 
