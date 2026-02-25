@@ -26,6 +26,7 @@ export default async function RootLayout({
 }>) {
   const locale = await getLocale()
   const messages = await getMessages()
+  const analyticsEnabled = process.env.NEXT_PUBLIC_VERCEL_ANALYTICS === "true"
 
   return (
     <html lang={locale} suppressHydrationWarning>
@@ -44,7 +45,7 @@ export default async function RootLayout({
             </SidebarProvider>
           </ThemeProvider>
         </NextIntlClientProvider>
-        <Analytics />
+        {analyticsEnabled ? <Analytics /> : null}
       </body>
     </html>
   )

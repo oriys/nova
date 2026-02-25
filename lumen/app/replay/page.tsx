@@ -5,30 +5,58 @@ import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
 import { Button } from "@/components/ui/button"
-import { RefreshCw, Play, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, XCircle } from "lucide-react"
+import { RefreshCw, Play, CheckCircle2, AlertTriangle, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { Recording, ReplayResult, TimeTravelState } from "@/lib/types"
+import type { Recording, ReplayResult } from "@/lib/types"
+import { functionsApi, invocationsApi } from "@/lib/api"
 
-const API_BASE = "/api"
-
-async function fetchRecordings(): Promise<Recording[]> {
-  const res = await fetch(`${API_BASE}/recordings`)
-  if (!res.ok) throw new Error(`Failed to fetch recordings: ${res.statusText}`)
-  return res.json()
+type ReplayRecording = Recording & {
+  input_payload?: unknown
 }
 
-async function triggerReplay(functionName: string, invocationId: string): Promise<ReplayResult> {
-  const res = await fetch(`${API_BASE}/functions/${functionName}/invocations/${invocationId}/replay`, {
-    method: "POST",
-  })
-  if (!res.ok) throw new Error(`Replay failed: ${res.statusText}`)
-  return res.json()
+async function fetchRecordings(): Promise<ReplayRecording[]> {
+  const { items } = await invocationsApi.listPage(100, 0)
+  return items.map((invocation) => ({
+    id: invocation.id,
+    function_id: invocation.function_name,
+    invocation_id: invocation.id,
+    runtime: invocation.runtime,
+    arch: "unknown",
+    created_at: invocation.created_at,
+    events_count: 1,
+    input_payload: invocation.input ?? {},
+  }))
 }
 
-async function fetchTimeTravelState(replayId: string, step: number): Promise<TimeTravelState> {
-  const res = await fetch(`${API_BASE}/replays/${replayId}/steps/${step}`)
-  if (!res.ok) throw new Error(`Failed to fetch step: ${res.statusText}`)
-  return res.json()
+async function triggerReplay(functionName: string, payload: unknown): Promise<ReplayResult> {
+  const startedAt = Date.now()
+  try {
+    const result = await functionsApi.invoke(functionName, payload ?? {})
+    return {
+      replay_id: result.request_id,
+      status: result.error ? "failed" : "success",
+      divergences: [],
+      duration_ms: result.duration_ms,
+      events_replayed: 1,
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Replay failed"
+    return {
+      replay_id: `replay-${startedAt}`,
+      status: "failed",
+      divergences: [
+        {
+          event_seq: 1,
+          type: "invoke_error",
+          expected: "function invocation succeeds",
+          actual: "function invocation failed",
+          message,
+        },
+      ],
+      duration_ms: Math.max(1, Date.now() - startedAt),
+      events_replayed: 0,
+    }
+  }
 }
 
 function StatusBadge({ status }: { status: ReplayResult["status"] }) {
@@ -56,12 +84,11 @@ export default function ReplayPage() {
   const tr = useTranslations("replayPage")
   const tc = useTranslations("common")
 
-  const [recordings, setRecordings] = useState<Recording[]>([])
+  const [recordings, setRecordings] = useState<ReplayRecording[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [replayingId, setReplayingId] = useState<string | null>(null)
   const [replayResult, setReplayResult] = useState<ReplayResult | null>(null)
-  const [timeTravelState, setTimeTravelState] = useState<TimeTravelState | null>(null)
 
   const loadRecordings = useCallback(async () => {
     try {
@@ -80,44 +107,16 @@ export default function ReplayPage() {
     loadRecordings()
   }, [loadRecordings])
 
-  const handleReplay = async (rec: Recording) => {
+  const handleReplay = async (rec: ReplayRecording) => {
     try {
       setReplayingId(rec.id)
       setReplayResult(null)
-      setTimeTravelState(null)
-      const result = await triggerReplay(rec.function_id, rec.invocation_id)
+      const result = await triggerReplay(rec.function_id, rec.input_payload ?? {})
       setReplayResult(result)
-      // Load initial time-travel state if available
-      try {
-        const state = await fetchTimeTravelState(result.replay_id, 0)
-        setTimeTravelState(state)
-      } catch {
-        // Time-travel not available for this replay
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : tr("replayFailed"))
     } finally {
       setReplayingId(null)
-    }
-  }
-
-  const handleStepForward = async () => {
-    if (!replayResult || !timeTravelState) return
-    try {
-      const state = await fetchTimeTravelState(replayResult.replay_id, timeTravelState.step + 1)
-      setTimeTravelState(state)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : tr("stepFailed"))
-    }
-  }
-
-  const handleStepBackward = async () => {
-    if (!replayResult || !timeTravelState || timeTravelState.step <= 0) return
-    try {
-      const state = await fetchTimeTravelState(replayResult.replay_id, timeTravelState.step - 1)
-      setTimeTravelState(state)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : tr("stepFailed"))
     }
   }
 
@@ -260,83 +259,6 @@ export default function ReplayPage() {
           </div>
         )}
 
-        {/* Time Travel Debug Panel */}
-        {timeTravelState && (
-          <div className="rounded-xl border border-border bg-card overflow-hidden">
-            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-              <h3 className="text-sm font-medium">{tr("timeTravel")}</h3>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleStepBackward}
-                  disabled={timeTravelState.step <= 0}
-                >
-                  <ChevronLeft className="mr-1 h-4 w-4" />
-                  {tr("stepBackward")}
-                </Button>
-                <span className="text-sm text-muted-foreground font-mono">
-                  {tr("stepLabel", { step: timeTravelState.step })}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleStepForward}
-                  disabled={timeTravelState.completed}
-                >
-                  {tr("stepForward")}
-                  <ChevronRight className="ml-1 h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-0 divide-x divide-border">
-              {/* Variables Panel */}
-              <div className="p-4">
-                <h4 className="text-sm font-medium mb-2">{tr("variables")}</h4>
-                <div className="space-y-1 font-mono text-xs">
-                  {Object.entries(timeTravelState.variables).map(([key, value]) => (
-                    <div key={key} className="flex justify-between py-1 border-b border-border/50">
-                      <span className="text-muted-foreground">{key}</span>
-                      <span>{value}</span>
-                    </div>
-                  ))}
-                  {Object.keys(timeTravelState.variables).length === 0 && (
-                    <p className="text-muted-foreground">{tr("noVariables")}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Call Stack Panel */}
-              <div className="p-4">
-                <h4 className="text-sm font-medium mb-2">{tr("callStack")}</h4>
-                <div className="space-y-1 font-mono text-xs">
-                  {timeTravelState.call_stack.map((frame, i) => (
-                    <div key={i} className={cn(
-                      "py-1 px-2 rounded",
-                      i === 0 && "bg-primary/10 text-primary"
-                    )}>
-                      <span className="font-medium">{frame.function}</span>
-                      <span className="text-muted-foreground ml-2">{frame.file}:{frame.line}</span>
-                    </div>
-                  ))}
-                  {timeTravelState.call_stack.length === 0 && (
-                    <p className="text-muted-foreground">{tr("emptyStack")}</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Output */}
-            {timeTravelState.output && (
-              <div className="border-t border-border p-4">
-                <h4 className="text-sm font-medium mb-2">{tr("output")}</h4>
-                <pre className="p-3 bg-muted rounded-lg text-xs font-mono overflow-x-auto">
-                  {timeTravelState.output}
-                </pre>
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </DashboardLayout>
   )

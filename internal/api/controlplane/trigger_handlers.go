@@ -79,8 +79,8 @@ func (h *Handler) ListTriggers(w http.ResponseWriter, r *http.Request) {
 		triggers = []*store.TriggerRecord{}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(triggers)
+	total := estimatePaginatedTotal(limit, offset, len(triggers))
+	writePaginatedList(w, limit, offset, len(triggers), total, triggers)
 }
 
 // GetTrigger handles GET /triggers/{id}
