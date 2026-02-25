@@ -158,6 +158,9 @@ func (m *Manager) createPod(ctx context.Context, fn *domain.Function, files map[
 }
 
 // buildPodManifest generates a Kubernetes pod YAML manifest.
+// Uses a single-container design: the runtime image already contains the
+// nova-agent binary, so no sidecar is needed. The agent runs as the
+// entrypoint and forks the runtime interpreter for each invocation.
 func (m *Manager) buildPodManifest(podName string, fn *domain.Function, image string) string {
 	memoryMB := fn.MemoryMB
 	if memoryMB <= 0 {
@@ -205,8 +208,9 @@ metadata:
 spec:
 %s%s%s  terminationGracePeriodSeconds: 5
   containers:
-  - name: agent
+  - name: function
     image: %q
+    imagePullPolicy: IfNotPresent
     ports:
     - containerPort: %d
       protocol: TCP
@@ -223,17 +227,6 @@ spec:
     volumeMounts:
     - name: code
       mountPath: /code
-  - name: runtime
-    image: %q
-    command: ["sleep", "infinity"]
-    volumeMounts:
-    - name: code
-      mountPath: /code
-    resources:
-      requests:
-        memory: %q
-      limits:
-        memory: %q
   volumes:
   - name: code
     emptyDir:
@@ -246,12 +239,9 @@ spec:
 		runtimeClassLine,
 		nodeSelectorLines,
 		serviceAccountLine,
-		m.config.AgentImage,
+		image,
 		m.config.AgentPort,
 		envLines,
-		fmt.Sprintf("%dMi", memoryMB/4), // agent gets 1/4 of memory
-		fmt.Sprintf("%dMi", memoryMB/4),
-		image,
 		fmt.Sprintf("%dMi", memoryMB),
 		fmt.Sprintf("%dMi", memoryMB),
 	)
@@ -273,9 +263,9 @@ func (m *Manager) copyCodeToPod(ctx context.Context, podName string, files map[s
 		}
 		tmpFile.Close()
 
-		// Copy file into the agent container
+		// Copy file into the function container
 		dest := fmt.Sprintf("%s/%s:%s", m.config.Namespace, podName, "/code/"+path)
-		cpCmd := exec.CommandContext(ctx, "kubectl", "cp", tmpFile.Name(), dest, "-c", "agent", "-n", m.config.Namespace)
+		cpCmd := exec.CommandContext(ctx, "kubectl", "cp", tmpFile.Name(), dest, "-c", "function", "-n", m.config.Namespace)
 		if output, err := cpCmd.CombinedOutput(); err != nil {
 			os.Remove(tmpFile.Name())
 			return fmt.Errorf("kubectl cp %s: %w: %s", path, err, output)
@@ -283,7 +273,7 @@ func (m *Manager) copyCodeToPod(ctx context.Context, podName string, files map[s
 		os.Remove(tmpFile.Name())
 
 		// Make the file executable (best-effort: some runtimes like Python don't need it)
-		chmodCmd := exec.CommandContext(ctx, "kubectl", "exec", "-n", m.config.Namespace, podName, "-c", "agent", "--",
+		chmodCmd := exec.CommandContext(ctx, "kubectl", "exec", "-n", m.config.Namespace, podName, "-c", "function", "--",
 			"chmod", "+x", "/code/"+path)
 		if chmodOut, chmodErr := chmodCmd.CombinedOutput(); chmodErr != nil {
 			logging.Op().Debug("chmod failed (non-fatal)", "path", path, "error", chmodErr, "output", string(chmodOut))

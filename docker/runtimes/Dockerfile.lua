@@ -2,7 +2,7 @@
 FROM alpine:3.19
 
 # Install Lua and certificates
-RUN apk add --no-cache lua5.4 ca-certificates
+RUN apk add --no-cache lua5.4 lua5.4-cjson ca-certificates && ln -sf /usr/bin/lua5.4 /usr/bin/lua
 
 # Install nova-agent
 COPY bin/nova-agent /usr/local/bin/nova-agent

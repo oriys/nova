@@ -14,6 +14,7 @@ import (
 	"github.com/oriys/nova/internal/backend"
 	"github.com/oriys/nova/internal/config"
 	"github.com/oriys/nova/internal/docker"
+	"github.com/oriys/nova/internal/kubernetes"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/firecracker"
 	novagrpc "github.com/oriys/nova/internal/grpc"
@@ -161,6 +162,16 @@ func daemonCmd() *cobra.Command {
 					return err
 				}
 				be = dockerMgr
+			case "kubernetes", "k8s":
+				logging.Op().Info("using Kubernetes backend",
+					"namespace", cfg.Kubernetes.Namespace,
+					"image_prefix", cfg.Kubernetes.ImagePrefix,
+				)
+				k8sMgr, err := kubernetes.NewManager(&cfg.Kubernetes)
+				if err != nil {
+					return err
+				}
+				be = k8sMgr
 			case "kata":
 				logging.Op().Info("using Kata Containers backend")
 				kataMgr, err := kata.NewManager(&cfg.Kata)
