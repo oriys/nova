@@ -12,6 +12,22 @@ import (
 	"github.com/oriys/nova/internal/metrics"
 )
 
+func canUseRuntimeTemplate(fn *domain.Function) bool {
+	if fn == nil {
+		return true
+	}
+	// Runtime templates are keyed by runtime only. To avoid crossing backend
+	// boundaries, only use templates for auto/default backend selection.
+	return fn.Backend == "" || fn.Backend == domain.BackendAuto
+}
+
+func canCreateSnapshotForFunction(fn *domain.Function) bool {
+	if fn == nil {
+		return true
+	}
+	return fn.Backend == "" || fn.Backend == domain.BackendAuto || fn.Backend == domain.BackendFirecracker
+}
+
 func getCapacityLimits(fn *domain.Function) (maxInflight, maxQueueDepth int, maxQueueWait time.Duration) {
 	// Zero values mean "no limit" throughout the acquisition loop, so
 	// returning zeros when the policy is absent is the correct default.
@@ -158,7 +174,7 @@ func waitForVMLocked(ctx context.Context, fp *functionPool, waitFor time.Duratio
 //     - Reject immediately if MaxInflight is exceeded.
 //     - Reject immediately if MaxQueueDepth is exceeded.
 //     - Wait on the condition variable until a VM is released or the
-//       MaxQueueWait deadline expires.
+//     MaxQueueWait deadline expires.
 //
 // The singleflight group deduplicates concurrent cold-start attempts for
 // the same function so that N waiting goroutines result in exactly one VM
@@ -312,7 +328,7 @@ func (p *Pool) Acquire(ctx context.Context, fn *domain.Function, codeContent []b
 func (p *Pool) createVM(ctx context.Context, fn *domain.Function, codeContent []byte) (*PooledVM, error) {
 	// Try to acquire a pre-warmed template VM from the runtime template pool.
 	// This skips VM boot and kernel initialization, reducing cold-start latency.
-	if p.templatePool != nil {
+	if p.templatePool != nil && canUseRuntimeTemplate(fn) {
 		if pvm, err := p.createVMFromTemplate(ctx, fn, codeContent); err == nil && pvm != nil {
 			return pvm, nil
 		}
@@ -360,7 +376,7 @@ func (p *Pool) createVM(ctx context.Context, fn *domain.Function, codeContent []
 	}
 
 	// Create snapshot asynchronously — not needed for the current invocation
-	if p.snapshotCallback != nil {
+	if p.snapshotCallback != nil && canCreateSnapshotForFunction(fn) {
 		if _, hasSnapshot := p.snapshotCache.Load(fn.ID); !hasSnapshot {
 			snapshotCb := p.snapshotCallback
 			funcName := fn.Name

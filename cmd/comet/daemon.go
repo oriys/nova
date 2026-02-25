@@ -14,11 +14,12 @@ import (
 	"github.com/oriys/nova/internal/backend"
 	"github.com/oriys/nova/internal/config"
 	"github.com/oriys/nova/internal/docker"
-	"github.com/oriys/nova/internal/kubernetes"
+	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/firecracker"
 	novagrpc "github.com/oriys/nova/internal/grpc"
 	"github.com/oriys/nova/internal/kata"
+	"github.com/oriys/nova/internal/kubernetes"
 	"github.com/oriys/nova/internal/libkrun"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/logsink"
@@ -148,54 +149,61 @@ func daemonCmd() *cobra.Command {
 			var be backend.Backend
 			var fcAdapter *firecracker.Adapter
 
-			backendName := cfg.Firecracker.Backend
-			if backendName == "" || backendName == "auto" {
+			defaultBackend := domain.BackendType(cfg.Firecracker.Backend)
+			if defaultBackend == "" || defaultBackend == domain.BackendAuto {
 				detected := backend.DetectDefaultBackend()
-				backendName = string(detected)
-				logging.Op().Info("auto-detected backend", "backend", backendName)
+				defaultBackend = detected
+				logging.Op().Info("auto-detected backend", "backend", defaultBackend)
+			}
+			if defaultBackend == domain.BackendType("k8s") {
+				defaultBackend = domain.BackendKubernetes
 			}
 
-			switch backendName {
-			case "docker":
-				logging.Op().Info("using Docker backend")
-				dockerMgr, err := docker.NewManager(&cfg.Docker)
-				if err != nil {
-					return err
-				}
-				be = dockerMgr
-			case "kubernetes", "k8s":
-				logging.Op().Info("using Kubernetes backend",
-					"namespace", cfg.Kubernetes.Namespace,
-					"image_prefix", cfg.Kubernetes.ImagePrefix,
-				)
-				k8sMgr, err := kubernetes.NewManager(&cfg.Kubernetes)
-				if err != nil {
-					return err
-				}
-				be = k8sMgr
-			case "kata":
-				logging.Op().Info("using Kata Containers backend")
-				kataMgr, err := kata.NewManager(&cfg.Kata)
-				if err != nil {
-					return err
-				}
-				be = kataMgr
-			case "libkrun":
-				logging.Op().Info("using libkrun backend")
-				libkrunMgr, err := libkrun.NewManager(&cfg.LibKrun)
-				if err != nil {
-					return err
-				}
-				be = libkrunMgr
-			default:
-				logging.Op().Info("using Firecracker backend")
-				adapter, err := firecracker.NewAdapter(&cfg.Firecracker)
-				if err != nil {
-					return err
-				}
-				fcAdapter = adapter
-				be = adapter
+			factories := map[domain.BackendType]backend.BackendFactory{
+				domain.BackendDocker: func() (backend.Backend, error) {
+					logging.Op().Info("initializing Docker backend")
+					return docker.NewManager(&cfg.Docker)
+				},
+				domain.BackendKubernetes: func() (backend.Backend, error) {
+					logging.Op().Info("initializing Kubernetes backend",
+						"namespace", cfg.Kubernetes.Namespace,
+						"image_prefix", cfg.Kubernetes.ImagePrefix,
+					)
+					return kubernetes.NewManager(&cfg.Kubernetes)
+				},
+				domain.BackendKata: func() (backend.Backend, error) {
+					logging.Op().Info("initializing Kata Containers backend")
+					return kata.NewManager(&cfg.Kata)
+				},
+				domain.BackendLibKrun: func() (backend.Backend, error) {
+					logging.Op().Info("initializing libkrun backend")
+					return libkrun.NewManager(&cfg.LibKrun)
+				},
+				domain.BackendFirecracker: func() (backend.Backend, error) {
+					logging.Op().Info("initializing Firecracker backend")
+					adapter, err := firecracker.NewAdapter(&cfg.Firecracker)
+					if err != nil {
+						return nil, err
+					}
+					fcAdapter = adapter
+					return adapter, nil
+				},
 			}
+			switch defaultBackend {
+			case domain.BackendDocker, domain.BackendKubernetes, domain.BackendKata, domain.BackendLibKrun, domain.BackendFirecracker:
+			default:
+				return fmt.Errorf("unsupported default backend for comet: %s", defaultBackend)
+			}
+
+			router, err := backend.NewRouter(defaultBackend, factories)
+			if err != nil {
+				return err
+			}
+			if err := router.EnsureReady(defaultBackend); err != nil {
+				return err
+			}
+			be = router
+			logging.Op().Info("using backend router", "default_backend", defaultBackend)
 
 			p := pool.NewPool(be, pool.PoolConfig{
 				IdleTTL:             cfg.Pool.IdleTTL,
@@ -203,7 +211,7 @@ func daemonCmd() *cobra.Command {
 				HealthCheckInterval: cfg.Pool.HealthCheckInterval,
 				MaxPreWarmWorkers:   cfg.Pool.MaxPreWarmWorkers,
 			})
-			if fcAdapter != nil {
+			if defaultBackend == domain.BackendFirecracker && fcAdapter != nil {
 				mgr := fcAdapter.Manager()
 				p.SetSnapshotCallback(func(ctx context.Context, vmID, funcID string) error {
 					if err := mgr.CreateSnapshot(ctx, vmID, funcID); err != nil {

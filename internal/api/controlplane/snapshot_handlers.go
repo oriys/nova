@@ -12,6 +12,13 @@ import (
 	"github.com/oriys/nova/internal/executor"
 )
 
+func snapshotsSupportedForFunction(fn *domain.Function) bool {
+	if fn == nil {
+		return true
+	}
+	return fn.Backend == "" || fn.Backend == domain.BackendAuto || fn.Backend == domain.BackendFirecracker
+}
+
 // ListSnapshots handles GET /snapshots
 func (h *Handler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
@@ -46,6 +53,9 @@ func (h *Handler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 
 	var snapshots []snapshotInfo
 	for _, fn := range funcs {
+		if !snapshotsSupportedForFunction(fn) {
+			continue
+		}
 		if executor.HasSnapshot(h.Backend.SnapshotDir(), fn.ID) {
 			snapPath := filepath.Join(h.Backend.SnapshotDir(), fn.ID+".snap")
 			memPath := filepath.Join(h.Backend.SnapshotDir(), fn.ID+".mem")
@@ -106,6 +116,10 @@ func (h *Handler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	if !snapshotsSupportedForFunction(fn) {
+		http.Error(w, "Snapshots are only supported for firecracker backend functions", http.StatusNotImplemented)
+		return
+	}
 
 	if executor.HasSnapshot(h.Backend.SnapshotDir(), fn.ID) {
 		w.Header().Set("Content-Type", "application/json")
@@ -164,6 +178,10 @@ func (h *Handler) DeleteSnapshot(w http.ResponseWriter, r *http.Request) {
 	fn, err := h.Store.GetFunctionByName(r.Context(), name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if !snapshotsSupportedForFunction(fn) {
+		http.Error(w, "Snapshots are only supported for firecracker backend functions", http.StatusNotImplemented)
 		return
 	}
 

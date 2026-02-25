@@ -13,6 +13,7 @@ import (
 	"github.com/oriys/nova/internal/backend"
 	"github.com/oriys/nova/internal/config"
 	"github.com/oriys/nova/internal/docker"
+	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/eventbus"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/firecracker"
@@ -142,45 +143,39 @@ func daemonCmd() *cobra.Command {
 			} else {
 				// Fallback: local executor with its own backend/pool.
 				var fcAdapter *firecracker.Adapter
-				backendName := cfg.Firecracker.Backend
-				if backendName == "" || backendName == "auto" {
+				defaultBackend := domain.BackendType(cfg.Firecracker.Backend)
+				if defaultBackend == "" || defaultBackend == domain.BackendAuto {
 					detected := backend.DetectDefaultBackend()
-					backendName = string(detected)
-					logging.Op().Info("auto-detected backend", "backend", backendName)
+					defaultBackend = detected
+					logging.Op().Info("auto-detected backend", "backend", defaultBackend)
 				}
-				switch backendName {
-				case "docker":
-					dockerMgr, err := docker.NewManager(&cfg.Docker)
-					if err != nil {
-						return err
-					}
-					be = dockerMgr
-				case "wasm":
-					wasmMgr, err := wasm.NewManager(&cfg.Wasm)
-					if err != nil {
-						return err
-					}
-					be = wasmMgr
-				case "kubernetes", "k8s":
-					k8sMgr, err := kubernetes.NewManager(&cfg.Kubernetes)
-					if err != nil {
-						return err
-					}
-					be = k8sMgr
-				case "libkrun":
-					libkrunMgr, err := libkrun.NewManager(&cfg.LibKrun)
-					if err != nil {
-						return err
-					}
-					be = libkrunMgr
-				default:
-					adapter, err := firecracker.NewAdapter(&cfg.Firecracker)
-					if err != nil {
-						return err
-					}
-					fcAdapter = adapter
-					be = adapter
+				if defaultBackend == domain.BackendType("k8s") {
+					defaultBackend = domain.BackendKubernetes
 				}
+				factories := map[domain.BackendType]backend.BackendFactory{
+					domain.BackendDocker: func() (backend.Backend, error) { return docker.NewManager(&cfg.Docker) },
+					domain.BackendWasm:   func() (backend.Backend, error) { return wasm.NewManager(&cfg.Wasm) },
+					domain.BackendKubernetes: func() (backend.Backend, error) {
+						return kubernetes.NewManager(&cfg.Kubernetes)
+					},
+					domain.BackendLibKrun: func() (backend.Backend, error) { return libkrun.NewManager(&cfg.LibKrun) },
+					domain.BackendFirecracker: func() (backend.Backend, error) {
+						adapter, err := firecracker.NewAdapter(&cfg.Firecracker)
+						if err != nil {
+							return nil, err
+						}
+						fcAdapter = adapter
+						return adapter, nil
+					},
+				}
+				router, err := backend.NewRouter(defaultBackend, factories)
+				if err != nil {
+					return err
+				}
+				if err := router.EnsureReady(defaultBackend); err != nil {
+					return err
+				}
+				be = router
 				p := pool.NewPool(be, pool.PoolConfig{
 					IdleTTL:             cfg.Pool.IdleTTL,
 					CleanupInterval:     cfg.Pool.CleanupInterval,

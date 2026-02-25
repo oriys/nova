@@ -238,11 +238,15 @@ func (p *Pool) EnsureReady(ctx context.Context, fn *domain.Function, codeContent
 }
 
 func (p *Pool) computeInstanceConcurrency(fn *domain.Function) int {
-	// Firecracker backend keeps strong isolation: one request per VM.
-	if p.backend.SnapshotDir() != "" {
+	// Firecracker-like backends keep strong isolation: one request per VM.
+	// For mixed-backend routing, only apply this hard cap when the function
+	// resolves to auto/default or explicitly requests firecracker.
+	if fn != nil &&
+		p.backend.SnapshotDir() != "" &&
+		(fn.Backend == "" || fn.Backend == domain.BackendAuto || fn.Backend == domain.BackendFirecracker) {
 		return 1
 	}
-	if fn.InstanceConcurrency > 0 {
+	if fn != nil && fn.InstanceConcurrency > 0 {
 		return fn.InstanceConcurrency
 	}
 	return 1

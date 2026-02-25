@@ -21,6 +21,7 @@ import (
 	"github.com/oriys/nova/internal/compiler"
 	"github.com/oriys/nova/internal/config"
 	"github.com/oriys/nova/internal/docker"
+	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/eventbus"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/firecracker"
@@ -129,60 +130,67 @@ func daemonCmd() *cobra.Command {
 			var be backend.Backend
 			var fcAdapter *firecracker.Adapter
 
-			backendName := cfg.Firecracker.Backend
-			if backendName == "" || backendName == "auto" {
+			defaultBackend := domain.BackendType(cfg.Firecracker.Backend)
+			if defaultBackend == "" || defaultBackend == domain.BackendAuto {
 				detected := backend.DetectDefaultBackend()
-				backendName = string(detected)
-				logging.Op().Info("auto-detected backend", "backend", backendName)
+				defaultBackend = detected
+				logging.Op().Info("auto-detected backend", "backend", defaultBackend)
+			}
+			if defaultBackend == domain.BackendType("k8s") {
+				defaultBackend = domain.BackendKubernetes
 			}
 
-			switch backendName {
-			case "docker":
-				logging.Op().Info("using Docker backend")
-				dockerMgr, err := docker.NewManager(&cfg.Docker)
-				if err != nil {
-					return err
-				}
-				be = dockerMgr
-			case "wasm":
-				logging.Op().Info("using WASM backend")
-				wasmMgr, err := wasm.NewManager(&cfg.Wasm)
-				if err != nil {
-					return err
-				}
-				be = wasmMgr
-			case "kubernetes", "k8s":
-				logging.Op().Info("using Kubernetes backend",
-					"namespace", cfg.Kubernetes.Namespace,
-					"runtime_class", cfg.Kubernetes.RuntimeClassName,
-					"scale_to_zero_grace", cfg.Kubernetes.ScaleToZeroGracePeriod,
-				)
-				k8sMgr, err := kubernetes.NewManager(&cfg.Kubernetes)
-				if err != nil {
-					return err
-				}
-				be = k8sMgr
-			case "libkrun":
-				logging.Op().Info("using libkrun backend")
-				libkrunMgr, err := libkrun.NewManager(&cfg.LibKrun)
-				if err != nil {
-					return err
-				}
-				be = libkrunMgr
-			default:
-				logging.Op().Info("using Firecracker backend")
-				if runtime.GOOS == "linux" {
-					if err := compiler.EnsureDockerToolchainReady(context.Background()); err != nil {
-						return fmt.Errorf("ensure compiler docker images: %w", err)
+			factories := map[domain.BackendType]backend.BackendFactory{
+				domain.BackendDocker: func() (backend.Backend, error) {
+					logging.Op().Info("initializing Docker backend")
+					return docker.NewManager(&cfg.Docker)
+				},
+				domain.BackendWasm: func() (backend.Backend, error) {
+					logging.Op().Info("initializing WASM backend")
+					return wasm.NewManager(&cfg.Wasm)
+				},
+				domain.BackendKubernetes: func() (backend.Backend, error) {
+					logging.Op().Info("initializing Kubernetes backend",
+						"namespace", cfg.Kubernetes.Namespace,
+						"runtime_class", cfg.Kubernetes.RuntimeClassName,
+						"scale_to_zero_grace", cfg.Kubernetes.ScaleToZeroGracePeriod,
+					)
+					return kubernetes.NewManager(&cfg.Kubernetes)
+				},
+				domain.BackendLibKrun: func() (backend.Backend, error) {
+					logging.Op().Info("initializing libkrun backend")
+					return libkrun.NewManager(&cfg.LibKrun)
+				},
+				domain.BackendFirecracker: func() (backend.Backend, error) {
+					logging.Op().Info("initializing Firecracker backend")
+					if runtime.GOOS == "linux" {
+						if err := compiler.EnsureDockerToolchainReady(context.Background()); err != nil {
+							return nil, fmt.Errorf("ensure compiler docker images: %w", err)
+						}
 					}
-				}
-				adapter, err := firecracker.NewAdapter(&cfg.Firecracker)
-				if err != nil {
-					return err
-				}
-				fcAdapter = adapter
-				be = adapter
+					adapter, err := firecracker.NewAdapter(&cfg.Firecracker)
+					if err != nil {
+						return nil, err
+					}
+					fcAdapter = adapter
+					return adapter, nil
+				},
 			}
+			switch defaultBackend {
+			case domain.BackendDocker, domain.BackendWasm, domain.BackendKubernetes, domain.BackendLibKrun, domain.BackendFirecracker:
+			default:
+				return fmt.Errorf("unsupported default backend for nova: %s", defaultBackend)
+			}
+
+			router, err := backend.NewRouter(defaultBackend, factories)
+			if err != nil {
+				return err
+			}
+			if err := router.EnsureReady(defaultBackend); err != nil {
+				return err
+			}
+			be = router
+			logging.Op().Info("using backend router", "default_backend", defaultBackend)
 
 			p := pool.NewPool(be, pool.PoolConfig{
 				IdleTTL:             cfg.Pool.IdleTTL,
@@ -190,7 +198,7 @@ func daemonCmd() *cobra.Command {
 				HealthCheckInterval: cfg.Pool.HealthCheckInterval,
 				MaxPreWarmWorkers:   cfg.Pool.MaxPreWarmWorkers,
 			})
-			if fcAdapter != nil {
+			if defaultBackend == domain.BackendFirecracker && fcAdapter != nil {
 				mgr := fcAdapter.Manager()
 				p.SetSnapshotCallback(func(ctx context.Context, vmID, funcID string) error {
 					if err := mgr.CreateSnapshot(ctx, vmID, funcID); err != nil {

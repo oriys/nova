@@ -366,6 +366,38 @@ func TestUpdateFunction(t *testing.T) {
 			t.Fatalf("expected 500, got %d", w.Code)
 		}
 	})
+
+	t.Run("invalid_backend", func(t *testing.T) {
+		_, mux := setupTestHandler(t, nil)
+		body := `{"backend":"qemu"}`
+		req := httptest.NewRequest("PATCH", "/functions/hello", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("empty_backend_normalizes_to_auto", func(t *testing.T) {
+		ms := &mockMetadataStore{
+			updateFunctionFn: func(ctx context.Context, name string, update *store.FunctionUpdate) (*domain.Function, error) {
+				if update.Backend == nil || *update.Backend != domain.BackendAuto {
+					t.Fatalf("expected backend auto, got %#v", update.Backend)
+				}
+				return &domain.Function{ID: "fn-1", Name: name, Runtime: "python", Backend: domain.BackendAuto}, nil
+			},
+		}
+		_, mux := setupTestHandler(t, ms)
+		body := `{"backend":""}`
+		req := httptest.NewRequest("PATCH", "/functions/hello", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+		}
+	})
 }
 
 func TestGetFunctionCode(t *testing.T) {

@@ -79,6 +79,7 @@ func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 		"id":                   fn.ID,
 		"name":                 fn.Name,
 		"runtime":              fn.Runtime,
+		"backend":              fn.Backend,
 		"handler":              fn.Handler,
 		"code_hash":            fn.CodeHash,
 		"memory_mb":            fn.MemoryMB,
@@ -187,6 +188,15 @@ func (h *Handler) UpdateFunction(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
+	}
+	if update.Backend != nil {
+		if *update.Backend == "" {
+			auto := domain.BackendAuto
+			update.Backend = &auto
+		} else if !domain.IsValidBackendType(*update.Backend) {
+			http.Error(w, "invalid backend", http.StatusBadRequest)
+			return
+		}
 	}
 
 	codeChanged := update.Code != nil
