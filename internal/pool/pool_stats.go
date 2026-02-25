@@ -162,6 +162,13 @@ func (p *Pool) EvictVM(funcID string, target *PooledVM) {
 // ReloadCode sends new code files to all active VMs for a function.
 // Returns nil if no VMs are active. Falls back to eviction on failure.
 func (p *Pool) ReloadCode(funcID string, files map[string][]byte) error {
+	return p.ReloadCodeWithHash(funcID, files, "")
+}
+
+// ReloadCodeWithHash hot-reloads code into all pooled VMs for a function and
+// updates the pool's stored code hash so that subsequent Acquire calls won't
+// mistakenly detect a hash mismatch and evict the freshly-reloaded VMs.
+func (p *Pool) ReloadCodeWithHash(funcID string, files map[string][]byte, newCodeHash string) error {
 	_, fp, ok := p.getPoolForFunctionID(funcID)
 	if !ok {
 		return nil // No active pool, nothing to reload
@@ -196,6 +203,12 @@ func (p *Pool) ReloadCode(funcID string, files map[string][]byte) error {
 
 	if len(failedVMs) > 0 {
 		return fmt.Errorf("reload failed on %d/%d VMs", len(failedVMs), len(vms))
+	}
+
+	// Update the pool's code hash so preparePoolForFunction won't evict
+	// these freshly-reloaded VMs on the next Acquire.
+	if newCodeHash != "" {
+		fp.codeHash.Store(newCodeHash)
 	}
 
 	return nil

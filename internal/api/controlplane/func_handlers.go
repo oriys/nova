@@ -205,11 +205,18 @@ func (h *Handler) UpdateFunction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Persist new code hash so remote pools (e.g. Comet) detect the change
+		fn.CodeHash = sourceHash
+		if err := h.Store.SaveFunction(r.Context(), fn); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 		// Try hot reload for interpreted languages
 		hotReloaded := false
 		if !domain.NeedsCompilation(fn.Runtime) {
 			reloadFiles := map[string][]byte{"handler": []byte(*update.Code)}
-			if err := h.Pool.ReloadCode(fn.ID, reloadFiles); err == nil {
+			if err := h.Pool.ReloadCodeWithHash(fn.ID, reloadFiles, sourceHash); err == nil {
 				hotReloaded = true
 				logging.Op().Info("hot reloaded code", "function", fn.Name)
 			}
@@ -486,7 +493,7 @@ func (h *Handler) UpdateFunctionCode(w http.ResponseWriter, r *http.Request) {
 		} else {
 			reloadFiles = map[string][]byte{"handler": []byte(sourceCode)}
 		}
-		if err := h.Pool.ReloadCode(fn.ID, reloadFiles); err == nil {
+		if err := h.Pool.ReloadCodeWithHash(fn.ID, reloadFiles, sourceHash); err == nil {
 			hotReloaded = true
 			logging.Op().Info("hot reloaded code", "function", fn.Name)
 		} else {
