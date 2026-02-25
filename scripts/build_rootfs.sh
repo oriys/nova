@@ -32,6 +32,23 @@ OUT_DIR="${OUT_DIR:-/opt/nova/rootfs}"
 ASSETS_DIR="${ASSETS_DIR:-}"
 NOVA_CACHE_DIR="${NOVA_CACHE_DIR:-/var/cache/nova/downloads}"
 AGENT_BIN="${AGENT_BIN:-}"
+TARGET_ARCH="${TARGET_ARCH:-x86_64}"
+
+if [[ "${TARGET_ARCH}" == "aarch64" ]]; then
+  ALPINE_URL="${ALPINE_URL:-https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/aarch64/alpine-minirootfs-3.23.3-aarch64.tar.gz}"
+  ARCH_SUFFIX="-arm64"
+  WASMTIME_ARCH="aarch64"
+  DENO_ARCH="aarch64"
+  BUN_ARCH="aarch64"
+  BUN_MUSL_DIR="bun-linux-aarch64-musl"
+else
+  ALPINE_URL="${ALPINE_URL:-https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.3-x86_64.tar.gz}"
+  ARCH_SUFFIX="-amd64"
+  WASMTIME_ARCH="x86_64"
+  DENO_ARCH="x86_64"
+  BUN_ARCH="x64"
+  BUN_MUSL_DIR="bun-linux-x64-musl"
+fi
 
 usage() {
   cat <<EOF
@@ -88,8 +105,10 @@ check_platform() {
     warn "Skipping rootfs build: Linux required (current: $(uname))"
     exit 0
   fi
-  if [[ "$(uname -m)" != "x86_64" ]]; then
-    warn "Skipping rootfs build: x86_64 required (current: $(uname -m))"
+  local host_arch
+  host_arch="$(uname -m)"
+  if [[ "${TARGET_ARCH}" != "x86_64" && "${TARGET_ARCH}" != "aarch64" ]]; then
+    warn "Skipping rootfs build: unsupported TARGET_ARCH=${TARGET_ARCH}"
     exit 0
   fi
 }
@@ -201,9 +220,9 @@ build_base_rootfs() {
   tmp="$(mktemp -d)"
   mkdir -p "${tmp}"/{dev,proc,sys,tmp,code,usr/local/bin}
   inject_agent_init "${tmp}"
-  build_image_from_dir "${OUT_DIR}/base.ext4" "${BASE_ROOTFS_SIZE_MB}" "${tmp}"
+  build_image_from_dir "${OUT_DIR}/base${ARCH_SUFFIX}.ext4" "${BASE_ROOTFS_SIZE_MB}" "${tmp}"
   rm -rf "${tmp}"
-  log "base.ext4 ready -> ${OUT_DIR}/base.ext4"
+  log "base${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/base${ARCH_SUFFIX}.ext4"
 }
 
 build_python_rootfs() {
@@ -213,9 +232,9 @@ build_python_rootfs() {
   stage_alpine_root "${tmp}"
   apk_add "${tmp}" python3
   inject_agent_init "${tmp}"
-  build_image_from_dir "${OUT_DIR}/python.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
+  build_image_from_dir "${OUT_DIR}/python${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
   rm -rf "${tmp}"
-  log "python.ext4 ready -> ${OUT_DIR}/python.ext4"
+  log "python${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/python${ARCH_SUFFIX}.ext4"
 }
 
 build_node_rootfs() {
@@ -225,9 +244,9 @@ build_node_rootfs() {
   stage_alpine_root "${tmp}"
   apk_add "${tmp}" nodejs npm
   inject_agent_init "${tmp}"
-  build_image_from_dir "${OUT_DIR}/node.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
+  build_image_from_dir "${OUT_DIR}/node${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
   rm -rf "${tmp}"
-  log "node.ext4 ready -> ${OUT_DIR}/node.ext4"
+  log "node${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/node${ARCH_SUFFIX}.ext4"
 }
 
 build_ruby_rootfs() {
@@ -237,9 +256,9 @@ build_ruby_rootfs() {
   stage_alpine_root "${tmp}"
   apk_add "${tmp}" ruby
   inject_agent_init "${tmp}"
-  build_image_from_dir "${OUT_DIR}/ruby.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
+  build_image_from_dir "${OUT_DIR}/ruby${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
   rm -rf "${tmp}"
-  log "ruby.ext4 ready -> ${OUT_DIR}/ruby.ext4"
+  log "ruby${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/ruby${ARCH_SUFFIX}.ext4"
 }
 
 build_java_rootfs() {
@@ -250,9 +269,9 @@ build_java_rootfs() {
   apk_add "${tmp}" openjdk21-jre-headless
   chroot "${tmp}" /bin/sh -c 'jli="$(find /usr/lib/jvm -name libjli.so | head -n1)"; [ -n "$jli" ] && ln -sf "$jli" /usr/lib/libjli.so'
   inject_agent_init "${tmp}"
-  build_image_from_dir "${OUT_DIR}/java.ext4" "${ROOTFS_SIZE_JAVA_MB}" "${tmp}"
+  build_image_from_dir "${OUT_DIR}/java${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_JAVA_MB}" "${tmp}"
   rm -rf "${tmp}"
-  log "java.ext4 ready -> ${OUT_DIR}/java.ext4"
+  log "java${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/java${ARCH_SUFFIX}.ext4"
 }
 
 build_wasm_rootfs() {
@@ -268,19 +287,19 @@ build_wasm_rootfs() {
   wasmtime_tmp="$(mktemp -d)"
   
   fetch_asset \
-    "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
+    "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-${WASMTIME_ARCH}-linux.tar.xz" \
     "wasmtime.tar.xz" \
     "${wasmtime_tmp}/wasmtime.tar.xz"
 
   tar -xJf "${wasmtime_tmp}/wasmtime.tar.xz" -C "${wasmtime_tmp}"
-  cp "${wasmtime_tmp}/wasmtime-${WASMTIME_VERSION}-x86_64-linux/wasmtime" "${tmp}/usr/local/bin/wasmtime"
+  cp "${wasmtime_tmp}/wasmtime-${WASMTIME_VERSION}-${WASMTIME_ARCH}-linux/wasmtime" "${tmp}/usr/local/bin/wasmtime"
   chmod +x "${tmp}/usr/local/bin/wasmtime"
   rm -rf "${wasmtime_tmp}"
 
   inject_agent_init "${tmp}"
-  build_image_from_dir "${OUT_DIR}/wasm.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
+  build_image_from_dir "${OUT_DIR}/wasm${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
   rm -rf "${tmp}"
-  log "wasm.ext4 ready -> ${OUT_DIR}/wasm.ext4"
+  log "wasm${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/wasm${ARCH_SUFFIX}.ext4"
 }
 
 build_php_rootfs() {
@@ -290,9 +309,9 @@ build_php_rootfs() {
   stage_alpine_root "${tmp}"
   apk_add "${tmp}" php
   inject_agent_init "${tmp}"
-  build_image_from_dir "${OUT_DIR}/php.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
+  build_image_from_dir "${OUT_DIR}/php${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
   rm -rf "${tmp}"
-  log "php.ext4 ready -> ${OUT_DIR}/php.ext4"
+  log "php${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/php${ARCH_SUFFIX}.ext4"
 }
 
 build_lua_rootfs() {
@@ -302,9 +321,9 @@ build_lua_rootfs() {
   stage_alpine_root "${tmp}"
   apk_add "${tmp}" lua5.4
   inject_agent_init "${tmp}"
-  build_image_from_dir "${OUT_DIR}/lua.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
+  build_image_from_dir "${OUT_DIR}/lua${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
   rm -rf "${tmp}"
-  log "lua.ext4 ready -> ${OUT_DIR}/lua.ext4"
+  log "lua${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/lua${ARCH_SUFFIX}.ext4"
 }
 
 build_deno_rootfs() {
@@ -328,7 +347,7 @@ build_deno_rootfs() {
   deno_tmp="$(mktemp -d)"
   
   fetch_asset \
-    "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" \
+    "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-${DENO_ARCH}-unknown-linux-gnu.zip" \
     "deno.zip" \
     "${deno_tmp}/deno.zip"
 
@@ -338,9 +357,9 @@ build_deno_rootfs() {
   rm -rf "${deno_tmp}"
 
   inject_agent_init "${tmp}"
-  build_image_from_dir "${OUT_DIR}/deno.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
+  build_image_from_dir "${OUT_DIR}/deno${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
   rm -rf "${tmp}"
-  log "deno.ext4 ready -> ${OUT_DIR}/deno.ext4"
+  log "deno${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/deno${ARCH_SUFFIX}.ext4"
 }
 
 build_bun_rootfs() {
@@ -356,19 +375,19 @@ build_bun_rootfs() {
   bun_tmp="$(mktemp -d)"
   
   fetch_asset \
-    "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/bun-linux-x64-musl.zip" \
+    "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/${BUN_MUSL_DIR}.zip" \
     "bun.zip" \
     "${bun_tmp}/bun.zip"
     
   unzip -q -o "${bun_tmp}/bun.zip" -d "${bun_tmp}"
-  cp "${bun_tmp}/bun-linux-x64-musl/bun" "${tmp}/usr/local/bin/bun"
+  cp "${bun_tmp}/${BUN_MUSL_DIR}/bun" "${tmp}/usr/local/bin/bun"
   chmod +x "${tmp}/usr/local/bin/bun"
   rm -rf "${bun_tmp}"
 
   inject_agent_init "${tmp}"
-  build_image_from_dir "${OUT_DIR}/bun.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
+  build_image_from_dir "${OUT_DIR}/bun${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
   rm -rf "${tmp}"
-  log "bun.ext4 ready -> ${OUT_DIR}/bun.ext4"
+  log "bun${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/bun${ARCH_SUFFIX}.ext4"
 }
 
 main() {

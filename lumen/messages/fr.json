@@ -26,7 +26,9 @@
     "snapshots": "Snapshots",
     "triggers": "Déclencheurs",
     "cluster": "Cluster",
-    "alerts": "Alertes"
+    "alerts": "Alertes",
+    "replay": "Rejeu",
+    "tuning": "Réglage"
   },
   "pages": {
     "dashboard": {
@@ -439,6 +441,14 @@
     "alerts": {
       "title": "Alertes",
       "description": "Alertes SLO et notifications système"
+    },
+    "replay": {
+      "title": "Rejeu déterministe",
+      "description": "Rejouez les invocations enregistrées pour reproduire les problèmes"
+    },
+    "tuning": {
+      "title": "Réglage",
+      "description": "Conseiller de réglage automatique avec expériences canari et rollback"
     }
   },
   "common": {
@@ -2375,5 +2385,58 @@
     "colFunction": "Fonction",
     "colTime": "Heure",
     "colStatus": "Statut"
+  },
+  "replayPage": {
+    "recordings": "Enregistrements",
+    "replayButton": "Rejouer",
+    "status": "Statut",
+    "divergences": "Divergences",
+    "noDivergences": "Aucune divergence détectée",
+    "timeTravel": "Débogage temporel",
+    "stepForward": "Avancer",
+    "stepBackward": "Reculer",
+    "stepLabel": "Étape {step}",
+    "variables": "Variables",
+    "noVariables": "Aucune variable dans la portée",
+    "callStack": "Pile d'appels",
+    "emptyStack": "Pile d'appels vide",
+    "output": "Sortie",
+    "replayResult": "Résultat du rejeu",
+    "duration": "Durée",
+    "eventsReplayed": "Événements rejoués",
+    "expected": "Attendu",
+    "actual": "Réel",
+    "failedToLoad": "Échec du chargement des enregistrements",
+    "replayFailed": "Échec du rejeu",
+    "stepFailed": "Échec du chargement de l'étape",
+    "noRecordings": "Aucun enregistrement disponible",
+    "colFunction": "Fonction",
+    "colRuntime": "Environnement",
+    "colEvents": "Événements",
+    "colCreated": "Créé le",
+    "colActions": "Actions"
+  },
+  "tuningPage": {
+    "signals": "Signaux de fonction",
+    "coldWarmRatio": "Froid / Chaud",
+    "errorRate": "Taux d'erreur",
+    "requestRate": "Taux de requêtes",
+    "recommendations": "Recommandations",
+    "accept": "Accepter",
+    "reject": "Rejeter",
+    "impact": "Impact",
+    "activeExperiments": "Expériences actives",
+    "history": "Historique de réglage",
+    "colExperiment": "Expérience",
+    "colParameter": "Paramètre",
+    "colTraffic": "Trafic",
+    "colStatus": "Statut",
+    "colVerdict": "Verdict",
+    "colChange": "Changement",
+    "colSource": "Source",
+    "colAppliedAt": "Appliqué le",
+    "failedToLoad": "Échec du chargement des données de réglage",
+    "failedToApply": "Échec de l'application de la recommandation",
+    "noData": "Sélectionnez une fonction pour voir les données de réglage"
   }
 }

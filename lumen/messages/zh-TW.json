@@ -26,7 +26,9 @@
     "snapshots": "快照",
     "triggers": "觸發器",
     "cluster": "叢集",
-    "alerts": "告警"
+    "alerts": "告警",
+    "replay": "回放",
+    "tuning": "調優"
   },
   "pages": {
     "dashboard": {
@@ -439,6 +441,14 @@
     "alerts": {
       "title": "告警",
       "description": "SLO告警與系統通知"
+    },
+    "replay": {
+      "title": "確定性回放",
+      "description": "回放已記錄的調用以重現問題"
+    },
+    "tuning": {
+      "title": "調優",
+      "description": "自動調優顧問：金絲雀實驗與回滾"
     }
   },
   "common": {
@@ -2375,5 +2385,58 @@
     "colFunction": "函數",
     "colTime": "時間",
     "colStatus": "狀態"
+  },
+  "replayPage": {
+    "recordings": "錄製記錄",
+    "replayButton": "回放",
+    "status": "狀態",
+    "divergences": "差異",
+    "noDivergences": "未偵測到差異",
+    "timeTravel": "時間旅行除錯",
+    "stepForward": "前進一步",
+    "stepBackward": "後退一步",
+    "stepLabel": "步驟 {step}",
+    "variables": "變數",
+    "noVariables": "作用域中無變數",
+    "callStack": "呼叫堆疊",
+    "emptyStack": "呼叫堆疊為空",
+    "output": "輸出",
+    "replayResult": "回放結果",
+    "duration": "耗時",
+    "eventsReplayed": "已回放事件數",
+    "expected": "預期",
+    "actual": "實際",
+    "failedToLoad": "載入錄製記錄失敗",
+    "replayFailed": "回放失敗",
+    "stepFailed": "載入步驟失敗",
+    "noRecordings": "暫無錄製記錄",
+    "colFunction": "函數",
+    "colRuntime": "執行環境",
+    "colEvents": "事件數",
+    "colCreated": "建立時間",
+    "colActions": "操作"
+  },
+  "tuningPage": {
+    "signals": "函數信號",
+    "coldWarmRatio": "冷啟動 / 熱啟動",
+    "errorRate": "錯誤率",
+    "requestRate": "請求速率",
+    "recommendations": "推薦",
+    "accept": "接受",
+    "reject": "拒絕",
+    "impact": "影響",
+    "activeExperiments": "活躍實驗",
+    "history": "調優歷史",
+    "colExperiment": "實驗",
+    "colParameter": "參數",
+    "colTraffic": "流量",
+    "colStatus": "狀態",
+    "colVerdict": "結論",
+    "colChange": "變更",
+    "colSource": "來源",
+    "colAppliedAt": "應用時間",
+    "failedToLoad": "載入調優資料失敗",
+    "failedToApply": "應用推薦失敗",
+    "noData": "選擇函數以查看調優資料"
   }
 }

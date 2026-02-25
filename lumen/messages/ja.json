@@ -26,7 +26,9 @@
     "snapshots": "スナップショット",
     "triggers": "トリガー",
     "cluster": "クラスター",
-    "alerts": "アラート"
+    "alerts": "アラート",
+    "replay": "リプレイ",
+    "tuning": "チューニング"
   },
   "pages": {
     "dashboard": {
@@ -439,6 +441,14 @@
     "alerts": {
       "title": "アラート",
       "description": "SLOアラートとシステム通知"
+    },
+    "replay": {
+      "title": "決定的リプレイ",
+      "description": "記録された呼び出しをリプレイして問題を再現"
+    },
+    "tuning": {
+      "title": "チューニング",
+      "description": "自動チューニングアドバイザー：カナリア実験とロールバック"
     }
   },
   "common": {
@@ -2375,5 +2385,58 @@
     "colFunction": "関数",
     "colTime": "時間",
     "colStatus": "ステータス"
+  },
+  "replayPage": {
+    "recordings": "記録一覧",
+    "replayButton": "リプレイ",
+    "status": "ステータス",
+    "divergences": "差異",
+    "noDivergences": "差異は検出されませんでした",
+    "timeTravel": "タイムトラベルデバッグ",
+    "stepForward": "次のステップ",
+    "stepBackward": "前のステップ",
+    "stepLabel": "ステップ {step}",
+    "variables": "変数",
+    "noVariables": "スコープ内に変数がありません",
+    "callStack": "コールスタック",
+    "emptyStack": "コールスタックが空です",
+    "output": "出力",
+    "replayResult": "リプレイ結果",
+    "duration": "所要時間",
+    "eventsReplayed": "リプレイ済みイベント数",
+    "expected": "期待値",
+    "actual": "実際の値",
+    "failedToLoad": "記録の読み込みに失敗しました",
+    "replayFailed": "リプレイに失敗しました",
+    "stepFailed": "ステップの読み込みに失敗しました",
+    "noRecordings": "記録がありません",
+    "colFunction": "関数",
+    "colRuntime": "ランタイム",
+    "colEvents": "イベント数",
+    "colCreated": "作成日時",
+    "colActions": "操作"
+  },
+  "tuningPage": {
+    "signals": "関数シグナル",
+    "coldWarmRatio": "コールド / ウォーム",
+    "errorRate": "エラー率",
+    "requestRate": "リクエストレート",
+    "recommendations": "推奨",
+    "accept": "適用",
+    "reject": "却下",
+    "impact": "影響",
+    "activeExperiments": "アクティブな実験",
+    "history": "チューニング履歴",
+    "colExperiment": "実験",
+    "colParameter": "パラメータ",
+    "colTraffic": "トラフィック",
+    "colStatus": "ステータス",
+    "colVerdict": "判定",
+    "colChange": "変更",
+    "colSource": "ソース",
+    "colAppliedAt": "適用日時",
+    "failedToLoad": "チューニングデータの読み込みに失敗しました",
+    "failedToApply": "推奨の適用に失敗しました",
+    "noData": "関数を選択してチューニングデータを表示"
   }
 }

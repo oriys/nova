@@ -247,7 +247,7 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 	if fn.RuntimeImageName != "" {
 		rootfsFile = fn.RuntimeImageName
 	} else {
-		rootfsFile = rootfsForRuntime(fn.Runtime)
+		rootfsFile = rootfsForRuntime(fn.Runtime, fn.Arch)
 	}
 	rootfsPath := filepath.Join(m.config.RootfsDir, rootfsFile)
 	if _, err := os.Stat(rootfsPath); os.IsNotExist(err) {
@@ -496,7 +496,7 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 	if fn.RuntimeImageName != "" {
 		rootfsFile = fn.RuntimeImageName
 	} else {
-		rootfsFile = rootfsForRuntime(fn.Runtime)
+		rootfsFile = rootfsForRuntime(fn.Runtime, fn.Arch)
 	}
 	rootfsPath := filepath.Join(m.config.RootfsDir, rootfsFile)
 	if _, err := os.Stat(rootfsPath); os.IsNotExist(err) {

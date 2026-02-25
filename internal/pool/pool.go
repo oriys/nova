@@ -264,6 +264,7 @@ func (p *Pool) InvalidateSnapshotCache(funcID string) {
 }
 
 type poolKeyPayload struct {
+	Arch                domain.Arch           `json:"arch,omitempty"`
 	Runtime             domain.Runtime        `json:"runtime"`
 	MemoryMB            int                   `json:"memory_mb"`
 	Mode                domain.ExecutionMode  `json:"mode,omitempty"`
@@ -296,6 +297,7 @@ func (p *Pool) poolKeyForFunction(fn *domain.Function) string {
 	sort.Strings(envVars)
 
 	payload := poolKeyPayload{
+		Arch:                fn.Arch,
 		Runtime:             fn.Runtime,
 		MemoryMB:            fn.MemoryMB,
 		Mode:                fn.Mode,

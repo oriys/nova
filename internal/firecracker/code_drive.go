@@ -305,31 +305,42 @@ func copyFile(src, dst string) error {
 // Go/Rust: static binaries, minimal base is enough.
 // Python: needs interpreter. WASM: needs wasmtime.
 // Node/Deno/Bun: need JS runtime. Ruby: needs interpreter. Java: needs JVM.
-func rootfsForRuntime(rt domain.Runtime) string {
+func rootfsForRuntime(rt domain.Runtime, arch domain.Arch) string {
 	r := string(rt)
+	var base string
 	switch {
 	case r == string(domain.RuntimePython) || strings.HasPrefix(r, "python"):
-		return "python.ext4"
+		base = "python.ext4"
 	case r == string(domain.RuntimeWasm) || strings.HasPrefix(r, "wasm"):
-		return "wasm.ext4"
+		base = "wasm.ext4"
 	case r == string(domain.RuntimeNode) || strings.HasPrefix(r, "node"):
-		return "node.ext4"
+		base = "node.ext4"
 	case r == string(domain.RuntimeRuby) || strings.HasPrefix(r, "ruby"):
-		return "ruby.ext4"
+		base = "ruby.ext4"
 	case r == string(domain.RuntimeJava) || strings.HasPrefix(r, "java") ||
 		r == string(domain.RuntimeKotlin) || strings.HasPrefix(r, "kotlin") ||
 		r == string(domain.RuntimeScala) || strings.HasPrefix(r, "scala"):
-		return "java.ext4"
+		base = "java.ext4"
 	case r == string(domain.RuntimePHP) || strings.HasPrefix(r, "php"):
-		return "php.ext4"
+		base = "php.ext4"
 	case r == string(domain.RuntimeLua) || strings.HasPrefix(r, "lua"):
-		return "lua.ext4"
+		base = "lua.ext4"
 	case r == string(domain.RuntimeDeno) || strings.HasPrefix(r, "deno"):
-		return "deno.ext4"
+		base = "deno.ext4"
 	case r == string(domain.RuntimeBun) || strings.HasPrefix(r, "bun"):
-		return "bun.ext4"
+		base = "bun.ext4"
 	default:
 		// Go, Rust, Zig, Swift, GraalVM use base. (Static native binaries)
-		return "base.ext4"
+		base = "base.ext4"
 	}
+	return archSuffixedRootfs(base, arch)
+}
+
+func archSuffixedRootfs(base string, arch domain.Arch) string {
+	if arch == "" || arch == domain.ArchAMD64 {
+		return base // backward compatible: no suffix for amd64
+	}
+	ext := filepath.Ext(base)
+	name := strings.TrimSuffix(base, ext)
+	return name + "-" + string(arch) + ext
 }

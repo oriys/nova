@@ -26,7 +26,9 @@
     "snapshots": "Snapshots",
     "triggers": "Triggers",
     "cluster": "Cluster",
-    "alerts": "Alerts"
+    "alerts": "Alerts",
+    "replay": "Replay",
+    "tuning": "Tuning"
   },
   "pages": {
     "dashboard": {
@@ -439,6 +441,14 @@
     "alerts": {
       "title": "Alerts",
       "description": "SLO alerts and system notifications"
+    },
+    "replay": {
+      "title": "Deterministic Replay",
+      "description": "Replay recorded invocations to reproduce issues"
+    },
+    "tuning": {
+      "title": "Tuning",
+      "description": "Auto-tuning advisor with canary experiments and rollback"
     }
   },
   "common": {
@@ -2380,5 +2390,58 @@
     "colFunction": "Function",
     "colTime": "Time",
     "colStatus": "Status"
+  },
+  "replayPage": {
+    "recordings": "Recordings",
+    "replayButton": "Replay",
+    "status": "Status",
+    "divergences": "Divergences",
+    "noDivergences": "No divergences detected",
+    "timeTravel": "Time Travel Debug",
+    "stepForward": "Step Forward",
+    "stepBackward": "Step Backward",
+    "stepLabel": "Step {step}",
+    "variables": "Variables",
+    "noVariables": "No variables in scope",
+    "callStack": "Call Stack",
+    "emptyStack": "Empty call stack",
+    "output": "Output",
+    "replayResult": "Replay Result",
+    "duration": "Duration",
+    "eventsReplayed": "Events Replayed",
+    "expected": "Expected",
+    "actual": "Actual",
+    "failedToLoad": "Failed to load recordings",
+    "replayFailed": "Replay failed",
+    "stepFailed": "Failed to load step",
+    "noRecordings": "No recordings available",
+    "colFunction": "Function",
+    "colRuntime": "Runtime",
+    "colEvents": "Events",
+    "colCreated": "Created",
+    "colActions": "Actions"
+  },
+  "tuningPage": {
+    "signals": "Function Signals",
+    "coldWarmRatio": "Cold / Warm",
+    "errorRate": "Error Rate",
+    "requestRate": "Request Rate",
+    "recommendations": "Recommendations",
+    "accept": "Accept",
+    "reject": "Reject",
+    "impact": "Impact",
+    "activeExperiments": "Active Experiments",
+    "history": "Tuning History",
+    "colExperiment": "Experiment",
+    "colParameter": "Parameter",
+    "colTraffic": "Traffic",
+    "colStatus": "Status",
+    "colVerdict": "Verdict",
+    "colChange": "Change",
+    "colSource": "Source",
+    "colAppliedAt": "Applied At",
+    "failedToLoad": "Failed to load tuning data",
+    "failedToApply": "Failed to apply recommendation",
+    "noData": "Select a function to view tuning data"
   }
 }

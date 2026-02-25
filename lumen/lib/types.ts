@@ -231,3 +231,47 @@ export function getAvailableRuntimes(): string[] {
 export function getRuntimeDisplayName(id: string): string {
   return RUNTIME_DISPLAY_NAMES[id] || id;
 }
+
+// Replay / Time-travel types
+
+export interface Recording {
+  id: string;
+  function_id: string;
+  invocation_id: string;
+  runtime: string;
+  arch: string;
+  created_at: string;
+  events_count: number;
+}
+
+export interface ReplayResult {
+  replay_id: string;
+  status: 'success' | 'diverged' | 'failed';
+  divergences: Divergence[];
+  duration_ms: number;
+  events_replayed: number;
+}
+
+export interface Divergence {
+  event_seq: number;
+  type: string;
+  expected: string;
+  actual: string;
+  message: string;
+}
+
+export interface TimeTravelState {
+  step: number;
+  line: number;
+  file: string;
+  variables: Record<string, string>;
+  call_stack: StackFrame[];
+  output: string;
+  completed: boolean;
+}
+
+export interface StackFrame {
+  function: string;
+  file: string;
+  line: number;
+}

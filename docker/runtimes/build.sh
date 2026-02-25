@@ -34,6 +34,15 @@ docker run --rm \
     golang:1.24-alpine \
     sh -c 'mkdir -p /tmp/go-cache /tmp/go-mod && GOCACHE=/tmp/go-cache GOMODCACHE=/tmp/go-mod CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bin/nova-agent ./cmd/agent'
 
+echo "Building nova-agent for linux/arm64 in Docker..."
+docker run --rm \
+    --platform "$BUILD_PLATFORM" \
+    -u "$(id -u):$(id -g)" \
+    -v "$ROOT_DIR:/src" \
+    -w /src \
+    golang:1.24-alpine \
+    sh -c 'mkdir -p /tmp/go-cache /tmp/go-mod && GOCACHE=/tmp/go-cache GOMODCACHE=/tmp/go-mod CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/nova-agent-arm64 ./cmd/agent'
+
 echo ""
 echo "Building runtime images with prefix: $PREFIX"
 echo ""

@@ -27,6 +27,7 @@ package domain
 
 import (
 	"encoding/json"
+	"runtime"
 	"time"
 )
 
@@ -120,6 +121,29 @@ func IsValidBackendType(b BackendType) bool {
 		}
 	}
 	return false
+}
+
+// Arch represents a CPU architecture for function artifacts and VMs.
+type Arch string
+
+const (
+	ArchAMD64 Arch = "amd64"
+	ArchARM64 Arch = "arm64"
+)
+
+// AllArchTypes returns all valid architecture values.
+func AllArchTypes() []Arch {
+	return []Arch{ArchAMD64, ArchARM64}
+}
+
+// IsValidArch returns true if the architecture is recognized.
+func IsValidArch(a Arch) bool {
+	return a == ArchAMD64 || a == ArchARM64
+}
+
+// HostArch returns the architecture of the current host.
+func HostArch() Arch {
+	return Arch(runtime.GOARCH)
 }
 
 func (r Runtime) IsValid() bool {
@@ -334,6 +358,7 @@ type Function struct {
 	InstanceConcurrency int               `json:"instance_concurrency,omitempty"` // Max in-flight requests per instance
 	Mode                ExecutionMode     `json:"mode,omitempty"`                 // "process" or "persistent"
 	Backend             BackendType       `json:"backend,omitempty"`              // "auto", "docker", "firecracker", "wasm", "kubernetes", "libkrun", "kata"
+	Arch                Arch              `json:"arch,omitempty"`                 // Target architecture (default: host arch)
 	Limits              *ResourceLimits   `json:"limits,omitempty"`
 	NetworkPolicy       *NetworkPolicy    `json:"network_policy,omitempty"`
 	RolloutPolicy       *RolloutPolicy    `json:"rollout_policy,omitempty"`
@@ -365,6 +390,7 @@ type FunctionVersion struct {
 	FunctionID  string            `json:"function_id"`
 	Version     int               `json:"version"`
 	CodeHash    string            `json:"code_hash"`
+	Arch        string            `json:"arch,omitempty"`
 	Handler     string            `json:"handler"`
 	MemoryMB    int               `json:"memory_mb"`
 	TimeoutS    int               `json:"timeout_s"`
@@ -394,17 +420,20 @@ func (f *Function) UnmarshalBinary(data []byte) error {
 }
 
 type InvokeRequest struct {
-	FunctionID string          `json:"function_id"`
-	Payload    json.RawMessage `json:"payload"`
+	FunctionID     string          `json:"function_id"`
+	Payload        json.RawMessage `json:"payload"`
+	IdempotencyKey string          `json:"idempotency_key,omitempty"`
 }
 
 type InvokeResponse struct {
-	RequestID  string          `json:"request_id"`
-	Output     json.RawMessage `json:"output"`
-	Error      string          `json:"error,omitempty"`
-	DurationMs int64           `json:"duration_ms"`
-	ColdStart  bool            `json:"cold_start"`
-	Version    int             `json:"version,omitempty"` // Which version handled this request
+	RequestID      string          `json:"request_id"`
+	Output         json.RawMessage `json:"output"`
+	Error          string          `json:"error,omitempty"`
+	DurationMs     int64           `json:"duration_ms"`
+	ColdStart      bool            `json:"cold_start"`
+	Version        int             `json:"version,omitempty"` // Which version handled this request
+	IdempotencyKey string          `json:"idempotency_key,omitempty"`
+	Deduplicated   bool            `json:"deduplicated,omitempty"`
 }
 
 // CompileStatus represents the compilation status of function code
@@ -425,10 +454,27 @@ type FunctionCode struct {
 	CompiledBinary []byte        `json:"-"` // Not exposed in JSON
 	SourceHash     string        `json:"source_hash"`
 	BinaryHash     string        `json:"binary_hash,omitempty"`
+	Arch           string        `json:"arch,omitempty"` // Target architecture (amd64, arm64)
 	CompileStatus  CompileStatus `json:"compile_status"`
 	CompileError   string        `json:"compile_error,omitempty"`
 	CreatedAt      time.Time     `json:"created_at"`
 	UpdatedAt      time.Time     `json:"updated_at"`
+}
+
+// ArtifactManifest describes available architecture variants for a function's compiled artifacts.
+type ArtifactManifest struct {
+	FunctionID string                  `json:"function_id"`
+	Version    int                     `json:"version"`
+	Arches     map[Arch]ArtifactVariant `json:"arches"`
+	CreatedAt  time.Time               `json:"created_at"`
+}
+
+// ArtifactVariant describes a single architecture variant of a compiled artifact.
+type ArtifactVariant struct {
+	Arch       Arch   `json:"arch"`
+	BinaryHash string `json:"binary_hash"`
+	SizeBytes  int64  `json:"size_bytes"`
+	Available  bool   `json:"available"`
 }
 
 // NeedsCompilation returns true if the runtime requires compilation before

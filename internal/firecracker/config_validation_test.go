@@ -77,7 +77,7 @@ func TestRootfsForRuntime_VersionedKotlinScala(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		if got := rootfsForRuntime(tc.runtime); got != tc.want {
+		if got := rootfsForRuntime(tc.runtime, domain.ArchAMD64); got != tc.want {
 			t.Fatalf("rootfsForRuntime(%q) = %q, want %q", tc.runtime, got, tc.want)
 		}
 	}

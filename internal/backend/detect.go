@@ -45,6 +45,11 @@ func DetectDefaultBackend() domain.BackendType {
 	return domain.BackendDocker
 }
 
+// HostArch returns the CPU architecture of the current host as a domain.Arch value.
+func HostArch() domain.Arch {
+	return domain.HostArch()
+}
+
 func detectFirecracker() BackendInfo {
 	info := BackendInfo{Name: "firecracker"}
 	if runtime.GOOS != "linux" {

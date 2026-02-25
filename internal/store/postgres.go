@@ -15,23 +15,24 @@ type builtinRuntimeSeed struct {
 	ID      string
 	Name    string
 	Version string
+	Arch    string
 }
 
 var builtinRuntimeSeeds = []builtinRuntimeSeed{
-	{ID: "python", Name: "Python", Version: "3.12.12"},
-	{ID: "node", Name: "Node.js", Version: "24.13.0"},
-	{ID: "go", Name: "Go", Version: "1.25.6"},
-	{ID: "rust", Name: "Rust", Version: "1.93.0"},
-	{ID: "java", Name: "Java", Version: "21.0.10"},
-	{ID: "kotlin", Name: "Kotlin", Version: "2.1.10"},
-	{ID: "scala", Name: "Scala", Version: "3.7.3"},
-	{ID: "c", Name: "C", Version: "14.2.0"},
-	{ID: "cpp", Name: "C++", Version: "14.2.0"},
-	{ID: "ruby", Name: "Ruby", Version: "3.4.8"},
-	{ID: "php", Name: "PHP", Version: "8.4.17"},
-	{ID: "deno", Name: "Deno", Version: "2.6.7"},
-	{ID: "bun", Name: "Bun", Version: "1.3.8"},
-	{ID: "graalvm", Name: "GraalVM", Version: "21.0.2"},
+	{ID: "python", Name: "Python", Version: "3.12.12", Arch: "amd64"},
+	{ID: "node", Name: "Node.js", Version: "24.13.0", Arch: "amd64"},
+	{ID: "go", Name: "Go", Version: "1.25.6", Arch: "amd64"},
+	{ID: "rust", Name: "Rust", Version: "1.93.0", Arch: "amd64"},
+	{ID: "java", Name: "Java", Version: "21.0.10", Arch: "amd64"},
+	{ID: "kotlin", Name: "Kotlin", Version: "2.1.10", Arch: "amd64"},
+	{ID: "scala", Name: "Scala", Version: "3.7.3", Arch: "amd64"},
+	{ID: "c", Name: "C", Version: "14.2.0", Arch: "amd64"},
+	{ID: "cpp", Name: "C++", Version: "14.2.0", Arch: "amd64"},
+	{ID: "ruby", Name: "Ruby", Version: "3.4.8", Arch: "amd64"},
+	{ID: "php", Name: "PHP", Version: "8.4.17", Arch: "amd64"},
+	{ID: "deno", Name: "Deno", Version: "2.6.7", Arch: "amd64"},
+	{ID: "bun", Name: "Bun", Version: "1.3.8", Arch: "amd64"},
+	{ID: "graalvm", Name: "GraalVM", Version: "21.0.2", Arch: "amd64"},
 }
 
 func NewPostgresStore(ctx context.Context, dsn string) (*PostgresStore, error) {
@@ -713,6 +714,7 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
+		`ALTER TABLE cluster_nodes ADD COLUMN IF NOT EXISTS arch TEXT NOT NULL DEFAULT 'amd64'`,
 		`CREATE INDEX IF NOT EXISTS idx_cluster_nodes_state ON cluster_nodes(state)`,
 		`CREATE INDEX IF NOT EXISTS idx_cluster_nodes_heartbeat ON cluster_nodes(last_heartbeat DESC)`,
 
@@ -902,8 +904,58 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		`CREATE EXTENSION IF NOT EXISTS pg_trgm`,
 		`CREATE INDEX IF NOT EXISTS idx_functions_name_trgm ON functions USING gin(name gin_trgm_ops)`,
 
+		`CREATE TABLE IF NOT EXISTS idempotency_store (
+			key TEXT PRIMARY KEY,
+			status TEXT NOT NULL DEFAULT 'claimed',
+			result JSONB,
+			error_msg TEXT,
+			claimed_by TEXT,
+			claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			completed_at TIMESTAMPTZ,
+			expires_at TIMESTAMPTZ NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_idempotency_expires ON idempotency_store(expires_at)`,
+		`CREATE TABLE IF NOT EXISTS inbox (
+			message_id TEXT PRIMARY KEY,
+			function_id TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'processing',
+			processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_inbox_processed ON inbox(processed_at)`,
+
 		// Migration: add password_hash column to tenants for server-side authentication
 		`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT ''`,
+
+		// Migration: multi-architecture support
+		`ALTER TABLE function_code ADD COLUMN IF NOT EXISTS arch TEXT NOT NULL DEFAULT 'amd64'`,
+		`ALTER TABLE runtimes ADD COLUMN IF NOT EXISTS arch TEXT NOT NULL DEFAULT 'amd64'`,
+		`CREATE TABLE IF NOT EXISTS artifact_manifests (
+			function_id TEXT NOT NULL REFERENCES functions(id) ON DELETE CASCADE,
+			version INTEGER NOT NULL DEFAULT 1,
+			arch TEXT NOT NULL DEFAULT 'amd64',
+			binary_hash TEXT NOT NULL DEFAULT '',
+			size_bytes BIGINT NOT NULL DEFAULT 0,
+			available BOOLEAN NOT NULL DEFAULT TRUE,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (function_id, version, arch)
+		)`,
+
+		// Enhanced outbox for exactly-once semantics
+		`CREATE TABLE IF NOT EXISTS outbox_enhanced (
+			id TEXT PRIMARY KEY,
+			topic TEXT NOT NULL,
+			payload JSONB NOT NULL,
+			idempotency_key TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending',
+			attempts INTEGER NOT NULL DEFAULT 0,
+			max_attempts INTEGER NOT NULL DEFAULT 5,
+			next_retry_at TIMESTAMPTZ,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			published_at TIMESTAMPTZ
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_outbox_enhanced_status ON outbox_enhanced(status, next_retry_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_outbox_enhanced_idempotency ON outbox_enhanced(idempotency_key)`,
 	}
 
 	for _, stmt := range stmts {

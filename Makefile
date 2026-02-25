@@ -20,10 +20,11 @@ ATLAS_BIN    := $(BINARY_DIR)/atlas
 ATLAS_LINUX  := $(BINARY_DIR)/atlas-linux
 SERVER       ?= user@server
 PREFIX       ?= nova-runtime
+AGENT_ARCH   ?= amd64
 
 # ─── Backend ──────────────────────────────────────────────────────────────────
 
-.PHONY: build build-linux agent comet comet-linux zenith zenith-linux corona corona-linux nebula nebula-linux aurora aurora-linux proto
+.PHONY: build build-linux agent agent-arm64 agent-all comet comet-linux zenith zenith-linux corona corona-linux nebula nebula-linux aurora aurora-linux proto
 
 proto:  ## Generate gRPC/protobuf code via buf (nova.proto)
 	cd api/proto && buf generate --path nova.proto
@@ -33,6 +34,13 @@ build: $(NOVA_BIN) $(COMET_BIN) $(ZENITH_BIN) $(CORONA_BIN) $(NEBULA_BIN) $(AURO
 build-linux: $(NOVA_LINUX) $(COMET_LINUX) $(ZENITH_LINUX) $(CORONA_LINUX) $(NEBULA_LINUX) $(AURORA_LINUX) $(AGENT_BIN)  ## Cross-compile all services + agent for linux/amd64
 
 agent: $(AGENT_BIN)  ## Build only the guest agent (linux/amd64)
+agent-arm64: $(BINARY_DIR)/nova-agent-arm64  ## Build guest agent for linux/arm64
+
+$(BINARY_DIR)/nova-agent-arm64: cmd/agent/main.go
+	@mkdir -p $(BINARY_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o $@ ./cmd/agent
+
+agent-all: $(AGENT_BIN) $(BINARY_DIR)/nova-agent-arm64  ## Build guest agent for all architectures
 comet: $(COMET_BIN)  ## Build Comet data plane (native)
 comet-linux: $(COMET_LINUX)  ## Cross-compile Comet for linux/amd64
 zenith: $(ZENITH_BIN)  ## Build Zenith gateway (native)
@@ -124,7 +132,7 @@ docker-runtime-%:  ## Build a single runtime image (e.g. make docker-runtime-pyt
 
 # ─── VM Rootfs ────────────────────────────────────────────────────────────────
 
-.PHONY: rootfs download-assets
+.PHONY: rootfs rootfs-arm64 rootfs-all download-assets
 
 rootfs: download-assets  ## Build rootfs images using Docker
 	docker build -f Dockerfile.rootfs -t nova-rootfs-builder .
@@ -132,6 +140,16 @@ rootfs: download-assets  ## Build rootfs images using Docker
 	docker run --rm \
 		-v $(PWD)/assets/rootfs:/opt/nova/rootfs \
 		nova-rootfs-builder
+
+rootfs-arm64: download-assets  ## Build arm64 rootfs images using Docker
+	docker build -f Dockerfile.rootfs -t nova-rootfs-builder-arm64 --build-arg TARGET_ARCH=aarch64 .
+	@mkdir -p assets/rootfs
+	docker run --rm \
+		-v $(PWD)/assets/rootfs:/opt/nova/rootfs \
+		-e TARGET_ARCH=aarch64 \
+		nova-rootfs-builder-arm64
+
+rootfs-all: rootfs rootfs-arm64  ## Build rootfs images for all architectures
 
 download-assets:  ## Download large assets (Firecracker binary, kernel, etc.)
 	./scripts/download_assets.sh

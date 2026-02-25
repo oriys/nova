@@ -30,9 +30,11 @@ import {
   Zap,
   Server,
   Activity,
+  RotateCcw,
+  SlidersHorizontal,
 } from "lucide-react"
 
-type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "asyncJobs" | "history" | "runtimes" | "configurations" | "secrets" | "apiKeys" | "gateway" | "apiDocs" | "rbac" | "volumes" | "layers" | "notifications" | "snapshots" | "triggers" | "cluster" | "alerts"
+type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "asyncJobs" | "history" | "replay" | "runtimes" | "configurations" | "secrets" | "apiKeys" | "gateway" | "apiDocs" | "rbac" | "volumes" | "layers" | "notifications" | "snapshots" | "triggers" | "cluster" | "alerts" | "tuning"
 
 const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] = [
   { key: "dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -44,11 +46,13 @@ const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] 
   { key: "tenancy", href: "/tenancy", icon: Building2 },
   { key: "asyncJobs", href: "/async-invocations", icon: Clock3 },
   { key: "history", href: "/history", icon: History },
+  { key: "replay", href: "/replay", icon: RotateCcw },
   { key: "runtimes", href: "/runtimes", icon: Play },
   { key: "layers", href: "/layers", icon: Layers },
   { key: "volumes", href: "/volumes", icon: HardDrive },
   { key: "cluster", href: "/cluster", icon: Server },
   { key: "snapshots", href: "/snapshots", icon: Camera },
+  { key: "tuning", href: "/tuning", icon: SlidersHorizontal },
   { key: "rbac", href: "/rbac", icon: ShieldCheck },
   { key: "notifications", href: "/notifications", icon: Bell },
   { key: "alerts", href: "/alerts", icon: Activity },

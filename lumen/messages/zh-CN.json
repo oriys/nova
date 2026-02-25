@@ -26,7 +26,9 @@
     "snapshots": "快照",
     "triggers": "触发器",
     "cluster": "集群",
-    "alerts": "告警"
+    "alerts": "告警",
+    "replay": "回放",
+    "tuning": "调优"
   },
   "pages": {
     "dashboard": {
@@ -439,6 +441,14 @@
     "alerts": {
       "title": "告警",
       "description": "SLO告警与系统通知"
+    },
+    "replay": {
+      "title": "确定性回放",
+      "description": "回放已记录的调用以重现问题"
+    },
+    "tuning": {
+      "title": "调优",
+      "description": "自动调优顾问：金丝雀实验与回滚"
     }
   },
   "common": {
@@ -2380,5 +2390,58 @@
     "colFunction": "函数",
     "colTime": "时间",
     "colStatus": "状态"
+  },
+  "replayPage": {
+    "recordings": "录制记录",
+    "replayButton": "回放",
+    "status": "状态",
+    "divergences": "差异",
+    "noDivergences": "未检测到差异",
+    "timeTravel": "时间旅行调试",
+    "stepForward": "前进一步",
+    "stepBackward": "后退一步",
+    "stepLabel": "步骤 {step}",
+    "variables": "变量",
+    "noVariables": "作用域中无变量",
+    "callStack": "调用栈",
+    "emptyStack": "调用栈为空",
+    "output": "输出",
+    "replayResult": "回放结果",
+    "duration": "耗时",
+    "eventsReplayed": "已回放事件数",
+    "expected": "预期",
+    "actual": "实际",
+    "failedToLoad": "加载录制记录失败",
+    "replayFailed": "回放失败",
+    "stepFailed": "加载步骤失败",
+    "noRecordings": "暂无录制记录",
+    "colFunction": "函数",
+    "colRuntime": "运行时",
+    "colEvents": "事件数",
+    "colCreated": "创建时间",
+    "colActions": "操作"
+  },
+  "tuningPage": {
+    "signals": "函数信号",
+    "coldWarmRatio": "冷启动 / 热启动",
+    "errorRate": "错误率",
+    "requestRate": "请求速率",
+    "recommendations": "推荐",
+    "accept": "接受",
+    "reject": "拒绝",
+    "impact": "影响",
+    "activeExperiments": "活跃实验",
+    "history": "调优历史",
+    "colExperiment": "实验",
+    "colParameter": "参数",
+    "colTraffic": "流量",
+    "colStatus": "状态",
+    "colVerdict": "结论",
+    "colChange": "变更",
+    "colSource": "来源",
+    "colAppliedAt": "应用时间",
+    "failedToLoad": "加载调优数据失败",
+    "failedToApply": "应用推荐失败",
+    "noData": "选择函数以查看调优数据"
   }
 }
