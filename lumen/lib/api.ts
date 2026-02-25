@@ -2,6 +2,7 @@
 // Connects to the nova backend at /api (proxied via Next.js rewrites)
 import { getTenantScopeHeaders } from "@/lib/tenant-scope";
 import { filterTenantsForSession, getAuthToken } from "@/lib/auth";
+import type { ParamMapping, CORSConfig } from "@/lib/types";
 
 const API_BASE = "/api";
 
@@ -174,7 +175,9 @@ export interface GatewayRoute {
   auth_strategy: string;
   auth_config?: Record<string, string>;
   request_schema?: unknown;
+  param_mapping?: ParamMapping[];
   rate_limit?: RouteRateLimit;
+  cors?: CORSConfig;
   enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -188,6 +191,7 @@ export interface CreateGatewayRouteRequest {
   auth_strategy?: string;
   auth_config?: Record<string, string>;
   request_schema?: unknown;
+  param_mapping?: ParamMapping[];
   rate_limit?: RouteRateLimit;
   enabled?: boolean;
 }
@@ -200,6 +204,7 @@ export interface UpdateGatewayRouteRequest {
   auth_strategy?: string;
   auth_config?: Record<string, string>;
   request_schema?: unknown;
+  param_mapping?: ParamMapping[];
   rate_limit?: RouteRateLimit;
   enabled?: boolean;
 }

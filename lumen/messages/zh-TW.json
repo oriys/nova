@@ -2143,7 +2143,8 @@
       "allMethods": "ALL",
       "selectedCount": "Selected {count} route(s)",
       "rateLimitValue": "{rps}/s, burst {burst}",
-      "importInvalidSuffix": ", skipped {count} invalid record(s)"
+      "importInvalidSuffix": ", skipped {count} invalid record(s)",
+      "mappingCount": "{count} 個映射"
     },
     "authStrategies": {
       "none": "none",
@@ -2438,5 +2439,49 @@
     "failedToLoad": "載入調優資料失敗",
     "failedToApply": "應用推薦失敗",
     "noData": "選擇函數以查看調優資料"
+  },
+  "paramMapping": {
+    "title": "參數映射",
+    "add": "新增映射",
+    "empty": "尚未配置參數映射。新增映射以提取和轉換請求參數。",
+    "required": "必填",
+    "yes": "是",
+    "no": "否",
+    "fields": {
+      "source": "來源",
+      "name": "來源欄位",
+      "target": "目標欄位",
+      "transform": "大小寫轉換",
+      "type": "型別轉換",
+      "required": "必填",
+      "default": "預設值"
+    },
+    "placeholders": {
+      "name": "例如 user_id",
+      "target": "與來源欄位相同",
+      "default": "回退值（JSON 或字串）"
+    },
+    "sources": {
+      "query": "查詢參數",
+      "path": "路徑參數",
+      "body": "請求主體",
+      "header": "請求標頭"
+    },
+    "transforms": {
+      "none": "無",
+      "camel_case": "駝峰式 (camelCase)",
+      "snake_case": "底線式 (snake_case)",
+      "kebab_case": "短橫線式 (kebab-case)",
+      "upper_case": "全大寫",
+      "lower_case": "全小寫",
+      "upper_first": "首字母大寫"
+    },
+    "types": {
+      "string": "字串",
+      "integer": "整數",
+      "float": "浮點數",
+      "boolean": "布林值",
+      "json": "JSON"
+    }
   }
 }

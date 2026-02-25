@@ -2148,7 +2148,8 @@
       "allMethods": "ALL",
       "selectedCount": "已选择 {count} 条路由",
       "rateLimitValue": "{rps}/s, burst {burst}",
-      "importInvalidSuffix": "，已跳过 {count} 条无效记录"
+      "importInvalidSuffix": "，已跳过 {count} 条无效记录",
+      "mappingCount": "{count} 个映射"
     },
     "authStrategies": {
       "none": "none",
@@ -2443,5 +2444,49 @@
     "failedToLoad": "加载调优数据失败",
     "failedToApply": "应用推荐失败",
     "noData": "选择函数以查看调优数据"
+  },
+  "paramMapping": {
+    "title": "参数映射",
+    "add": "添加映射",
+    "empty": "尚未配置参数映射。添加映射以提取和转换请求参数。",
+    "required": "必填",
+    "yes": "是",
+    "no": "否",
+    "fields": {
+      "source": "来源",
+      "name": "源字段",
+      "target": "目标字段",
+      "transform": "大小写转换",
+      "type": "类型转换",
+      "required": "必填",
+      "default": "默认值"
+    },
+    "placeholders": {
+      "name": "例如 user_id",
+      "target": "与源字段相同",
+      "default": "回退值（JSON 或字符串）"
+    },
+    "sources": {
+      "query": "查询参数",
+      "path": "路径参数",
+      "body": "请求体",
+      "header": "请求头"
+    },
+    "transforms": {
+      "none": "无",
+      "camel_case": "驼峰式 (camelCase)",
+      "snake_case": "下划线式 (snake_case)",
+      "kebab_case": "短横线式 (kebab-case)",
+      "upper_case": "全大写",
+      "lower_case": "全小写",
+      "upper_first": "首字母大写"
+    },
+    "types": {
+      "string": "字符串",
+      "integer": "整数",
+      "float": "浮点数",
+      "boolean": "布尔值",
+      "json": "JSON"
+    }
   }
 }

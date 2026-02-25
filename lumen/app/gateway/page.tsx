@@ -21,6 +21,8 @@ import {
 } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { ErrorBanner } from "@/components/ui/error-banner"
+import { ParamMappingEditor } from "@/components/param-mapping-editor"
+import type { ParamMapping } from "@/lib/types"
 import {
   functionsApi,
   gatewayApi,
@@ -230,6 +232,7 @@ export default function GatewayPage() {
   const [createEnabled, setCreateEnabled] = useState(true)
   const [createRps, setCreateRps] = useState("")
   const [createBurst, setCreateBurst] = useState("")
+  const [createParamMapping, setCreateParamMapping] = useState<ParamMapping[]>([])
 
   const [editDomain, setEditDomain] = useState("")
   const [editPath, setEditPath] = useState("")
@@ -239,6 +242,7 @@ export default function GatewayPage() {
   const [editEnabled, setEditEnabled] = useState(true)
   const [editRps, setEditRps] = useState("")
   const [editBurst, setEditBurst] = useState("")
+  const [editParamMapping, setEditParamMapping] = useState<ParamMapping[]>([])
 
   // Domain filtering is now handled server-side via the API call
 
@@ -317,6 +321,7 @@ export default function GatewayPage() {
     setCreateEnabled(true)
     setCreateRps("")
     setCreateBurst("")
+    setCreateParamMapping([])
   }
 
   const setEditFromRoute = (route: GatewayRoute) => {
@@ -329,6 +334,7 @@ export default function GatewayPage() {
     setEditEnabled(Boolean(route.enabled))
     setEditRps(route.rate_limit?.requests_per_second ? String(route.rate_limit.requests_per_second) : "")
     setEditBurst(route.rate_limit?.burst_size ? String(route.rate_limit.burst_size) : "")
+    setEditParamMapping(route.param_mapping || [])
   }
 
   const buildRateLimit = (rpsRaw: string, burstRaw: string) => {
@@ -393,6 +399,7 @@ export default function GatewayPage() {
       function_name: createFunctionName,
       auth_strategy: createAuth,
       enabled: createEnabled,
+      param_mapping: createParamMapping.length > 0 ? createParamMapping : undefined,
       rate_limit: buildRateLimit(createRps, createBurst),
     }
 
@@ -431,6 +438,7 @@ export default function GatewayPage() {
       function_name: editFunctionName,
       auth_strategy: editAuth,
       enabled: editEnabled,
+      param_mapping: editParamMapping,
       rate_limit: buildRateLimit(editRps, editBurst),
     }
 
@@ -916,6 +924,11 @@ export default function GatewayPage() {
                     />
                   </div>
                 </div>
+                <ParamMappingEditor
+                  value={createParamMapping}
+                  onChange={setCreateParamMapping}
+                  disabled={busy}
+                />
                 <div className="flex justify-end gap-2">
                   <Button
                     variant="outline"
@@ -1099,6 +1112,11 @@ export default function GatewayPage() {
                           burst: route.rate_limit.burst_size,
                         })
                         : "-"}
+                      {route.param_mapping && route.param_mapping.length > 0 && (
+                        <Badge variant="secondary" className="ml-2 text-[10px] border-0 bg-primary/10 text-primary">
+                          {g("labels.mappingCount", { count: route.param_mapping.length })}
+                        </Badge>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <Badge
@@ -1299,6 +1317,11 @@ export default function GatewayPage() {
               />
             </div>
           </div>
+          <ParamMappingEditor
+            value={editParamMapping}
+            onChange={setEditParamMapping}
+            disabled={busy}
+          />
           <div className="flex justify-end gap-2">
             <Button
               variant="outline"

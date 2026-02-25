@@ -2143,7 +2143,8 @@
       "allMethods": "ALL",
       "selectedCount": "Selected {count} route(s)",
       "rateLimitValue": "{rps}/s, burst {burst}",
-      "importInvalidSuffix": ", skipped {count} invalid record(s)"
+      "importInvalidSuffix": ", skipped {count} invalid record(s)",
+      "mappingCount": "{count} マッピング"
     },
     "authStrategies": {
       "none": "none",
@@ -2438,5 +2439,49 @@
     "failedToLoad": "チューニングデータの読み込みに失敗しました",
     "failedToApply": "推奨の適用に失敗しました",
     "noData": "関数を選択してチューニングデータを表示"
+  },
+  "paramMapping": {
+    "title": "パラメータマッピング",
+    "add": "マッピング追加",
+    "empty": "パラメータマッピングが設定されていません。マッピングを追加してリクエストパラメータを変換します。",
+    "required": "必須",
+    "yes": "はい",
+    "no": "いいえ",
+    "fields": {
+      "source": "ソース",
+      "name": "ソースフィールド",
+      "target": "ターゲットフィールド",
+      "transform": "ケース変換",
+      "type": "型変換",
+      "required": "必須",
+      "default": "デフォルト値"
+    },
+    "placeholders": {
+      "name": "例: user_id",
+      "target": "ソースと同じ",
+      "default": "フォールバック値（JSONまたは文字列）"
+    },
+    "sources": {
+      "query": "クエリ",
+      "path": "パス",
+      "body": "ボディ",
+      "header": "ヘッダー"
+    },
+    "transforms": {
+      "none": "なし",
+      "camel_case": "キャメルケース (camelCase)",
+      "snake_case": "スネークケース (snake_case)",
+      "kebab_case": "ケバブケース (kebab-case)",
+      "upper_case": "大文字",
+      "lower_case": "小文字",
+      "upper_first": "先頭大文字"
+    },
+    "types": {
+      "string": "文字列",
+      "integer": "整数",
+      "float": "浮動小数点",
+      "boolean": "ブール値",
+      "json": "JSON"
+    }
   }
 }

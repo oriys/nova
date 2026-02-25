@@ -2143,7 +2143,8 @@
       "allMethods": "ALL",
       "selectedCount": "Selected {count} route(s)",
       "rateLimitValue": "{rps}/s, burst {burst}",
-      "importInvalidSuffix": ", skipped {count} invalid record(s)"
+      "importInvalidSuffix": ", skipped {count} invalid record(s)",
+      "mappingCount": "{count} mappage(s)"
     },
     "authStrategies": {
       "none": "none",
@@ -2438,5 +2439,49 @@
     "failedToLoad": "Échec du chargement des données de réglage",
     "failedToApply": "Échec de l'application de la recommandation",
     "noData": "Sélectionnez une fonction pour voir les données de réglage"
+  },
+  "paramMapping": {
+    "title": "Mappage des paramètres",
+    "add": "Ajouter un mappage",
+    "empty": "Aucun mappage de paramètre configuré. Ajoutez des mappages pour extraire et transformer les paramètres de requête.",
+    "required": "requis",
+    "yes": "Oui",
+    "no": "Non",
+    "fields": {
+      "source": "Source",
+      "name": "Champ source",
+      "target": "Champ cible",
+      "transform": "Transformation de casse",
+      "type": "Conversion de type",
+      "required": "Requis",
+      "default": "Valeur par défaut"
+    },
+    "placeholders": {
+      "name": "ex. user_id",
+      "target": "identique à la source",
+      "default": "valeur de repli (JSON ou chaîne)"
+    },
+    "sources": {
+      "query": "Requête",
+      "path": "Chemin",
+      "body": "Corps",
+      "header": "En-tête"
+    },
+    "transforms": {
+      "none": "Aucune",
+      "camel_case": "camelCase",
+      "snake_case": "snake_case",
+      "kebab_case": "kebab-case",
+      "upper_case": "MAJUSCULES",
+      "lower_case": "minuscules",
+      "upper_first": "Première lettre majuscule"
+    },
+    "types": {
+      "string": "Chaîne",
+      "integer": "Entier",
+      "float": "Flottant",
+      "boolean": "Booléen",
+      "json": "JSON"
+    }
   }
 }

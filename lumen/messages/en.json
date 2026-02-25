@@ -2148,7 +2148,8 @@
       "allMethods": "ALL",
       "selectedCount": "Selected {count} route(s)",
       "rateLimitValue": "{rps}/s, burst {burst}",
-      "importInvalidSuffix": ", skipped {count} invalid record(s)"
+      "importInvalidSuffix": ", skipped {count} invalid record(s)",
+      "mappingCount": "{count} mapping(s)"
     },
     "authStrategies": {
       "none": "none",
@@ -2443,5 +2444,49 @@
     "failedToLoad": "Failed to load tuning data",
     "failedToApply": "Failed to apply recommendation",
     "noData": "Select a function to view tuning data"
+  },
+  "paramMapping": {
+    "title": "Parameter Mapping",
+    "add": "Add Mapping",
+    "empty": "No parameter mappings configured. Add mappings to extract and transform request parameters.",
+    "required": "required",
+    "yes": "Yes",
+    "no": "No",
+    "fields": {
+      "source": "Source",
+      "name": "Source Field",
+      "target": "Target Field",
+      "transform": "Case Transform",
+      "type": "Type Coercion",
+      "required": "Required",
+      "default": "Default Value"
+    },
+    "placeholders": {
+      "name": "e.g. user_id",
+      "target": "same as source",
+      "default": "fallback value (JSON or string)"
+    },
+    "sources": {
+      "query": "Query",
+      "path": "Path",
+      "body": "Body",
+      "header": "Header"
+    },
+    "transforms": {
+      "none": "None",
+      "camel_case": "camelCase",
+      "snake_case": "snake_case",
+      "kebab_case": "kebab-case",
+      "upper_case": "UPPER CASE",
+      "lower_case": "lower case",
+      "upper_first": "Upper first"
+    },
+    "types": {
+      "string": "String",
+      "integer": "Integer",
+      "float": "Float",
+      "boolean": "Boolean",
+      "json": "JSON"
+    }
   }
 }
