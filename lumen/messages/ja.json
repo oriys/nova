@@ -472,7 +472,7 @@
     "actions": "操作"
   },
   "header": {
-    "searchPlaceholder": "関数を検索…",
+    "searchPlaceholder": "名前・ハンドラ・コード・ドキュメントで検索…",
     "searching": "検索中…",
     "noMatchingFunctions": "一致する関数がありません",
     "systemHealth": "システムヘルス",
@@ -611,7 +611,7 @@
   },
   "functionsPage": {
     "dismiss": "非表示",
-    "searchPlaceholder": "関数を検索…",
+    "searchPlaceholder": "名前・ハンドラ・コード・ドキュメントで検索…",
     "statusPlaceholder": "ステータス",
     "runtimePlaceholder": "ランタイム",
     "allStatus": "すべてのステータス",

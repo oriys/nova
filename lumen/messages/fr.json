@@ -472,7 +472,7 @@
     "actions": "Actions"
   },
   "header": {
-    "searchPlaceholder": "Rechercher des fonctions…",
+    "searchPlaceholder": "Rechercher par nom, handler, code, docs…",
     "searching": "Recherche en cours…",
     "noMatchingFunctions": "Aucune fonction correspondante",
     "systemHealth": "Santé du système",
@@ -611,7 +611,7 @@
   },
   "functionsPage": {
     "dismiss": "Ignorer",
-    "searchPlaceholder": "Rechercher des fonctions…",
+    "searchPlaceholder": "Rechercher par nom, handler, code, docs…",
     "statusPlaceholder": "Statut",
     "runtimePlaceholder": "Environnement",
     "allStatus": "Tous les statuts",

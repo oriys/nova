@@ -285,13 +285,20 @@ func (s *PostgresStore) SearchFunctions(ctx context.Context, query string, limit
 	if offset < 0 {
 		offset = 0
 	}
+	pattern := "%" + query + "%"
 	rows, err := s.pool.Query(ctx, `
-		SELECT data
-		FROM functions
-		WHERE tenant_id = $1 AND namespace = $2 AND name ILIKE $3
-		ORDER BY name
+		SELECT f.data
+		FROM functions f
+		LEFT JOIN function_code fc ON fc.function_id = f.id
+		LEFT JOIN function_docs fd ON fd.function_name = f.name
+		WHERE f.tenant_id = $1 AND f.namespace = $2
+		  AND (f.name ILIKE $3
+		       OR f.data->>'handler' ILIKE $3
+		       OR fc.source_code ILIKE $3
+		       OR fd.doc_content::text ILIKE $3)
+		ORDER BY f.name
 		LIMIT $4 OFFSET $5
-	`, scope.TenantID, scope.Namespace, "%"+query+"%", limit, offset)
+	`, scope.TenantID, scope.Namespace, pattern, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("search functions: %w", err)
 	}
@@ -342,13 +349,18 @@ func (s *PostgresStore) ListFunctionsFiltered(ctx context.Context, query, runtim
 	runtimeExact := strings.TrimSpace(runtime)
 
 	rows, err := s.pool.Query(ctx, `
-		SELECT data
-		FROM functions
-		WHERE tenant_id = $1
-		  AND namespace = $2
-		  AND ($3 = '' OR name ILIKE $3)
-		  AND ($4 = '' OR LOWER(data->>'runtime') = LOWER($4))
-		ORDER BY name
+		SELECT f.data
+		FROM functions f
+		LEFT JOIN function_code fc ON fc.function_id = f.id
+		LEFT JOIN function_docs fd ON fd.function_name = f.name
+		WHERE f.tenant_id = $1
+		  AND f.namespace = $2
+		  AND ($3 = '' OR f.name ILIKE $3
+		       OR f.data->>'handler' ILIKE $3
+		       OR fc.source_code ILIKE $3
+		       OR fd.doc_content::text ILIKE $3)
+		  AND ($4 = '' OR LOWER(f.data->>'runtime') = LOWER($4))
+		ORDER BY f.name
 		LIMIT $5 OFFSET $6
 	`, scope.TenantID, scope.Namespace, queryPattern, runtimeExact, limit, offset)
 	if err != nil {
@@ -388,11 +400,16 @@ func (s *PostgresStore) CountFunctionsFiltered(ctx context.Context, query, runti
 	var total int64
 	if err := s.pool.QueryRow(ctx, `
 		SELECT COUNT(*)
-		FROM functions
-		WHERE tenant_id = $1
-		  AND namespace = $2
-		  AND ($3 = '' OR name ILIKE $3)
-		  AND ($4 = '' OR LOWER(data->>'runtime') = LOWER($4))
+		FROM functions f
+		LEFT JOIN function_code fc ON fc.function_id = f.id
+		LEFT JOIN function_docs fd ON fd.function_name = f.name
+		WHERE f.tenant_id = $1
+		  AND f.namespace = $2
+		  AND ($3 = '' OR f.name ILIKE $3
+		       OR f.data->>'handler' ILIKE $3
+		       OR fc.source_code ILIKE $3
+		       OR fd.doc_content::text ILIKE $3)
+		  AND ($4 = '' OR LOWER(f.data->>'runtime') = LOWER($4))
 	`, scope.TenantID, scope.Namespace, queryPattern, runtimeExact).Scan(&total); err != nil {
 		return 0, fmt.Errorf("count functions filtered: %w", err)
 	}

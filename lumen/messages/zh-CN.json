@@ -472,7 +472,7 @@
     "actions": "操作"
   },
   "header": {
-    "searchPlaceholder": "搜索函数…",
+    "searchPlaceholder": "按名称、处理器、代码、文档搜索…",
     "searching": "搜索中…",
     "noMatchingFunctions": "没有匹配的函数",
     "systemHealth": "系统健康",
@@ -611,7 +611,7 @@
   },
   "functionsPage": {
     "dismiss": "忽略",
-    "searchPlaceholder": "搜索函数…",
+    "searchPlaceholder": "按名称、处理器、代码、文档搜索…",
     "statusPlaceholder": "状态",
     "runtimePlaceholder": "运行时",
     "allStatus": "所有状态",

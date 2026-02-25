@@ -472,7 +472,7 @@
     "actions": "操作"
   },
   "header": {
-    "searchPlaceholder": "搜尋函數…",
+    "searchPlaceholder": "按名稱、處理器、代碼、文檔搜尋…",
     "searching": "搜尋中…",
     "noMatchingFunctions": "沒有匹配的函數",
     "systemHealth": "系統健康",
@@ -611,7 +611,7 @@
   },
   "functionsPage": {
     "dismiss": "忽略",
-    "searchPlaceholder": "搜尋函數…",
+    "searchPlaceholder": "按名稱、處理器、代碼、文檔搜尋…",
     "statusPlaceholder": "狀態",
     "runtimePlaceholder": "執行環境",
     "allStatus": "所有狀態",
