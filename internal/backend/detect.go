@@ -39,6 +39,19 @@ func DetectDefaultBackend() domain.BackendType {
 	if _, err := exec.LookPath("docker"); err == nil {
 		return domain.BackendDocker
 	}
+	// Fall back to other available backends
+	if runtime.GOOS == "darwin" {
+		if _, err := exec.LookPath("krunvm"); err == nil {
+			return domain.BackendLibKrun
+		}
+	} else if runtime.GOOS == "linux" {
+		if _, err := exec.LookPath("krun"); err == nil {
+			return domain.BackendLibKrun
+		}
+	}
+	if info := detectKubernetes(); info.Available {
+		return domain.BackendKubernetes
+	}
 	if _, err := exec.LookPath("wasmtime"); err == nil {
 		return domain.BackendWasm
 	}
