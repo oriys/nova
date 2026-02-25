@@ -237,6 +237,21 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		payload = injectPathParams(payload, pathParams)
 	}
 
+	// Apply parameter mapping rules (query, path, body, header → payload)
+	if len(route.ParamMapping) > 0 {
+		mapped, err := applyParamMappings(payload, r, pathParams, route.ParamMapping)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":   "param_mapping_failed",
+				"message": err.Error(),
+			})
+			return
+		}
+		payload = mapped
+	}
+
 	// Execute function
 	resp, err := g.exec.Invoke(r.Context(), route.FunctionName, payload)
 	if err != nil {

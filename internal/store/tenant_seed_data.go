@@ -324,14 +324,21 @@ func seedTenantSampleGatewayRoutes(ctx context.Context, exec dbExecer, tenantID 
 		methods      []string
 		functionName string
 		description  string
+		mapping      []domain.ParamMapping
 	}
 
 	// Use /t/<tenantID>/... paths to avoid cross-tenant collisions
 	prefix := "/t/" + tenantID
 	routes := []routeSpec{
-		{prefix + "/hello", []string{"GET", "POST"}, "hello-python", "Greeting endpoint"},
-		{prefix + "/fibonacci", []string{"POST"}, "fibonacci", "Compute Fibonacci numbers"},
-		{prefix + "/transform", []string{"POST"}, "json-transform", "JSON data transformations"},
+		{prefix + "/hello", []string{"GET", "POST"}, "hello-python", "Greeting endpoint", nil},
+		{prefix + "/fibonacci", []string{"GET", "POST"}, "fibonacci", "Compute Fibonacci numbers", []domain.ParamMapping{
+			{Source: domain.ParamSourceQuery, Name: "n", Target: "n", Type: domain.ParamTypeInteger},
+		}},
+		{prefix + "/transform", []string{"POST"}, "json-transform", "JSON data transformations", []domain.ParamMapping{
+			{Source: domain.ParamSourceBody, Name: "user_name", Target: "userName", Transform: domain.ParamTransformCamelCase},
+			{Source: domain.ParamSourceHeader, Name: "X-Request-ID", Target: "requestId"},
+			{Source: domain.ParamSourceQuery, Name: "format", Target: "outputFormat", Default: "json"},
+		}},
 	}
 
 	for _, r := range routes {
@@ -341,6 +348,7 @@ func seedTenantSampleGatewayRoutes(ctx context.Context, exec dbExecer, tenantID 
 			Methods:      r.methods,
 			FunctionName: r.functionName,
 			AuthStrategy: "none",
+			ParamMapping: r.mapping,
 			RateLimit: &domain.RouteRateLimit{
 				RequestsPerSecond: 100,
 				BurstSize:         200,

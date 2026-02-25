@@ -61,10 +61,35 @@ export interface GatewayRoute {
   auth_strategy: string;
   auth_config?: Record<string, string>;
   request_schema?: unknown;
+  param_mapping?: ParamMapping[];
   rate_limit?: RouteRateLimit;
+  cors?: CORSConfig;
   enabled: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export type ParamSource = "query" | "path" | "body" | "header";
+export type ParamTransform = "" | "camel_case" | "snake_case" | "upper_case" | "lower_case" | "upper_first" | "kebab_case";
+export type ParamType = "" | "integer" | "float" | "boolean" | "json";
+
+export interface ParamMapping {
+  source: ParamSource;
+  name: string;
+  target?: string;
+  transform?: ParamTransform;
+  type?: ParamType;
+  default?: unknown;
+  required?: boolean;
+}
+
+export interface CORSConfig {
+  allow_origins?: string[];
+  allow_methods?: string[];
+  allow_headers?: string[];
+  expose_headers?: string[];
+  allow_credentials?: boolean;
+  max_age?: number;
 }
 
 export interface RouteRateLimit {
