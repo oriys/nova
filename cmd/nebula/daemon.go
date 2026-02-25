@@ -26,8 +26,10 @@ import (
 	"github.com/oriys/nova/internal/queue"
 	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/store"
+	"github.com/oriys/nova/internal/triggers"
 	"github.com/oriys/nova/internal/wasm"
 	"github.com/oriys/nova/internal/workflow"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 )
@@ -265,6 +267,40 @@ func daemonCmd() *cobra.Command {
 			outboxRelay.Start()
 			defer outboxRelay.Stop()
 
+			// Trigger manager: load persisted triggers and start connectors.
+			// Requires a local Executor (not just Invoker) because the trigger
+			// manager dispatches via executor.Invoke directly.
+			if localExec != nil {
+				triggerMgr := triggers.NewManager(s, localExec)
+				storedTriggers, err := s.ListTriggers(context.Background(), 1000, 0)
+				if err != nil {
+					logging.Op().Warn("failed to load triggers from store", "error", err)
+				} else {
+					for _, rec := range storedTriggers {
+						t := &triggers.Trigger{
+							ID:           rec.ID,
+							TenantID:     rec.TenantID,
+							Namespace:    rec.Namespace,
+							Name:         rec.Name,
+							Type:         triggers.TriggerType(rec.Type),
+							FunctionID:   rec.FunctionID,
+							FunctionName: rec.FunctionName,
+							Enabled:      rec.Enabled,
+							Config:       rec.Config,
+							CreatedAt:    rec.CreatedAt,
+							UpdatedAt:    rec.UpdatedAt,
+						}
+						if err := triggerMgr.RegisterTrigger(t); err != nil {
+							logging.Op().Warn("failed to register trigger", "trigger", t.Name, "error", err)
+						}
+					}
+					if len(storedTriggers) > 0 {
+						logging.Op().Info("loaded triggers from store", "count", len(storedTriggers))
+					}
+				}
+				defer triggerMgr.Shutdown()
+			}
+
 			var httpServer *http.Server
 			if listenAddr != "" {
 				mux := http.NewServeMux()
@@ -273,6 +309,9 @@ func daemonCmd() *cobra.Command {
 					w.WriteHeader(http.StatusOK)
 					_, _ = w.Write([]byte(`{"status":"ok","service":"nebula"}`))
 				})
+				if cfg.Observability.Metrics.Enabled {
+					mux.Handle("/metrics", promhttp.Handler())
+				}
 				httpServer = &http.Server{
 					Addr:    listenAddr,
 					Handler: mux,

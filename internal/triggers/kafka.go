@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/oriys/nova/internal/logging"
+	"github.com/segmentio/kafka-go"
 )
 
 // KafkaConnector consumes messages from a Kafka topic and triggers functions.
@@ -75,12 +76,16 @@ func (k *KafkaConnector) Start(ctx context.Context) error {
 func (k *KafkaConnector) consumeLoop(ctx context.Context) {
 	defer close(k.doneCh)
 
-	// Poll-based consumer simulation — in production this would use a real
-	// Kafka client library (e.g. confluent-kafka-go or segmentio/kafka-go).
-	// The connector structure is wired so that swapping in a real client
-	// requires only changing this loop body.
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:        k.brokers,
+		Topic:          k.topic,
+		GroupID:        k.group,
+		MinBytes:       1,
+		MaxBytes:       10e6, // 10MB
+		CommitInterval: time.Second,
+		StartOffset:    kafka.LastOffset,
+	})
+	defer reader.Close()
 
 	for {
 		select {
@@ -88,9 +93,40 @@ func (k *KafkaConnector) consumeLoop(ctx context.Context) {
 			return
 		case <-k.stopCh:
 			return
-		case <-ticker.C:
-			// Placeholder: a real implementation would call consumer.ReadMessage()
-			// and dispatch each message to the handler.
+		default:
+		}
+
+		readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		msg, err := reader.ReadMessage(readCtx)
+		cancel()
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			// Timeout is normal when there are no new messages
+			if readCtx.Err() == context.DeadlineExceeded {
+				continue
+			}
+			logging.Op().Warn("kafka: read error", "topic", k.topic, "error", err)
+			k.mu.Lock()
+			k.healthy = false
+			k.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return
+			case <-k.stopCh:
+				return
+			case <-time.After(2 * time.Second):
+			}
+			k.mu.Lock()
+			k.healthy = true
+			k.mu.Unlock()
+			continue
+		}
+
+		if err := k.dispatchMessage(ctx, msg.Key, msg.Value, msg.Offset, int32(msg.Partition)); err != nil {
+			logging.Op().Warn("kafka: dispatch failed",
+				"topic", k.topic, "offset", msg.Offset, "error", err)
 		}
 	}
 }

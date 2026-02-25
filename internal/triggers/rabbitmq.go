@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/oriys/nova/internal/logging"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 // RabbitMQConnector consumes messages from a RabbitMQ queue and triggers functions.
@@ -75,20 +76,88 @@ func (r *RabbitMQConnector) Start(ctx context.Context) error {
 func (r *RabbitMQConnector) consumeLoop(ctx context.Context) {
 	defer close(r.doneCh)
 
-	// Poll-based consumer placeholder — in production this would use
-	// amqp091-go to consume from the queue. The connector structure
-	// allows swapping in a real AMQP client by changing this loop body.
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-r.stopCh:
 			return
-		case <-ticker.C:
-			// Placeholder: a real implementation would call channel.Consume()
+		default:
+		}
+
+		if err := r.consumeOnce(ctx); err != nil {
+			logging.Op().Warn("rabbitmq: connection error, reconnecting",
+				"queue", r.queue, "error", err)
+			r.mu.Lock()
+			r.healthy = false
+			r.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return
+			case <-r.stopCh:
+				return
+			case <-time.After(3 * time.Second):
+			}
+			r.mu.Lock()
+			r.healthy = true
+			r.mu.Unlock()
+		}
+	}
+}
+
+// consumeOnce establishes one AMQP connection and consumes until error or stop.
+func (r *RabbitMQConnector) consumeOnce(ctx context.Context) error {
+	conn, err := amqp.Dial(r.url)
+	if err != nil {
+		return fmt.Errorf("dial: %w", err)
+	}
+	defer conn.Close()
+
+	ch, err := conn.Channel()
+	if err != nil {
+		return fmt.Errorf("channel: %w", err)
+	}
+	defer ch.Close()
+
+	// Ensure queue exists
+	_, err = ch.QueueDeclare(r.queue, true, false, false, false, nil)
+	if err != nil {
+		return fmt.Errorf("queue declare: %w", err)
+	}
+
+	if err := ch.Qos(10, 0, false); err != nil {
+		return fmt.Errorf("qos: %w", err)
+	}
+
+	deliveries, err := ch.Consume(r.queue, r.trigger.ID, false, false, false, false, nil)
+	if err != nil {
+		return fmt.Errorf("consume: %w", err)
+	}
+
+	connClosed := conn.NotifyClose(make(chan *amqp.Error, 1))
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-r.stopCh:
+			return nil
+		case amqpErr := <-connClosed:
+			if amqpErr != nil {
+				return fmt.Errorf("connection closed: %s", amqpErr.Reason)
+			}
+			return fmt.Errorf("connection closed")
+		case d, ok := <-deliveries:
+			if !ok {
+				return fmt.Errorf("delivery channel closed")
+			}
+			if err := r.dispatchMessage(ctx, d.Body, d.RoutingKey, d.DeliveryTag); err != nil {
+				logging.Op().Warn("rabbitmq: dispatch failed",
+					"queue", r.queue, "delivery_tag", d.DeliveryTag, "error", err)
+				_ = d.Nack(false, true) // requeue on failure
+				continue
+			}
+			_ = d.Ack(false)
 		}
 	}
 }

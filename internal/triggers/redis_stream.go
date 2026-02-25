@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/oriys/nova/internal/logging"
+	"github.com/redis/go-redis/v9"
 )
 
 // RedisStreamConnector consumes messages from a Redis Stream and triggers functions.
@@ -82,11 +84,15 @@ func (rs *RedisStreamConnector) Start(ctx context.Context) error {
 func (rs *RedisStreamConnector) consumeLoop(ctx context.Context) {
 	defer close(rs.doneCh)
 
-	// Poll-based consumer placeholder — in production this would use
-	// go-redis XREADGROUP. The connector structure allows swapping in
-	// a real Redis client by changing this loop body.
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
+	client := redis.NewClient(&redis.Options{Addr: rs.addr})
+	defer client.Close()
+
+	// Create consumer group if it doesn't exist (MKSTREAM creates the stream too)
+	err := client.XGroupCreateMkStream(ctx, rs.stream, rs.group, "0").Err()
+	if err != nil && !strings.Contains(err.Error(), "BUSYGROUP") {
+		logging.Op().Warn("redis stream: failed to create consumer group",
+			"stream", rs.stream, "group", rs.group, "error", err)
+	}
 
 	for {
 		select {
@@ -94,9 +100,50 @@ func (rs *RedisStreamConnector) consumeLoop(ctx context.Context) {
 			return
 		case <-rs.stopCh:
 			return
-		case <-ticker.C:
-			// Placeholder: a real implementation would call
-			// client.XReadGroup() and dispatch each message.
+		default:
+		}
+
+		streams, err := client.XReadGroup(ctx, &redis.XReadGroupArgs{
+			Group:    rs.group,
+			Consumer: rs.consumer,
+			Streams:  []string{rs.stream, ">"},
+			Count:    10,
+			Block:    time.Second,
+		}).Result()
+		if err != nil {
+			if err == redis.Nil || ctx.Err() != nil {
+				continue
+			}
+			logging.Op().Warn("redis stream: read error", "stream", rs.stream, "error", err)
+			rs.mu.Lock()
+			rs.healthy = false
+			rs.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return
+			case <-rs.stopCh:
+				return
+			case <-time.After(2 * time.Second):
+			}
+			rs.mu.Lock()
+			rs.healthy = true
+			rs.mu.Unlock()
+			continue
+		}
+
+		for _, stream := range streams {
+			for _, msg := range stream.Messages {
+				values := make(map[string]interface{}, len(msg.Values))
+				for k, v := range msg.Values {
+					values[k] = v
+				}
+				if err := rs.dispatchMessage(ctx, msg.ID, values); err != nil {
+					logging.Op().Warn("redis stream: dispatch failed",
+						"stream", rs.stream, "message_id", msg.ID, "error", err)
+					continue
+				}
+				client.XAck(ctx, rs.stream, rs.group, msg.ID)
+			}
 		}
 	}
 }

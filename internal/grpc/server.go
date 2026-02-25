@@ -46,8 +46,10 @@ func NewServer(s *store.Store, exec *executor.Executor, p *pool.Pool) *Server {
 	localNodeID := strings.TrimSpace(os.Getenv("NOVA_CLUSTER_NODE_ID"))
 	if localNodeID != "" {
 		registry := cluster.NewRegistry(s, cluster.DefaultConfig(localNodeID))
+		go registry.StartHealthChecker(context.Background())
 		scheduler := cluster.NewScheduler(registry, cluster.StrategyLocalityAware)
 		clusterRouter = cluster.NewRouter(registry, scheduler, cluster.NewProxy(3*time.Second), localNodeID)
+		logging.Op().Info("cluster mode enabled", "node_id", localNodeID)
 	}
 
 	mux := http.NewServeMux()

@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/oriys/nova/internal/autoscaler"
 	"github.com/oriys/nova/internal/backend"
 	"github.com/oriys/nova/internal/config"
 	"github.com/oriys/nova/internal/docker"
@@ -23,6 +24,7 @@ import (
 	"github.com/oriys/nova/internal/scheduler"
 	"github.com/oriys/nova/internal/store"
 	"github.com/oriys/nova/internal/wasm"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 )
 
@@ -86,6 +88,7 @@ func daemonCmd() *cobra.Command {
 
 			// Determine the invoker: remote (via Comet gRPC) or local.
 			var invoker executor.Invoker
+			var localPool *pool.Pool
 			if cometAddr != "" {
 				remote, err := executor.NewRemoteInvoker(cometAddr)
 				if err != nil {
@@ -143,6 +146,7 @@ func daemonCmd() *cobra.Command {
 					HealthCheckInterval: cfg.Pool.HealthCheckInterval,
 					MaxPreWarmWorkers:   cfg.Pool.MaxPreWarmWorkers,
 				})
+				localPool = p
 				if fcAdapter != nil {
 					mgr := fcAdapter.Manager()
 					p.SetSnapshotCallback(func(ctx context.Context, vmID, funcID string) error {
@@ -165,9 +169,11 @@ func daemonCmd() *cobra.Command {
 			defer sched.Stop()
 
 			// Start autoscaler (needs pool — only available in local mode)
-			if cfg.AutoScale.Enabled && cometAddr == "" {
-				// Autoscaler requires direct pool access; only in local mode.
-				logging.Op().Info("autoscaler enabled (local mode)")
+			if cfg.AutoScale.Enabled && localPool != nil {
+				as := autoscaler.New(localPool, s, cfg.AutoScale.Interval)
+				as.Start()
+				defer as.Stop()
+				logging.Op().Info("autoscaler started (local mode)")
 			}
 
 			var httpServer *http.Server
@@ -178,6 +184,9 @@ func daemonCmd() *cobra.Command {
 					w.WriteHeader(http.StatusOK)
 					_, _ = w.Write([]byte(`{"status":"ok","service":"corona"}`))
 				})
+				if cfg.Observability.Metrics.Enabled {
+					mux.Handle("/metrics", promhttp.Handler())
+				}
 				httpServer = &http.Server{
 					Addr:    listenAddr,
 					Handler: mux,
