@@ -182,9 +182,13 @@ func (c *CachedMetadataStore) GetFunctionCode(ctx context.Context, funcID string
 	}
 	// Only cache terminal compile states. In multi-instance deployments,
 	// pending/compiling can transition quickly and stale cache values would
-	// block invocation for up to TTL (default 60s) after compilation succeeds.
+	// block invocation for up to TTL seconds after compilation succeeds.
+	// Use a short TTL (3s) to limit staleness in split deployments where
+	// the control plane (Nova) compiles code but the data plane (Comet)
+	// serves invocations from its own independent cache.
 	if fc != nil && isTerminalCompileStatus(fc.CompileStatus) {
-		cachePut(&c.fnCode, funcID, fc, c.ttl)
+		codeTTL := 3 * time.Second
+		cachePut(&c.fnCode, funcID, fc, codeTTL)
 	}
 	return fc, nil
 }
@@ -454,6 +458,10 @@ func (c *CachedMetadataStore) UpdateCompileResult(ctx context.Context, funcID st
 	err := c.MetadataStore.UpdateCompileResult(ctx, funcID, binary, binaryHash, status, compileError)
 	if err == nil {
 		c.fnCode.Delete(funcID)
+		// Also invalidate function metadata cache since CodeHash changes
+		// after compilation (SaveFunction is called separately, but the
+		// cache may still hold stale data in multi-service deployments).
+		c.invalidateFunctionByID(funcID)
 	}
 	return err
 }

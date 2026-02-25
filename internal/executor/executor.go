@@ -240,6 +240,15 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		return nil, err
 	}
 
+	// Sync CodeHash from the authoritative function_code record.
+	// In split deployments (Nova + Comet), the function metadata cache on
+	// the data-plane may lag behind the control-plane by up to TTL seconds
+	// after a compilation completes. The fnCode cache is properly invalidated
+	// by UpdateCompileResult, so codeRecord always reflects the latest state.
+	if codeRecord != nil && codeRecord.BinaryHash != "" && codeRecord.BinaryHash != fn.CodeHash {
+		fn.CodeHash = codeRecord.BinaryHash
+	}
+
 	// Apply runtime config
 	if rtCfg != nil {
 		fn.RuntimeCommand = append([]string(nil), rtCfg.Entrypoint...)
