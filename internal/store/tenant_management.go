@@ -171,6 +171,11 @@ func (s *PostgresStore) CreateTenant(ctx context.Context, tenant *TenantRecord) 
 		return nil, err
 	}
 
+	// Seed starter functions so new tenants can invoke immediately.
+	if err := seedTenantSampleFunctions(ctx, tx, tenantID); err != nil {
+		return nil, err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit tenant create tx: %w", err)
 	}
