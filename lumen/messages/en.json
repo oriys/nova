@@ -2487,6 +2487,11 @@
       "float": "Float",
       "boolean": "Boolean",
       "json": "JSON"
-    }
+    },
+    "modeVisual": "Visual",
+    "modeDsl": "DSL",
+    "dslPlaceholder": "# One mapping per line\n# source.name -> target | transform | type = default !\nquery.user_id -> userId | camel_case | integer\npath.id -> recordId | integer !\nheader.X-Request-ID -> requestId",
+    "dslError": "Line {line}: {message}",
+    "dslHelp": "Syntax: source.name -> target | transform | type = default !\nSources: query, path, body, header\nTransforms: camel_case, snake_case, kebab_case, upper_case, lower_case, upper_first\nTypes: integer, float, boolean, json\nAppend ! to mark as required. Lines starting with # are comments."
   }
 }

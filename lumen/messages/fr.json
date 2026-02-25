@@ -2482,6 +2482,11 @@
       "float": "Flottant",
       "boolean": "Booléen",
       "json": "JSON"
-    }
+    },
+    "modeVisual": "Visuel",
+    "modeDsl": "DSL",
+    "dslPlaceholder": "# Un mappage par ligne\n# source.champ -> cible | transformation | type = défaut !\nquery.user_id -> userId | camel_case | integer\npath.id -> recordId | integer !\nheader.X-Request-ID -> requestId",
+    "dslError": "Ligne {line} : {message}",
+    "dslHelp": "Syntaxe : source.champ -> cible | transformation | type = défaut !\nSources : query, path, body, header\nTransformations : camel_case, snake_case, kebab_case, upper_case, lower_case, upper_first\nTypes : integer, float, boolean, json\nAjoutez ! à la fin pour marquer comme requis. Les lignes commençant par # sont des commentaires."
   }
 }

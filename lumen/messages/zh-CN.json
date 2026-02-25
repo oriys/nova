@@ -2487,6 +2487,11 @@
       "float": "浮点数",
       "boolean": "布尔值",
       "json": "JSON"
-    }
+    },
+    "modeVisual": "可视化",
+    "modeDsl": "DSL",
+    "dslPlaceholder": "# 每行一条映射规则\n# 来源.字段 -> 目标 | 转换 | 类型 = 默认值 !\nquery.user_id -> userId | camel_case | integer\npath.id -> recordId | integer !\nheader.X-Request-ID -> requestId",
+    "dslError": "第 {line} 行：{message}",
+    "dslHelp": "语法：来源.字段 -> 目标 | 转换 | 类型 = 默认值 !\n来源：query, path, body, header\n转换：camel_case, snake_case, kebab_case, upper_case, lower_case, upper_first\n类型：integer, float, boolean, json\n末尾加 ! 表示必填。以 # 开头的行为注释。"
   }
 }

@@ -2482,6 +2482,11 @@
       "float": "浮點數",
       "boolean": "布林值",
       "json": "JSON"
-    }
+    },
+    "modeVisual": "視覺化",
+    "modeDsl": "DSL",
+    "dslPlaceholder": "# 每行一條映射規則\n# 來源.欄位 -> 目標 | 轉換 | 型別 = 預設值 !\nquery.user_id -> userId | camel_case | integer\npath.id -> recordId | integer !\nheader.X-Request-ID -> requestId",
+    "dslError": "第 {line} 行：{message}",
+    "dslHelp": "語法：來源.欄位 -> 目標 | 轉換 | 型別 = 預設值 !\n來源：query, path, body, header\n轉換：camel_case, snake_case, kebab_case, upper_case, lower_case, upper_first\n型別：integer, float, boolean, json\n末尾加 ! 表示必填。以 # 開頭的行為註解。"
   }
 }

@@ -2482,6 +2482,11 @@
       "float": "浮動小数点",
       "boolean": "ブール値",
       "json": "JSON"
-    }
+    },
+    "modeVisual": "ビジュアル",
+    "modeDsl": "DSL",
+    "dslPlaceholder": "# 1行に1つのマッピング\n# ソース.フィールド -> ターゲット | 変換 | 型 = デフォルト !\nquery.user_id -> userId | camel_case | integer\npath.id -> recordId | integer !\nheader.X-Request-ID -> requestId",
+    "dslError": "{line}行目: {message}",
+    "dslHelp": "構文: ソース.フィールド -> ターゲット | 変換 | 型 = デフォルト !\nソース: query, path, body, header\n変換: camel_case, snake_case, kebab_case, upper_case, lower_case, upper_first\n型: integer, float, boolean, json\n末尾に ! を付けると必須。# で始まる行はコメント。"
   }
 }
