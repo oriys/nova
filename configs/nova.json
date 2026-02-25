@@ -12,12 +12,19 @@
     "vsock_dir": "/tmp/nova/vsock",
     "log_dir": "/tmp/nova/logs"
   },
+  "libkrun": {
+    "code_dir": "/tmp/nova/libkrun-code",
+    "image_prefix": "localhost:5555/nova-runtime-"
+  },
   "docker": {
     "code_dir": "/tmp/nova/code",
     "image_prefix": "nova-runtime"
   },
   "pool": {
-    "idle_ttl": 60000000000
+    "idle_ttl": 120000000000
+  },
+  "runtime_pool": {
+    "enabled": false
   },
   "gateway": {
     "enabled": true

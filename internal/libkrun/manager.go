@@ -31,6 +31,7 @@ type Manager struct {
 	vms      map[string]*backend.VM
 	mu       sync.RWMutex
 	nextPort int32
+	useMacOS bool // true = use krunvm (macOS), false = use krun (Linux)
 }
 
 // NewManager creates a new libkrun backend manager.
@@ -43,6 +44,7 @@ func NewManager(cfg *Config) (*Manager, error) {
 		config:   cfg,
 		vms:      make(map[string]*backend.VM),
 		nextPort: int32(cfg.PortRangeMin),
+		useMacOS: UseKrunVM(),
 	}, nil
 }
 
@@ -160,8 +162,17 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 	return vm, nil
 }
 
-// startVM launches the libkrun microVM process and waits for the agent.
+// startVM launches a libkrun microVM process and waits for the agent.
+// Dispatches to krun (Linux) or krunvm (macOS) based on the platform.
 func (m *Manager) startVM(ctx context.Context, fn *domain.Function, vmID string, port int, codeDir string) (*backend.VM, error) {
+	if m.useMacOS {
+		return m.startVMKrunVM(ctx, fn, vmID, port, codeDir)
+	}
+	return m.startVMKrun(ctx, fn, vmID, port, codeDir)
+}
+
+// startVMKrun launches a microVM via the Linux krun binary (ext4 rootfs).
+func (m *Manager) startVMKrun(ctx context.Context, fn *domain.Function, vmID string, port int, codeDir string) (*backend.VM, error) {
 	rootfs := filepath.Join(m.config.RootfsDir, imageForRuntime(fn.Runtime))
 
 	// Build krun command arguments.
@@ -250,6 +261,128 @@ func waitForAgent(addr string, timeout time.Duration) error {
 	return fmt.Errorf("timeout waiting for agent on %s", addr)
 }
 
+// ociImageForRuntime returns the OCI image reference for a runtime,
+// used by the krunvm (macOS) path.
+func (m *Manager) ociImageForRuntime(rt domain.Runtime) string {
+	r := string(rt)
+	base := "base"
+	switch {
+	case r == string(domain.RuntimePython) || strings.HasPrefix(r, "python"):
+		base = "python"
+	case r == string(domain.RuntimeNode) || strings.HasPrefix(r, "node"):
+		base = "node"
+	case r == string(domain.RuntimeGo) || strings.HasPrefix(r, "go"):
+		base = "base"
+	case r == string(domain.RuntimeRust):
+		base = "base"
+	case r == string(domain.RuntimeRuby) || strings.HasPrefix(r, "ruby"):
+		base = "ruby"
+	case r == string(domain.RuntimeJava) || strings.HasPrefix(r, "java") ||
+		r == string(domain.RuntimeKotlin) || r == string(domain.RuntimeScala):
+		base = "java"
+	case r == string(domain.RuntimePHP) || strings.HasPrefix(r, "php"):
+		base = "php"
+	case r == string(domain.RuntimeDeno) || strings.HasPrefix(r, "deno"):
+		base = "deno"
+	case r == string(domain.RuntimeBun) || strings.HasPrefix(r, "bun"):
+		base = "bun"
+	case r == string(domain.RuntimeLua):
+		base = "lua"
+	case r == string(domain.RuntimeWasm) || strings.HasPrefix(r, "wasm"):
+		base = "wasm"
+	}
+	return m.config.ImagePrefix + base + ":latest"
+}
+
+// krunvmName returns a deterministic krunvm VM name for a VM ID.
+func krunvmName(vmID string) string {
+	return "nova-" + vmID
+}
+
+// startVMKrunVM launches a microVM via krunvm (macOS / Apple Virtualization).
+// krunvm create: registers a VM from an OCI image with port/volume mapping.
+// krunvm start: runs the agent inside the VM (blocking in a goroutine).
+func (m *Manager) startVMKrunVM(ctx context.Context, fn *domain.Function, vmID string, port int, codeDir string) (*backend.VM, error) {
+	image := m.ociImageForRuntime(fn.Runtime)
+	name := krunvmName(vmID)
+
+	// Step 1: krunvm create
+	mem := 256
+	if fn.MemoryMB > 0 {
+		mem = fn.MemoryMB
+	}
+	createArgs := []string{
+		"create", image,
+		"--name", name,
+		"--cpus", "1",
+		"--mem", fmt.Sprintf("%d", mem),
+		"--port", fmt.Sprintf("%d:%d", port, agentPort),
+		"--volume", fmt.Sprintf("%s:/code", codeDir),
+	}
+
+	logging.Op().Info("creating krunvm VM", "vmID", vmID, "image", image, "name", name, "port", port, "codeDir", codeDir)
+	logging.Op().Debug("krunvm create args", "args", createArgs)
+
+	createCmd := exec.CommandContext(ctx, "krunvm", createArgs...)
+	createOut, err := createCmd.CombinedOutput()
+	logging.Op().Debug("krunvm create result", "output", string(createOut), "err", err)
+	if err != nil {
+		return nil, fmt.Errorf("krunvm create failed: %s: %w", string(createOut), err)
+	}
+
+	// Step 2: krunvm start (runs in background goroutine, blocks until VM exits)
+	startArgs := []string{
+		"start", name,
+		"--env", "NOVA_AGENT_MODE=tcp",
+		"--env", "NOVA_SKIP_MOUNT=true",
+	}
+	for k, v := range fn.EnvVars {
+		startArgs = append(startArgs, "--env", fmt.Sprintf("%s=%s", k, v))
+	}
+	startArgs = append(startArgs, "--", "/usr/local/bin/nova-agent")
+
+	logging.Op().Debug("krunvm start args", "args", startArgs)
+
+	startCmd := exec.CommandContext(ctx, "krunvm", startArgs...)
+	startCmd.Stdout = os.Stdout
+	startCmd.Stderr = os.Stderr
+	startCmd.Stdin = nil
+
+	if err := startCmd.Start(); err != nil {
+		// Clean up the created VM
+		exec.Command("krunvm", "delete", name).Run()
+		return nil, fmt.Errorf("krunvm start failed: %w", err)
+	}
+
+	agentAddr := fmt.Sprintf("127.0.0.1:%d", port)
+
+	vm := &backend.VM{
+		ID:           vmID,
+		Runtime:      fn.Runtime,
+		State:        backend.VMStateCreating,
+		AssignedPort: port,
+		GuestIP:      agentAddr,
+		CodeDir:      codeDir,
+		Cmd:          startCmd,
+		CreatedAt:    time.Now(),
+		LastUsed:     time.Now(),
+	}
+
+	// For krunvm we skip waitForAgent (which opens a probe TCP connection
+	// that poisons krunvm's single-connection port forwarding). Instead we
+	// mark the VM as running immediately; the caller (pool.createVM) will
+	// call NewClient → Init which retries the dial until the agent is ready.
+	vm.State = backend.VMStateRunning
+	metrics.Global().RecordVMCreated()
+
+	m.mu.Lock()
+	m.vms[vmID] = vm
+	m.mu.Unlock()
+
+	logging.Op().Info("krunvm VM ready", "vmID", vmID, "addr", agentAddr, "image", image)
+	return vm, nil
+}
+
 // StopVM stops and cleans up a libkrun microVM.
 func (m *Manager) StopVM(vmID string) error {
 	m.mu.Lock()
@@ -262,6 +395,9 @@ func (m *Manager) StopVM(vmID string) error {
 	m.mu.Unlock()
 
 	metrics.Global().RecordVMStopped()
+	if m.useMacOS {
+		return m.stopKrunVM(vm.Cmd, vm.CodeDir, krunvmName(vmID))
+	}
 	return m.stopVM(vm.Cmd, vm.CodeDir)
 }
 
@@ -270,6 +406,19 @@ func (m *Manager) stopVM(cmd *exec.Cmd, codeDir string) error {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 	}
+	if codeDir != "" {
+		os.RemoveAll(codeDir)
+	}
+	return nil
+}
+
+func (m *Manager) stopKrunVM(cmd *exec.Cmd, codeDir, name string) error {
+	if cmd != nil && cmd.Process != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}
+	// Delete the krunvm VM registration
+	exec.Command("krunvm", "delete", name).Run()
 	if codeDir != "" {
 		os.RemoveAll(codeDir)
 	}

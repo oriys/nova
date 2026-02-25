@@ -113,12 +113,19 @@ func detectKubernetes() BackendInfo {
 
 func detectLibKrun() BackendInfo {
 	info := BackendInfo{Name: "libkrun"}
-	if runtime.GOOS != "linux" {
-		info.Reason = "requires Linux"
-		return info
-	}
-	if _, err := exec.LookPath("krun"); err != nil {
-		info.Reason = "krun binary not found in PATH"
+	switch runtime.GOOS {
+	case "linux":
+		if _, err := exec.LookPath("krun"); err != nil {
+			info.Reason = "krun binary not found in PATH"
+			return info
+		}
+	case "darwin":
+		if _, err := exec.LookPath("krunvm"); err != nil {
+			info.Reason = "krunvm binary not found in PATH"
+			return info
+		}
+	default:
+		info.Reason = "requires Linux or macOS"
 		return info
 	}
 	info.Available = true

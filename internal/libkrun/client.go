@@ -28,7 +28,7 @@ func NewClient(vm *backend.VM) (*Client, error) {
 	return &Client{vm: vm}, nil
 }
 
-// Init sends the init message to the agent.
+// Init sends the init message to the agent and keeps the connection open.
 func (c *Client) Init(fn *domain.Function) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -47,10 +47,21 @@ func (c *Client) Init(fn *domain.Function) error {
 	})
 	c.initPayload = payload
 
-	if err := c.redialAndInit(5 * time.Second); err != nil {
-		return err
+	// Connect with retry and init; keep connection open for subsequent
+	// Execute calls. krunvm port forwarding only supports one connection
+	// at a time, so we must not open any probe connections beforehand.
+	var dialErr error
+	for i := 0; i < 50; i++ { // up to ~10s
+		dialErr = c.dialLocked(500 * time.Millisecond)
+		if dialErr == nil {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
-	return c.closeLocked()
+	if dialErr != nil {
+		return fmt.Errorf("dial agent: %w", dialErr)
+	}
+	return c.initLocked()
 }
 
 // Execute runs a function invocation.
@@ -59,6 +70,9 @@ func (c *Client) Execute(reqID string, input json.RawMessage, timeoutS int) (*ba
 }
 
 // ExecuteWithTrace runs a function with trace context.
+// Reuses the existing connection (established during Init) to avoid
+// reconnection issues with krunvm port forwarding. Falls back to
+// reconnect only if the connection is broken.
 func (c *Client) ExecuteWithTrace(reqID string, input json.RawMessage, timeoutS int, traceParent, traceState string) (*backend.RespPayload, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -77,12 +91,26 @@ func (c *Client) ExecuteWithTrace(reqID string, input json.RawMessage, timeoutS 
 
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
-		if err := c.redialAndInit(5 * time.Second); err != nil {
-			lastErr = err
-			if attempt < 2 {
-				time.Sleep(backoff[attempt])
+		// On first attempt, reuse existing connection if available.
+		// On retries (broken conn), reconnect.
+		if c.conn == nil {
+			if err := c.dialLocked(5 * time.Second); err != nil {
+				lastErr = err
+				if attempt < 2 {
+					time.Sleep(backoff[attempt])
+				}
+				continue
 			}
-			continue
+			if c.initPayload != nil {
+				if err := c.initLocked(); err != nil {
+					_ = c.closeLocked()
+					lastErr = err
+					if attempt < 2 {
+						time.Sleep(backoff[attempt])
+					}
+					continue
+				}
+			}
 		}
 
 		deadline := time.Now().Add(time.Duration(timeoutS+5) * time.Second)
@@ -112,11 +140,9 @@ func (c *Client) ExecuteWithTrace(reqID string, input json.RawMessage, timeoutS 
 
 		var result backend.RespPayload
 		if err := json.Unmarshal(resp.Payload, &result); err != nil {
-			_ = c.closeLocked()
 			return nil, err
 		}
 
-		_ = c.closeLocked()
 		return &result, nil
 	}
 
@@ -142,8 +168,16 @@ func (c *Client) ExecuteStream(reqID string, input json.RawMessage, timeoutS int
 
 	execMsg := &backend.VsockMessage{Type: backend.MsgTypeExec, Payload: payload}
 
-	if err := c.redialAndInit(5 * time.Second); err != nil {
-		return err
+	if c.conn == nil {
+		if err := c.dialLocked(5 * time.Second); err != nil {
+			return err
+		}
+		if c.initPayload != nil {
+			if err := c.initLocked(); err != nil {
+				_ = c.closeLocked()
+				return err
+			}
+		}
 	}
 
 	deadline := time.Now().Add(time.Duration(timeoutS+5) * time.Second)
@@ -187,7 +221,6 @@ func (c *Client) ExecuteStream(reqID string, input json.RawMessage, timeoutS int
 	}
 
 	_ = c.conn.SetDeadline(time.Time{})
-	_ = c.closeLocked()
 	return nil
 }
 
@@ -196,17 +229,22 @@ func (c *Client) Ping() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if err := c.redialAndInit(5 * time.Second); err != nil {
-		return err
+	if c.conn == nil {
+		if err := c.dialLocked(5 * time.Second); err != nil {
+			return err
+		}
 	}
-	defer c.closeLocked()
 
 	_ = c.conn.SetDeadline(time.Now().Add(3 * time.Second))
 	if err := c.sendLocked(&backend.VsockMessage{Type: backend.MsgTypePing}); err != nil {
+		_ = c.closeLocked()
 		return err
 	}
 	_, err := c.receiveLocked()
 	_ = c.conn.SetDeadline(time.Time{})
+	if err != nil {
+		_ = c.closeLocked()
+	}
 	return err
 }
 
@@ -220,10 +258,17 @@ func (c *Client) Reload(files map[string][]byte) error {
 		return err
 	}
 
-	if err := c.redialAndInit(5 * time.Second); err != nil {
-		return err
+	if c.conn == nil {
+		if err := c.dialLocked(5 * time.Second); err != nil {
+			return err
+		}
+		if c.initPayload != nil {
+			if err := c.initLocked(); err != nil {
+				_ = c.closeLocked()
+				return err
+			}
+		}
 	}
-	defer c.closeLocked()
 
 	_ = c.conn.SetDeadline(time.Now().Add(30 * time.Second))
 	if err := c.sendLocked(&backend.VsockMessage{Type: backend.MsgTypeReload, Payload: payload}); err != nil {

@@ -1155,7 +1155,11 @@ rustflags = ["-C", "target-feature=+crt-static"]
 func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 	switch runtime {
 	case domain.RuntimeGo:
-		return "golang:1.23-alpine", "cd /work && go mod tidy && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o handler ."
+		goarch := "amd64"
+		if p := resolveCompilePlatform(runtime); strings.Contains(p, "arm64") {
+			goarch = "arm64"
+		}
+		return "golang:1.23-alpine", fmt.Sprintf("cd /work && go mod tidy && CGO_ENABLED=0 GOOS=linux GOARCH=%s go build -o handler .", goarch)
 	case domain.RuntimeRust:
 		return "rust:1.84-alpine", "apk add --no-cache musl-dev gcc && cd /work && RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target x86_64-unknown-linux-musl && cp target/x86_64-unknown-linux-musl/release/handler /work/handler"
 	case domain.RuntimeJava:
