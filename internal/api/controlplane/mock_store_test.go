@@ -1899,6 +1899,14 @@ func (m *mockMetadataStore) ListActiveClusterNodes(ctx context.Context) ([]*stor
 	return nil, nil
 }
 
+func (m *mockMetadataStore) RecordPoolMetrics(ctx context.Context, snap store.PoolMetricsSnapshot) error {
+	return nil
+}
+
+func (m *mockMetadataStore) PrunePoolMetrics(ctx context.Context, retentionSeconds int) error {
+	return nil
+}
+
 // --- Test helper ---
 
 func setupTestHandler(t *testing.T, ms *mockMetadataStore) (*Handler, *http.ServeMux) {

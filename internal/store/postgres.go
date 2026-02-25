@@ -956,6 +956,18 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_outbox_enhanced_status ON outbox_enhanced(status, next_retry_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_outbox_enhanced_idempotency ON outbox_enhanced(idempotency_key)`,
+		// Pool metrics history: periodic snapshots of VM pool state for time-series charts.
+		`CREATE TABLE IF NOT EXISTS pool_metrics_history (
+			ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			tenant_id TEXT NOT NULL DEFAULT 'default',
+			namespace TEXT NOT NULL DEFAULT 'default',
+			active_vms INTEGER NOT NULL DEFAULT 0,
+			total_pools INTEGER NOT NULL DEFAULT 0,
+			vms_created BIGINT NOT NULL DEFAULT 0,
+			vms_stopped BIGINT NOT NULL DEFAULT 0,
+			vms_crashed BIGINT NOT NULL DEFAULT 0
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_pool_metrics_history_ts ON pool_metrics_history(tenant_id, namespace, ts)`,
 	}
 
 	for _, stmt := range stmts {

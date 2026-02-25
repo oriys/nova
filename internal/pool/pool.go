@@ -258,6 +258,21 @@ func (p *Pool) TotalVMCount() int {
 	return int(p.totalVMs.Load())
 }
 
+// PoolCount returns the number of active function pools.
+func (p *Pool) PoolCount() int {
+	count := 0
+	p.pools.Range(func(_, _ interface{}) bool {
+		count++
+		return true
+	})
+	return count
+}
+
+// Done returns a channel that is closed when the pool's context is cancelled.
+func (p *Pool) Done() <-chan struct{} {
+	return p.ctx.Done()
+}
+
 // InvalidateSnapshotCache removes the cached snapshot status for a function
 func (p *Pool) InvalidateSnapshotCache(funcID string) {
 	p.snapshotCache.Delete(funcID)

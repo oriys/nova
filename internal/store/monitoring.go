@@ -37,6 +37,11 @@ type TimeSeriesBucket struct {
 	Invocations int64     `json:"invocations"`
 	Errors      int64     `json:"errors"`
 	AvgDuration float64   `json:"avg_duration"`
+	ActiveVMs   int64     `json:"active_vms"`
+	TotalPools  int64     `json:"total_pools"`
+	VMsCreated  int64     `json:"vms_created"`
+	VMsStopped  int64     `json:"vms_stopped"`
+	VMsCrashed  int64     `json:"vms_crashed"`
 }
 
 // FunctionSLOSnapshot is the windowed SLI summary used by SLO evaluation.
@@ -703,7 +708,7 @@ func (s *PostgresStore) GetGlobalTimeSeries(ctx context.Context, rangeSeconds, b
 				make_interval(secs => $2::double precision)
 			) AS bucket
 		),
-		data AS (
+		inv AS (
 			SELECT
 				to_timestamp(floor(extract(epoch from created_at) / $2) * $2) AS bucket,
 				COUNT(*) AS invocations,
@@ -721,14 +726,34 @@ func (s *PostgresStore) GetGlobalTimeSeries(ctx context.Context, rangeSeconds, b
 				  AND f.namespace = l.namespace
 			  )
 			GROUP BY bucket
+		),
+		pool AS (
+			SELECT
+				to_timestamp(floor(extract(epoch from ts) / $2) * $2) AS bucket,
+				AVG(active_vms)::bigint AS active_vms,
+				AVG(total_pools)::bigint AS total_pools,
+				MAX(vms_created) - MIN(vms_created) AS vms_created,
+				MAX(vms_stopped) - MIN(vms_stopped) AS vms_stopped,
+				MAX(vms_crashed) - MIN(vms_crashed) AS vms_crashed
+			FROM pool_metrics_history
+			WHERE tenant_id = $3
+			  AND namespace = $4
+			  AND ts >= NOW() - make_interval(secs => $1::double precision)
+			GROUP BY bucket
 		)
 		SELECT
 			b.bucket,
-			COALESCE(d.invocations, 0) AS invocations,
-			COALESCE(d.errors, 0) AS errors,
-			COALESCE(d.avg_duration, 0) AS avg_duration
+			COALESCE(i.invocations, 0) AS invocations,
+			COALESCE(i.errors, 0) AS errors,
+			COALESCE(i.avg_duration, 0) AS avg_duration,
+			COALESCE(p.active_vms, 0) AS active_vms,
+			COALESCE(p.total_pools, 0) AS total_pools,
+			COALESCE(p.vms_created, 0) AS vms_created,
+			COALESCE(p.vms_stopped, 0) AS vms_stopped,
+			COALESCE(p.vms_crashed, 0) AS vms_crashed
 		FROM buckets b
-		LEFT JOIN data d ON b.bucket = d.bucket
+		LEFT JOIN inv i ON b.bucket = i.bucket
+		LEFT JOIN pool p ON b.bucket = p.bucket
 		ORDER BY b.bucket ASC
 	`, rangeSeconds, bucketSeconds, scope.TenantID, scope.Namespace)
 	if err != nil {
@@ -739,7 +764,10 @@ func (s *PostgresStore) GetGlobalTimeSeries(ctx context.Context, rangeSeconds, b
 	buckets := make([]TimeSeriesBucket, 0)
 	for rows.Next() {
 		var bucket TimeSeriesBucket
-		if err := rows.Scan(&bucket.Timestamp, &bucket.Invocations, &bucket.Errors, &bucket.AvgDuration); err != nil {
+		if err := rows.Scan(
+			&bucket.Timestamp, &bucket.Invocations, &bucket.Errors, &bucket.AvgDuration,
+			&bucket.ActiveVMs, &bucket.TotalPools, &bucket.VMsCreated, &bucket.VMsStopped, &bucket.VMsCrashed,
+		); err != nil {
 			return nil, fmt.Errorf("scan time series: %w", err)
 		}
 		buckets = append(buckets, bucket)
@@ -748,6 +776,33 @@ func (s *PostgresStore) GetGlobalTimeSeries(ctx context.Context, rangeSeconds, b
 		return nil, fmt.Errorf("get global time series rows: %w", err)
 	}
 	return buckets, nil
+}
+
+// PoolMetricsSnapshot holds a point-in-time snapshot of VM pool state.
+type PoolMetricsSnapshot struct {
+	ActiveVMs  int
+	TotalPools int
+	VMsCreated int64
+	VMsStopped int64
+	VMsCrashed int64
+}
+
+// RecordPoolMetrics inserts a pool metrics snapshot for time-series charting.
+func (s *PostgresStore) RecordPoolMetrics(ctx context.Context, snap PoolMetricsSnapshot) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO pool_metrics_history (ts, tenant_id, namespace, active_vms, total_pools, vms_created, vms_stopped, vms_crashed)
+		VALUES (NOW(), 'default', 'default', $1, $2, $3, $4, $5)
+	`, snap.ActiveVMs, snap.TotalPools, snap.VMsCreated, snap.VMsStopped, snap.VMsCrashed)
+	return err
+}
+
+// PrunePoolMetrics removes pool metrics older than the given retention period.
+func (s *PostgresStore) PrunePoolMetrics(ctx context.Context, retentionSeconds int) error {
+	_, err := s.pool.Exec(ctx, `
+		DELETE FROM pool_metrics_history
+		WHERE ts < NOW() - make_interval(secs => $1::double precision)
+	`, retentionSeconds)
+	return err
 }
 
 func (s *PostgresStore) GetFunctionSLOSnapshot(ctx context.Context, functionID string, windowSeconds int) (*FunctionSLOSnapshot, error) {

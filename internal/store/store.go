@@ -120,6 +120,8 @@ type MetadataStore interface {
 	GetFunctionDailyHeatmap(ctx context.Context, functionID string, weeks int) ([]DailyCount, error)
 	GetGlobalDailyHeatmap(ctx context.Context, weeks int) ([]DailyCount, error)
 	GetFunctionSLOSnapshot(ctx context.Context, functionID string, windowSeconds int) (*FunctionSLOSnapshot, error)
+	RecordPoolMetrics(ctx context.Context, snap PoolMetricsSnapshot) error
+	PrunePoolMetrics(ctx context.Context, retentionSeconds int) error
 
 	// Stateful function key-value entries
 	GetFunctionState(ctx context.Context, functionID, key string) (*FunctionStateEntry, error)

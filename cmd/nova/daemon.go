@@ -362,6 +362,42 @@ func daemonCmd() *cobra.Command {
 				logging.Op().Info("unified gRPC API started", "addr", cfg.GRPC.Addr, "mode", cfg.GRPC.Mode)
 			}
 
+			// Pool metrics recorder: write periodic snapshots for dashboard charts.
+			go func() {
+				ticker := time.NewTicker(30 * time.Second)
+				defer ticker.Stop()
+				snap := store.PoolMetricsSnapshot{
+					ActiveVMs:  p.TotalVMCount(),
+					TotalPools: p.PoolCount(),
+					VMsCreated: metrics.Global().VMsCreated.Load(),
+					VMsStopped: metrics.Global().VMsStopped.Load(),
+					VMsCrashed: metrics.Global().VMsCrashed.Load(),
+				}
+				if err := s.RecordPoolMetrics(context.Background(), snap); err != nil {
+					logging.Op().Warn("failed to record pool metrics", "error", err)
+				}
+				for {
+					select {
+					case <-ticker.C:
+						snap := store.PoolMetricsSnapshot{
+							ActiveVMs:  p.TotalVMCount(),
+							TotalPools: p.PoolCount(),
+							VMsCreated: metrics.Global().VMsCreated.Load(),
+							VMsStopped: metrics.Global().VMsStopped.Load(),
+							VMsCrashed: metrics.Global().VMsCrashed.Load(),
+						}
+						if err := s.RecordPoolMetrics(context.Background(), snap); err != nil {
+							logging.Op().Warn("failed to record pool metrics", "error", err)
+						}
+						if err := s.PrunePoolMetrics(context.Background(), 7*24*3600); err != nil {
+							logging.Op().Warn("failed to prune pool metrics", "error", err)
+						}
+					case <-p.Done():
+						return
+					}
+				}
+			}()
+
 			sigCh := make(chan os.Signal, 1)
 			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 

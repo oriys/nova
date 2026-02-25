@@ -985,6 +985,14 @@ func (m *mockMetadataStore) GetAllInvocationLogsSummaryFiltered(ctx context.Cont
 	return &store.InvocationLogSummary{}, nil
 }
 
+func (m *mockMetadataStore) RecordPoolMetrics(ctx context.Context, snap store.PoolMetricsSnapshot) error {
+	return nil
+}
+
+func (m *mockMetadataStore) PrunePoolMetrics(ctx context.Context, retentionSeconds int) error {
+	return nil
+}
+
 // mockWorkflowStore implements store.WorkflowStore for the mockMetadataStore to
 // also satisfy the GetWorkflowByName requirement in ListWorkflowAsyncInvocations.
 type mockWorkflowStore struct {
