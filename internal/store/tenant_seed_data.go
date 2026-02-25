@@ -166,3 +166,210 @@ func seedTenantSampleFunctions(ctx context.Context, exec dbExecer, tenantID stri
 
 	return nil
 }
+
+// seedTenantSampleWorkflow inserts a starter DAG workflow that chains the
+// seeded functions so new users can see the workflow engine in action.
+func seedTenantSampleWorkflow(ctx context.Context, exec dbExecer, tenantID string) error {
+	ns := DefaultNamespace
+	now := time.Now()
+
+	// ── Workflow: data-pipeline (hello-python → json-transform → hello-ruby) ──
+	wfID := uuid.New().String()
+	wfPrefix := tenantID + "/"
+	_, err := exec.Exec(ctx, `
+		INSERT INTO dag_workflows (id, tenant_id, namespace, name, description, status, current_version, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, 'active', 1, $6, $7)
+		ON CONFLICT DO NOTHING
+	`, wfID, tenantID, ns, wfPrefix+"data-pipeline",
+		"Sample pipeline: greet → transform to uppercase → format report", now, now)
+	if err != nil {
+		return fmt.Errorf("seed workflow for tenant %s: %w", tenantID, err)
+	}
+
+	// Version
+	vID := uuid.New().String()
+	definition := `{"nodes":[` +
+		`{"node_key":"greet","function_name":"hello-python"},` +
+		`{"node_key":"transform","function_name":"json-transform"},` +
+		`{"node_key":"report","function_name":"hello-ruby"}` +
+		`],"edges":[` +
+		`{"from":"greet","to":"transform"},` +
+		`{"from":"transform","to":"report"}` +
+		`]}`
+	_, err = exec.Exec(ctx, `
+		INSERT INTO dag_workflow_versions (id, workflow_id, version, definition, created_at)
+		VALUES ($1, $2, 1, $3::jsonb, $4)
+		ON CONFLICT DO NOTHING
+	`, vID, wfID, definition, now)
+	if err != nil {
+		return fmt.Errorf("seed workflow version for tenant %s: %w", tenantID, err)
+	}
+
+	// Nodes
+	type nodeSpec struct {
+		key      string
+		funcName string
+		pos      int
+	}
+	nodes := []nodeSpec{
+		{"greet", "hello-python", 0},
+		{"transform", "json-transform", 1},
+		{"report", "hello-ruby", 2},
+	}
+	nodeIDs := make(map[string]string, len(nodes))
+	for _, n := range nodes {
+		nID := uuid.New().String()
+		nodeIDs[n.key] = nID
+		_, err = exec.Exec(ctx, `
+			INSERT INTO dag_workflow_nodes (id, version_id, node_key, node_type, function_name, timeout_s, position)
+			VALUES ($1, $2, $3, 'function', $4, 30, $5)
+			ON CONFLICT DO NOTHING
+		`, nID, vID, n.key, n.funcName, n.pos)
+		if err != nil {
+			return fmt.Errorf("seed workflow node %s for tenant %s: %w", n.key, tenantID, err)
+		}
+	}
+
+	// Edges
+	edges := [][2]string{{"greet", "transform"}, {"transform", "report"}}
+	for _, e := range edges {
+		_, err = exec.Exec(ctx, `
+			INSERT INTO dag_workflow_edges (id, version_id, from_node_id, to_node_id)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT DO NOTHING
+		`, uuid.New().String(), vID, nodeIDs[e[0]], nodeIDs[e[1]])
+		if err != nil {
+			return fmt.Errorf("seed workflow edge %s→%s for tenant %s: %w", e[0], e[1], tenantID, err)
+		}
+	}
+
+	// ── Workflow: parallel-compute (fibonacci ⇉ hello-node, hello-ruby → hello-python) ──
+	wf2ID := uuid.New().String()
+	_, err = exec.Exec(ctx, `
+		INSERT INTO dag_workflows (id, tenant_id, namespace, name, description, status, current_version, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, 'active', 1, $6, $7)
+		ON CONFLICT DO NOTHING
+	`, wf2ID, tenantID, ns, wfPrefix+"parallel-compute",
+		"Sample fan-out: compute fibonacci, then run Node.js & Ruby in parallel, aggregate with Python", now, now)
+	if err != nil {
+		return fmt.Errorf("seed workflow parallel-compute for tenant %s: %w", tenantID, err)
+	}
+
+	v2ID := uuid.New().String()
+	def2 := `{"nodes":[` +
+		`{"node_key":"compute","function_name":"fibonacci"},` +
+		`{"node_key":"format-node","function_name":"hello-node"},` +
+		`{"node_key":"format-ruby","function_name":"hello-ruby"},` +
+		`{"node_key":"aggregate","function_name":"hello-python"}` +
+		`],"edges":[` +
+		`{"from":"compute","to":"format-node"},` +
+		`{"from":"compute","to":"format-ruby"},` +
+		`{"from":"format-node","to":"aggregate"},` +
+		`{"from":"format-ruby","to":"aggregate"}` +
+		`]}`
+	_, err = exec.Exec(ctx, `
+		INSERT INTO dag_workflow_versions (id, workflow_id, version, definition, created_at)
+		VALUES ($1, $2, 1, $3::jsonb, $4)
+		ON CONFLICT DO NOTHING
+	`, v2ID, wf2ID, def2, now)
+	if err != nil {
+		return fmt.Errorf("seed workflow version parallel-compute for tenant %s: %w", tenantID, err)
+	}
+
+	nodes2 := []nodeSpec{
+		{"compute", "fibonacci", 0},
+		{"format-node", "hello-node", 1},
+		{"format-ruby", "hello-ruby", 1},
+		{"aggregate", "hello-python", 2},
+	}
+	node2IDs := make(map[string]string, len(nodes2))
+	for _, n := range nodes2 {
+		nID := uuid.New().String()
+		node2IDs[n.key] = nID
+		_, err = exec.Exec(ctx, `
+			INSERT INTO dag_workflow_nodes (id, version_id, node_key, node_type, function_name, timeout_s, position)
+			VALUES ($1, $2, $3, 'function', $4, 30, $5)
+			ON CONFLICT DO NOTHING
+		`, nID, v2ID, n.key, n.funcName, n.pos)
+		if err != nil {
+			return fmt.Errorf("seed workflow node %s for tenant %s: %w", n.key, tenantID, err)
+		}
+	}
+
+	edges2 := [][2]string{
+		{"compute", "format-node"}, {"compute", "format-ruby"},
+		{"format-node", "aggregate"}, {"format-ruby", "aggregate"},
+	}
+	for _, e := range edges2 {
+		_, err = exec.Exec(ctx, `
+			INSERT INTO dag_workflow_edges (id, version_id, from_node_id, to_node_id)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT DO NOTHING
+		`, uuid.New().String(), v2ID, node2IDs[e[0]], node2IDs[e[1]])
+		if err != nil {
+			return fmt.Errorf("seed workflow edge %s→%s for tenant %s: %w", e[0], e[1], tenantID, err)
+		}
+	}
+
+	return nil
+}
+
+// seedTenantSampleGatewayRoutes inserts starter gateway routes mapping
+// REST-style paths to the seeded functions.
+func seedTenantSampleGatewayRoutes(ctx context.Context, exec dbExecer, tenantID string) error {
+	now := time.Now()
+
+	type routeSpec struct {
+		path         string
+		methods      []string
+		functionName string
+		description  string
+	}
+
+	// Use /t/<tenantID>/... paths to avoid cross-tenant collisions
+	prefix := "/t/" + tenantID
+	routes := []routeSpec{
+		{prefix + "/hello", []string{"GET", "POST"}, "hello-python", "Greeting endpoint"},
+		{prefix + "/fibonacci", []string{"POST"}, "fibonacci", "Compute Fibonacci numbers"},
+		{prefix + "/transform", []string{"POST"}, "json-transform", "JSON data transformations"},
+	}
+
+	for _, r := range routes {
+		route := &domain.GatewayRoute{
+			ID:           uuid.New().String()[:8],
+			Path:         r.path,
+			Methods:      r.methods,
+			FunctionName: r.functionName,
+			AuthStrategy: "none",
+			RateLimit: &domain.RouteRateLimit{
+				RequestsPerSecond: 100,
+				BurstSize:         200,
+			},
+			CORS: &domain.CORSConfig{
+				AllowOrigins: []string{"*"},
+				AllowMethods: r.methods,
+				AllowHeaders: []string{"Content-Type", "Authorization"},
+				MaxAge:       3600,
+			},
+			Enabled:   true,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+
+		data, err := json.Marshal(route)
+		if err != nil {
+			return fmt.Errorf("marshal gateway route %s: %w", r.path, err)
+		}
+
+		_, err = exec.Exec(ctx, `
+			INSERT INTO gateway_routes (id, domain, path, function_name, data, enabled, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			ON CONFLICT (domain, path) DO NOTHING
+		`, route.ID, route.Domain, route.Path, route.FunctionName, data, route.Enabled, now, now)
+		if err != nil {
+			return fmt.Errorf("seed gateway route %s for tenant %s: %w", r.path, tenantID, err)
+		}
+	}
+
+	return nil
+}

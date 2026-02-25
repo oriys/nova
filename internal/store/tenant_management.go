@@ -176,6 +176,16 @@ func (s *PostgresStore) CreateTenant(ctx context.Context, tenant *TenantRecord) 
 		return nil, err
 	}
 
+	// Seed sample DAG workflows using the starter functions.
+	if err := seedTenantSampleWorkflow(ctx, tx, tenantID); err != nil {
+		return nil, err
+	}
+
+	// Seed sample gateway routes mapping REST paths to starter functions.
+	if err := seedTenantSampleGatewayRoutes(ctx, tx, tenantID); err != nil {
+		return nil, err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit tenant create tx: %w", err)
 	}
