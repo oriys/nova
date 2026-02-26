@@ -590,7 +590,8 @@
     "depsHelp": "Ajoutez des dépendances externes via {file}. Elles seront installées lors du déploiement.",
     "backend": "Moteur d'exécution",
     "backendAuto": "Détection automatique",
-    "backendHelp": "Sélectionnez le backend d'exécution. La détection automatique choisit la meilleure option disponible pour votre système."
+    "backendHelp": "Sélectionnez le backend d'exécution. La détection automatique choisit la meilleure option disponible pour votre système.",
+    "backendUnavailable": "(indisponible)"
   },
   "functionsTable": {
     "unlimited": "Illimité",

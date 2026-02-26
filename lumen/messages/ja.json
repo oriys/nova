@@ -590,7 +590,8 @@
     "depsHelp": "{file} で外部依存関係を追加します。デプロイ時に自動的にインストールされます。",
     "backend": "実行バックエンド",
     "backendAuto": "自動検出",
-    "backendHelp": "実行バックエンドを選択します。自動検出はシステムで利用可能な最適なオプションを選択します。"
+    "backendHelp": "実行バックエンドを選択します。自動検出はシステムで利用可能な最適なオプションを選択します。",
+    "backendUnavailable": "（利用不可）"
   },
   "functionsTable": {
     "unlimited": "無制限",

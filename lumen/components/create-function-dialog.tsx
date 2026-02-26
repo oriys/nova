@@ -675,9 +675,12 @@ export function CreateFunctionDialog({
                 <SelectItem value="auto">
                   {t("backendAuto")} ({defaultBackend})
                 </SelectItem>
-                {availableBackends.filter(b => b.available).map((b) => (
-                  <SelectItem key={b.name} value={b.name}>
+                {availableBackends.map((b) => (
+                  <SelectItem key={b.name} value={b.name} disabled={!b.available}>
                     {b.name.charAt(0).toUpperCase() + b.name.slice(1)}
+                    {!b.available && (
+                      <span className="ml-1 text-muted-foreground">{t("backendUnavailable")}</span>
+                    )}
                   </SelectItem>
                 ))}
               </SelectContent>
