@@ -87,10 +87,11 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 		clusterRouter = cluster.NewRouter(clusterRegistry, scheduler, cluster.NewProxy(forwardTimeout), registryCfg.NodeID)
 	}
 
+	var cpHandler *controlplane.Handler
 	if controlPlaneEnabled {
 		comp := compiler.New(cfg.Store)
 		funcService := service.NewFunctionService(cfg.Store, comp)
-		cpHandler := &controlplane.Handler{
+		cpHandler = &controlplane.Handler{
 			Store:           cfg.Store,
 			Pool:            cfg.Pool,
 			Backend:         cfg.Backend,
@@ -178,6 +179,15 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 	// Add auth middleware
 	if cfg.AuthCfg != nil && cfg.AuthCfg.Enabled {
 		authenticators := buildAuthenticators(cfg.AuthCfg, cfg.Store)
+
+		// Wire token revocation checker from the auth handler into the JWT authenticator
+		if controlPlaneEnabled && cpHandler != nil && cpHandler.AuthHandler != nil {
+			for _, a := range authenticators {
+				if jwtAuth, ok := a.(*auth.JWTAuthenticator); ok {
+					jwtAuth.SetRevokeChecker(cpHandler.AuthHandler)
+				}
+			}
+		}
 
 		// Add authorization middleware
 		if cfg.AuthCfg.Authorization.Enabled {
@@ -400,9 +410,10 @@ func buildAuthenticators(cfg *config.AuthConfig, s *store.Store) []auth.Authenti
 		var staticKeys []auth.StaticKeyConfig
 		for _, k := range cfg.APIKeys.StaticKeys {
 			staticKeys = append(staticKeys, auth.StaticKeyConfig{
-				Name: k.Name,
-				Key:  k.Key,
-				Tier: k.Tier,
+				Name:     k.Name,
+				Key:      k.Key,
+				Tier:     k.Tier,
+				TenantID: k.TenantID,
 			})
 		}
 		apiKeyAuth := auth.NewAPIKeyAuthenticator(auth.APIKeyAuthConfig{

@@ -44,8 +44,9 @@ type APIKeyAuthenticator struct {
 }
 
 type staticKey struct {
-	name string
-	tier string
+	name     string
+	tier     string
+	tenantID string
 }
 
 // APIKeyAuthConfig holds API key authenticator configuration
@@ -56,9 +57,10 @@ type APIKeyAuthConfig struct {
 
 // StaticKeyConfig represents a static API key from config
 type StaticKeyConfig struct {
-	Name string
-	Key  string
-	Tier string
+	Name     string
+	Key      string
+	Tier     string
+	TenantID string // Bound tenant scope (empty = unrestricted)
 }
 
 // NewAPIKeyAuthenticator creates a new API key authenticator
@@ -76,8 +78,9 @@ func NewAPIKeyAuthenticator(cfg APIKeyAuthConfig) *APIKeyAuthenticator {
 			tier = "default"
 		}
 		auth.staticKeys[hash] = staticKey{
-			name: k.Name,
-			tier: tier,
+			name:     k.Name,
+			tier:     tier,
+			tenantID: k.TenantID,
 		}
 	}
 
@@ -104,12 +107,20 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) *Identity {
 
 	// Check static keys first
 	if sk, ok := a.staticKeys[keyHash]; ok {
-		return &Identity{
+		id := &Identity{
 			Subject: "apikey:" + sk.name,
 			KeyName: sk.name,
 			Tier:    sk.tier,
 			Claims:  map[string]any{"source": "static"},
 		}
+		// Bind static keys to their configured tenant scope
+		if sk.tenantID != "" {
+			id.AllowedScopes = []TenantScope{normalizeTenantScopeWithWildcard(TenantScope{
+				TenantID:  sk.tenantID,
+				Namespace: "*",
+			})}
+		}
+		return id
 	}
 
 	// Check database

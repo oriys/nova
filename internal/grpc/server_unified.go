@@ -33,6 +33,9 @@ Address string
 CertFile string
 KeyFile  string
 
+// Inter-service auth token (optional)
+ServiceToken string
+
 // Data plane dependencies
 Store    *store.Store
 Executor *executor.Executor
@@ -54,6 +57,7 @@ controlPlane := NewControlPlaneServer(cfg.Store, cfg.FunctionService, cfg.Compil
 // Create gRPC server with interceptors
 opts := []grpc.ServerOption{
 grpc.ChainUnaryInterceptor(
+serviceAuthInterceptor(cfg.ServiceToken),
 loggingInterceptor,
 errorHandlingInterceptor,
 ),

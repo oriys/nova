@@ -27,12 +27,13 @@ import (
 const defaultBodyLimit = 10 << 20 // 10MB
 
 type Config struct {
-	NovaURL       string
-	CometGRPCAddr string
-	CoronaURL     string
-	NebulaURL     string
-	AuroraURL     string
-	Timeout       time.Duration
+	NovaURL          string
+	CometGRPCAddr    string
+	CoronaURL        string
+	NebulaURL        string
+	AuroraURL        string
+	Timeout          time.Duration
+	CometServiceToken string // Shared secret for Comet gRPC authentication
 }
 
 type Server struct {
@@ -111,7 +112,15 @@ func (s *Server) Close() error {
 	return nil
 }
 
+type serviceTokenKey struct{}
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Inject service token into request context for gRPC calls
+	if s.cfg.CometServiceToken != "" {
+		ctx := context.WithValue(r.Context(), serviceTokenKey{}, s.cfg.CometServiceToken)
+		r = r.WithContext(ctx)
+	}
+
 	path := r.URL.Path
 
 	switch path {
@@ -585,6 +594,10 @@ func cometContextFromRequest(r *http.Request) (context.Context, context.CancelFu
 	}
 
 	md := metadata.MD{}
+	// Attach service token for inter-service auth
+	if s, ok := ctx.Value(serviceTokenKey{}).(string); ok && s != "" {
+		md.Set("authorization", "Bearer "+s)
+	}
 	for _, key := range []string{"X-Nova-Tenant", "X-Nova-Namespace", "X-Request-ID"} {
 		if val := strings.TrimSpace(r.Header.Get(key)); val != "" {
 			md.Set(strings.ToLower(key), val)

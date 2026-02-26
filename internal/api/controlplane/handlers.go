@@ -41,6 +41,7 @@ type Handler struct {
 	VolumeManager   *volume.Manager // Optional: for persistent volume management
 	AIService       *ai.Service     // Optional: for AI-powered code operations
 	JWTSecret       string          // HS256 JWT signing key for auth endpoints
+	AuthHandler     *AuthHandler    // Exposed for revocation checker integration
 }
 
 // RegisterRoutes registers all control plane routes on the given mux.
@@ -164,6 +165,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	if h.JWTSecret != "" {
 		authHandler := &AuthHandler{Store: h.Store, JWTSecret: h.JWTSecret}
 		authHandler.RegisterRoutes(mux)
+		h.AuthHandler = authHandler
 	}
 
 	// Schedules

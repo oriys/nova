@@ -73,6 +73,12 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusBadRequest, "tenant_id is required")
 		return
 	}
+	// Prevent registration with the default tenant ID to avoid
+	// auto-granting admin role via issueToken.
+	if tenantID == store.DefaultTenantID {
+		writeAuthError(w, http.StatusForbidden, "cannot register with the default tenant ID")
+		return
+	}
 	if req.Password == "" {
 		writeAuthError(w, http.StatusBadRequest, "password is required")
 		return

@@ -35,12 +35,13 @@ func serveCmd() *cobra.Command {
 			logging.InitStructured("text", logLevel)
 
 			handler, err := zenith.New(zenith.Config{
-				NovaURL:       novaURL,
-				CometGRPCAddr: cometGRPCAddr,
-				CoronaURL:     coronaURL,
-				NebulaURL:     nebulaURL,
-				AuroraURL:     auroraURL,
-				Timeout:       timeout,
+				NovaURL:           novaURL,
+				CometGRPCAddr:     cometGRPCAddr,
+				CoronaURL:         coronaURL,
+				NebulaURL:         nebulaURL,
+				AuroraURL:         auroraURL,
+				Timeout:           timeout,
+				CometServiceToken: os.Getenv("NOVA_GRPC_SERVICE_TOKEN"),
 			})
 			if err != nil {
 				return err

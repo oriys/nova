@@ -84,11 +84,12 @@ type ObservabilityConfig struct {
 
 // GRPCConfig holds gRPC server settings
 type GRPCConfig struct {
-	Enabled  bool   `json:"enabled"`   // Default: false
-	Addr     string `json:"addr"`      // :9090
-	Mode     string `json:"mode"`      // unified (default), dataplane, controlplane
-	CertFile string `json:"cert_file"` // TLS certificate file path
-	KeyFile  string `json:"key_file"`  // TLS key file path
+	Enabled      bool   `json:"enabled"`       // Default: false
+	Addr         string `json:"addr"`          // :9090
+	Mode         string `json:"mode"`          // unified (default), dataplane, controlplane
+	CertFile     string `json:"cert_file"`     // TLS certificate file path
+	KeyFile      string `json:"key_file"`      // TLS key file path
+	ServiceToken string `json:"service_token"` // Shared secret for inter-service auth; when set, callers must provide it via "authorization" gRPC metadata
 }
 
 // AuthConfig holds authentication settings
@@ -123,9 +124,10 @@ type APIKeyConfig struct {
 
 // StaticAPIKey represents an API key defined in config
 type StaticAPIKey struct {
-	Name string `json:"name"` // Key name/identifier
-	Key  string `json:"key"`  // The API key value
-	Tier string `json:"tier"` // Rate limit tier
+	Name     string `json:"name"`      // Key name/identifier
+	Key      string `json:"key"`       // The API key value
+	Tier     string `json:"tier"`      // Rate limit tier
+	TenantID string `json:"tenant_id"` // Bound tenant scope (empty = unrestricted)
 }
 
 // RateLimitConfig holds rate limiting settings
@@ -497,6 +499,9 @@ func LoadFromEnv(cfg *Config) {
 	}
 	if v := os.Getenv("NOVA_GRPC_ADDR"); v != "" {
 		cfg.GRPC.Addr = v
+	}
+	if v := os.Getenv("NOVA_GRPC_SERVICE_TOKEN"); v != "" {
+		cfg.GRPC.ServiceToken = v
 	}
 
 	// Auth overrides

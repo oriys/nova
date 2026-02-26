@@ -18,12 +18,18 @@ import (
 	"github.com/oriys/nova/internal/domain"
 )
 
+// TokenRevokeChecker checks whether a token identifier has been revoked.
+type TokenRevokeChecker interface {
+	IsTokenRevoked(tokenID string) bool
+}
+
 // JWTAuthenticator validates JWT tokens
 type JWTAuthenticator struct {
-	algorithm string
-	hmacKey   []byte
-	rsaPubKey *rsa.PublicKey
-	issuer    string
+	algorithm     string
+	hmacKey       []byte
+	rsaPubKey     *rsa.PublicKey
+	issuer        string
+	revokeChecker TokenRevokeChecker
 }
 
 // JWTConfig holds JWT authenticator configuration
@@ -65,6 +71,11 @@ func NewJWTAuthenticator(cfg JWTAuthConfig) (*JWTAuthenticator, error) {
 	return auth, nil
 }
 
+// SetRevokeChecker attaches a token revocation checker to the authenticator.
+func (a *JWTAuthenticator) SetRevokeChecker(checker TokenRevokeChecker) {
+	a.revokeChecker = checker
+}
+
 // Authenticate implements Authenticator
 func (a *JWTAuthenticator) Authenticate(r *http.Request) *Identity {
 	// Extract token from Authorization header
@@ -83,6 +94,20 @@ func (a *JWTAuthenticator) Authenticate(r *http.Request) *Identity {
 	claims, err := a.validateToken(token)
 	if err != nil {
 		return nil
+	}
+
+	// Check token revocation via JTI or subject+token composite key
+	if a.revokeChecker != nil {
+		if jti, ok := claims["jti"].(string); ok && jti != "" {
+			if a.revokeChecker.IsTokenRevoked(jti) {
+				return nil
+			}
+		}
+		// Also check the composite key used by AuthHandler.Logout
+		sub, _ := claims["sub"].(string)
+		if sub != "" && a.revokeChecker.IsTokenRevoked("user:"+sub+":"+r.Header.Get("Authorization")) {
+			return nil
+		}
 	}
 
 	// Build identity
@@ -160,11 +185,13 @@ func (a *JWTAuthenticator) validateToken(tokenStr string) (map[string]any, error
 	// Validate standard claims
 	now := time.Now().Unix()
 
-	// Check expiration
-	if exp, ok := claims["exp"].(float64); ok {
-		if int64(exp) < now {
-			return nil, fmt.Errorf("token expired")
-		}
+	// Check expiration — required claim
+	exp, hasExp := claims["exp"].(float64)
+	if !hasExp {
+		return nil, fmt.Errorf("missing required exp claim")
+	}
+	if int64(exp) < now {
+		return nil, fmt.Errorf("token expired")
 	}
 
 	// Check not-before

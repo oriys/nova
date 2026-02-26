@@ -299,7 +299,7 @@ func daemonCmd() *cobra.Command {
 			})
 			asyncWorkers.Start()
 
-			grpcServer := novagrpc.NewServer(s, exec, p)
+			grpcServer := novagrpc.NewServer(s, exec, p, cfg.GRPC.ServiceToken)
 			if err := grpcServer.Start(cfg.GRPC.Addr, cfg.GRPC.CertFile, cfg.GRPC.KeyFile); err != nil {
 				return fmt.Errorf("start Comet gRPC server: %w", err)
 			}

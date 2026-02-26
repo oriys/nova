@@ -17,6 +17,9 @@ func (s *PostgresStore) CreateDbResource(ctx context.Context, res *DbResourceRec
 	if res.ID == "" {
 		res.ID = uuid.New().String()
 	}
+	// Force tenant_id from context to prevent tenant injection
+	scope := tenantScopeFromContext(ctx)
+	res.TenantID = scope.TenantID
 	now := time.Now().UTC()
 	res.CreatedAt = now
 	res.UpdatedAt = now
@@ -346,6 +349,10 @@ func (s *PostgresStore) CreateCredentialPolicy(ctx context.Context, p *Credentia
 }
 
 func (s *PostgresStore) GetCredentialPolicy(ctx context.Context, dbResourceID string) (*CredentialPolicyRecord, error) {
+	// Validate that the db resource belongs to the current tenant
+	if _, err := s.GetDbResource(ctx, dbResourceID); err != nil {
+		return nil, fmt.Errorf("get credential_policy: resource access denied or not found: %w", err)
+	}
 	p := &CredentialPolicyRecord{}
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, db_resource_id, auth_mode, rotation_days, static_username, created_at, updated_at
@@ -359,6 +366,7 @@ func (s *PostgresStore) GetCredentialPolicy(ctx context.Context, dbResourceID st
 }
 
 func (s *PostgresStore) UpdateCredentialPolicy(ctx context.Context, dbResourceID string, update *CredentialPolicyUpdate) (*CredentialPolicyRecord, error) {
+	// GetCredentialPolicy already validates tenant ownership via GetDbResource
 	existing, err := s.GetCredentialPolicy(ctx, dbResourceID)
 	if err != nil {
 		return nil, err
@@ -384,6 +392,10 @@ func (s *PostgresStore) UpdateCredentialPolicy(ctx context.Context, dbResourceID
 }
 
 func (s *PostgresStore) DeleteCredentialPolicy(ctx context.Context, dbResourceID string) error {
+	// Validate that the db resource belongs to the current tenant
+	if _, err := s.GetDbResource(ctx, dbResourceID); err != nil {
+		return fmt.Errorf("delete credential_policy: resource access denied or not found: %w", err)
+	}
 	_, err := s.pool.Exec(ctx, `DELETE FROM credential_policies WHERE db_resource_id = $1`, dbResourceID)
 	if err != nil {
 		return fmt.Errorf("delete credential_policy: %w", err)
@@ -414,11 +426,16 @@ func (s *PostgresStore) SaveDbRequestLog(ctx context.Context, log *domain.DbRequ
 }
 
 func (s *PostgresStore) ListDbRequestLogs(ctx context.Context, dbResourceID string, limit, offset int) ([]*domain.DbRequestLog, error) {
+	// Validate that the db resource belongs to the current tenant
+	if _, err := s.GetDbResource(ctx, dbResourceID); err != nil {
+		return nil, fmt.Errorf("list db_request_logs: resource access denied or not found: %w", err)
+	}
+	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, request_id, function_id, function_name, version, tenant_id, db_resource_id,
 			statement_hash, tables, rows_returned, rows_affected, latency_ms, error_code, created_at
-		FROM db_request_logs WHERE db_resource_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
-		dbResourceID, limit, offset)
+		FROM db_request_logs WHERE db_resource_id = $1 AND tenant_id = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
+		dbResourceID, scope.TenantID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list db_request_logs: %w", err)
 	}

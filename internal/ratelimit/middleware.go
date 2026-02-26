@@ -2,6 +2,7 @@ package ratelimit
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -10,7 +11,7 @@ import (
 )
 
 // Middleware creates an HTTP middleware for rate limiting
-func Middleware(limiter *Limiter, publicPaths []string) func(http.Handler) http.Handler {
+func Middleware(limiter *Limiter, publicPaths []string, trustedProxies ...string) func(http.Handler) http.Handler {
 	// Build public path set
 	publicSet := make(map[string]bool, len(publicPaths))
 	for _, p := range publicPaths {
@@ -38,7 +39,7 @@ func Middleware(limiter *Limiter, publicPaths []string) func(http.Handler) http.
 				tier = id.Tier
 			} else {
 				// Anonymous request - use IP
-				ip := getClientIP(r)
+				ip := getClientIP(r, trustedProxies)
 				key = KeyForGlobal(ip)
 				tier = "default"
 			}
@@ -46,8 +47,11 @@ func Middleware(limiter *Limiter, publicPaths []string) func(http.Handler) http.
 			// Check rate limit
 			result, err := limiter.Allow(r.Context(), key, tier)
 			if err != nil {
-				// On error, allow the request but log
-				next.ServeHTTP(w, r)
+				// Fail-closed: reject the request when the rate limit backend is unavailable
+				// to prevent self-amplifying DoS when the backend is overloaded.
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				w.Write([]byte(`{"error":"service_unavailable","message":"rate limit service temporarily unavailable"}`))
 				return
 			}
 
@@ -90,30 +94,63 @@ func isPublicPath(path string, publicSet map[string]bool) bool {
 	return false
 }
 
-// getClientIP extracts the client IP from the request
-func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP in the chain
-		if idx := strings.Index(xff, ","); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
+// getClientIP extracts the client IP from the request.
+// X-Forwarded-For and X-Real-IP headers are only trusted when the remote
+// address belongs to the configured list of trusted proxy CIDRs/IPs.
+func getClientIP(r *http.Request, trustedProxies []string) string {
+	remoteIP := extractRemoteIP(r.RemoteAddr)
+
+	// Only trust proxy headers when the direct peer is a known proxy
+	if isTrustedProxy(remoteIP, trustedProxies) {
+		// Check X-Forwarded-For header — take the rightmost non-trusted IP
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			for i := len(parts) - 1; i >= 0; i-- {
+				ip := strings.TrimSpace(parts[i])
+				if ip != "" && !isTrustedProxy(ip, trustedProxies) {
+					return ip
+				}
+			}
 		}
-		return strings.TrimSpace(xff)
+
+		// Check X-Real-IP header
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			return strings.TrimSpace(xri)
+		}
 	}
 
-	// Check X-Real-IP header
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
+	return remoteIP
+}
 
-	// Fall back to RemoteAddr
-	ip := r.RemoteAddr
+// extractRemoteIP extracts the IP from a host:port RemoteAddr string.
+func extractRemoteIP(addr string) string {
+	ip := addr
 	if idx := strings.LastIndex(ip, ":"); idx != -1 {
 		ip = ip[:idx]
 	}
-	// Remove brackets for IPv6
 	ip = strings.TrimPrefix(ip, "[")
 	ip = strings.TrimSuffix(ip, "]")
-
 	return ip
+}
+
+// isTrustedProxy checks if the given IP matches any trusted proxy entry.
+// Entries can be plain IPs or CIDR notation.
+func isTrustedProxy(ip string, trusted []string) bool {
+	if len(trusted) == 0 {
+		return false
+	}
+	for _, entry := range trusted {
+		if strings.Contains(entry, "/") {
+			_, cidr, err := net.ParseCIDR(entry)
+			if err != nil {
+				continue
+			}
+			if cidr.Contains(net.ParseIP(ip)) {
+				return true
+			}
+		} else if ip == strings.TrimSpace(entry) {
+			return true
+		}
+	}
+	return false
 }

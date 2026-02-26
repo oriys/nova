@@ -38,10 +38,18 @@ type Server struct {
 	server          *grpc.Server
 	dataPlaneRouter http.Handler
 	clusterRouter   *cluster.Router
+	serviceToken    string
+}
+
+func firstString(ss []string) string {
+	if len(ss) > 0 {
+		return ss[0]
+	}
+	return ""
 }
 
 // NewServer creates a new gRPC server
-func NewServer(s *store.Store, exec *executor.Executor, p *pool.Pool) *Server {
+func NewServer(s *store.Store, exec *executor.Executor, p *pool.Pool, serviceToken ...string) *Server {
 	var clusterRouter *cluster.Router
 	localNodeID := strings.TrimSpace(os.Getenv("NOVA_CLUSTER_NODE_ID"))
 	if localNodeID != "" {
@@ -66,6 +74,7 @@ func NewServer(s *store.Store, exec *executor.Executor, p *pool.Pool) *Server {
 		executor:        exec,
 		dataPlaneRouter: mux,
 		clusterRouter:   clusterRouter,
+		serviceToken:    firstString(serviceToken),
 	}
 }
 
@@ -87,6 +96,17 @@ func (s *Server) Start(addr string, certFile, keyFile string) error {
 		logging.Op().Info("gRPC TLS enabled", "cert", certFile)
 	} else {
 		logging.Op().Warn("gRPC server running without TLS")
+	}
+
+	opts = append(opts, grpc.ChainUnaryInterceptor(
+		serviceAuthInterceptor(s.serviceToken),
+		loggingInterceptor,
+	))
+
+	if s.serviceToken != "" {
+		logging.Op().Info("gRPC service auth enabled")
+	} else {
+		logging.Op().Warn("gRPC server running without service auth — set NOVA_GRPC_SERVICE_TOKEN for inter-service authentication")
 	}
 
 	s.server = grpc.NewServer(opts...)
@@ -222,6 +242,11 @@ func (s *Server) InvokeAsync(ctx context.Context, req *novapb.InvokeRequest) (*n
 		idempotencyKey = strings.TrimSpace(req.Metadata["idempotency_key"])
 		if ttlSeconds := parsePositiveInt(req.Metadata["idempotency_ttl_s"]); ttlSeconds > 0 {
 			idempotencyTTL = time.Duration(ttlSeconds) * time.Second
+			// Cap idempotency TTL to prevent unbounded storage growth
+			const maxIdempotencyTTL = 7 * 24 * time.Hour
+			if idempotencyTTL > maxIdempotencyTTL {
+				idempotencyTTL = maxIdempotencyTTL
+			}
 		}
 	}
 
