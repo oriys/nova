@@ -30,6 +30,7 @@ import (
 	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/service"
 	"github.com/oriys/nova/internal/store"
+	"github.com/oriys/nova/internal/triggers"
 	"github.com/oriys/nova/internal/volume"
 	"github.com/oriys/nova/internal/workflow"
 	"github.com/redis/go-redis/v9"
@@ -61,6 +62,7 @@ type ServerConfig struct {
 	LayerManager          *layer.Manager
 	VolumeManager         *volume.Manager
 	AIService             *ai.Service
+	TriggerManager        *triggers.Manager
 	PlaneMode             PlaneMode
 	LocalNodeID           string
 	ClusterForwardTimeout time.Duration
@@ -85,6 +87,9 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 			forwardTimeout = 3 * time.Second
 		}
 		clusterRouter = cluster.NewRouter(clusterRegistry, scheduler, cluster.NewProxy(forwardTimeout), registryCfg.NodeID)
+		// Start cluster health checker and initial store sync
+		go clusterRegistry.StartHealthChecker(context.Background())
+		_ = clusterRegistry.SyncFromStore(context.Background())
 	}
 
 	var cpHandler *controlplane.Handler
@@ -108,6 +113,7 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 			LayerManager:    cfg.LayerManager,
 			VolumeManager:   cfg.VolumeManager,
 			AIService:       cfg.AIService,
+			TriggerManager:  cfg.TriggerManager,
 		}
 		if cfg.AuthCfg != nil && cfg.AuthCfg.JWT.Secret != "" {
 			cpHandler.JWTSecret = cfg.AuthCfg.JWT.Secret

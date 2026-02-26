@@ -58,6 +58,8 @@ case TriggerTypeRabbitMQ:
 connector, err = NewRabbitMQConnector(trigger, handler)
 case TriggerTypeRedis:
 connector, err = NewRedisStreamConnector(trigger, handler)
+case TriggerTypeWebhook:
+connector, err = NewWebhookConnector(trigger, handler)
 default:
 return fmt.Errorf("unsupported trigger type: %s", trigger.Type)
 }

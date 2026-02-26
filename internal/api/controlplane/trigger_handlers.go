@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/oriys/nova/internal/store"
+	"github.com/oriys/nova/internal/triggers"
 )
 
 // CreateTrigger handles POST /triggers
@@ -57,6 +58,22 @@ func (h *Handler) CreateTrigger(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.CreateTrigger(r.Context(), trigger); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Hot-load: register with trigger manager so it starts immediately
+	if h.TriggerManager != nil {
+		t := &triggers.Trigger{
+			ID:           trigger.ID,
+			TenantID:     trigger.TenantID,
+			Namespace:    trigger.Namespace,
+			Name:         trigger.Name,
+			Type:         triggers.TriggerType(trigger.Type),
+			FunctionID:   trigger.FunctionID,
+			FunctionName: trigger.FunctionName,
+			Enabled:      trigger.Enabled,
+			Config:       trigger.Config,
+		}
+		_ = h.TriggerManager.RegisterTrigger(t)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -126,5 +143,41 @@ func (h *Handler) DeleteTrigger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Hot-unload: stop the running connector
+	if h.TriggerManager != nil {
+		_ = h.TriggerManager.UnregisterTrigger(id)
+	}
+
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListTriggerStatuses handles GET /triggers:statuses
+func (h *Handler) ListTriggerStatuses(w http.ResponseWriter, r *http.Request) {
+	if h.TriggerManager == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("[]"))
+		return
+	}
+	statuses := h.TriggerManager.ListTriggerStatuses()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(statuses)
+}
+
+// GetTriggerStatus handles GET /triggers/{id}/status
+func (h *Handler) GetTriggerStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	if h.TriggerManager == nil {
+		http.Error(w, "trigger manager not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	status, err := h.TriggerManager.GetTriggerStatus(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
 }

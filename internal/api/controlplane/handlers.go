@@ -18,6 +18,7 @@ import (
 	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/service"
 	"github.com/oriys/nova/internal/store"
+	"github.com/oriys/nova/internal/triggers"
 	"github.com/oriys/nova/internal/volume"
 	"github.com/oriys/nova/internal/workflow"
 )
@@ -40,6 +41,7 @@ type Handler struct {
 	LayerManager    *layer.Manager  // Optional: for shared dependency layers
 	VolumeManager   *volume.Manager // Optional: for persistent volume management
 	AIService       *ai.Service     // Optional: for AI-powered code operations
+	TriggerManager  *triggers.Manager // Optional: for hot-loading triggers at runtime
 	JWTSecret       string          // HS256 JWT signing key for auth endpoints
 	AuthHandler     *AuthHandler    // Exposed for revocation checker integration
 }
@@ -200,6 +202,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /triggers/{id}", h.GetTrigger)
 	mux.HandleFunc("PATCH /triggers/{id}", h.UpdateTrigger)
 	mux.HandleFunc("DELETE /triggers/{id}", h.DeleteTrigger)
+	mux.HandleFunc("GET /triggers:statuses", h.ListTriggerStatuses)
+	mux.HandleFunc("GET /triggers/{id}/status", h.GetTriggerStatus)
 
 	// Cluster nodes
 	mux.HandleFunc("POST /cluster/nodes", h.RegisterClusterNode)
