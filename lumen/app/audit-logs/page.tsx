@@ -76,7 +76,6 @@ const RESOURCE_TYPES = [
 
 export default function AuditLogsPage() {
   const t = useTranslations("auditLogsPage")
-  const tc = useTranslations("common")
   const [logs, setLogs] = useState<AuditLogEntry[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -289,48 +288,48 @@ export default function AuditLogsPage() {
 
         {/* Detail Dialog */}
         <Dialog open={!!selectedLog} onOpenChange={(open) => { if (!open) setSelectedLog(null) }}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="w-full max-w-2xl max-h-[85dvh] overflow-y-auto overflow-x-hidden">
             <DialogHeader>
               <DialogTitle>{t("detail.title")}</DialogTitle>
             </DialogHeader>
             {selectedLog && (
-              <div className="space-y-4">
+              <div className="space-y-4 min-w-0">
                 <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-muted-foreground">{t("columns.time")}</p>
                     <p className="font-medium">{formatTime(selectedLog.created_at)}</p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-muted-foreground">{t("columns.actor")}</p>
-                    <p className="font-medium font-mono">{selectedLog.actor} ({selectedLog.actor_type})</p>
+                    <p className="font-medium font-mono break-all">{selectedLog.actor} ({selectedLog.actor_type})</p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-muted-foreground">{t("columns.action")}</p>
                     <Badge variant="secondary" className={cn("gap-1", ACTION_COLORS[selectedLog.action])}>
                       {selectedLog.action}
                     </Badge>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-muted-foreground">{t("columns.resource")}</p>
-                    <p className="font-medium">{selectedLog.resource_type} / {selectedLog.resource_name}</p>
+                    <p className="font-medium break-all">{selectedLog.resource_type} / {selectedLog.resource_name}</p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-muted-foreground">{t("columns.method")}</p>
                     <Badge variant="outline" className="font-mono">{selectedLog.http_method}</Badge>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-muted-foreground">{t("columns.path")}</p>
                     <p className="font-mono text-xs break-all">{selectedLog.http_path}</p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-muted-foreground">{t("columns.status")}</p>
                     <Badge variant="secondary" className={statusColor(selectedLog.status_code)}>
                       {selectedLog.status_code}
                     </Badge>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-muted-foreground">{t("columns.ip")}</p>
-                    <p className="font-mono text-xs">{selectedLog.ip_address}</p>
+                    <p className="font-mono text-xs break-all">{selectedLog.ip_address}</p>
                   </div>
                 </div>
                 <div>
@@ -340,7 +339,7 @@ export default function AuditLogsPage() {
                 {selectedLog.request_body && (
                   <div>
                     <p className="text-muted-foreground text-sm mb-1">{t("detail.requestBody")}</p>
-                    <pre className="text-xs font-mono bg-muted p-3 rounded overflow-auto max-h-48">
+                    <pre className="text-xs font-mono bg-muted p-3 rounded overflow-auto max-h-48 max-w-full whitespace-pre-wrap break-all">
                       {(() => {
                         try {
                           return JSON.stringify(JSON.parse(selectedLog.request_body), null, 2)
@@ -354,7 +353,7 @@ export default function AuditLogsPage() {
                 {selectedLog.response_summary && (
                   <div>
                     <p className="text-muted-foreground text-sm mb-1">{t("detail.responseSummary")}</p>
-                    <pre className="text-xs font-mono bg-muted p-3 rounded overflow-auto max-h-48">
+                    <pre className="text-xs font-mono bg-muted p-3 rounded overflow-auto max-h-48 max-w-full whitespace-pre-wrap break-all">
                       {selectedLog.response_summary}
                     </pre>
                   </div>
