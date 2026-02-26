@@ -8,6 +8,7 @@ import (
 // GatewayRoute maps a domain+path to a function with optional auth and validation
 type GatewayRoute struct {
 	ID            string            `json:"id"`
+	TenantID      string            `json:"tenant_id"`
 	Domain        string            `json:"domain"`                    // "api.example.com"
 	Path          string            `json:"path"`                      // "/v1/process" or "/v1/users/{id}"
 	Methods       []string          `json:"methods,omitempty"`         // empty = all methods

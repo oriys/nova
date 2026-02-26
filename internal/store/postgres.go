@@ -655,6 +655,8 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 		`ALTER TABLE layers ADD COLUMN IF NOT EXISTS content_hash TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE layers ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'`,
+		`ALTER TABLE gateway_routes ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'`,
 		`CREATE TABLE IF NOT EXISTS function_layers (
 			function_id TEXT NOT NULL,
 			layer_id TEXT NOT NULL,

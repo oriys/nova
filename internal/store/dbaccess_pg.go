@@ -39,11 +39,12 @@ func (s *PostgresStore) CreateDbResource(ctx context.Context, res *DbResourceRec
 }
 
 func (s *PostgresStore) GetDbResource(ctx context.Context, id string) (*DbResourceRecord, error) {
+	scope := tenantScopeFromContext(ctx)
 	r := &DbResourceRecord{}
 	var capsJSON []byte
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, tenant_id, name, type, endpoint, port, database_name, region, tenant_mode, network_policy, capabilities, created_at, updated_at
-		FROM db_resources WHERE id = $1`, id).Scan(
+		FROM db_resources WHERE id = $1 AND tenant_id = $2`, id, scope.TenantID).Scan(
 		&r.ID, &r.TenantID, &r.Name, &r.Type, &r.Endpoint, &r.Port,
 		&r.DatabaseName, &r.Region, &r.TenantMode, &r.NetworkPolicy,
 		&capsJSON, &r.CreatedAt, &r.UpdatedAt)
@@ -60,11 +61,12 @@ func (s *PostgresStore) GetDbResource(ctx context.Context, id string) (*DbResour
 }
 
 func (s *PostgresStore) GetDbResourceByName(ctx context.Context, name string) (*DbResourceRecord, error) {
+	scope := tenantScopeFromContext(ctx)
 	r := &DbResourceRecord{}
 	var capsJSON []byte
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, tenant_id, name, type, endpoint, port, database_name, region, tenant_mode, network_policy, capabilities, created_at, updated_at
-		FROM db_resources WHERE name = $1`, name).Scan(
+		FROM db_resources WHERE name = $1 AND tenant_id = $2`, name, scope.TenantID).Scan(
 		&r.ID, &r.TenantID, &r.Name, &r.Type, &r.Endpoint, &r.Port,
 		&r.DatabaseName, &r.Region, &r.TenantMode, &r.NetworkPolicy,
 		&capsJSON, &r.CreatedAt, &r.UpdatedAt)
@@ -81,9 +83,10 @@ func (s *PostgresStore) GetDbResourceByName(ctx context.Context, name string) (*
 }
 
 func (s *PostgresStore) ListDbResources(ctx context.Context, limit, offset int) ([]*DbResourceRecord, error) {
+	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, tenant_id, name, type, endpoint, port, database_name, region, tenant_mode, network_policy, capabilities, created_at, updated_at
-		FROM db_resources ORDER BY created_at DESC LIMIT $1 OFFSET $2`, limit, offset)
+		FROM db_resources WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`, scope.TenantID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list db_resources: %w", err)
 	}
@@ -110,7 +113,7 @@ func (s *PostgresStore) ListDbResources(ctx context.Context, limit, offset int) 
 }
 
 func (s *PostgresStore) UpdateDbResource(ctx context.Context, id string, update *DbResourceUpdate) (*DbResourceRecord, error) {
-	existing, err := s.GetDbResource(ctx, id)
+	existing, err := s.GetDbResource(ctx, id) // GetDbResource already filters by tenant_id
 	if err != nil {
 		return nil, err
 	}
@@ -157,9 +160,13 @@ func (s *PostgresStore) UpdateDbResource(ctx context.Context, id string, update 
 }
 
 func (s *PostgresStore) DeleteDbResource(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM db_resources WHERE id = $1`, id)
+	scope := tenantScopeFromContext(ctx)
+	ct, err := s.pool.Exec(ctx, `DELETE FROM db_resources WHERE id = $1 AND tenant_id = $2`, id, scope.TenantID)
 	if err != nil {
 		return fmt.Errorf("delete db_resource: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("db_resource not found: %s", id)
 	}
 	return nil
 }
@@ -195,11 +202,12 @@ func (s *PostgresStore) CreateDbBinding(ctx context.Context, b *DbBindingRecord)
 }
 
 func (s *PostgresStore) GetDbBinding(ctx context.Context, id string) (*DbBindingRecord, error) {
+	scope := tenantScopeFromContext(ctx)
 	b := &DbBindingRecord{}
 	var permsJSON, quotaJSON []byte
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, tenant_id, function_id, version_selector, db_resource_id, permissions, quota, created_at, updated_at
-		FROM db_bindings WHERE id = $1`, id).Scan(
+		FROM db_bindings WHERE id = $1 AND tenant_id = $2`, id, scope.TenantID).Scan(
 		&b.ID, &b.TenantID, &b.FunctionID, &b.VersionSelector, &b.DbResourceID,
 		&permsJSON, &quotaJSON, &b.CreatedAt, &b.UpdatedAt)
 	if err != nil {
@@ -218,10 +226,11 @@ func (s *PostgresStore) GetDbBinding(ctx context.Context, id string) (*DbBinding
 }
 
 func (s *PostgresStore) ListDbBindings(ctx context.Context, dbResourceID string, limit, offset int) ([]*DbBindingRecord, error) {
+	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, tenant_id, function_id, version_selector, db_resource_id, permissions, quota, created_at, updated_at
-		FROM db_bindings WHERE db_resource_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
-		dbResourceID, limit, offset)
+		FROM db_bindings WHERE db_resource_id = $1 AND tenant_id = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
+		dbResourceID, scope.TenantID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list db_bindings: %w", err)
 	}
@@ -230,10 +239,11 @@ func (s *PostgresStore) ListDbBindings(ctx context.Context, dbResourceID string,
 }
 
 func (s *PostgresStore) ListDbBindingsByFunction(ctx context.Context, functionID string, limit, offset int) ([]*DbBindingRecord, error) {
+	scope := tenantScopeFromContext(ctx)
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, tenant_id, function_id, version_selector, db_resource_id, permissions, quota, created_at, updated_at
-		FROM db_bindings WHERE function_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
-		functionID, limit, offset)
+		FROM db_bindings WHERE function_id = $1 AND tenant_id = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
+		functionID, scope.TenantID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list db_bindings by function: %w", err)
 	}
@@ -303,9 +313,13 @@ func (s *PostgresStore) UpdateDbBinding(ctx context.Context, id string, update *
 }
 
 func (s *PostgresStore) DeleteDbBinding(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM db_bindings WHERE id = $1`, id)
+	scope := tenantScopeFromContext(ctx)
+	ct, err := s.pool.Exec(ctx, `DELETE FROM db_bindings WHERE id = $1 AND tenant_id = $2`, id, scope.TenantID)
 	if err != nil {
 		return fmt.Errorf("delete db_binding: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("db_binding not found: %s", id)
 	}
 	return nil
 }

@@ -12,13 +12,17 @@ import (
 
 // SaveGatewayRoute creates or updates a gateway route
 func (s *PostgresStore) SaveGatewayRoute(ctx context.Context, route *domain.GatewayRoute) error {
+	scope := tenantScopeFromContext(ctx)
+	if route.TenantID == "" {
+		route.TenantID = scope.TenantID
+	}
 	data, err := json.Marshal(route)
 	if err != nil {
 		return fmt.Errorf("marshal gateway route: %w", err)
 	}
 	_, err = s.pool.Exec(ctx, `
-		INSERT INTO gateway_routes (id, domain, path, function_name, data, enabled, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO gateway_routes (id, tenant_id, domain, path, function_name, data, enabled, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (id) DO UPDATE SET
 			domain = EXCLUDED.domain,
 			path = EXCLUDED.path,
@@ -26,7 +30,7 @@ func (s *PostgresStore) SaveGatewayRoute(ctx context.Context, route *domain.Gate
 			data = EXCLUDED.data,
 			enabled = EXCLUDED.enabled,
 			updated_at = NOW()
-	`, route.ID, route.Domain, route.Path, route.FunctionName, data, route.Enabled, route.CreatedAt, route.UpdatedAt)
+	`, route.ID, route.TenantID, route.Domain, route.Path, route.FunctionName, data, route.Enabled, route.CreatedAt, route.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("save gateway route: %w", err)
 	}
@@ -35,8 +39,9 @@ func (s *PostgresStore) SaveGatewayRoute(ctx context.Context, route *domain.Gate
 
 // GetGatewayRoute retrieves a gateway route by ID
 func (s *PostgresStore) GetGatewayRoute(ctx context.Context, id string) (*domain.GatewayRoute, error) {
+	scope := tenantScopeFromContext(ctx)
 	var data []byte
-	err := s.pool.QueryRow(ctx, `SELECT data FROM gateway_routes WHERE id = $1`, id).Scan(&data)
+	err := s.pool.QueryRow(ctx, `SELECT data FROM gateway_routes WHERE id = $1 AND tenant_id = $2`, id, scope.TenantID).Scan(&data)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("gateway route not found: %s", id)
 	}
@@ -70,15 +75,16 @@ func (s *PostgresStore) GetRouteByDomainPath(ctx context.Context, routeDomain, p
 	return &route, nil
 }
 
-// ListGatewayRoutes returns all gateway routes
+// ListGatewayRoutes returns all gateway routes for the current tenant
 func (s *PostgresStore) ListGatewayRoutes(ctx context.Context, limit, offset int) ([]*domain.GatewayRoute, error) {
+	scope := tenantScopeFromContext(ctx)
 	if limit <= 0 {
 		limit = 100
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := s.pool.Query(ctx, `SELECT data FROM gateway_routes ORDER BY domain, path LIMIT $1 OFFSET $2`, limit, offset)
+	rows, err := s.pool.Query(ctx, `SELECT data FROM gateway_routes WHERE tenant_id = $1 ORDER BY domain, path LIMIT $2 OFFSET $3`, scope.TenantID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list gateway routes: %w", err)
 	}
@@ -99,8 +105,9 @@ func (s *PostgresStore) ListGatewayRoutes(ctx context.Context, limit, offset int
 	return routes, nil
 }
 
-// ListRoutesByDomain returns routes for a specific domain
+// ListRoutesByDomain returns routes for a specific domain within the current tenant
 func (s *PostgresStore) ListRoutesByDomain(ctx context.Context, routeDomain string, limit, offset int) ([]*domain.GatewayRoute, error) {
+	scope := tenantScopeFromContext(ctx)
 	if limit <= 0 {
 		limit = 100
 	}
@@ -108,8 +115,8 @@ func (s *PostgresStore) ListRoutesByDomain(ctx context.Context, routeDomain stri
 		offset = 0
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT data FROM gateway_routes WHERE domain = $1 ORDER BY path LIMIT $2 OFFSET $3
-	`, routeDomain, limit, offset)
+		SELECT data FROM gateway_routes WHERE domain = $1 AND tenant_id = $2 ORDER BY path LIMIT $3 OFFSET $4
+	`, routeDomain, scope.TenantID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list routes by domain: %w", err)
 	}
@@ -132,7 +139,8 @@ func (s *PostgresStore) ListRoutesByDomain(ctx context.Context, routeDomain stri
 
 // DeleteGatewayRoute removes a gateway route
 func (s *PostgresStore) DeleteGatewayRoute(ctx context.Context, id string) error {
-	ct, err := s.pool.Exec(ctx, `DELETE FROM gateway_routes WHERE id = $1`, id)
+	scope := tenantScopeFromContext(ctx)
+	ct, err := s.pool.Exec(ctx, `DELETE FROM gateway_routes WHERE id = $1 AND tenant_id = $2`, id, scope.TenantID)
 	if err != nil {
 		return fmt.Errorf("delete gateway route: %w", err)
 	}
@@ -144,6 +152,7 @@ func (s *PostgresStore) DeleteGatewayRoute(ctx context.Context, id string) error
 
 // UpdateGatewayRoute partially updates a gateway route
 func (s *PostgresStore) UpdateGatewayRoute(ctx context.Context, id string, route *domain.GatewayRoute) error {
+	scope := tenantScopeFromContext(ctx)
 	route.UpdatedAt = time.Now()
 	data, err := json.Marshal(route)
 	if err != nil {
@@ -153,8 +162,8 @@ func (s *PostgresStore) UpdateGatewayRoute(ctx context.Context, id string, route
 		UPDATE gateway_routes SET
 			domain = $2, path = $3, function_name = $4,
 			data = $5, enabled = $6, updated_at = NOW()
-		WHERE id = $1
-	`, id, route.Domain, route.Path, route.FunctionName, data, route.Enabled)
+		WHERE id = $1 AND tenant_id = $7
+	`, id, route.Domain, route.Path, route.FunctionName, data, route.Enabled, scope.TenantID)
 	if err != nil {
 		return fmt.Errorf("update gateway route: %w", err)
 	}

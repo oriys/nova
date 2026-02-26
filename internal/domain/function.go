@@ -275,6 +275,7 @@ type SLOPolicy struct {
 // Layer represents a shared dependency layer that can be mounted as a read-only drive
 type Layer struct {
 	ID          string    `json:"id"`
+	TenantID    string    `json:"tenant_id"`
 	Name        string    `json:"name"`
 	Runtime     Runtime   `json:"runtime"`
 	Version     string    `json:"version"`

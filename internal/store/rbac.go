@@ -78,11 +78,12 @@ func (s *PostgresStore) CreateRole(ctx context.Context, role *RoleRecord) (*Role
 }
 
 func (s *PostgresStore) GetRole(ctx context.Context, id string) (*RoleRecord, error) {
+	scope := tenantScopeFromContext(ctx)
 	var r RoleRecord
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, tenant_id, name, is_system, created_at, updated_at
-		FROM rbac_roles WHERE id = $1
-	`, id).Scan(&r.ID, &r.TenantID, &r.Name, &r.IsSystem, &r.CreatedAt, &r.UpdatedAt)
+		FROM rbac_roles WHERE id = $1 AND tenant_id = $2
+	`, id, scope.TenantID).Scan(&r.ID, &r.TenantID, &r.Name, &r.IsSystem, &r.CreatedAt, &r.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("role not found: %s", id)
 	}
@@ -127,7 +128,8 @@ func (s *PostgresStore) ListRoles(ctx context.Context, tenantID string, limit, o
 }
 
 func (s *PostgresStore) DeleteRole(ctx context.Context, id string) error {
-	ct, err := s.pool.Exec(ctx, `DELETE FROM rbac_roles WHERE id = $1 AND is_system = FALSE`, id)
+	scope := tenantScopeFromContext(ctx)
+	ct, err := s.pool.Exec(ctx, `DELETE FROM rbac_roles WHERE id = $1 AND tenant_id = $2 AND is_system = FALSE`, id, scope.TenantID)
 	if err != nil {
 		return fmt.Errorf("delete role: %w", err)
 	}
@@ -225,6 +227,10 @@ func (s *PostgresStore) DeletePermission(ctx context.Context, id string) error {
 // ─── Role ↔ Permission Mapping ──────────────────────────────────────────────
 
 func (s *PostgresStore) AssignPermissionToRole(ctx context.Context, roleID, permissionID string) error {
+	// Verify role belongs to current tenant
+	if _, err := s.GetRole(ctx, roleID); err != nil {
+		return fmt.Errorf("role not found in current tenant: %s", roleID)
+	}
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO rbac_role_permissions (role_id, permission_id)
 		VALUES ($1, $2)
@@ -237,6 +243,10 @@ func (s *PostgresStore) AssignPermissionToRole(ctx context.Context, roleID, perm
 }
 
 func (s *PostgresStore) RevokePermissionFromRole(ctx context.Context, roleID, permissionID string) error {
+	// Verify role belongs to current tenant
+	if _, err := s.GetRole(ctx, roleID); err != nil {
+		return fmt.Errorf("role not found in current tenant: %s", roleID)
+	}
 	ct, err := s.pool.Exec(ctx, `
 		DELETE FROM rbac_role_permissions WHERE role_id = $1 AND permission_id = $2
 	`, roleID, permissionID)
@@ -250,6 +260,10 @@ func (s *PostgresStore) RevokePermissionFromRole(ctx context.Context, roleID, pe
 }
 
 func (s *PostgresStore) ListRolePermissions(ctx context.Context, roleID string) ([]*PermissionRecord, error) {
+	// Verify role belongs to current tenant
+	if _, err := s.GetRole(ctx, roleID); err != nil {
+		return nil, fmt.Errorf("role not found in current tenant: %s", roleID)
+	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT p.id, p.code, p.resource_type, p.action, p.description, p.created_at
 		FROM rbac_permissions p
@@ -314,12 +328,13 @@ func (s *PostgresStore) CreateRoleAssignment(ctx context.Context, ra *RoleAssign
 }
 
 func (s *PostgresStore) GetRoleAssignment(ctx context.Context, id string) (*RoleAssignmentRecord, error) {
+	scope := tenantScopeFromContext(ctx)
 	var ra RoleAssignmentRecord
 	var principalType, scopeType string
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, tenant_id, principal_type, principal_id, role_id, scope_type, scope_id, created_by, created_at
-		FROM rbac_role_assignments WHERE id = $1
-	`, id).Scan(&ra.ID, &ra.TenantID, &principalType, &ra.PrincipalID, &ra.RoleID, &scopeType, &ra.ScopeID, &ra.CreatedBy, &ra.CreatedAt)
+		FROM rbac_role_assignments WHERE id = $1 AND tenant_id = $2
+	`, id, scope.TenantID).Scan(&ra.ID, &ra.TenantID, &principalType, &ra.PrincipalID, &ra.RoleID, &scopeType, &ra.ScopeID, &ra.CreatedBy, &ra.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("role assignment not found: %s", id)
 	}
@@ -442,7 +457,8 @@ func (s *PostgresStore) ResolveEffectivePermissions(ctx context.Context, tenantI
 }
 
 func (s *PostgresStore) DeleteRoleAssignment(ctx context.Context, id string) error {
-	ct, err := s.pool.Exec(ctx, `DELETE FROM rbac_role_assignments WHERE id = $1`, id)
+	scope := tenantScopeFromContext(ctx)
+	ct, err := s.pool.Exec(ctx, `DELETE FROM rbac_role_assignments WHERE id = $1 AND tenant_id = $2`, id, scope.TenantID)
 	if err != nil {
 		return fmt.Errorf("delete role assignment: %w", err)
 	}

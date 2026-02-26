@@ -59,6 +59,9 @@ func (h *Handler) CreateDbResource(w http.ResponseWriter, r *http.Request) {
 		Capabilities:  req.Capabilities,
 	}
 
+	scope := store.TenantScopeFromContext(r.Context())
+	rec.TenantID = scope.TenantID
+
 	created, err := h.Store.CreateDbResource(r.Context(), rec)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -186,6 +189,9 @@ func (h *Handler) CreateDbBinding(w http.ResponseWriter, r *http.Request) {
 		Permissions:     req.Permissions,
 		Quota:           req.Quota,
 	}
+
+	scope := store.TenantScopeFromContext(r.Context())
+	rec.TenantID = scope.TenantID
 
 	created, err := h.Store.CreateDbBinding(r.Context(), rec)
 	if err != nil {
