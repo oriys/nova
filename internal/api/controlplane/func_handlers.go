@@ -244,8 +244,43 @@ func (h *Handler) UpdateFunction(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Auto-version: snapshot current function state as a new version
+	h.publishVersion(r.Context(), fn, update.Code)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(fn)
+}
+
+// publishVersion snapshots the current function state as a new version.
+// This is called automatically after every successful function update.
+func (h *Handler) publishVersion(ctx context.Context, fn *domain.Function, code *string) {
+	fn.Version++
+	_ = h.Store.SaveFunction(ctx, fn)
+
+	var codeStr string
+	if code != nil {
+		codeStr = *code
+	} else if fc, err := h.Store.GetFunctionCode(ctx, fn.ID); err == nil && fc != nil {
+		codeStr = fc.SourceCode
+	}
+
+	ver := &domain.FunctionVersion{
+		FunctionID: fn.ID,
+		Version:    fn.Version,
+		CodeHash:   fn.CodeHash,
+		Code:       codeStr,
+		Handler:    fn.Handler,
+		MemoryMB:   fn.MemoryMB,
+		TimeoutS:   fn.TimeoutS,
+		Mode:       fn.Mode,
+		Limits:     fn.Limits,
+		EnvVars:    fn.EnvVars,
+	}
+	if err := h.Store.PublishVersion(ctx, fn.ID, ver); err != nil {
+		logging.Op().Warn("failed to publish version", "function", fn.Name, "version", fn.Version, "error", err)
+	} else {
+		logging.Op().Info("published version", "function", fn.Name, "version", fn.Version)
+	}
 }
 
 // DeleteFunction handles DELETE /functions/{name}

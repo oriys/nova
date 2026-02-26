@@ -391,6 +391,7 @@ type FunctionVersion struct {
 	FunctionID  string            `json:"function_id"`
 	Version     int               `json:"version"`
 	CodeHash    string            `json:"code_hash"`
+	Code        string            `json:"code,omitempty"`
 	Arch        string            `json:"arch,omitempty"`
 	Handler     string            `json:"handler"`
 	MemoryMB    int               `json:"memory_mb"`
