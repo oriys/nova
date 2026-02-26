@@ -23,6 +23,7 @@ import {
   Network,
   FileText,
   ShieldCheck,
+  ShieldAlert,
   HardDrive,
   Layers,
   Bell,
@@ -35,7 +36,7 @@ import {
   HelpCircle,
 } from "lucide-react"
 
-type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "asyncJobs" | "history" | "replay" | "runtimes" | "configurations" | "secrets" | "apiKeys" | "gateway" | "apiDocs" | "rbac" | "volumes" | "layers" | "notifications" | "snapshots" | "triggers" | "cluster" | "alerts" | "tuning" | "help"
+type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "asyncJobs" | "history" | "replay" | "runtimes" | "configurations" | "secrets" | "apiKeys" | "gateway" | "apiDocs" | "rbac" | "volumes" | "layers" | "notifications" | "snapshots" | "triggers" | "cluster" | "alerts" | "tuning" | "auditLogs" | "help"
 
 const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] = [
   { key: "dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -55,6 +56,7 @@ const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] 
   { key: "snapshots", href: "/snapshots", icon: Camera },
   { key: "tuning", href: "/tuning", icon: SlidersHorizontal },
   { key: "rbac", href: "/rbac", icon: ShieldCheck },
+  { key: "auditLogs", href: "/audit-logs", icon: ShieldAlert },
   { key: "notifications", href: "/notifications", icon: Bell },
   { key: "alerts", href: "/alerts", icon: Activity },
   { key: "configurations", href: "/configurations", icon: Settings },

@@ -29,6 +29,7 @@
     "alerts": "Alertes",
     "replay": "Rejeu",
     "tuning": "Réglage",
+    "auditLogs": "Journaux d'audit",
     "help": "Aide"
   },
   "pages": {
@@ -2705,5 +2706,45 @@
         "step3": "Copiez les extraits de code pour l'intégration"
       }
     }
+  },
+  "auditLogsPage": {
+    "title": "Journaux d'audit",
+    "description": "Piste d'audit complète de toutes les opérations de la plateforme",
+    "filters": {
+      "actor": "Acteur",
+      "action": "Action",
+      "resourceType": "Type de ressource",
+      "resourceName": "Nom de la ressource",
+      "allActions": "Toutes les actions",
+      "allResourceTypes": "Tous les types",
+      "since": "Depuis",
+      "until": "Jusqu'à",
+      "search": "Rechercher",
+      "reset": "Réinitialiser"
+    },
+    "columns": {
+      "time": "Heure",
+      "actor": "Acteur",
+      "action": "Action",
+      "resource": "Ressource",
+      "method": "Méthode",
+      "path": "Chemin",
+      "status": "Statut",
+      "ip": "Adresse IP"
+    },
+    "actions": {
+      "create": "Créer",
+      "update": "Mettre à jour",
+      "delete": "Supprimer",
+      "invoke": "Invoquer"
+    },
+    "detail": {
+      "title": "Détail du journal d'audit",
+      "requestBody": "Corps de la requête",
+      "responseSummary": "Résumé de la réponse",
+      "userAgent": "Agent utilisateur"
+    },
+    "empty": "Aucun journal d'audit",
+    "emptyDescription": "Les journaux d'audit apparaîtront ici lors des opérations sur la plateforme"
   }
 }

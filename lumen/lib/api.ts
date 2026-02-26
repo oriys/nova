@@ -3187,3 +3187,63 @@ export const clusterApi = {
       method: "DELETE",
     }),
 };
+
+// Audit Log types
+export interface AuditLogEntry {
+  id: string;
+  tenant_id: string;
+  namespace: string;
+  actor: string;
+  actor_type: string;
+  action: string;
+  resource_type: string;
+  resource_name: string;
+  http_method: string;
+  http_path: string;
+  status_code: number;
+  request_body?: string;
+  response_summary?: string;
+  ip_address: string;
+  user_agent: string;
+  created_at: string;
+}
+
+export interface AuditLogFilter {
+  actor?: string;
+  resource_type?: string;
+  resource_name?: string;
+  action?: string;
+  since?: string;
+  until?: string;
+}
+
+// Audit Logs API
+export const auditLogsApi = {
+  list: async (
+    filter?: AuditLogFilter,
+    limit?: number,
+    offset?: number
+  ): Promise<PaginatedResult<AuditLogEntry>> => {
+    const params = new URLSearchParams();
+    const resolvedLimit =
+      typeof limit === "number" && Number.isFinite(limit) && limit > 0
+        ? Math.floor(limit)
+        : 50;
+    params.set("limit", String(resolvedLimit));
+    if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    if (filter) {
+      if (filter.actor) params.set("actor", filter.actor);
+      if (filter.resource_type) params.set("resource_type", filter.resource_type);
+      if (filter.resource_name) params.set("resource_name", filter.resource_name);
+      if (filter.action) params.set("action", filter.action);
+      if (filter.since) params.set("since", filter.since);
+      if (filter.until) params.set("until", filter.until);
+    }
+    return requestPaged<AuditLogEntry>(`/audit-logs?${params.toString()}`);
+  },
+
+  get: (id: string) =>
+    request<AuditLogEntry>(`/audit-logs/${encodeURIComponent(id)}`),
+};

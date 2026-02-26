@@ -373,6 +373,12 @@ type MetadataStore interface {
 	UpdateClusterNodeHeartbeat(ctx context.Context, id string, activeVMs, queueDepth int) error
 	DeleteClusterNode(ctx context.Context, id string) error
 	ListActiveClusterNodes(ctx context.Context) ([]*ClusterNodeRecord, error)
+
+	// Audit logs (platform-level immutable trail)
+	SaveAuditLog(ctx context.Context, log *AuditLog) error
+	ListAuditLogs(ctx context.Context, filter *AuditLogFilter, limit, offset int) ([]*AuditLog, error)
+	GetAuditLog(ctx context.Context, id string) (*AuditLog, error)
+	CountAuditLogs(ctx context.Context, filter *AuditLogFilter) (int64, error)
 }
 
 // Store wraps the MetadataStore, WorkflowStore, and ScheduleStore (Postgres) for all persistence.
@@ -488,4 +494,34 @@ type TestSuite struct {
 	TestCases    json.RawMessage `json:"test_cases"`
 	UpdatedAt    time.Time       `json:"updated_at"`
 	CreatedAt    time.Time       `json:"created_at"`
+}
+
+// AuditLog represents a single immutable audit trail entry.
+type AuditLog struct {
+	ID              string    `json:"id"`
+	TenantID        string    `json:"tenant_id"`
+	Namespace       string    `json:"namespace"`
+	Actor           string    `json:"actor"`
+	ActorType       string    `json:"actor_type"` // "user", "apikey", "system"
+	Action          string    `json:"action"`     // "create", "update", "delete", "invoke"
+	ResourceType    string    `json:"resource_type"`
+	ResourceName    string    `json:"resource_name"`
+	HTTPMethod      string    `json:"http_method"`
+	HTTPPath        string    `json:"http_path"`
+	StatusCode      int       `json:"status_code"`
+	RequestBody     string    `json:"request_body,omitempty"`
+	ResponseSummary string    `json:"response_summary,omitempty"`
+	IPAddress       string    `json:"ip_address"`
+	UserAgent       string    `json:"user_agent"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+// AuditLogFilter provides filtering criteria for listing audit logs.
+type AuditLogFilter struct {
+	Actor        string
+	ResourceType string
+	ResourceName string
+	Action       string
+	Since        *time.Time
+	Until        *time.Time
 }

@@ -29,6 +29,7 @@
     "alerts": "告警",
     "replay": "回放",
     "tuning": "調優",
+    "auditLogs": "稽核日誌",
     "help": "幫助"
   },
   "pages": {
@@ -2705,5 +2706,45 @@
         "step3": "複製程式碼片段用於整合"
       }
     }
+  },
+  "auditLogsPage": {
+    "title": "稽核日誌",
+    "description": "平台全鏈路操作稽核記錄",
+    "filters": {
+      "actor": "操作人",
+      "action": "操作",
+      "resourceType": "資源類型",
+      "resourceName": "資源名稱",
+      "allActions": "所有操作",
+      "allResourceTypes": "所有資源類型",
+      "since": "開始時間",
+      "until": "結束時間",
+      "search": "搜尋",
+      "reset": "重置"
+    },
+    "columns": {
+      "time": "時間",
+      "actor": "操作人",
+      "action": "操作",
+      "resource": "資源",
+      "method": "方法",
+      "path": "路徑",
+      "status": "狀態碼",
+      "ip": "IP 位址"
+    },
+    "actions": {
+      "create": "建立",
+      "update": "更新",
+      "delete": "刪除",
+      "invoke": "調用"
+    },
+    "detail": {
+      "title": "稽核日誌詳情",
+      "requestBody": "請求主體",
+      "responseSummary": "回應摘要",
+      "userAgent": "使用者代理"
+    },
+    "empty": "暫無稽核日誌",
+    "emptyDescription": "執行平台操作後，稽核日誌將顯示在此處"
   }
 }

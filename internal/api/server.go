@@ -10,6 +10,7 @@ import (
 	"github.com/oriys/nova/internal/ai"
 	"github.com/oriys/nova/internal/api/controlplane"
 	"github.com/oriys/nova/internal/api/dataplane"
+	"github.com/oriys/nova/internal/audit"
 	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/authz"
 	"github.com/oriys/nova/internal/backend"
@@ -129,6 +130,10 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 	// Wrap with tracing middleware
 	var handler http.Handler = mux
 	handler = observability.HTTPMiddleware(handler)
+
+	// Audit logging middleware: captures all mutating requests with actor/tenant context.
+	auditSkipPaths := []string{"/health", "/health/live", "/health/ready", "/health/startup", "/metrics"}
+	handler = audit.Middleware(cfg.Store, auditSkipPaths)(handler)
 
 	// Add rate limiting middleware
 	if cfg.RateLimitCfg != nil && cfg.RateLimitCfg.Enabled {

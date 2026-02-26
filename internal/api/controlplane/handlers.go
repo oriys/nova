@@ -236,6 +236,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /db-resources/{name}/credential-policy", h.GetCredentialPolicy)
 	mux.HandleFunc("DELETE /db-resources/{name}/credential-policy", h.DeleteCredentialPolicy)
 	mux.HandleFunc("GET /db-resources/{name}/logs", h.ListDbRequestLogs)
+
+	// Audit logs
+	mux.HandleFunc("GET /audit-logs", h.ListAuditLogs)
+	mux.HandleFunc("GET /audit-logs/{id}", h.GetAuditLog)
 }
 
 // ListFunctionVersions returns all versions of a function.

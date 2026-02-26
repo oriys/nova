@@ -30,6 +30,7 @@ var AllMenuKeys = []string{
 	"apiDocs",
 	"apiKeys",
 	"asyncJobs",
+	"auditLogs",
 	"configurations",
 	"dashboard",
 	"events",

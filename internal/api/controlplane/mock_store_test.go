@@ -1907,6 +1907,22 @@ func (m *mockMetadataStore) PrunePoolMetrics(ctx context.Context, retentionSecon
 	return nil
 }
 
+func (m *mockMetadataStore) SaveAuditLog(ctx context.Context, log *store.AuditLog) error {
+	return nil
+}
+
+func (m *mockMetadataStore) ListAuditLogs(ctx context.Context, filter *store.AuditLogFilter, limit, offset int) ([]*store.AuditLog, error) {
+	return nil, nil
+}
+
+func (m *mockMetadataStore) GetAuditLog(ctx context.Context, id string) (*store.AuditLog, error) {
+	return nil, nil
+}
+
+func (m *mockMetadataStore) CountAuditLogs(ctx context.Context, filter *store.AuditLogFilter) (int64, error) {
+	return 0, nil
+}
+
 // --- Test helper ---
 
 func setupTestHandler(t *testing.T, ms *mockMetadataStore) (*Handler, *http.ServeMux) {

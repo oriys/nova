@@ -29,6 +29,7 @@
     "alerts": "Alerts",
     "replay": "Replay",
     "tuning": "Tuning",
+    "auditLogs": "Audit Logs",
     "help": "Help"
   },
   "pages": {
@@ -2710,5 +2711,45 @@
         "step3": "Copy code snippets for integration"
       }
     }
+  },
+  "auditLogsPage": {
+    "title": "Audit Logs",
+    "description": "Full-chain audit trail of all platform operations",
+    "filters": {
+      "actor": "Actor",
+      "action": "Action",
+      "resourceType": "Resource Type",
+      "resourceName": "Resource Name",
+      "allActions": "All Actions",
+      "allResourceTypes": "All Resource Types",
+      "since": "From",
+      "until": "To",
+      "search": "Search",
+      "reset": "Reset"
+    },
+    "columns": {
+      "time": "Time",
+      "actor": "Actor",
+      "action": "Action",
+      "resource": "Resource",
+      "method": "Method",
+      "path": "Path",
+      "status": "Status",
+      "ip": "IP Address"
+    },
+    "actions": {
+      "create": "Create",
+      "update": "Update",
+      "delete": "Delete",
+      "invoke": "Invoke"
+    },
+    "detail": {
+      "title": "Audit Log Detail",
+      "requestBody": "Request Body",
+      "responseSummary": "Response Summary",
+      "userAgent": "User Agent"
+    },
+    "empty": "No audit logs found",
+    "emptyDescription": "Audit logs will appear here when platform operations are performed"
   }
 }

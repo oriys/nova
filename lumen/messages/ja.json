@@ -29,6 +29,7 @@
     "alerts": "アラート",
     "replay": "リプレイ",
     "tuning": "チューニング",
+    "auditLogs": "監査ログ",
     "help": "ヘルプ"
   },
   "pages": {
@@ -2705,5 +2706,45 @@
         "step3": "統合用のコードスニペットをコピー"
       }
     }
+  },
+  "auditLogsPage": {
+    "title": "監査ログ",
+    "description": "プラットフォーム全操作の監査記録",
+    "filters": {
+      "actor": "操作者",
+      "action": "操作",
+      "resourceType": "リソースタイプ",
+      "resourceName": "リソース名",
+      "allActions": "すべての操作",
+      "allResourceTypes": "すべてのリソースタイプ",
+      "since": "開始日時",
+      "until": "終了日時",
+      "search": "検索",
+      "reset": "リセット"
+    },
+    "columns": {
+      "time": "日時",
+      "actor": "操作者",
+      "action": "操作",
+      "resource": "リソース",
+      "method": "メソッド",
+      "path": "パス",
+      "status": "ステータス",
+      "ip": "IPアドレス"
+    },
+    "actions": {
+      "create": "作成",
+      "update": "更新",
+      "delete": "削除",
+      "invoke": "呼び出し"
+    },
+    "detail": {
+      "title": "監査ログ詳細",
+      "requestBody": "リクエストボディ",
+      "responseSummary": "レスポンス概要",
+      "userAgent": "ユーザーエージェント"
+    },
+    "empty": "監査ログがありません",
+    "emptyDescription": "プラットフォーム操作を実行すると、監査ログがここに表示されます"
   }
 }

@@ -29,6 +29,7 @@
     "alerts": "告警",
     "replay": "回放",
     "tuning": "调优",
+    "auditLogs": "审计日志",
     "help": "帮助"
   },
   "pages": {
@@ -2710,5 +2711,45 @@
         "step3": "复制代码片段用于集成"
       }
     }
+  },
+  "auditLogsPage": {
+    "title": "审计日志",
+    "description": "平台全链路操作审计记录",
+    "filters": {
+      "actor": "操作人",
+      "action": "操作",
+      "resourceType": "资源类型",
+      "resourceName": "资源名称",
+      "allActions": "所有操作",
+      "allResourceTypes": "所有资源类型",
+      "since": "开始时间",
+      "until": "结束时间",
+      "search": "搜索",
+      "reset": "重置"
+    },
+    "columns": {
+      "time": "时间",
+      "actor": "操作人",
+      "action": "操作",
+      "resource": "资源",
+      "method": "方法",
+      "path": "路径",
+      "status": "状态码",
+      "ip": "IP 地址"
+    },
+    "actions": {
+      "create": "创建",
+      "update": "更新",
+      "delete": "删除",
+      "invoke": "调用"
+    },
+    "detail": {
+      "title": "审计日志详情",
+      "requestBody": "请求体",
+      "responseSummary": "响应摘要",
+      "userAgent": "用户代理"
+    },
+    "empty": "暂无审计日志",
+    "emptyDescription": "执行平台操作后，审计日志将显示在此处"
   }
 }

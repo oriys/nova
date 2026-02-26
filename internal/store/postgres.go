@@ -968,6 +968,28 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			vms_crashed BIGINT NOT NULL DEFAULT 0
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_pool_metrics_history_ts ON pool_metrics_history(tenant_id, namespace, ts)`,
+		// Platform audit logs: immutable append-only trail of all mutating operations.
+		`CREATE TABLE IF NOT EXISTS audit_logs (
+			id TEXT PRIMARY KEY,
+			tenant_id TEXT NOT NULL DEFAULT 'default',
+			namespace TEXT NOT NULL DEFAULT 'default',
+			actor TEXT NOT NULL DEFAULT '',
+			actor_type TEXT NOT NULL DEFAULT '',
+			action TEXT NOT NULL DEFAULT '',
+			resource_type TEXT NOT NULL DEFAULT '',
+			resource_name TEXT NOT NULL DEFAULT '',
+			http_method TEXT NOT NULL DEFAULT '',
+			http_path TEXT NOT NULL DEFAULT '',
+			status_code INTEGER NOT NULL DEFAULT 0,
+			request_body TEXT NOT NULL DEFAULT '',
+			response_summary TEXT NOT NULL DEFAULT '',
+			ip_address TEXT NOT NULL DEFAULT '',
+			user_agent TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant_time ON audit_logs(tenant_id, namespace, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs(resource_type, resource_name, created_at DESC)`,
 	}
 
 	for _, stmt := range stmts {
