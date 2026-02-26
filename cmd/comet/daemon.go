@@ -21,6 +21,7 @@ import (
 	"github.com/oriys/nova/internal/kata"
 	"github.com/oriys/nova/internal/kubernetes"
 	"github.com/oriys/nova/internal/libkrun"
+	"github.com/oriys/nova/internal/wasm"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/logsink"
 	"github.com/oriys/nova/internal/metrics"
@@ -164,6 +165,10 @@ func daemonCmd() *cobra.Command {
 					logging.Op().Info("initializing Docker backend")
 					return docker.NewManager(&cfg.Docker)
 				},
+				domain.BackendWasm: func() (backend.Backend, error) {
+					logging.Op().Info("initializing WASM backend")
+					return wasm.NewManager(&cfg.Wasm)
+				},
 				domain.BackendKubernetes: func() (backend.Backend, error) {
 					logging.Op().Info("initializing Kubernetes backend",
 						"namespace", cfg.Kubernetes.Namespace,
@@ -190,7 +195,7 @@ func daemonCmd() *cobra.Command {
 				},
 			}
 			switch defaultBackend {
-			case domain.BackendDocker, domain.BackendKubernetes, domain.BackendKata, domain.BackendLibKrun, domain.BackendFirecracker:
+			case domain.BackendDocker, domain.BackendWasm, domain.BackendKubernetes, domain.BackendKata, domain.BackendLibKrun, domain.BackendFirecracker:
 			default:
 				return fmt.Errorf("unsupported default backend for comet: %s", defaultBackend)
 			}

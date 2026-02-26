@@ -1305,7 +1305,8 @@
       "versions": "Versions",
       "schedules": "Schedules",
       "docs": "Docs",
-      "tests": "テスト"
+      "tests": "テスト",
+      "gateway": "ゲートウェイ"
     },
     "versions": {
       "colVersion": "Version",
@@ -1353,6 +1354,26 @@
       "edit": "Edit",
       "disable": "Disable",
       "enable": "Enable"
+    },
+    "backendLabel": "バックエンド",
+    "gateway": {
+      "title": "ゲートウェイルート",
+      "description": "この関数にトラフィックを転送するゲートウェイルート。",
+      "empty": "この関数にゲートウェイルートは設定されていません。",
+      "emptyHint": "ゲートウェイページでルートを作成し、カスタムドメインやパスでこの関数を公開します。",
+      "goToGateway": "ゲートウェイへ",
+      "domain": "ドメイン",
+      "path": "パス",
+      "methods": "メソッド",
+      "auth": "認証",
+      "rateLimit": "レート制限",
+      "status": "ステータス",
+      "enabled": "有効",
+      "disabled": "無効",
+      "allMethods": "すべて",
+      "rps": "{rps} リクエスト/秒",
+      "noLimit": "制限なし",
+      "routeCount": "{count} ルート"
     }
   },
   "landingPage": {

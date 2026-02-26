@@ -1305,7 +1305,8 @@
       "versions": "Versions",
       "schedules": "Schedules",
       "docs": "Docs",
-      "tests": "Tests"
+      "tests": "Tests",
+      "gateway": "Passerelle"
     },
     "versions": {
       "colVersion": "Version",
@@ -1353,6 +1354,26 @@
       "edit": "Edit",
       "disable": "Disable",
       "enable": "Enable"
+    },
+    "backendLabel": "Backend",
+    "gateway": {
+      "title": "Routes de la passerelle",
+      "description": "Routes de la passerelle qui dirigent le trafic vers cette fonction.",
+      "empty": "Aucune route de passerelle configurée pour cette fonction.",
+      "emptyHint": "Créez une route dans la page Passerelle pour exposer cette fonction via un domaine ou un chemin personnalisé.",
+      "goToGateway": "Aller à la passerelle",
+      "domain": "Domaine",
+      "path": "Chemin",
+      "methods": "Méthodes",
+      "auth": "Auth",
+      "rateLimit": "Limite de débit",
+      "status": "Statut",
+      "enabled": "Activé",
+      "disabled": "Désactivé",
+      "allMethods": "TOUTES",
+      "rps": "{rps} req/s",
+      "noLimit": "Aucune limite",
+      "routeCount": "{count} route(s)"
     }
   },
   "landingPage": {

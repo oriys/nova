@@ -1305,7 +1305,8 @@
       "versions": "Versions",
       "schedules": "Schedules",
       "docs": "Docs",
-      "tests": "測試套件"
+      "tests": "測試套件",
+      "gateway": "閘道"
     },
     "versions": {
       "colVersion": "Version",
@@ -1353,6 +1354,26 @@
       "edit": "Edit",
       "disable": "Disable",
       "enable": "Enable"
+    },
+    "backendLabel": "後端",
+    "gateway": {
+      "title": "閘道路由",
+      "description": "將流量引導到此函式的閘道路由。",
+      "empty": "此函式未設定閘道路由。",
+      "emptyHint": "在閘道頁面中建立路由，透過自訂網域或路徑公開此函式。",
+      "goToGateway": "前往閘道",
+      "domain": "網域",
+      "path": "路徑",
+      "methods": "方法",
+      "auth": "驗證",
+      "rateLimit": "速率限制",
+      "status": "狀態",
+      "enabled": "已啟用",
+      "disabled": "已停用",
+      "allMethods": "全部",
+      "rps": "{rps} 請求/秒",
+      "noLimit": "無限制",
+      "routeCount": "{count} 條路由"
     }
   },
   "landingPage": {

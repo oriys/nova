@@ -16,6 +16,7 @@ import { FunctionConfig } from "@/components/function-config"
 import { FunctionDiagnosticsPanel } from "@/components/function-diagnostics"
 import { FunctionSLOPanel } from "@/components/function-slo-panel"
 import { FunctionDocs } from "@/components/function-docs"
+import { FunctionGateway } from "@/components/function-gateway"
 import { FunctionTestSuite } from "@/components/function-test-suite"
 import { InvocationHeatmap } from "@/components/invocation-heatmap"
 import {
@@ -71,6 +72,7 @@ export default function FunctionDetailPage({
       "schedules",
       "tests",
       "docs",
+      "gateway",
     ])
     if (validTabs.has(requestedTab)) {
       return requestedTab
@@ -319,6 +321,14 @@ export default function FunctionDetailPage({
               </div>
               <p className="text-sm text-muted-foreground mt-0.5">
                 {func.runtime} · {func.region}
+                {func.backend && (
+                  <>
+                    {" · "}
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono align-middle">
+                      {func.backend}
+                    </Badge>
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -399,6 +409,12 @@ export default function FunctionDetailPage({
               className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
             >
               {t("tabs.docs")}
+            </TabsTrigger>
+            <TabsTrigger
+              value="gateway"
+              className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
+            >
+              {t("tabs.gateway")}
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -761,6 +777,10 @@ export default function FunctionDetailPage({
 
           <TabsContent value="tests" className="mt-0">
             <FunctionTestSuite functionName={func.name} runtime={func.runtimeId} />
+          </TabsContent>
+
+          <TabsContent value="gateway" className="mt-0">
+            <FunctionGateway functionName={func.name} />
           </TabsContent>
         </Tabs>
       </div>

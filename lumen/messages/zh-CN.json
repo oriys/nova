@@ -1310,7 +1310,8 @@
       "versions": "Versions",
       "schedules": "Schedules",
       "docs": "Docs",
-      "tests": "测试套件"
+      "tests": "测试套件",
+      "gateway": "网关"
     },
     "versions": {
       "colVersion": "Version",
@@ -1358,6 +1359,26 @@
       "edit": "Edit",
       "disable": "Disable",
       "enable": "Enable"
+    },
+    "backendLabel": "后端",
+    "gateway": {
+      "title": "网关路由",
+      "description": "将流量引导到此函数的网关路由。",
+      "empty": "此函数未配置网关路由。",
+      "emptyHint": "在网关页面中创建路由，通过自定义域名或路径暴露此函数。",
+      "goToGateway": "前往网关",
+      "domain": "域名",
+      "path": "路径",
+      "methods": "方法",
+      "auth": "认证",
+      "rateLimit": "速率限制",
+      "status": "状态",
+      "enabled": "已启用",
+      "disabled": "已禁用",
+      "allMethods": "全部",
+      "rps": "{rps} 请求/秒",
+      "noLimit": "无限制",
+      "routeCount": "{count} 条路由"
     }
   },
   "landingPage": {

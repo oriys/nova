@@ -1310,7 +1310,8 @@
       "versions": "Versions",
       "schedules": "Schedules",
       "docs": "Docs",
-      "tests": "Tests"
+      "tests": "Tests",
+      "gateway": "Gateway"
     },
     "versions": {
       "colVersion": "Version",
@@ -1358,6 +1359,26 @@
       "edit": "Edit",
       "disable": "Disable",
       "enable": "Enable"
+    },
+    "backendLabel": "Backend",
+    "gateway": {
+      "title": "Gateway Routes",
+      "description": "Gateway routes that direct traffic to this function.",
+      "empty": "No gateway routes configured for this function.",
+      "emptyHint": "Create a route in the Gateway page to expose this function via a custom domain or path.",
+      "goToGateway": "Go to Gateway",
+      "domain": "Domain",
+      "path": "Path",
+      "methods": "Methods",
+      "auth": "Auth",
+      "rateLimit": "Rate Limit",
+      "status": "Status",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "allMethods": "ALL",
+      "rps": "{rps} req/s",
+      "noLimit": "No limit",
+      "routeCount": "{count} route(s)"
     }
   },
   "landingPage": {
