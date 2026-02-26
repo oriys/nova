@@ -16,7 +16,7 @@ import {
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { RefreshCw, ArrowLeft, X, ExternalLink, Loader2 } from "lucide-react"
+import { RefreshCw, ArrowLeft, X, ExternalLink, Loader2, ChevronRight, ChevronDown } from "lucide-react"
 
 export default function RunDetailPage() {
   const t = useTranslations("workflowRunPage")
@@ -28,6 +28,17 @@ export default function RunDetailPage() {
   const [version, setVersion] = useState<WorkflowVersion | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Expanded node rows (show input/output)
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
+  const toggleNode = useCallback((nodeId: string) => {
+    setExpandedNodes(prev => {
+      const next = new Set(prev)
+      if (next.has(nodeId)) next.delete(nodeId)
+      else next.add(nodeId)
+      return next
+    })
+  }, [])
 
   // Function code viewer
   const [codeViewFn, setCodeViewFn] = useState<string | null>(null)
@@ -220,37 +231,78 @@ export default function RunDetailPage() {
                       </td>
                     </tr>
                   ) : (
-                    run.nodes.map((node: RunNode) => (
-                      <tr key={node.id} className="border-b border-border last:border-0">
-                        <td className="px-4 py-3 font-mono text-sm">{node.node_key}</td>
-                        <td className="px-4 py-3 text-sm">
-                          {node.node_type === "sub_workflow" ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="text-[10px] px-1 py-0.5 rounded bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 font-medium">SW</span>
-                              {node.workflow_name}
-                            </span>
-                          ) : (
-                            node.function_name
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge variant={nodeStatusColor(node.status)}>
-                            {node.status}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-muted-foreground">{node.attempt}</td>
-                        <td className="px-4 py-3 text-sm text-muted-foreground">{node.unresolved_deps}</td>
-                        <td className="px-4 py-3 text-sm text-muted-foreground">
-                          {node.started_at ? new Date(node.started_at).toLocaleTimeString() : "-"}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-muted-foreground">
-                          {node.finished_at ? new Date(node.finished_at).toLocaleTimeString() : "-"}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-destructive max-w-xs truncate">
-                          {node.error_message || "-"}
-                        </td>
-                      </tr>
-                    ))
+                    run.nodes.map((node: RunNode) => {
+                      const hasIO = (node.input !== undefined && node.input !== null) || (node.output !== undefined && node.output !== null)
+                      const isExpanded = expandedNodes.has(node.id)
+                      return (
+                        <tr key={node.id} className={`border-b border-border last:border-0 ${hasIO ? "cursor-pointer hover:bg-muted/50" : ""}`} onClick={() => hasIO && toggleNode(node.id)}>
+                          <td className="px-4 py-3 font-mono text-sm">
+                            <div className="flex items-center gap-1.5">
+                              {hasIO ? (
+                                isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              ) : (
+                                <span className="w-3.5 shrink-0" />
+                              )}
+                              {node.node_key}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            {node.node_type === "sub_workflow" ? (
+                              <span className="inline-flex items-center gap-1.5">
+                                <span className="text-[10px] px-1 py-0.5 rounded bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 font-medium">SW</span>
+                                {node.workflow_name}
+                              </span>
+                            ) : (
+                              node.function_name
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge variant={nodeStatusColor(node.status)}>
+                              {node.status}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-muted-foreground">{node.attempt}</td>
+                          <td className="px-4 py-3 text-sm text-muted-foreground">{node.unresolved_deps}</td>
+                          <td className="px-4 py-3 text-sm text-muted-foreground">
+                            {node.started_at ? new Date(node.started_at).toLocaleTimeString() : "-"}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-muted-foreground">
+                            {node.finished_at ? new Date(node.finished_at).toLocaleTimeString() : "-"}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-destructive max-w-xs truncate">
+                            {node.error_message || "-"}
+                          </td>
+                        </tr>
+                      )
+                    }).flatMap((row, i) => {
+                      const node = run.nodes![i]
+                      const isExpanded = expandedNodes.has(node.id)
+                      if (!isExpanded) return [row]
+                      return [row, (
+                        <tr key={`${node.id}-io`} className="border-b border-border last:border-0 bg-muted/30">
+                          <td colSpan={8} className="px-4 py-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-xs font-medium text-muted-foreground mb-1">{t("nodeStatus.input")}</p>
+                                <pre className="text-xs font-mono bg-muted rounded p-2 overflow-x-auto max-h-48">
+                                  {node.input !== undefined && node.input !== null
+                                    ? (typeof node.input === "string" ? node.input : JSON.stringify(node.input, null, 2))
+                                    : "-"}
+                                </pre>
+                              </div>
+                              <div>
+                                <p className="text-xs font-medium text-muted-foreground mb-1">{t("nodeStatus.output")}</p>
+                                <pre className="text-xs font-mono bg-muted rounded p-2 overflow-x-auto max-h-48">
+                                  {node.output !== undefined && node.output !== null
+                                    ? (typeof node.output === "string" ? node.output : JSON.stringify(node.output, null, 2))
+                                    : "-"}
+                                </pre>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )]
+                    })
                   )}
                 </tbody>
               </table>

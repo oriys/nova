@@ -1228,7 +1228,9 @@
       "colStarted": "Started",
       "colFinished": "Finished",
       "colError": "Error",
-      "empty": "No nodes."
+      "empty": "No nodes.",
+      "input": "输入",
+      "output": "输出"
     },
     "sections": {
       "runOutput": "Run Output",

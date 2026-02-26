@@ -1223,7 +1223,9 @@
       "colStarted": "Started",
       "colFinished": "Finished",
       "colError": "Error",
-      "empty": "No nodes."
+      "empty": "No nodes.",
+      "input": "Entrée",
+      "output": "Sortie"
     },
     "sections": {
       "runOutput": "Run Output",

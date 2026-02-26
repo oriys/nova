@@ -1223,7 +1223,9 @@
       "colStarted": "Started",
       "colFinished": "Finished",
       "colError": "Error",
-      "empty": "No nodes."
+      "empty": "No nodes.",
+      "input": "入力",
+      "output": "出力"
     },
     "sections": {
       "runOutput": "Run Output",
