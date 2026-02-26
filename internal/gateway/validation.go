@@ -129,6 +129,9 @@ func validateString(path string, schema map[string]any, value string) error {
 		}
 	}
 	if pattern, ok := schema["pattern"].(string); ok {
+		if len(pattern) > 1024 {
+			return fmt.Errorf("%s: pattern too long (max 1024 chars)", path)
+		}
 		re, err := regexp.Compile(pattern)
 		if err != nil {
 			return fmt.Errorf("%s: invalid pattern %q: %w", path, pattern, err)

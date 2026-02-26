@@ -35,6 +35,10 @@ func (h *Handler) CreateVolume(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "size_mb must be positive", http.StatusBadRequest)
 		return
 	}
+	if req.SizeMB > 10240 {
+		http.Error(w, "size_mb must not exceed 10240 (10GB)", http.StatusBadRequest)
+		return
+	}
 
 	vol := &domain.Volume{
 		Name:        req.Name,

@@ -1124,7 +1124,13 @@ func readMessage(conn net.Conn) (*Message, error) {
 	if _, err := io.ReadFull(conn, lenBuf); err != nil {
 		return nil, err
 	}
-	data := make([]byte, binary.BigEndian.Uint32(lenBuf))
+	size := binary.BigEndian.Uint32(lenBuf)
+	// Guard against oversized messages that could cause OOM
+	const maxMessageSize = 16 * 1024 * 1024 // 16MB
+	if size > maxMessageSize {
+		return nil, fmt.Errorf("message too large: %d bytes (max %d)", size, maxMessageSize)
+	}
+	data := make([]byte, size)
 	if _, err := io.ReadFull(conn, data); err != nil {
 		return nil, err
 	}

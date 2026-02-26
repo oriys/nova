@@ -263,6 +263,12 @@ func (h *APIDocHandler) GetFunctionDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verify the function belongs to the caller's tenant
+	if _, err := h.Store.GetFunctionByName(r.Context(), name); err != nil {
+		http.Error(w, "function not found: "+name, http.StatusNotFound)
+		return
+	}
+
 	doc, err := h.Store.GetFunctionDoc(r.Context(), name)
 	if err != nil {
 		http.Error(w, "documentation not found for function: "+name, http.StatusNotFound)
@@ -277,6 +283,12 @@ func (h *APIDocHandler) SaveFunctionDoc(w http.ResponseWriter, r *http.Request) 
 	name := r.PathValue("name")
 	if name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify the function belongs to the caller's tenant
+	if _, err := h.Store.GetFunctionByName(r.Context(), name); err != nil {
+		http.Error(w, "function not found: "+name, http.StatusNotFound)
 		return
 	}
 
@@ -324,6 +336,12 @@ func (h *APIDocHandler) DeleteFunctionDoc(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Verify the function belongs to the caller's tenant
+	if _, err := h.Store.GetFunctionByName(r.Context(), name); err != nil {
+		http.Error(w, "function not found: "+name, http.StatusNotFound)
+		return
+	}
+
 	if err := h.Store.DeleteFunctionDoc(r.Context(), name); err != nil {
 		http.Error(w, "failed to delete documentation", http.StatusInternalServerError)
 		return
@@ -342,6 +360,12 @@ func (h *APIDocHandler) GetWorkflowDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verify the workflow belongs to the caller's tenant
+	if _, err := h.Store.GetWorkflowByName(r.Context(), name); err != nil {
+		http.Error(w, "workflow not found: "+name, http.StatusNotFound)
+		return
+	}
+
 	doc, err := h.Store.GetWorkflowDoc(r.Context(), name)
 	if err != nil {
 		http.Error(w, "documentation not found for workflow: "+name, http.StatusNotFound)
@@ -356,6 +380,12 @@ func (h *APIDocHandler) SaveWorkflowDoc(w http.ResponseWriter, r *http.Request) 
 	name := r.PathValue("name")
 	if name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify the workflow belongs to the caller's tenant
+	if _, err := h.Store.GetWorkflowByName(r.Context(), name); err != nil {
+		http.Error(w, "workflow not found: "+name, http.StatusNotFound)
 		return
 	}
 
@@ -400,6 +430,12 @@ func (h *APIDocHandler) DeleteWorkflowDoc(w http.ResponseWriter, r *http.Request
 	name := r.PathValue("name")
 	if name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify the workflow belongs to the caller's tenant
+	if _, err := h.Store.GetWorkflowByName(r.Context(), name); err != nil {
+		http.Error(w, "workflow not found: "+name, http.StatusNotFound)
 		return
 	}
 

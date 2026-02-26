@@ -172,6 +172,12 @@ func (s *NBDServer) handleRequest(conn net.Conn) error {
 
 // handleRead serves a block read request from the backing data.
 func (s *NBDServer) handleRead(conn net.Conn, handle []byte, offset uint64, length uint32) error {
+	// Guard against oversized read requests that could cause OOM
+	const maxReadSize = 32 * 1024 * 1024 // 32MB
+	if length > maxReadSize {
+		return s.sendError(conn, handle, 1) // EPERM
+	}
+
 	// Build reply: magic(4) + error(4) + handle(8) + data
 	reply := make([]byte, 16+length)
 	binary.BigEndian.PutUint32(reply[0:4], nbdReplyMagic)

@@ -247,6 +247,10 @@ func (s *Server) handleProxyHTTPViaGRPC(w http.ResponseWriter, r *http.Request) 
 		if strings.EqualFold(k, "Content-Length") || strings.EqualFold(k, "Transfer-Encoding") {
 			continue
 		}
+		// Sanitize header values: reject CRLF sequences to prevent header injection
+		if strings.ContainsAny(value, "\r\n") {
+			continue
+		}
 		w.Header().Set(k, value)
 	}
 	if w.Header().Get("Content-Type") == "" {

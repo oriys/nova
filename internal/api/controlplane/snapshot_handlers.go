@@ -10,6 +10,7 @@ import (
 
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
+	"github.com/oriys/nova/internal/logging"
 )
 
 func snapshotsSupportedForFunction(fn *domain.Function) bool {
@@ -133,7 +134,8 @@ func (h *Handler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 	// Fetch code content from store
 	codeRecord, err := h.Store.GetFunctionCode(r.Context(), fn.ID)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("get function code: %v", err), http.StatusInternalServerError)
+		logging.Op().Error("get function code failed", "error", err)
+		http.Error(w, "failed to get function code", http.StatusInternalServerError)
 		return
 	}
 	if codeRecord == nil {
@@ -151,14 +153,16 @@ func (h *Handler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 
 	pvm, err := h.Pool.Acquire(r.Context(), fn, codeContent)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("acquire VM: %v", err), http.StatusInternalServerError)
+		logging.Op().Error("acquire VM failed", "error", err)
+		http.Error(w, "failed to acquire VM", http.StatusInternalServerError)
 		return
 	}
 
 	mgr := h.FCAdapter.Manager()
 	if err := mgr.CreateSnapshot(r.Context(), pvm.VM.ID, fn.ID); err != nil {
 		h.Pool.Release(pvm)
-		http.Error(w, fmt.Sprintf("create snapshot: %v", err), http.StatusInternalServerError)
+		logging.Op().Error("create snapshot failed", "error", err)
+		http.Error(w, "failed to create snapshot", http.StatusInternalServerError)
 		return
 	}
 
@@ -191,7 +195,8 @@ func (h *Handler) DeleteSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := executor.InvalidateSnapshot(h.Backend.SnapshotDir(), fn.ID); err != nil {
-		http.Error(w, fmt.Sprintf("delete snapshot: %v", err), http.StatusInternalServerError)
+		logging.Op().Error("delete snapshot failed", "error", err)
+		http.Error(w, "failed to delete snapshot", http.StatusInternalServerError)
 		return
 	}
 

@@ -6,6 +6,7 @@ import (
 "os"
 "os/exec"
 "path/filepath"
+"strings"
 
 "github.com/oriys/nova/internal/domain"
 "github.com/oriys/nova/internal/logging"
@@ -52,6 +53,13 @@ volumeDir: cfg.VolumeDir,
 
 // CreateVolume creates a new persistent volume with an ext4 filesystem
 func (m *Manager) CreateVolume(ctx context.Context, vol *domain.Volume) error {
+// Sanitize name to prevent path traversal
+if strings.ContainsAny(vol.Name, "/\\..") || vol.Name != filepath.Base(vol.Name) || vol.Name == "." || vol.Name == ".." {
+return fmt.Errorf("invalid volume name: %s", vol.Name)
+}
+if strings.ContainsAny(vol.TenantID, "/\\..") || vol.TenantID != filepath.Base(vol.TenantID) {
+return fmt.Errorf("invalid tenant ID: %s", vol.TenantID)
+}
 imageName := fmt.Sprintf("%s-%s.ext4", vol.TenantID, vol.Name)
 imagePath := filepath.Join(m.volumeDir, imageName)
 
@@ -75,7 +83,8 @@ return nil
 }
 
 func (m *Manager) createExt4Image(path string, sizeMB int) error {
-f, err := os.Create(path)
+	// Use O_EXCL to atomically fail if file already exists (prevents TOCTOU race)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 if err != nil {
 return fmt.Errorf("create file: %w", err)
 }

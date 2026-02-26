@@ -5,6 +5,8 @@ import (
 "context"
 "encoding/json"
 "fmt"
+"net"
+"net/url"
 "net/http"
 "time"
 
@@ -34,6 +36,11 @@ MaxRetries int               `json:"max_retries"` // Default: 3
 func NewWebhookSink(config *WebhookSinkConfig) (*WebhookSink, error) {
 if config.URL == "" {
 return nil, fmt.Errorf("webhook URL is required")
+}
+
+// SSRF protection: block private/internal network targets
+if err := validateWebhookURL(config.URL); err != nil {
+return nil, fmt.Errorf("invalid webhook URL: %w", err)
 }
 
 if config.Method == "" {
@@ -101,4 +108,30 @@ logging.Op().Warn("webhook returned error status", "attempt", attempt+1, "url", 
 }
 
 return fmt.Errorf("webhook failed after %d attempts: %w", ws.maxRetries+1, lastErr)
+}
+
+// validateWebhookURL validates that the webhook URL does not target private/internal networks.
+func validateWebhookURL(rawURL string) error {
+u, err := url.Parse(rawURL)
+if err != nil {
+return fmt.Errorf("invalid URL: %w", err)
+}
+if u.Scheme != "http" && u.Scheme != "https" {
+return fmt.Errorf("only http/https schemes allowed, got %s", u.Scheme)
+}
+host := u.Hostname()
+if host == "" {
+return fmt.Errorf("empty hostname")
+}
+ips, err := net.LookupIP(host)
+if err != nil {
+return fmt.Errorf("DNS resolution failed for %s: %w", host, err)
+}
+for _, ip := range ips {
+if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+return fmt.Errorf("blocked: %s resolves to private/reserved IP %s", host, ip)
+}
+}
+return nil
 }

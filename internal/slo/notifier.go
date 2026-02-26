@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/smtp"
+	"net/url"
 	"strings"
 	"time"
 
@@ -80,6 +82,12 @@ type alertSnapshot struct {
 }
 
 func (n *Notifier) sendWebhook(ctx context.Context, target domain.SLONotificationTarget, payload *alertPayload) {
+	// SSRF protection: block private/internal network targets
+	if err := validateWebhookTarget(target.URL); err != nil {
+		logging.Op().Warn("slo notifier: blocked webhook URL", "url", target.URL, "error", err)
+		return
+	}
+
 	body, err := json.Marshal(payload)
 	if err != nil {
 		logging.Op().Warn("slo notifier: marshal webhook payload", "error", err)
@@ -208,4 +216,30 @@ func (n *Notifier) sendEmail(ctx context.Context, target domain.SLONotificationT
 		return
 	}
 	logging.Op().Debug("slo notifier: email delivered", "to", recipient, "function", payload.Function)
+}
+
+// validateWebhookTarget validates that the webhook URL does not target private/internal networks.
+func validateWebhookTarget(rawURL string) error {
+u, err := url.Parse(rawURL)
+if err != nil {
+return fmt.Errorf("invalid URL: %w", err)
+}
+if u.Scheme != "http" && u.Scheme != "https" {
+return fmt.Errorf("only http/https schemes allowed, got %s", u.Scheme)
+}
+host := u.Hostname()
+if host == "" {
+return fmt.Errorf("empty hostname")
+}
+ips, err := net.LookupIP(host)
+if err != nil {
+return fmt.Errorf("DNS resolution failed for %s: %w", host, err)
+}
+for _, ip := range ips {
+if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+return fmt.Errorf("blocked: %s resolves to private/reserved IP %s", host, ip)
+}
+}
+return nil
 }

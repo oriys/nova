@@ -56,7 +56,8 @@ func Middleware(s AuditStore, skipPaths []string) func(http.Handler) http.Handle
 					bodySample = string(buf[:n])
 				}
 				// Reconstruct the body so handlers can still read it.
-				remaining, _ := io.ReadAll(r.Body)
+				// Limit remaining read to 10MB to prevent OOM from huge payloads.
+				remaining, _ := io.ReadAll(io.LimitReader(r.Body, 10<<20))
 				r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(buf[:n]), bytes.NewReader(remaining)))
 			}
 
