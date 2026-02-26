@@ -28,7 +28,8 @@
     "cluster": "Cluster",
     "alerts": "Alertes",
     "replay": "Rejeu",
-    "tuning": "Réglage"
+    "tuning": "Réglage",
+    "help": "Aide"
   },
   "pages": {
     "dashboard": {
@@ -2534,5 +2535,175 @@
     "dslPlaceholder": "# Un mappage par ligne\n# source.champ -> cible | transformation | type = défaut !\nquery.user_id -> userId | camel_case | integer\npath.id -> recordId | integer !\nheader.X-Request-ID -> requestId",
     "dslError": "Ligne {line} : {message}",
     "dslHelp": "Syntaxe : source.champ -> cible | transformation | type = défaut !\nSources : query, path, body, header\nTransformations : camel_case, snake_case, kebab_case, upper_case, lower_case, upper_first\nTypes : integer, float, boolean, json\nAjoutez ! à la fin pour marquer comme requis. Les lignes commençant par # sont des commentaires."
+  },
+  "helpPage": {
+    "title": "Centre d'aide",
+    "description": "Découvrez comment utiliser chaque fonctionnalité de la plateforme Nova",
+    "quickStart": {
+      "title": "Démarrage rapide",
+      "subtitle": "Démarrez avec Nova en 4 étapes",
+      "step1": "Créer une fonction : allez dans Fonctions → cliquez sur « Créer une fonction », choisissez un environnement et écrivez votre code",
+      "step2": "Invoquer une fonction : ouvrez la page de détail et cliquez sur « Invoquer » pour tester avec un payload JSON",
+      "step3": "Voir les logs : consultez l'onglet Logs de la page de détail pour voir les résultats",
+      "step4": "Configurer des déclencheurs : allez dans Déclencheurs pour planifier des exécutions ou connecter des événements"
+    },
+    "features": {
+      "functions": {
+        "title": "Fonctions",
+        "desc": "Créez, déployez et gérez des fonctions serverless avec plus de 20 environnements d'exécution.",
+        "step1": "Accédez à la page Fonctions depuis la barre latérale pour voir toutes vos fonctions déployées.",
+        "step2": "Cliquez sur le bouton « Créer une fonction » pour ouvrir le formulaire de création. Renseignez le nom, sélectionnez un environnement (Python, Go, Node.js, etc.) et écrivez votre code.",
+        "step3": "Après la création, cliquez sur la fonction pour ouvrir sa page de détail et consulter les versions, alias et la configuration.",
+        "step4": "Passez à l'onglet « Invoquer » pour tester la fonction. Saisissez un payload JSON et cliquez sur « Invoquer » pour voir le résultat.",
+        "step5": "Passez à l'onglet « Logs » pour consulter l'historique des invocations, y compris les payloads, la durée et le statut."
+      },
+      "gateway": {
+        "title": "Passerelle",
+        "desc": "Configurez les règles de routage HTTP pour exposer les fonctions comme endpoints API.",
+        "step1": "Créez des routes mappant les chemins URL aux fonctions",
+        "step2": "Configurez les méthodes, paramètres de chemin et authentification",
+        "step3": "Testez les endpoints directement depuis le tableau de bord"
+      },
+      "events": {
+        "title": "Événements",
+        "desc": "Publiez et abonnez-vous à des événements pour découpler les invocations de fonctions.",
+        "step1": "Créez des canaux d'événements pour différents types",
+        "step2": "Abonnez des fonctions aux canaux pour traiter les événements",
+        "step3": "Publiez des événements via l'API ou depuis d'autres fonctions"
+      },
+      "triggers": {
+        "title": "Déclencheurs",
+        "desc": "Planifiez l'exécution de fonctions avec des expressions cron ou des intervalles.",
+        "step1": "Créez un déclencheur et associez-le à une fonction",
+        "step2": "Définissez une expression cron (ex : @every 5m, @hourly, @daily)",
+        "step3": "Surveillez l'historique d'exécution et le statut des déclencheurs"
+      },
+      "workflows": {
+        "title": "Workflows",
+        "desc": "Orchestrez des pipelines de fonctions multi-étapes avec logique conditionnelle.",
+        "step1": "Définissez les étapes du workflow et connectez les fonctions en séquence",
+        "step2": "Configurez les conditions de branchement et la gestion des erreurs",
+        "step3": "Surveillez les exécutions et inspectez les résultats par étape"
+      },
+      "runtimes": {
+        "title": "Environnements",
+        "desc": "Affichez et gérez les environnements d'exécution disponibles pour les fonctions.",
+        "step1": "Parcourez les environnements intégrés (Python, Go, Node.js, Rust, etc.)",
+        "step2": "Ajoutez des environnements personnalisés par référence ou téléchargement d'images rootfs",
+        "step3": "Vérifiez le statut et le nombre de fonctions utilisant chaque environnement"
+      },
+      "asyncJobs": {
+        "title": "Tâches asynchrones",
+        "desc": "Suivez les invocations de fonctions asynchrones et leurs résultats.",
+        "step1": "Consultez toutes les invocations en attente, en cours et terminées",
+        "step2": "Inspectez le payload et le résultat de chaque tâche",
+        "step3": "Annulez ou relancez les tâches asynchrones échouées"
+      },
+      "history": {
+        "title": "Historique",
+        "desc": "Parcourez l'historique complet des invocations de toutes les fonctions.",
+        "step1": "Filtrez par nom de fonction, statut ou plage temporelle",
+        "step2": "Consultez les payloads requête/réponse et la durée d'exécution",
+        "step3": "Exportez les logs pour analyse ou débogage"
+      },
+      "replay": {
+        "title": "Rejeu",
+        "desc": "Rejouez des invocations passées avec le payload original ou modifié.",
+        "step1": "Sélectionnez une invocation dans l'historique",
+        "step2": "Modifiez éventuellement le payload avant de rejouer",
+        "step3": "Comparez le nouveau résultat avec l'original"
+      },
+      "snapshots": {
+        "title": "Snapshots",
+        "desc": "Gérez les snapshots VM pour accélérer les démarrages à froid.",
+        "step1": "Consultez les snapshots existants des fonctions",
+        "step2": "Créez des snapshots pour accélérer les démarrages à froid",
+        "step3": "Supprimez les snapshots obsolètes pour libérer du stockage"
+      },
+      "tenancy": {
+        "title": "Locataires",
+        "desc": "Gérez les locataires et espaces de noms pour l'isolation multi-tenant.",
+        "step1": "Créez des locataires et attribuez des espaces de noms",
+        "step2": "Configurez les quotas et limites de ressources par locataire",
+        "step3": "Basculez entre les locataires via le sélecteur de portée"
+      },
+      "rbac": {
+        "title": "Contrôle d'accès",
+        "desc": "Configurez le contrôle d'accès basé sur les rôles pour les utilisateurs et clés API.",
+        "step1": "Définissez des rôles avec des permissions spécifiques",
+        "step2": "Attribuez des rôles aux utilisateurs ou clés API",
+        "step3": "Auditez les patterns d'accès et les modifications de permissions"
+      },
+      "secrets": {
+        "title": "Secrets",
+        "desc": "Stockez des valeurs sensibles auxquelles les fonctions peuvent accéder à l'exécution.",
+        "step1": "Créez des secrets avec des paires clé-valeur",
+        "step2": "Référencez les secrets dans les variables d'environnement des fonctions",
+        "step3": "Effectuez la rotation des secrets sans redéployer les fonctions"
+      },
+      "apiKeys": {
+        "title": "Clés API",
+        "desc": "Générez et gérez des clés API pour l'accès programmatique.",
+        "step1": "Créez des clés API avec des portées et expirations spécifiques",
+        "step2": "Utilisez les clés dans l'en-tête Authorization des appels API",
+        "step3": "Révoquez ou régénérez les clés selon les besoins"
+      },
+      "configurations": {
+        "title": "Configurations",
+        "desc": "Gérez les paramètres de configuration à l'échelle de la plateforme.",
+        "step1": "Consultez la configuration actuelle de la plateforme",
+        "step2": "Mettez à jour les valeurs par défaut et les limites",
+        "step3": "Les modifications prennent effet immédiatement sur toute la plateforme"
+      },
+      "layers": {
+        "title": "Couches",
+        "desc": "Partagez des dépendances communes entre plusieurs fonctions.",
+        "step1": "Créez une couche avec des bibliothèques ou fichiers partagés",
+        "step2": "Attachez des couches aux fonctions qui en ont besoin",
+        "step3": "Mettez à jour les versions de couches indépendamment des fonctions"
+      },
+      "volumes": {
+        "title": "Volumes",
+        "desc": "Attachez des volumes de stockage persistant aux fonctions.",
+        "step1": "Créez un volume avec la taille souhaitée",
+        "step2": "Montez des volumes aux fonctions pour des données persistantes",
+        "step3": "Gérez le cycle de vie et l'utilisation des volumes"
+      },
+      "cluster": {
+        "title": "Cluster",
+        "desc": "Surveillez les nœuds du cluster et l'utilisation des ressources.",
+        "step1": "Consultez la santé des nœuds et l'utilisation des ressources",
+        "step2": "Surveillez la distribution des fonctions entre les nœuds",
+        "step3": "Vérifiez la capacité et l'état de mise à l'échelle"
+      },
+      "tuning": {
+        "title": "Réglage",
+        "desc": "Ajustez finement les paramètres de performance des fonctions et de la plateforme.",
+        "step1": "Ajustez les valeurs par défaut de mémoire, CPU et timeout",
+        "step2": "Configurez la taille des pools et le comportement de préchauffage",
+        "step3": "Optimisez les temps de démarrage à froid avec des profils de réglage"
+      },
+      "notifications": {
+        "title": "Notifications",
+        "desc": "Configurez les canaux de notification et le routage des alertes.",
+        "step1": "Configurez les canaux de notification (email, webhook, etc.)",
+        "step2": "Définissez des règles de routage pour différents types d'événements",
+        "step3": "Consultez l'historique de livraison des notifications"
+      },
+      "alerts": {
+        "title": "Alertes",
+        "desc": "Définissez des règles d'alerte pour surveiller la santé des fonctions.",
+        "step1": "Créez des règles d'alerte basées sur les taux d'erreur ou la latence",
+        "step2": "Configurez les seuils et les intervalles d'évaluation",
+        "step3": "Acheminez les alertes vers les canaux de notification"
+      },
+      "apiDocs": {
+        "title": "Docs API",
+        "desc": "Parcourez la documentation API interactive et testez les endpoints.",
+        "step1": "Explorez les endpoints API disponibles et leurs paramètres",
+        "step2": "Essayez les appels API directement depuis la documentation",
+        "step3": "Copiez les extraits de code pour l'intégration"
+      }
+    }
   }
 }

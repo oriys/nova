@@ -32,9 +32,10 @@ import {
   Activity,
   RotateCcw,
   SlidersHorizontal,
+  HelpCircle,
 } from "lucide-react"
 
-type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "asyncJobs" | "history" | "replay" | "runtimes" | "configurations" | "secrets" | "apiKeys" | "gateway" | "apiDocs" | "rbac" | "volumes" | "layers" | "notifications" | "snapshots" | "triggers" | "cluster" | "alerts" | "tuning"
+type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "asyncJobs" | "history" | "replay" | "runtimes" | "configurations" | "secrets" | "apiKeys" | "gateway" | "apiDocs" | "rbac" | "volumes" | "layers" | "notifications" | "snapshots" | "triggers" | "cluster" | "alerts" | "tuning" | "help"
 
 const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] = [
   { key: "dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -60,6 +61,7 @@ const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] 
   { key: "secrets", href: "/secrets", icon: Lock },
   { key: "apiKeys", href: "/api-keys", icon: KeyRound },
   { key: "apiDocs", href: "/api-docs", icon: FileText },
+  { key: "help", href: "/help", icon: HelpCircle },
 ]
 
 function LumenLogo({ className }: { className?: string }) {

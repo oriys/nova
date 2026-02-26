@@ -28,7 +28,8 @@
     "cluster": "Cluster",
     "alerts": "Alerts",
     "replay": "Replay",
-    "tuning": "Tuning"
+    "tuning": "Tuning",
+    "help": "Help"
   },
   "pages": {
     "dashboard": {
@@ -2539,5 +2540,175 @@
     "dslPlaceholder": "# One mapping per line\n# source.name -> target | transform | type = default !\nquery.user_id -> userId | camel_case | integer\npath.id -> recordId | integer !\nheader.X-Request-ID -> requestId",
     "dslError": "Line {line}: {message}",
     "dslHelp": "Syntax: source.name -> target | transform | type = default !\nSources: query, path, body, header\nTransforms: camel_case, snake_case, kebab_case, upper_case, lower_case, upper_first\nTypes: integer, float, boolean, json\nAppend ! to mark as required. Lines starting with # are comments."
+  },
+  "helpPage": {
+    "title": "Help Center",
+    "description": "Learn how to use each feature of the Nova platform",
+    "quickStart": {
+      "title": "Quick Start",
+      "subtitle": "Get started with Nova in 4 steps",
+      "step1": "Create a function: go to Functions → click \"Create Function\", choose a runtime and write your code",
+      "step2": "Invoke a function: open a function detail page and click \"Invoke\" to test it with a JSON payload",
+      "step3": "View logs: check the Logs tab on the function detail page to see invocation results",
+      "step4": "Set up triggers: go to Triggers to schedule automatic invocations or connect events"
+    },
+    "features": {
+      "functions": {
+        "title": "Functions",
+        "desc": "Create, deploy, and manage serverless functions with 20+ language runtimes.",
+        "step1": "Navigate to the Functions page from the sidebar to view all your deployed functions.",
+        "step2": "Click the \"Create Function\" button to open the creation form. Fill in the function name, select a runtime (Python, Go, Node.js, etc.), and write your handler code.",
+        "step3": "After creating a function, click on it to open the detail page where you can view versions, aliases, and configuration.",
+        "step4": "Switch to the \"Invoke\" tab to test your function. Enter a JSON payload and click \"Invoke\" to see the result.",
+        "step5": "Switch to the \"Logs\" tab to view the invocation history, including request/response payloads, duration, and status."
+      },
+      "gateway": {
+        "title": "Gateway",
+        "desc": "Configure HTTP routing rules to expose functions as API endpoints.",
+        "step1": "Create routes that map URL paths to functions",
+        "step2": "Configure methods, path parameters, and authentication",
+        "step3": "Test endpoints directly from the gateway dashboard"
+      },
+      "events": {
+        "title": "Events",
+        "desc": "Publish and subscribe to events to decouple function invocations.",
+        "step1": "Create event channels for different event types",
+        "step2": "Subscribe functions to channels to process events",
+        "step3": "Publish events via the API or from other functions"
+      },
+      "triggers": {
+        "title": "Triggers",
+        "desc": "Schedule function executions using cron expressions or intervals.",
+        "step1": "Create a trigger and associate it with a function",
+        "step2": "Set a cron expression (e.g. @every 5m, @hourly, @daily)",
+        "step3": "Monitor trigger execution history and status"
+      },
+      "workflows": {
+        "title": "Workflows",
+        "desc": "Orchestrate multi-step function pipelines with conditional logic.",
+        "step1": "Define workflow steps and connect functions in sequence",
+        "step2": "Configure branching conditions and error handling",
+        "step3": "Monitor workflow runs and inspect step-level results"
+      },
+      "runtimes": {
+        "title": "Runtimes",
+        "desc": "View and manage available language runtimes for functions.",
+        "step1": "Browse built-in runtimes (Python, Go, Node.js, Rust, etc.)",
+        "step2": "Add custom runtimes by referencing or uploading rootfs images",
+        "step3": "Check runtime status and the number of functions using each"
+      },
+      "asyncJobs": {
+        "title": "Async Jobs",
+        "desc": "Track asynchronous function invocations and their results.",
+        "step1": "View all pending, running, and completed async invocations",
+        "step2": "Inspect the payload and result of each job",
+        "step3": "Cancel or retry failed async jobs"
+      },
+      "history": {
+        "title": "History",
+        "desc": "Browse the full invocation history of all functions.",
+        "step1": "Filter by function name, status, or time range",
+        "step2": "View request/response payloads and execution duration",
+        "step3": "Export logs for analysis or debugging"
+      },
+      "replay": {
+        "title": "Replay",
+        "desc": "Re-execute past invocations with the original or modified payload.",
+        "step1": "Select an invocation from the history",
+        "step2": "Optionally modify the payload before replaying",
+        "step3": "Compare the new result with the original"
+      },
+      "snapshots": {
+        "title": "Snapshots",
+        "desc": "Manage VM snapshots for faster cold starts.",
+        "step1": "View existing snapshots for functions",
+        "step2": "Create snapshots to speed up cold starts",
+        "step3": "Delete outdated snapshots to free up storage"
+      },
+      "tenancy": {
+        "title": "Tenancy",
+        "desc": "Manage tenants and namespaces for multi-tenant isolation.",
+        "step1": "Create tenants and assign namespaces",
+        "step2": "Configure per-tenant resource quotas and limits",
+        "step3": "Switch between tenants using the scope switcher"
+      },
+      "rbac": {
+        "title": "RBAC",
+        "desc": "Configure role-based access control for users and API keys.",
+        "step1": "Define roles with specific permissions",
+        "step2": "Assign roles to users or API keys",
+        "step3": "Audit access patterns and permission changes"
+      },
+      "secrets": {
+        "title": "Secrets",
+        "desc": "Store sensitive values that functions can access at runtime.",
+        "step1": "Create secrets with key-value pairs",
+        "step2": "Reference secrets in function environment variables",
+        "step3": "Rotate secret values without redeploying functions"
+      },
+      "apiKeys": {
+        "title": "API Keys",
+        "desc": "Generate and manage API keys for programmatic access.",
+        "step1": "Create API keys with specific scopes and expiration",
+        "step2": "Use keys in the Authorization header for API calls",
+        "step3": "Revoke or regenerate keys as needed"
+      },
+      "configurations": {
+        "title": "Configurations",
+        "desc": "Manage platform-wide configuration settings.",
+        "step1": "View current platform configuration",
+        "step2": "Update settings such as defaults and limits",
+        "step3": "Changes take effect immediately across the platform"
+      },
+      "layers": {
+        "title": "Layers",
+        "desc": "Share common dependencies across multiple functions.",
+        "step1": "Create a layer with shared libraries or files",
+        "step2": "Attach layers to functions that need them",
+        "step3": "Update layer versions independently from functions"
+      },
+      "volumes": {
+        "title": "Volumes",
+        "desc": "Attach persistent storage volumes to functions.",
+        "step1": "Create a volume with the desired size",
+        "step2": "Mount volumes to functions for persistent data",
+        "step3": "Manage volume lifecycle and usage"
+      },
+      "cluster": {
+        "title": "Cluster",
+        "desc": "Monitor cluster nodes and resource utilization.",
+        "step1": "View node health and resource usage",
+        "step2": "Monitor function distribution across nodes",
+        "step3": "Check capacity and scaling status"
+      },
+      "tuning": {
+        "title": "Tuning",
+        "desc": "Fine-tune performance settings for functions and the platform.",
+        "step1": "Adjust memory, CPU, and timeout defaults",
+        "step2": "Configure pool sizes and pre-warming behavior",
+        "step3": "Optimize cold start times with tuning profiles"
+      },
+      "notifications": {
+        "title": "Notifications",
+        "desc": "Configure notification channels and alert routing.",
+        "step1": "Set up notification channels (email, webhook, etc.)",
+        "step2": "Define routing rules for different event types",
+        "step3": "View notification delivery history"
+      },
+      "alerts": {
+        "title": "Alerts",
+        "desc": "Define alert rules for monitoring function health.",
+        "step1": "Create alert rules based on error rates or latency",
+        "step2": "Configure thresholds and evaluation intervals",
+        "step3": "Route alerts to notification channels"
+      },
+      "apiDocs": {
+        "title": "API Docs",
+        "desc": "Browse the interactive API documentation and test endpoints.",
+        "step1": "Explore available API endpoints and parameters",
+        "step2": "Try API calls directly from the documentation",
+        "step3": "Copy code snippets for integration"
+      }
+    }
   }
 }
