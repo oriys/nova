@@ -487,6 +487,13 @@ func (e *Engine) propagateInput(ctx context.Context, completed *domain.RunNode) 
 			// Multiple predecessors: merge by node_key
 			merged := make(map[string]json.RawMessage)
 			for _, predKey := range preds {
+				// Use the authoritative output from the completed node,
+				// as the DB read (rnByKey) might be slightly stale.
+				if predKey == completed.NodeKey {
+					merged[predKey] = completed.Output
+					continue
+				}
+
 				predNode := rnByKey[predKey]
 				if predNode != nil && predNode.Status == domain.NodeStatusSucceeded {
 					merged[predKey] = predNode.Output

@@ -193,11 +193,13 @@ func TestStart_NilScheduleStore(t *testing.T) {
 // --- mock schedule store ---
 
 type mockScheduleStore struct {
-	schedules  []*store.Schedule
-	listErr    error
-	updateErr  error
-	lastRunID  string
-	lastRunMu  sync.Mutex
+	schedules       []*store.Schedule
+	listErr         error
+	updateErr       error
+	lastRunID       string
+	lastRunMu       sync.Mutex
+	tryLockErr      error
+	tryLockReturnFn func() bool // If set, use this to control lock success
 }
 
 func (m *mockScheduleStore) SaveSchedule(ctx context.Context, s *store.Schedule) error {
@@ -227,6 +229,17 @@ func (m *mockScheduleStore) UpdateScheduleEnabled(ctx context.Context, id string
 }
 func (m *mockScheduleStore) UpdateScheduleCron(ctx context.Context, id string, cronExpr string) error {
 	return nil
+}
+func (m *mockScheduleStore) TryLockSchedule(ctx context.Context, id string) (bool, error) {
+	if m.tryLockErr != nil {
+		return false, m.tryLockErr
+	}
+	// If a custom return function is set, use it to determine lock success
+	if m.tryLockReturnFn != nil {
+		return m.tryLockReturnFn(), nil
+	}
+	// Default: lock succeeds
+	return true, nil
 }
 
 // --- Start() tests ---
@@ -322,11 +335,6 @@ func TestInvoke_Success(t *testing.T) {
 	if string(inv.invocations[0].payload) != `{"key":"val"}` {
 		t.Errorf("expected payload %q, got %q", `{"key":"val"}`, string(inv.invocations[0].payload))
 	}
-	mock.lastRunMu.Lock()
-	defer mock.lastRunMu.Unlock()
-	if mock.lastRunID != "sched-1" {
-		t.Errorf("expected UpdateScheduleLastRun called with %q, got %q", "sched-1", mock.lastRunID)
-	}
 }
 
 func TestInvoke_EmptyPayload(t *testing.T) {
@@ -374,29 +382,49 @@ func TestInvoke_Error(t *testing.T) {
 	inv := &mockInvoker{err: fmt.Errorf("invoke failed")}
 	s := New(st, inv)
 
-	// Should not panic
+	// Should not panic even when invocation fails
 	s.invoke("sched-4", "t", "ns", "fn4", json.RawMessage(`{}`))
 
-	mock.lastRunMu.Lock()
-	defer mock.lastRunMu.Unlock()
-	if mock.lastRunID != "sched-4" {
-		t.Errorf("expected UpdateScheduleLastRun still called with %q, got %q", "sched-4", mock.lastRunID)
+	inv.mu.Lock()
+	defer inv.mu.Unlock()
+	if len(inv.invocations) != 1 {
+		t.Fatalf("expected 1 invocation attempt, got %d", len(inv.invocations))
 	}
 }
 
 func TestInvoke_UpdateLastRunError(t *testing.T) {
 	t.Parallel()
-	mock := &mockScheduleStore{updateErr: fmt.Errorf("update failed")}
+	mock := &mockScheduleStore{tryLockErr: fmt.Errorf("lock failed")}
 	st := &store.Store{ScheduleStore: mock}
 	inv := &mockInvoker{}
 	s := New(st, inv)
 
-	// Should not panic even when UpdateScheduleLastRun fails
+	// Should not panic even when TryLockSchedule fails
 	s.invoke("sched-5", "t", "ns", "fn5", json.RawMessage(`{}`))
 
 	inv.mu.Lock()
 	defer inv.mu.Unlock()
-	if len(inv.invocations) != 1 {
-		t.Fatalf("expected 1 invocation, got %d", len(inv.invocations))
+	if len(inv.invocations) != 0 {
+		t.Fatalf("expected 0 invocations when lock fails, got %d", len(inv.invocations))
+	}
+}
+
+func TestInvoke_LockAlreadyHeld(t *testing.T) {
+	t.Parallel()
+	mock := &mockScheduleStore{
+		tryLockReturnFn: func() bool {
+			return false // Lock is already held
+		},
+	}
+	st := &store.Store{ScheduleStore: mock}
+	inv := &mockInvoker{}
+	s := New(st, inv)
+
+	s.invoke("sched-6", "t", "ns", "fn6", json.RawMessage(`{}`))
+
+	inv.mu.Lock()
+	defer inv.mu.Unlock()
+	if len(inv.invocations) != 0 {
+		t.Fatalf("expected 0 invocations when lock is held by another instance, got %d", len(inv.invocations))
 	}
 }

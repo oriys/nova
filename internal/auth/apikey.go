@@ -279,13 +279,27 @@ func UnmarshalPolicies(data json.RawMessage) ([]domain.PolicyBinding, error) {
 }
 
 // generateAPIKey creates a random API key with sk_ prefix
+// Uses rejection sampling to avoid modulo bias
 func generateAPIKey() string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	const charsetLen = 62 // len(charset)
+	const maxByte = 256
+	// maxValid is the largest multiple of 62 <= 256
+	// We only accept random bytes in range [0, maxValid) to avoid bias
+	maxValid := (maxByte / charsetLen) * charsetLen // 248
+
 	b := make([]byte, 24)
-	randomBytes := make([]byte, 24)
-	rand.Read(randomBytes)
-	for i := range b {
-		b[i] = charset[randomBytes[i]%byte(len(charset))]
+	randomByte := make([]byte, 1)
+
+	for i := 0; i < 24; {
+		if _, err := rand.Read(randomByte); err != nil {
+			panic(fmt.Sprintf("failed to read random bytes: %v", err))
+		}
+		// Rejection sampling: only accept bytes in valid range
+		if randomByte[0] < byte(maxValid) {
+			b[i] = charset[randomByte[0]%byte(charsetLen)]
+			i++
+		}
 	}
 	return "sk_" + string(b)
 }

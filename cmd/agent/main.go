@@ -582,6 +582,9 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID s
 			return nil, "", "", fmt.Errorf("invalid command: empty")
 		}
 		// Validate the executable against allowed runtime binaries
+		// To prevent path traversal (e.g. /tmp/malicious/python3), we ensure that:
+		// 1. If it's a known runtime binary, it must be specified by name only (no path components), OR
+		// 2. It must be inside the allowed code mount point.
 		exe := filepath.Base(args[0])
 		allowed := map[string]bool{
 			"python3": true, "python": true, "node": true, "ruby": true,
@@ -590,8 +593,15 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID s
 			"perl": true, "r": true, "Rscript": true, "julia": true,
 			"handler": true, "bootstrap": true,
 		}
-		if !allowed[exe] && !strings.HasPrefix(args[0], CodeMountPoint) {
-			return nil, "", "", fmt.Errorf("command not allowed: %s", args[0])
+
+		isAllowedBinary := allowed[exe]
+		isSimpleName := args[0] == exe
+		isInCodeDir := strings.HasPrefix(args[0], CodeMountPoint)
+
+		if !isInCodeDir {
+			if !isAllowedBinary || !isSimpleName {
+				return nil, "", "", fmt.Errorf("command not allowed: %s (must be in %s or be a simple system binary name)", args[0], CodeMountPoint)
+			}
 		}
 		if a.function.Extension != "" {
 			args = append(args, CodePath+a.function.Extension)

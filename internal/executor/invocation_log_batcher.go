@@ -45,6 +45,7 @@ type invocationLogBatcher struct {
 	// Overflow tracking
 	droppedTotal     atomic.Int64
 	flushFailedTotal atomic.Int64
+	closed           atomic.Bool
 }
 
 func newInvocationLogBatcher(s *store.Store, sink logsink.LogSink, cfg LogBatcherConfig) *invocationLogBatcher {
@@ -89,6 +90,12 @@ func newInvocationLogBatcher(s *store.Store, sink logsink.LogSink, cfg LogBatche
 }
 
 func (b *invocationLogBatcher) Enqueue(log *store.InvocationLog) {
+	if b.closed.Load() {
+		b.logger.Warn("cannot enqueue log after shutdown",
+			"request_id", log.ID,
+			"function_id", log.FunctionID)
+		return
+	}
 	select {
 	case b.logs <- log:
 	default:
@@ -112,6 +119,7 @@ func (b *invocationLogBatcher) FlushFailedTotal() int64 {
 }
 
 func (b *invocationLogBatcher) Shutdown(timeout time.Duration) {
+	b.closed.Store(true)
 	close(b.logs)
 	select {
 	case <-b.done:

@@ -268,6 +268,17 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 		return nil, fmt.Errorf("ensure bridge: %w", err)
 	}
 
+	// Ensure network cleanup on failure
+	defer func() {
+		if vm.State == VMStateStopped {
+			if vm.NetNS != "" {
+				CleanupNetNS(vm.ID)
+			} else if vm.TapDevice != "" {
+				deleteTAP(vm.TapDevice)
+			}
+		}
+	}()
+
 	useNetNS := fn.NetworkPolicy != nil && fn.NetworkPolicy.IsolationMode != "" && fn.NetworkPolicy.IsolationMode != "none"
 	if useNetNS {
 		ip, err := m.allocateIP()
@@ -284,7 +295,6 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 		}
 		if err := m.ApplyEgressRules(vm.NetNS, fn.NetworkPolicy); err != nil {
 			vm.State = VMStateStopped
-			CleanupNetNS(vm.ID)
 			m.releaseIP(vm.GuestIP)
 			return nil, fmt.Errorf("apply egress rules: %w", err)
 		}
@@ -298,7 +308,7 @@ func (m *Manager) CreateVM(ctx context.Context, fn *domain.Function, codeContent
 		ip, err := m.allocateIP()
 		if err != nil {
 			vm.State = VMStateStopped
-			deleteTAP(vm.TapDevice)
+			// deferred cleanup handles TAP
 			return nil, err
 		}
 		vm.GuestIP = ip
@@ -518,6 +528,17 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 		return nil, fmt.Errorf("ensure bridge: %w", err)
 	}
 
+	// Ensure network cleanup on failure
+	defer func() {
+		if vm.State == VMStateStopped {
+			if vm.NetNS != "" {
+				CleanupNetNS(vm.ID)
+			} else if vm.TapDevice != "" {
+				deleteTAP(vm.TapDevice)
+			}
+		}
+	}()
+
 	useNetNS := fn.NetworkPolicy != nil && fn.NetworkPolicy.IsolationMode != "" && fn.NetworkPolicy.IsolationMode != "none"
 	if useNetNS {
 		ip, err := m.allocateIP()
@@ -534,7 +555,6 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 		}
 		if err := m.ApplyEgressRules(vm.NetNS, fn.NetworkPolicy); err != nil {
 			vm.State = VMStateStopped
-			CleanupNetNS(vm.ID)
 			m.releaseIP(vm.GuestIP)
 			return nil, fmt.Errorf("apply egress rules: %w", err)
 		}
@@ -548,7 +568,7 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 		ip, err := m.allocateIP()
 		if err != nil {
 			vm.State = VMStateStopped
-			deleteTAP(vm.TapDevice)
+			// deferred cleanup handles TAP
 			return nil, err
 		}
 		vm.GuestIP = ip

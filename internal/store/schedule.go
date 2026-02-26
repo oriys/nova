@@ -34,6 +34,7 @@ type ScheduleStore interface {
 	UpdateScheduleLastRun(ctx context.Context, id string, t time.Time) error
 	UpdateScheduleEnabled(ctx context.Context, id string, enabled bool) error
 	UpdateScheduleCron(ctx context.Context, id string, cronExpr string) error
+	TryLockSchedule(ctx context.Context, id string) (bool, error)
 }
 
 // NewSchedule creates a new Schedule with defaults.
@@ -198,6 +199,27 @@ func (s *PostgresStore) UpdateScheduleCron(ctx context.Context, id string, cronE
 		return fmt.Errorf("update schedule cron: %w", err)
 	}
 	return nil
+}
+
+func (s *PostgresStore) TryLockSchedule(ctx context.Context, id string) (bool, error) {
+	scope := tenantScopeFromContext(ctx)
+	// Try to update last_run_at if it's NULL or older than 50 seconds.
+	// This acts as a distributed lock across multiple scheduler instances.
+	// Only the instance that successfully updates will proceed with execution.
+	now := time.Now()
+	lockThreshold := now.Add(-50 * time.Second)
+	
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE schedules
+		SET last_run_at = $1, updated_at = NOW()
+		WHERE id = $2 AND tenant_id = $3 AND namespace = $4
+		AND (last_run_at IS NULL OR last_run_at < $5)
+	`, now, id, scope.TenantID, scope.Namespace, lockThreshold)
+	if err != nil {
+		return false, fmt.Errorf("try lock schedule: %w", err)
+	}
+	// If no rows were affected, another instance already locked it
+	return ct.RowsAffected() > 0, nil
 }
 
 func scanSchedules(rows pgx.Rows) ([]*Schedule, error) {

@@ -106,20 +106,26 @@ func (s *Scheduler) invoke(schedID, tenantID, namespace, fnName string, input js
 	ctx, cancel := context.WithTimeout(scopedCtx, 30*time.Second)
 	defer cancel()
 
+	// Try to acquire the lock. Only proceed if no other instance has run this recently.
+	locked, err := s.store.TryLockSchedule(ctx, schedID)
+	if err != nil {
+		logging.Op().Error("failed to acquire schedule lock", "schedule", schedID, "error", err)
+		return
+	}
+	if !locked {
+		logging.Op().Debug("schedule already running on another instance", "schedule", schedID)
+		return
+	}
+
 	payload := input
 	if len(payload) == 0 {
 		payload = json.RawMessage(`{}`)
 	}
 
-	_, err := s.exec.Invoke(ctx, fnName, payload)
+	_, err = s.exec.Invoke(ctx, fnName, payload)
 	if err != nil {
 		logging.Op().Error("scheduled invocation failed", "schedule", schedID, "function", fnName, "error", err)
 	} else {
 		logging.Op().Debug("scheduled invocation succeeded", "schedule", schedID, "function", fnName)
-	}
-
-	// Update last_run_at
-	if err := s.store.UpdateScheduleLastRun(scopedCtx, schedID, time.Now()); err != nil {
-		logging.Op().Warn("failed to update schedule last_run", "schedule", schedID, "error", err)
 	}
 }

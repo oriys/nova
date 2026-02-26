@@ -221,8 +221,11 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 	handler = tenantScopeMiddleware(handler)
 
 	server := &http.Server{
-		Addr:    addr,
-		Handler: handler,
+		Addr:         addr,
+		Handler:      handler,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	go func() {

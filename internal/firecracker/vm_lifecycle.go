@@ -231,31 +231,44 @@ func (m *Manager) StopVM(vmID string) error {
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
 
-	// 1. Try graceful shutdown via vsock
-	if conn, err := dialVsock(vm, time.Second); err == nil {
-		msg, _ := json.Marshal(&VsockMessage{Type: MsgTypeStop})
-		lenBuf := make([]byte, 4)
-		binary.BigEndian.PutUint32(lenBuf, uint32(len(msg)))
-		conn.Write(lenBuf)
-		conn.Write(msg)
-		conn.Close()
-		// Give agent a moment to exit
-		time.Sleep(200 * time.Millisecond)
-	}
-
+	// Graceful shutdown sequence with proper timeout handling
 	if vm.Cmd != nil && vm.Cmd.Process != nil {
-		// 2. SIGTERM
-		syscall.Kill(-vm.Cmd.Process.Pid, syscall.SIGTERM)
+		// 1. Try graceful shutdown via vsock stop message
+		if conn, err := dialVsock(vm, time.Second); err == nil {
+			msg, _ := json.Marshal(&VsockMessage{Type: MsgTypeStop})
+			lenBuf := make([]byte, 4)
+			binary.BigEndian.PutUint32(lenBuf, uint32(len(msg)))
+			conn.Write(lenBuf)
+			conn.Write(msg)
+			conn.Close()
+		}
 
-		// Wait up to 2 seconds for clean exit
+		// 2. Wait for process exit with 500ms timeout
 		done := make(chan struct{})
 		go func() { vm.Cmd.Wait(); close(done) }()
+		
 		select {
 		case <-done:
-		case <-time.After(2 * time.Second):
-			// 3. SIGKILL as last resort
-			syscall.Kill(-vm.Cmd.Process.Pid, syscall.SIGKILL)
-			vm.Cmd.Wait()
+			// Process exited cleanly
+		case <-time.After(500 * time.Millisecond):
+			// 3. Timeout: send SIGTERM
+			syscall.Kill(-vm.Cmd.Process.Pid, syscall.SIGTERM)
+			
+			// 4. Wait again with timeout
+			select {
+			case <-done:
+				// Process exited after SIGTERM
+			case <-time.After(500 * time.Millisecond):
+				// 5. Timeout again: send SIGKILL as last resort
+				syscall.Kill(-vm.Cmd.Process.Pid, syscall.SIGKILL)
+				
+				// Wait for SIGKILL to take effect
+				select {
+				case <-done:
+				case <-time.After(100 * time.Millisecond):
+					// Process should be dead by now, but continue anyway
+				}
+			}
 		}
 	}
 

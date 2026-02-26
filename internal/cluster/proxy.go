@@ -16,6 +16,7 @@ import (
 
 	"github.com/oriys/nova/api/proto/novapb"
 	"github.com/oriys/nova/internal/domain"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -27,6 +28,7 @@ type Proxy struct {
 	timeout   time.Duration
 	connsMu   sync.Mutex
 	grpcConns map[string]*grpc.ClientConn
+	dialSF    singleflight.Group
 }
 
 // NewProxy creates a cluster proxy with configurable timeout.
@@ -197,6 +199,7 @@ func (p *Proxy) forwardPrewarmGRPC(ctx context.Context, addr, functionName strin
 }
 
 func (p *Proxy) getGRPCConn(ctx context.Context, addr string) (*grpc.ClientConn, error) {
+	// Fast path: check if connection already exists
 	p.connsMu.Lock()
 	if conn, ok := p.grpcConns[addr]; ok {
 		p.connsMu.Unlock()
@@ -204,26 +207,45 @@ func (p *Proxy) getGRPCConn(ctx context.Context, addr string) (*grpc.ClientConn,
 	}
 	p.connsMu.Unlock()
 
-	dialCtx, cancel := context.WithTimeout(ctx, p.timeout)
-	defer cancel()
-	conn, err := grpc.DialContext(dialCtx, addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("dial remote gRPC %s: %w", addr, err)
-	}
-
-	p.connsMu.Lock()
-	if existing, ok := p.grpcConns[addr]; ok {
+	// Use singleflight to ensure only one dial per address at a time
+	result, err, _ := p.dialSF.Do(addr, func() (interface{}, error) {
+		// Double-check after singleflight (another goroutine may have succeeded)
+		p.connsMu.Lock()
+		if existing, ok := p.grpcConns[addr]; ok {
+			p.connsMu.Unlock()
+			return existing, nil
+		}
 		p.connsMu.Unlock()
-		_ = conn.Close()
-		return existing, nil
-	}
-	p.grpcConns[addr] = conn
-	p.connsMu.Unlock()
 
-	return conn, nil
+		// Perform the dial operation
+		dialCtx, cancel := context.WithTimeout(ctx, p.timeout)
+		defer cancel()
+		conn, err := grpc.DialContext(dialCtx, addr,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithBlock(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("dial remote gRPC %s: %w", addr, err)
+		}
+
+		// Store in map
+		p.connsMu.Lock()
+		if existing, ok := p.grpcConns[addr]; ok {
+			p.connsMu.Unlock()
+			_ = conn.Close()
+			return existing, nil
+		}
+		p.grpcConns[addr] = conn
+		p.connsMu.Unlock()
+
+		return conn, nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result.(*grpc.ClientConn), nil
 }
 
 func normalizeNodeAddress(raw string) (string, bool) {
