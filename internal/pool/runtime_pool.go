@@ -3,6 +3,7 @@ package pool
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,10 +41,10 @@ type TemplateVM struct {
 
 // RuntimePoolConfig configures the runtime template pool.
 type RuntimePoolConfig struct {
-	Enabled     bool          `json:"enabled"`      // Enable the runtime template pool
-	PoolSize    int           `json:"pool_size"`    // Number of pre-warmed VMs per runtime (default: 2)
+	Enabled        bool          `json:"enabled"`         // Enable the runtime template pool
+	PoolSize       int           `json:"pool_size"`       // Number of pre-warmed VMs per runtime (default: 2)
 	RefillInterval time.Duration `json:"refill_interval"` // How often to check and refill pools (default: 30s)
-	Runtimes    []string      `json:"runtimes"`     // Runtimes to pre-warm (e.g. ["python", "node"])
+	Runtimes       []string      `json:"runtimes"`        // Runtimes to pre-warm (e.g. ["python", "node"])
 }
 
 // DefaultRuntimePoolConfig returns default runtime pool configuration.
@@ -76,13 +77,54 @@ func NewRuntimeTemplatePool(b backend.Backend, cfg RuntimePoolConfig) *RuntimeTe
 	return rtp
 }
 
+func runtimeTemplateKey(runtime domain.Runtime) domain.Runtime {
+	r := strings.ToLower(strings.TrimSpace(string(runtime)))
+	if r == "" {
+		return runtime
+	}
+
+	switch {
+	case r == string(domain.RuntimePython) || strings.HasPrefix(r, "python"):
+		return domain.RuntimePython
+	case r == string(domain.RuntimeWasm) || strings.HasPrefix(r, "wasm"):
+		return domain.RuntimeWasm
+	case r == string(domain.RuntimeNode) || strings.HasPrefix(r, "node"):
+		return domain.RuntimeNode
+	case r == string(domain.RuntimeRuby) || strings.HasPrefix(r, "ruby"):
+		return domain.RuntimeRuby
+	case r == string(domain.RuntimeJava) || strings.HasPrefix(r, "java"),
+		r == string(domain.RuntimeKotlin) || strings.HasPrefix(r, "kotlin"),
+		r == string(domain.RuntimeScala) || strings.HasPrefix(r, "scala"):
+		return domain.RuntimeJava
+	case r == string(domain.RuntimePHP) || strings.HasPrefix(r, "php"):
+		return domain.RuntimePHP
+	case r == string(domain.RuntimeLua) || strings.HasPrefix(r, "lua"):
+		return domain.RuntimeLua
+	case r == string(domain.RuntimeDeno) || strings.HasPrefix(r, "deno"):
+		return domain.RuntimeDeno
+	case r == string(domain.RuntimeBun) || strings.HasPrefix(r, "bun"):
+		return domain.RuntimeBun
+	case r == string(domain.RuntimeGo) || strings.HasPrefix(r, "go1."),
+		r == string(domain.RuntimeRust) || strings.HasPrefix(r, "rust1."),
+		r == string(domain.RuntimeSwift) || strings.HasPrefix(r, "swift"),
+		r == string(domain.RuntimeZig) || strings.HasPrefix(r, "zig"),
+		r == string(domain.RuntimeC),
+		r == string(domain.RuntimeCpp) || strings.HasPrefix(r, "cpp"),
+		r == string(domain.RuntimeGraalVM) || strings.HasPrefix(r, "graalvm"):
+		return domain.RuntimeGo
+	default:
+		return domain.Runtime(r)
+	}
+}
+
 // Acquire attempts to claim a pre-warmed template VM for the given runtime.
 // If a template VM is available it is removed from the pool and returned.
 // The caller must inject function code via Client.Reload before using it.
 // Returns nil, nil when no template VM is available (caller should fall back
 // to the normal cold-start path).
 func (rtp *RuntimeTemplatePool) Acquire(runtime domain.Runtime) (*TemplateVM, error) {
-	val, ok := rtp.templates.Load(string(runtime))
+	runtimeKey := runtimeTemplateKey(runtime)
+	val, ok := rtp.templates.Load(string(runtimeKey))
 	if !ok {
 		return nil, nil
 	}
@@ -100,13 +142,15 @@ func (rtp *RuntimeTemplatePool) Acquire(runtime domain.Runtime) (*TemplateVM, er
 
 	logging.Op().Info("acquired template VM",
 		"runtime", string(runtime),
+		"pool_runtime", string(runtimeKey),
 		"remaining", len(entry.vms))
 	return tvm, nil
 }
 
 // Return returns a template VM back to the pool (e.g. if code injection failed).
 func (rtp *RuntimeTemplatePool) Return(runtime domain.Runtime, tvm *TemplateVM) {
-	val, _ := rtp.templates.LoadOrStore(string(runtime), &templateEntry{})
+	runtimeKey := runtimeTemplateKey(runtime)
+	val, _ := rtp.templates.LoadOrStore(string(runtimeKey), &templateEntry{})
 	entry := val.(*templateEntry)
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
@@ -115,8 +159,17 @@ func (rtp *RuntimeTemplatePool) Return(runtime domain.Runtime, tvm *TemplateVM) 
 
 // PreWarm fills the template pool for the specified runtimes up to PoolSize.
 func (rtp *RuntimeTemplatePool) PreWarm(runtimes []string) {
+	seen := make(map[domain.Runtime]struct{}, len(runtimes))
 	for _, rt := range runtimes {
-		rtp.fillRuntime(domain.Runtime(rt))
+		runtimeKey := runtimeTemplateKey(domain.Runtime(rt))
+		if runtimeKey == "" {
+			continue
+		}
+		if _, ok := seen[runtimeKey]; ok {
+			continue
+		}
+		seen[runtimeKey] = struct{}{}
+		rtp.fillRuntime(runtimeKey)
 	}
 }
 

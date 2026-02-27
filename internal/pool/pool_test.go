@@ -1481,6 +1481,63 @@ func TestRuntimeTemplatePool_AcquireAndReturn(t *testing.T) {
 	}
 }
 
+func TestRuntimeTemplatePool_Acquire_VersionedRuntimeAlias(t *testing.T) {
+	t.Parallel()
+	b := &mockBackend{}
+	rtp := NewRuntimeTemplatePool(b, RuntimePoolConfig{
+		PoolSize: 1,
+	})
+	t.Cleanup(func() { rtp.Shutdown() })
+
+	rtp.PreWarm([]string{"go"})
+
+	tvm, err := rtp.Acquire(domain.Runtime("go1.23"))
+	if err != nil {
+		t.Fatalf("Acquire() error = %v", err)
+	}
+	if tvm == nil {
+		t.Fatal("Acquire() should reuse pre-warmed go template for go1.x runtime")
+	}
+}
+
+func TestRuntimeTemplatePool_Acquire_CompiledRuntimeFamilyAlias(t *testing.T) {
+	t.Parallel()
+	b := &mockBackend{}
+	rtp := NewRuntimeTemplatePool(b, RuntimePoolConfig{
+		PoolSize: 1,
+	})
+	t.Cleanup(func() { rtp.Shutdown() })
+
+	rtp.PreWarm([]string{"go"})
+
+	tvm, err := rtp.Acquire(domain.RuntimeRust)
+	if err != nil {
+		t.Fatalf("Acquire() error = %v", err)
+	}
+	if tvm == nil {
+		t.Fatal("Acquire() should reuse pre-warmed go template for rust runtime")
+	}
+}
+
+func TestRuntimeTemplatePool_Acquire_JVMAlias(t *testing.T) {
+	t.Parallel()
+	b := &mockBackend{}
+	rtp := NewRuntimeTemplatePool(b, RuntimePoolConfig{
+		PoolSize: 1,
+	})
+	t.Cleanup(func() { rtp.Shutdown() })
+
+	rtp.PreWarm([]string{"java"})
+
+	tvm, err := rtp.Acquire(domain.RuntimeKotlin)
+	if err != nil {
+		t.Fatalf("Acquire() error = %v", err)
+	}
+	if tvm == nil {
+		t.Fatal("Acquire() should reuse pre-warmed java template for kotlin runtime")
+	}
+}
+
 func TestRuntimeTemplatePool_Acquire_NoRuntime(t *testing.T) {
 	t.Parallel()
 	b := &mockBackend{}

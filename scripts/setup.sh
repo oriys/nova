@@ -89,9 +89,9 @@ cached_curl_pipe() {
 
     mkdir -p "${NOVA_CACHE_DIR}"
     if [[ -f "${cached}" ]]; then
-        log "Using cached ${cache_key}"
+        log "Using cached ${cache_key}" >&2
     else
-        log "Downloading ${cache_key}..."
+        log "Downloading ${cache_key}..." >&2
         local tmp_dl="${cached}.tmp.$$"
         if curl -fsSL "${url}" -o "${tmp_dl}"; then
             mv "${tmp_dl}" "${cached}"
@@ -230,7 +230,16 @@ run_parallel_functions() {
 
 # ─── Checks ──────────────────────────────────────────────
 check_root() {
-    [[ $EUID -eq 0 ]] || err "This script must be run as root: sudo $0"
+    if [[ $EUID -eq 0 ]]; then
+        return 0
+    fi
+
+    if command -v sudo >/dev/null 2>&1; then
+        warn "Root privileges required; re-running with sudo..."
+        exec sudo --preserve-env=NOVA_CACHE_DIR,NOVA_DOCKER_IMAGE_PREFIX,NOVA_CLEAN_DEPLOY_BINARIES bash "$0" "$@"
+    fi
+
+    err "This script must be run as root: sudo bash $0"
 }
 
 check_system() {
@@ -1209,6 +1218,11 @@ deploy_backend_services() {
   "postgres": {
     "dsn": "postgres://nova:nova@localhost:5432/nova?sslmode=disable"
   },
+  "auth": {
+    "jwt": {
+      "secret": "nova-local-dev-jwt-secret"
+    }
+  },
   "firecracker": {
     "backend": "firecracker",
     "binary": "/opt/nova/bin/firecracker",
@@ -1221,6 +1235,12 @@ deploy_backend_services() {
   },
   "pool": {
     "idle_ttl": 60000000000
+  },
+  "runtime_pool": {
+    "enabled": true,
+    "pool_size": 1,
+    "refill_interval": "30s",
+    "runtimes": ["python", "node", "go", "rust", "java", "kotlin", "scala", "c", "cpp"]
   }
 }
 EOF
@@ -1590,7 +1610,7 @@ main() {
     echo -e "${BLUE}Nova Serverless Platform - One-Click Deployment${NC}"
     echo ""
 
-    check_root
+    check_root "$@"
     check_system
     check_binaries
 
