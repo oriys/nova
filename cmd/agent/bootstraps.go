@@ -203,8 +203,10 @@ if (in_array('--persistent', $argv)) {
         try {
             $result = handler($req['input'] ?? [], $ctx);
             echo json_encode(['output' => $result]) . "\n";
+            flush();
         } catch (Exception $e) {
             echo json_encode(['error' => $e->getMessage()]) . "\n";
+            flush();
         }
     }
 } else {
