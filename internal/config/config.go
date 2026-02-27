@@ -227,7 +227,7 @@ type RuntimePoolCfg struct {
 	Enabled        bool     `json:"enabled"`         // Enable runtime template pool (default: true)
 	PoolSize       int      `json:"pool_size"`       // VMs per runtime (default: 1)
 	RefillInterval string   `json:"refill_interval"` // Refill check interval (default: "30s")
-	Runtimes       []string `json:"runtimes"`        // Runtimes to pre-warm (default: ["python", "node", "go"])
+	Runtimes       []string `json:"runtimes"`        // Runtimes to pre-warm (default: ["python", "node", "go", "java"])
 }
 
 // LogSinkConfig holds invocation log sink settings
@@ -399,7 +399,7 @@ func DefaultConfig() *Config {
 		RuntimePool: RuntimePoolCfg{
 			Enabled:  true,
 			PoolSize: 1,
-			Runtimes: []string{"python", "node", "go"},
+			Runtimes: []string{"python", "node", "go", "java"},
 		},
 	}
 }
