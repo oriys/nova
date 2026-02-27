@@ -1165,14 +1165,14 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 	case domain.RuntimeJava:
 		return "eclipse-temurin:21-jdk", "cd /work && javac Main.java Handler.java && jar cfe handler.jar Main *.class && cp handler.jar handler"
 	case domain.RuntimeKotlin:
-		return "eclipse-temurin:21-jdk", "apt-get update && apt-get install -y --no-install-recommends kotlin && cd /work && kotlinc *.kt -include-runtime -d handler.jar && cp handler.jar handler"
+		return "eclipse-temurin:21-jdk", "DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-install-recommends kotlin && cd /work && kotlinc *.kt -include-runtime -d handler.jar && cp handler.jar handler"
 	case domain.RuntimeSwift:
 		return "swift:5.10", "cd /work && swiftc -o handler -static-executable Handler.swift main.swift"
 	case domain.RuntimeZig:
 		return "euantorano/zig:0.13.0", "cd /work && zig build-exe main.zig -name handler -target x86_64-linux-musl"
 	case domain.RuntimeScala:
 		return "eclipse-temurin:21-jdk",
-			`apt-get update && apt-get install -y --no-install-recommends scala && cd /work && scalac *.scala && ` +
+			`DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-install-recommends scala && cd /work && scalac *.scala && ` +
 				`SCALA_LIB=$(find / -name "scala-library*.jar" 2>/dev/null | head -1) && ` +
 				`mkdir -p /tmp/fatjar && cd /tmp/fatjar && ` +
 				`jar xf "$SCALA_LIB" && ` +
