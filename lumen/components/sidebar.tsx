@@ -152,7 +152,7 @@ export function Sidebar() {
         )}
       </button>
 
-      <nav className={cn("flex-1 space-y-1", collapsed ? "px-2 py-4" : "px-3 py-4")}>
+      <nav className={cn("flex-1 overflow-y-auto space-y-1", collapsed ? "px-2 py-4" : "px-3 py-4")}>
         {visibleNavigation.map((item) => {
           const label = t(item.key)
           const isActive =
