@@ -95,7 +95,7 @@ func (m *Manager) apiBoot(ctx context.Context, vm *VM, rootfs, codeDrive string,
 		"drive_id":       "code",
 		"path_on_host":   codeDrive,
 		"is_root_device": false,
-		"is_read_only":   true,
+		"is_read_only":   false,
 		"io_engine":      "Async",
 	}
 	if fn.Limits != nil && (fn.Limits.DiskIOPS > 0 || fn.Limits.DiskBandwidth > 0) {

@@ -407,6 +407,14 @@ func (c *VsockClient) Reload(files map[string][]byte) error {
 	if resp.Type != MsgTypeResp {
 		return fmt.Errorf("unexpected response type: %d", resp.Type)
 	}
+
+	// Check for error in the response payload
+	var respBody struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(resp.Payload, &respBody) == nil && respBody.Error != "" {
+		return fmt.Errorf("reload failed: %s", respBody.Error)
+	}
 	return nil
 }
 
