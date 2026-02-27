@@ -9,15 +9,16 @@ import (
 )
 
 type CreateFunctionArgs struct {
-	Name     string            `json:"name" jsonschema:"Function name"`
-	Runtime  string            `json:"runtime" jsonschema:"Runtime (python go node rust etc)"`
-	Code     string            `json:"code,omitempty" jsonschema:"Inline source code"`
-	CodePath string            `json:"code_path,omitempty" jsonschema:"Path to code file on server"`
-	Handler  string            `json:"handler,omitempty" jsonschema:"Handler entry point"`
-	MemoryMB int               `json:"memory_mb,omitempty" jsonschema:"Memory in MB"`
-	TimeoutS int               `json:"timeout_s,omitempty" jsonschema:"Timeout in seconds"`
-	Mode     string            `json:"mode,omitempty" jsonschema:"Execution mode: process or persistent"`
-	EnvVars  map[string]string `json:"env_vars,omitempty" jsonschema:"Environment variables"`
+	Name        string            `json:"name" jsonschema:"Function name"`
+	Runtime     string            `json:"runtime" jsonschema:"Runtime (python go node rust etc)"`
+	Code        string            `json:"code,omitempty" jsonschema:"Inline source code"`
+	CodePath    string            `json:"code_path,omitempty" jsonschema:"Path to code file on server"`
+	Handler     string            `json:"handler,omitempty" jsonschema:"Handler entry point"`
+	Description string            `json:"description,omitempty" jsonschema:"Function description"`
+	MemoryMB    int               `json:"memory_mb,omitempty" jsonschema:"Memory in MB"`
+	TimeoutS    int               `json:"timeout_s,omitempty" jsonschema:"Timeout in seconds"`
+	Mode        string            `json:"mode,omitempty" jsonschema:"Execution mode: process or persistent"`
+	EnvVars     map[string]string `json:"env_vars,omitempty" jsonschema:"Environment variables"`
 }
 
 type ListFunctionsArgs struct {

@@ -198,6 +198,11 @@ enum Commands {
     },
     /// List backends
     Backends,
+    /// Pre-warm a function
+    Prewarm {
+        /// Function name
+        name: String,
+    },
     /// Manage tenant menu permissions
     MenuPerms {
         #[command(subcommand)]
@@ -298,6 +303,7 @@ async fn main() {
         Commands::State { cmd } => commands::state::run(cmd, &nova, &output_format).await,
         Commands::Dlq { cmd } => commands::dlq::run(cmd, &nova, &output_format).await,
         Commands::Backends => commands::backends::run(&nova, &output_format).await,
+        Commands::Prewarm { name } => commands::prewarm::run(&name, &nova).await,
         Commands::MenuPerms { cmd } => {
             commands::tenant_perms::run_menu(cmd, &nova, &output_format).await
         }

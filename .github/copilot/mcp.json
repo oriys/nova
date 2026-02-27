@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "atlas": {
+      "command": "/Users/cyo/Projects/GoProjects/nova/bin/atlas",
+      "env": {
+        "ZENITH_URL": "http://localhost:9000"
+      }
+    }
+  }
+}

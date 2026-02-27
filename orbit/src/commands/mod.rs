@@ -19,6 +19,7 @@ pub mod layers;
 pub mod logs;
 pub mod metrics;
 pub mod notifications;
+pub mod prewarm;
 pub mod rate_limit;
 pub mod rbac;
 pub mod runtimes;

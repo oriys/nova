@@ -9,9 +9,9 @@ import (
 )
 
 type CreateScheduleArgs struct {
-	Name string          `json:"name" jsonschema:"Function name"`
-	Cron string          `json:"cron_expression" jsonschema:"Cron expression"`
-	Input json.RawMessage `json:"input,omitempty" jsonschema:"Input JSON payload"`
+	Name  string `json:"name" jsonschema:"Function name"`
+	Cron  string `json:"cron_expression" jsonschema:"Cron expression"`
+	Input any    `json:"input,omitempty" jsonschema:"Input JSON payload"`
 }
 
 type ListSchedulesArgs struct {

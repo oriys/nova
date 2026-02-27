@@ -9,15 +9,15 @@ import (
 )
 
 type InvokeFunctionArgs struct {
-	Name    string          `json:"name" jsonschema:"Function name"`
-	Payload json.RawMessage `json:"payload,omitempty" jsonschema:"JSON payload to send to the function"`
+	Name    string `json:"name" jsonschema:"Function name"`
+	Payload any    `json:"payload,omitempty" jsonschema:"JSON payload to send to the function"`
 }
 
 type InvokeAsyncArgs struct {
-	Name           string          `json:"name" jsonschema:"Function name"`
-	Payload        json.RawMessage `json:"payload,omitempty" jsonschema:"JSON payload"`
-	MaxAttempts    int             `json:"max_attempts,omitempty" jsonschema:"Max retry attempts"`
-	IdempotencyKey string          `json:"idempotency_key,omitempty" jsonschema:"Idempotency key for deduplication"`
+	Name           string `json:"name" jsonschema:"Function name"`
+	Payload        any    `json:"payload,omitempty" jsonschema:"JSON payload"`
+	MaxAttempts    int    `json:"max_attempts,omitempty" jsonschema:"Max retry attempts"`
+	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"Idempotency key for deduplication"`
 }
 
 func RegisterInvokeTools(s *mcp.Server, c *NovaClient) {
@@ -27,7 +27,7 @@ func RegisterInvokeTools(s *mcp.Server, c *NovaClient) {
 	}, c, func(ctx context.Context, args InvokeFunctionArgs, c *NovaClient) (json.RawMessage, error) {
 		payload := args.Payload
 		if payload == nil {
-			payload = json.RawMessage(`{}`)
+			payload = map[string]any{}
 		}
 		return c.Post(ctx, fmt.Sprintf("/functions/%s/invoke", args.Name), payload)
 	})

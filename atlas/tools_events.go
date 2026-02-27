@@ -24,9 +24,9 @@ type DeleteTopicArgs struct {
 	Name string `json:"name" jsonschema:"Topic name"`
 }
 type PublishEventArgs struct {
-	Topic       string          `json:"topic" jsonschema:"Topic name"`
-	Payload     json.RawMessage `json:"payload" jsonschema:"Event payload (JSON)"`
-	OrderingKey string          `json:"ordering_key,omitempty" jsonschema:"Ordering key for message ordering"`
+	Topic       string `json:"topic" jsonschema:"Topic name"`
+	Payload     any    `json:"payload" jsonschema:"Event payload (JSON)"`
+	OrderingKey string `json:"ordering_key,omitempty" jsonschema:"Ordering key for message ordering"`
 }
 type ListMessagesArgs struct {
 	Topic  string `json:"topic" jsonschema:"Topic name"`
@@ -79,9 +79,9 @@ type RetryDeliveryArgs struct {
 	ID string `json:"id" jsonschema:"Delivery ID"`
 }
 type CreateOutboxArgs struct {
-	Topic       string          `json:"topic" jsonschema:"Topic name"`
-	Payload     json.RawMessage `json:"payload" jsonschema:"Outbox payload (JSON)"`
-	OrderingKey string          `json:"ordering_key,omitempty" jsonschema:"Ordering key"`
+	Topic       string `json:"topic" jsonschema:"Topic name"`
+	Payload     any    `json:"payload" jsonschema:"Outbox payload (JSON)"`
+	OrderingKey string `json:"ordering_key,omitempty" jsonschema:"Ordering key"`
 }
 type ListOutboxArgs struct {
 	Topic  string `json:"topic" jsonschema:"Topic name"`

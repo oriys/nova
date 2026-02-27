@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"sort"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -40,17 +42,21 @@ func addToolHelper[In any](s *mcp.Server, tool *mcp.Tool, client *NovaClient, ha
 
 // queryString builds a query string from optional parameters.
 func queryString(params map[string]string) string {
-	q := ""
+	keys := make([]string, 0, len(params))
 	for k, v := range params {
-		if v == "" {
-			continue
+		if v != "" {
+			keys = append(keys, k)
 		}
+	}
+	sort.Strings(keys)
+	q := ""
+	for _, k := range keys {
 		if q == "" {
 			q = "?"
 		} else {
 			q += "&"
 		}
-		q += k + "=" + v
+		q += url.QueryEscape(k) + "=" + url.QueryEscape(params[k])
 	}
 	return q
 }

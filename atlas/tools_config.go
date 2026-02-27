@@ -9,7 +9,7 @@ import (
 
 type GetConfigArgs struct{}
 type SetConfigArgs struct {
-	Config json.RawMessage `json:"config" jsonschema:"Configuration object (JSON)"`
+	Config any `json:"config" jsonschema:"Configuration object (JSON)"`
 }
 
 func RegisterConfigTools(s *mcp.Server, c *NovaClient) {
