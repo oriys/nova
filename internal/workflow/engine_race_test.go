@@ -1,11 +1,7 @@
 package workflow
 
 import (
-	"encoding/json"
 	"testing"
-
-	"github.com/oriys/nova/internal/domain"
-	"github.com/stretchr/testify/require"
 )
 
 // TestRaceCondition_MultiplePredsFinishSimultaneously
@@ -25,77 +21,6 @@ import (
 // Additionally, propagateInput(B) may fetch run nodes before B's own status
 // is committed, causing B's output to be missing from the merged input.
 func TestRaceCondition_MultiplePredsFinishSimultaneously(t *testing.T) {
-	// This test is conceptual - it requires:
-	// 1. A test-friendly store implementation
-	// 2. Ability to inject delays/barriers
-	// 3. Ability to verify concurrent behavior
-
-	/*
-	ctx := context.Background()
-	mockStore := setupMockStore()
-
-	// Create workflow with diamond dependency
-	workflow := setupWorkflowWithDiamondDeps()
-	run := setupRun(workflow)
-
-	// Setup run nodes: A, B, C (C depends on A and B)
-	// A.deps = 0 (ready)
-	// B.deps = 0 (ready)
-	// C.deps = 2 (pending)
-
-	var wg sync.WaitGroup
-	errors := make(chan error, 2)
-
-	// Simulate A and B finishing simultaneously
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		// Simulate A finishing
-		nodeA := getRunNode(run, "A")
-		nodeA.Status = domain.NodeStatusSucceeded
-		nodeA.Output = json.RawMessage(`{"a_result": "data_from_A"}`)
-
-		engine := NewEngine(mockStore, nil)
-		engine.succeedNode(ctx, nodeA, &domain.InvokeResponse{
-			Output: json.RawMessage(`{"a_result": "data_from_A"}`),
-		})
-	}()
-
-	go func() {
-		defer wg.Done()
-		// Simulate B finishing
-		nodeB := getRunNode(run, "B")
-		nodeB.Status = domain.NodeStatusSucceeded
-		nodeB.Output = json.RawMessage(`{"b_result": "data_from_B"}`)
-
-		engine := NewEngine(mockStore, nil)
-		engine.succeedNode(ctx, nodeB, &domain.InvokeResponse{
-			Output: json.RawMessage(`{"b_result": "data_from_B"}`),
-		})
-	}()
-
-	wg.Wait()
-
-	// Check that C has both A's and B's outputs
-	nodeC := getRunNode(run, "C")
-	var input map[string]interface{}
-	json.Unmarshal(nodeC.Input, &input)
-
-	// Bug: B's output might be missing if:
-	// - Thread B calls propagateInput before its own UpdateRunNode is committed
-	// - GetRunNodes in Thread B sees B.Status as Running instead of Succeeded
-	// - B's output is excluded from the merged map
-	require.Contains(t, input, "A", "Output from A should be in C's input")
-	require.Contains(t, input, "B", "Output from B should be in C's input (BUG: might be missing)")
-	*/
-
-	// This test is a placeholder to document the race condition.
-	// Real reproduction requires:
-	// - A controllable Store implementation
-	// - Ability to insert delays/barriers between transactions
-	// - Thread synchronization hooks
-
 	t.Skip("Race condition test requires mock store with transaction control")
 }
 
@@ -113,29 +38,6 @@ func TestRaceCondition_MultiplePredsFinishSimultaneously(t *testing.T) {
 //    if there's a lag in the database or transaction isolation issues
 // 7. B's output is excluded from the merged input for C
 func TestPropagateInputMissingPredecessor(t *testing.T) {
-	/*
-	Conceptual test showing the race:
-
-	Time T0: A completes
-	  - UpdateRunNode(A): A.Status = Succeeded, A.Output = {...}
-	  - DecrementDeps(C): C.deps = 2 -> 1 (still Pending)
-	  - propagateInput(A): C.Status = Pending, SKIP
-
-	Time T1: B completes
-	  - UpdateRunNode(B): B.Status = Succeeded, B.Output = {...}
-	  - (assume this tx not yet flushed to disk)
-	  - DecrementDeps(C): C.deps = 1 -> 0, C.Status = Ready
-	  - propagateInput(B):
-	    - GetRunNodes(runID): sees A.Status=Succeeded, B.Status=??? (uncommitted read issue)
-	    - For each pred in [A, B]:
-	      - predNode = rnByKey[pred]
-	      - if predNode.Status == Succeeded: merged[pred] = predNode.Output
-	    - If B is not seen as Succeeded, B is EXCLUDED from merged map
-	    - C.Input = {A: {...}} (MISSING B's output)
-
-	Result: C only has A's output, B's output is lost!
-	*/
-
 	t.Skip("Race condition test requires transaction isolation control")
 }
 
@@ -168,31 +70,8 @@ func TestMultipleCallsToUpdateRunNode(t *testing.T) {
 	t.Skip("Race condition test requires concurrent store mock")
 }
 
-// Helper function to show the expected behavior
-func expectCNodeInput(t *testing.T, nodeC *domain.RunNode, expectA bool, expectB bool) {
-	var input map[string]json.RawMessage
-	err := json.Unmarshal(nodeC.Input, &input)
-	require.NoError(t, err)
-
-	if expectA {
-		require.Contains(t, input, "A", "A output should be in C input")
-	}
-	if expectB {
-		require.Contains(t, input, "B", "B output should be in C input")
-	}
-}
-
 // Test showing the correct behavior (non-racy scenario)
 func TestNormalFlow_SequentialPredecessors(t *testing.T) {
-	// When A and B finish sequentially (not concurrently):
-	// 1. A finishes: succeedNode(A) -> advanceDAG(A) -> propagateInput(A)
-	//    C.deps = 2 -> 1, stays Pending, skip
-	// 2. B finishes: succeedNode(B) -> advanceDAG(B) -> propagateInput(B)
-	//    C.deps = 1 -> 0, C becomes Ready
-	//    propagateInput(B) fetches all nodes, sees A=Succeeded, B=Succeeded
-	//    Merges both outputs correctly
-	//    Result: C.Input = {A: {...}, B: {...}} ✓
-
 	t.Skip("Need real store to run this test")
 }
 

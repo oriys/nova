@@ -28,31 +28,6 @@ type ReplayResponse struct {
 	CompletedAt    time.Time       `json:"completed_at"`
 }
 
-// TimeTravelRequest requests statement-level replay for interpreted runtimes.
-type TimeTravelRequest struct {
-	RecordingID string `json:"recording_id"`
-	StepTo      int    `json:"step_to"`     // Step number to execute to
-	Breakpoints []int  `json:"breakpoints"` // Step numbers to pause at
-}
-
-// TimeTravelState represents the state at a specific step during replay.
-type TimeTravelState struct {
-	Step      int               `json:"step"`
-	Line      int               `json:"line"`
-	File      string            `json:"file"`
-	Variables map[string]string `json:"variables"` // Variable name → string representation
-	CallStack []StackFrame      `json:"call_stack"`
-	Output    string            `json:"output"` // Stdout captured so far
-	Completed bool              `json:"completed"`
-}
-
-// StackFrame represents a frame in the call stack.
-type StackFrame struct {
-	Function string `json:"function"`
-	File     string `json:"file"`
-	Line     int    `json:"line"`
-}
-
 // ReplayService orchestrates replay operations.
 type ReplayService struct {
 	engine *Engine
