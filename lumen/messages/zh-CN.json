@@ -1366,15 +1366,11 @@
       "overview": "Overview",
       "code": "Code",
       "logs": "Logs",
-      "diagnostics": "Diagnostics",
       "configuration": "Configuration",
-      "versions": "Versions",
-      "schedules": "Schedules",
+      "triggers": "触发器",
       "docs": "Docs",
       "tests": "测试套件",
-      "gateway": "网关",
-      "dependencies": "依赖",
-      "state": "状态"
+      "versions": "Versions"
     },
     "versions": {
       "colVersion": "Version",

@@ -1361,15 +1361,11 @@
       "overview": "Overview",
       "code": "Code",
       "logs": "Logs",
-      "diagnostics": "Diagnostics",
       "configuration": "Configuration",
-      "versions": "Versions",
-      "schedules": "Schedules",
+      "triggers": "觸發器",
       "docs": "Docs",
       "tests": "測試套件",
-      "gateway": "閘道",
-      "dependencies": "依賴",
-      "state": "狀態"
+      "versions": "Versions"
     },
     "versions": {
       "colVersion": "Version",

@@ -1361,15 +1361,11 @@
       "overview": "Overview",
       "code": "Code",
       "logs": "Logs",
-      "diagnostics": "Diagnostics",
       "configuration": "Configuration",
-      "versions": "Versions",
-      "schedules": "Schedules",
+      "triggers": "トリガー",
       "docs": "Docs",
       "tests": "テスト",
-      "gateway": "ゲートウェイ",
-      "dependencies": "依存関係",
-      "state": "ステート"
+      "versions": "Versions"
     },
     "versions": {
       "colVersion": "Version",

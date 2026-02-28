@@ -1361,15 +1361,11 @@
       "overview": "Overview",
       "code": "Code",
       "logs": "Logs",
-      "diagnostics": "Diagnostics",
       "configuration": "Configuration",
-      "versions": "Versions",
-      "schedules": "Schedules",
+      "triggers": "Déclencheurs",
       "docs": "Docs",
       "tests": "Tests",
-      "gateway": "Passerelle",
-      "dependencies": "Dépendances",
-      "state": "État"
+      "versions": "Versions"
     },
     "versions": {
       "colVersion": "Version",
