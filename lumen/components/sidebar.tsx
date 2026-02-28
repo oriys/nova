@@ -18,7 +18,7 @@ import {
   RadioTower,
   Building2,
   Network,
-  FileText,
+
   ShieldCheck,
   HardDrive,
   Layers,
@@ -36,7 +36,6 @@ const extraActivePaths: Record<string, string[]> = {
   "/rbac": ["/audit-logs"],
   "/alerts": ["/notifications"],
   "/configurations": ["/secrets", "/api-keys"],
-  "/help": ["/api-docs"],
 }
 
 const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] = [
@@ -57,7 +56,6 @@ const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] 
   { key: "accessControl", href: "/rbac", icon: ShieldCheck },
   { key: "alerting", href: "/alerts", icon: Activity },
   { key: "settings", href: "/configurations", icon: Settings },
-  { key: "docs", href: "/help", icon: FileText },
 ]
 
 function LumenLogo({ className }: { className?: string }) {

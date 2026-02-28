@@ -10,7 +10,7 @@ import {
   BookOpenText,
   CheckCircle2,
   ExternalLink,
-  HelpCircle,
+
   Info,
   Loader2,
   LogOut,
@@ -707,16 +707,6 @@ export function Header({ title, description }: HeaderProps) {
             </div>
           )}
         </div>
-
-        <Button
-          asChild
-          variant={pathname === "/help" ? "secondary" : "ghost"}
-          size="icon"
-        >
-          <a href="http://lumen.orb.local/help" title={tn("help")} aria-label={tn("help")}>
-            <HelpCircle className="h-5 w-5 text-muted-foreground" />
-          </a>
-        </Button>
 
         <Button asChild variant={isDocsPage ? "secondary" : "ghost"} size="icon">
           <Link href="/docs" aria-label={t("openDocs")} title={t("openDocs")}>

@@ -126,6 +126,43 @@ func (s *PostgresStore) ListTriggers(ctx context.Context, limit, offset int) ([]
 	return triggers, rows.Err()
 }
 
+// ListTriggersByFunction lists triggers targeting a given function name.
+func (s *PostgresStore) ListTriggersByFunction(ctx context.Context, functionName string, limit, offset int) ([]*TriggerRecord, error) {
+	scope := TenantScopeFromContext(ctx)
+	query := `
+		SELECT id, tenant_id, namespace, name, type, function_id, function_name, enabled, config, created_at, updated_at
+		FROM triggers
+		WHERE tenant_id = $1 AND namespace = $2 AND function_name = $3
+		ORDER BY created_at DESC
+		LIMIT $4 OFFSET $5
+	`
+	rows, err := s.pool.Query(ctx, query, scope.TenantID, scope.Namespace, functionName, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var triggers []*TriggerRecord
+	for rows.Next() {
+		var t TriggerRecord
+		var configJSON []byte
+		if err := rows.Scan(
+			&t.ID, &t.TenantID, &t.Namespace, &t.Name, &t.Type,
+			&t.FunctionID, &t.FunctionName, &t.Enabled, &configJSON,
+			&t.CreatedAt, &t.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if len(configJSON) > 0 {
+			if err := json.Unmarshal(configJSON, &t.Config); err != nil {
+				return nil, fmt.Errorf("unmarshal trigger config: %w", err)
+			}
+		}
+		triggers = append(triggers, &t)
+	}
+	return triggers, rows.Err()
+}
+
 // UpdateTrigger updates a trigger by ID and returns the updated record.
 func (s *PostgresStore) UpdateTrigger(ctx context.Context, id string, update *TriggerUpdate) (*TriggerRecord, error) {
 	scope := TenantScopeFromContext(ctx)

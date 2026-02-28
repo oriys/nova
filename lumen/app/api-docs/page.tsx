@@ -46,7 +46,6 @@ import { cn } from "@/lib/utils"
 
 export default function APIDocsPage() {
   const t = useTranslations("pages")
-  const th = useTranslations("helpPage")
   const [functions, setFunctions] = useState<NovaFunction[]>([])
   const [selectedFunction, setSelectedFunction] = useState<string>("")
   const [generatedDocs, setGeneratedDocs] = useState<GenerateDocsResponse | null>(null)
@@ -160,7 +159,6 @@ export default function APIDocsPage() {
       <Header title={t("apiDocs.title")} description={t("apiDocs.description")} />
       <div className="px-6 pt-4">
         <SubNav items={[
-          { label: th("title"), href: "/help" },
           { label: t("apiDocs.title"), href: "/api-docs" },
         ]} />
       </div>

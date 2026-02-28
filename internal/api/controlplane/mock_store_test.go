@@ -1367,6 +1367,10 @@ func (m *mockMetadataStore) ListFunctionsByLayer(ctx context.Context, layerID st
 	return nil, nil
 }
 
+func (m *mockMetadataStore) ListFunctionSummariesByLayer(ctx context.Context, layerID string, limit, offset int) ([]store.LayerFunctionSummary, error) {
+	return nil, nil
+}
+
 func (m *mockMetadataStore) CreateTrigger(ctx context.Context, trigger *store.TriggerRecord) error {
 	if m.createTriggerFn != nil {
 		return m.createTriggerFn(ctx, trigger)

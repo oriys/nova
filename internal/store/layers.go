@@ -232,6 +232,49 @@ func (s *PostgresStore) GetFunctionLayers(ctx context.Context, funcID string) ([
 	return layers, nil
 }
 
+// LayerFunctionSummary is a lightweight function reference for layer detail views.
+type LayerFunctionSummary struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Runtime string `json:"runtime"`
+}
+
+// ListFunctionSummariesByLayer returns lightweight function info for all functions
+// that reference the given layer, ordered by function name.
+func (s *PostgresStore) ListFunctionSummariesByLayer(ctx context.Context, layerID string, limit, offset int) ([]LayerFunctionSummary, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT f.id, f.name, COALESCE(f.data->>'runtime', '') AS runtime
+		FROM functions f
+		JOIN function_layers fl ON fl.function_id = f.id
+		WHERE fl.layer_id = $1
+		ORDER BY f.name
+		LIMIT $2 OFFSET $3
+	`, layerID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list function summaries by layer: %w", err)
+	}
+	defer rows.Close()
+
+	var funcs []LayerFunctionSummary
+	for rows.Next() {
+		var f LayerFunctionSummary
+		if err := rows.Scan(&f.ID, &f.Name, &f.Runtime); err != nil {
+			return nil, fmt.Errorf("list function summaries by layer scan: %w", err)
+		}
+		funcs = append(funcs, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list function summaries by layer rows: %w", err)
+	}
+	return funcs, nil
+}
+
 // ListFunctionsByLayer returns function IDs that reference a given layer
 func (s *PostgresStore) ListFunctionsByLayer(ctx context.Context, layerID string) ([]string, error) {
 	rows, err := s.pool.Query(ctx, `

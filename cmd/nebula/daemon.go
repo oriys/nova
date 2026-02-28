@@ -18,6 +18,7 @@ import (
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/firecracker"
 	"github.com/oriys/nova/internal/kubernetes"
+	"github.com/oriys/nova/internal/applevz"
 	"github.com/oriys/nova/internal/libkrun"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/logsink"
@@ -159,6 +160,7 @@ func daemonCmd() *cobra.Command {
 						return kubernetes.NewManager(&cfg.Kubernetes)
 					},
 					domain.BackendLibKrun: func() (backend.Backend, error) { return libkrun.NewManager(&cfg.LibKrun) },
+					domain.BackendAppleVZ: func() (backend.Backend, error) { return applevz.NewManager(&cfg.AppleVZ) },
 					domain.BackendFirecracker: func() (backend.Backend, error) {
 						adapter, err := firecracker.NewAdapter(&cfg.Firecracker)
 						if err != nil {

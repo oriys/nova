@@ -480,6 +480,15 @@ func (s *PostgresStore) UpdateFunction(ctx context.Context, name string, update 
 	if update.Mounts != nil {
 		fn.Mounts = update.Mounts
 	}
+	if update.Tags != nil {
+		fn.Tags = update.Tags
+	}
+	if update.LogRetentionDays != nil {
+		fn.LogRetentionDays = *update.LogRetentionDays
+	}
+	if update.AsyncDestinations != nil {
+		fn.AsyncDestinations = update.AsyncDestinations
+	}
 
 	fn.UpdatedAt = time.Now()
 

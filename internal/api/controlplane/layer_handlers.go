@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/oriys/nova/internal/domain"
+	"github.com/oriys/nova/internal/store"
 )
 
 // CreateLayer creates a new shared dependency layer from uploaded files
@@ -204,4 +205,33 @@ func (h *Handler) GetFunctionLayers(w http.ResponseWriter, r *http.Request) {
 	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
 	pagedLayers, total := paginateSliceWindow(layers, limit, offset)
 	writePaginatedList(w, limit, offset, len(pagedLayers), int64(total), pagedLayers)
+}
+
+// ListLayerFunctions returns functions that reference a specific layer
+func (h *Handler) ListLayerFunctions(w http.ResponseWriter, r *http.Request) {
+	if h.LayerManager == nil {
+		http.Error(w, "layers not enabled", http.StatusNotImplemented)
+		return
+	}
+
+	name := r.PathValue("name")
+	layer, err := h.Store.GetLayerByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+
+	funcs, err := h.Store.ListFunctionSummariesByLayer(r.Context(), layer.ID, limit, offset)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if funcs == nil {
+		funcs = []store.LayerFunctionSummary{}
+	}
+	total := estimatePaginatedTotal(limit, offset, len(funcs))
+	writePaginatedList(w, limit, offset, len(funcs), total, funcs)
 }

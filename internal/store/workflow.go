@@ -18,6 +18,7 @@ type WorkflowStore interface {
 	GetWorkflow(ctx context.Context, id string) (*domain.Workflow, error)
 	GetWorkflowByName(ctx context.Context, name string) (*domain.Workflow, error)
 	ListWorkflows(ctx context.Context, limit, offset int) ([]*domain.Workflow, error)
+	ListWorkflowsByFunction(ctx context.Context, functionName string, limit, offset int) ([]*domain.Workflow, error)
 	DeleteWorkflow(ctx context.Context, id string) error
 	UpdateWorkflowVersion(ctx context.Context, id string, version int) error
 
@@ -115,6 +116,39 @@ func (s *PostgresStore) ListWorkflows(ctx context.Context, limit, offset int) ([
 		 WHERE status != 'deleted' AND tenant_id = $1 AND namespace = $2
 		 ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
 		scope.TenantID, scope.Namespace, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*domain.Workflow
+	for rows.Next() {
+		w := &domain.Workflow{}
+		if err := rows.Scan(&w.ID, &w.Name, &w.Description, &w.Status, &w.CurrentVersion, &w.CreatedAt, &w.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
+}
+
+// ListWorkflowsByFunction returns workflows whose current version contains a node referencing the given function name.
+func (s *PostgresStore) ListWorkflowsByFunction(ctx context.Context, functionName string, limit, offset int) ([]*domain.Workflow, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	scope := tenantScopeFromContext(ctx)
+	rows, err := s.pool.Query(ctx,
+		`SELECT DISTINCT w.id, w.name, w.description, w.status, w.current_version, w.created_at, w.updated_at
+		 FROM dag_workflows w
+		 JOIN dag_workflow_versions v ON v.workflow_id = w.id AND v.version = w.current_version
+		 JOIN dag_workflow_nodes n ON n.version_id = v.id AND n.function_name = $1
+		 WHERE w.status != 'deleted' AND w.tenant_id = $2 AND w.namespace = $3
+		 ORDER BY w.created_at DESC LIMIT $4 OFFSET $5`,
+		functionName, scope.TenantID, scope.Namespace, limit, offset)
 	if err != nil {
 		return nil, err
 	}

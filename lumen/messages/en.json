@@ -1520,6 +1520,33 @@
       "completedAt": "Completed At",
       "input": "Input",
       "output": "Output"
+    },
+    "triggers_section": {
+      "title": "Event Triggers",
+      "empty": "No event triggers configured for this function.",
+      "colName": "Name",
+      "colType": "Type",
+      "colEnabled": "Enabled",
+      "colCreated": "Created"
+    },
+    "subscriptions": {
+      "title": "Event Subscriptions",
+      "empty": "No event subscriptions targeting this function.",
+      "colName": "Name",
+      "colTopic": "Topic",
+      "colGroup": "Consumer Group",
+      "colEnabled": "Enabled",
+      "colLag": "Lag",
+      "colCreated": "Created"
+    },
+    "workflows_section": {
+      "title": "Workflows",
+      "empty": "This function is not referenced by any workflow.",
+      "colName": "Name",
+      "colDescription": "Description",
+      "colStatus": "Status",
+      "colVersion": "Version",
+      "colUpdated": "Updated"
     }
   },
   "landingPage": {
@@ -2467,6 +2494,7 @@
     "namePlaceholder": "e.g., numpy-layer",
     "runtime": "Runtime",
     "runtimePlaceholder": "e.g., python",
+    "runtimeSelect": "Select runtime",
     "version": "Version",
     "versionPlaceholder": "e.g., 1.0.0",
     "creating": "Creating...",
@@ -2478,7 +2506,31 @@
     "colCreated": "Created",
     "colActions": "Actions",
     "noLayers": "No layers yet",
-    "filesCount": "{count} files"
+    "filesCount": "{count} files",
+    "deleteConfirm": "Are you sure you want to delete this layer?",
+    "deleteConfirmDesc": "This will permanently delete the layer \"{name}\". This action cannot be undone.",
+    "searchPlaceholder": "Search layers...",
+    "filterRuntime": "All Runtimes",
+    "uploadFiles": "Upload Files",
+    "uploadFilesDesc": "Select files to include in the layer",
+    "selectedFiles": "{count} file(s) selected",
+    "noFiles": "No files selected",
+    "dropzone": "Click to select files or drag and drop",
+    "detail": {
+      "backToLayers": "Back to Layers",
+      "layerNotFound": "Layer not found",
+      "metadata": "Metadata",
+      "contentHash": "Content Hash",
+      "imagePath": "Image Path",
+      "createdAt": "Created",
+      "updatedAt": "Updated",
+      "filesSection": "Files",
+      "noFiles": "No files in this layer",
+      "functionsSection": "Used by Functions",
+      "noFunctions": "No functions are using this layer",
+      "functionName": "Function",
+      "functionRuntime": "Runtime"
+    }
   },
   "notificationsPage": {
     "failedToLoad": "Failed to load notifications",

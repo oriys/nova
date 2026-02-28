@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/oriys/nova/internal/ai"
+	"github.com/oriys/nova/internal/applevz"
 	"github.com/oriys/nova/internal/docker"
 	"github.com/oriys/nova/internal/firecracker"
 	"github.com/oriys/nova/internal/kata"
@@ -243,6 +244,7 @@ type Config struct {
 	Kubernetes    kubernetes.Config   `json:"kubernetes"`
 	LibKrun       libkrun.Config      `json:"libkrun"`
 	Kata          kata.Config         `json:"kata"`
+	AppleVZ       applevz.Config      `json:"applevz"`
 	Postgres      PostgresConfig      `json:"postgres"`
 	Pool          PoolConfig          `json:"pool"`
 	Executor      ExecutorConfig      `json:"executor"`

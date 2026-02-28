@@ -20,6 +20,9 @@ import { FunctionDependencies } from "@/components/function-dependencies"
 import { FunctionState } from "@/components/function-state"
 import { FunctionVersions } from "@/components/function-versions"
 import { FunctionSchedules } from "@/components/function-schedules"
+import { FunctionTriggers } from "@/components/function-triggers"
+import { FunctionSubscriptions } from "@/components/function-subscriptions"
+import { FunctionWorkflows } from "@/components/function-workflows"
 import { InvocationHeatmap } from "@/components/invocation-heatmap"
 import { cn } from "@/lib/utils"
 import { functionsApi, schedulesApi } from "@/lib/api"
@@ -322,6 +325,15 @@ export default function FunctionDetailPage({
                   </>
                 )}
               </p>
+              {func.tags && Object.keys(func.tags).length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {Object.entries(func.tags).map(([k, v]) => (
+                    <Badge key={k} variant="outline" className="text-[10px] px-1.5 py-0 font-normal text-muted-foreground">
+                      {k}{v ? `: ${v}` : ""}
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -468,6 +480,9 @@ export default function FunctionDetailPage({
               onSchedulesChange={setSchedules}
             />
             <FunctionGateway functionName={func.name} />
+            <FunctionTriggers functionName={func.name} />
+            <FunctionSubscriptions functionName={func.name} />
+            <FunctionWorkflows functionName={func.name} />
           </TabsContent>
 
           <TabsContent value="tests" className="mt-0">

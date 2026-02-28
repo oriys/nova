@@ -846,3 +846,21 @@ func parseOutboxStatuses(raw string) ([]store.EventOutboxStatus, error) {
 	}
 	return statuses, nil
 }
+
+// ListFunctionSubscriptions handles GET /functions/{name}/subscriptions
+func (h *Handler) ListFunctionSubscriptions(w http.ResponseWriter, r *http.Request) {
+functionName := r.PathValue("name")
+limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+
+items, err := h.Store.ListSubscriptionsByFunction(r.Context(), functionName, limit, offset)
+if err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+if items == nil {
+items = []*store.EventSubscription{}
+}
+total := estimatePaginatedTotal(limit, offset, len(items))
+writePaginatedList(w, limit, offset, len(items), total, items)
+}

@@ -90,6 +90,27 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
   const [canaryFunction, setCanaryFunction] = useState(func.rolloutPolicy?.canary_function || "")
   const [canaryPercent, setCanaryPercent] = useState(String(func.rolloutPolicy?.canary_percent ?? 10))
 
+  // Tags state
+  const [tags, setTags] = useState<Record<string, string>>(func.tags ?? {})
+  const [newTagKey, setNewTagKey] = useState("")
+  const [newTagValue, setNewTagValue] = useState("")
+
+  const addTag = () => {
+    const key = newTagKey.trim()
+    if (!key) return
+    setTags((prev) => ({ ...prev, [key]: newTagValue.trim() }))
+    setNewTagKey("")
+    setNewTagValue("")
+  }
+
+  const removeTag = (key: string) => {
+    setTags((prev) => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  }
+
   const addEgressRule = () => {
     setEgressRules((prev) => [...prev, { host: "", port: "", protocol: "tcp" }])
   }
@@ -180,6 +201,7 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
         limits,
         network_policy: networkPolicy,
         rollout_policy: rolloutPolicy,
+        tags,
       })
       onUpdate?.()
     } catch (err) {
@@ -602,6 +624,63 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
               Rollback
             </Button>
           </div>
+        </div>
+      </div>
+
+      {/* Tags */}
+      <div className="rounded-xl border border-border bg-card p-6">
+        <h3 className="text-lg font-semibold text-card-foreground mb-1">
+          Tags
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Key-value labels for grouping and filtering functions.
+        </p>
+
+        {Object.keys(tags).length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {Object.entries(tags).map(([k, v]) => (
+              <span
+                key={k}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2.5 py-1 text-sm"
+              >
+                <span className="font-medium text-foreground">{k}</span>
+                {v && <span className="text-muted-foreground">= {v}</span>}
+                <button
+                  type="button"
+                  onClick={() => removeTag(k)}
+                  className="ml-0.5 text-muted-foreground hover:text-destructive transition-colors"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2 items-end">
+          <div className="space-y-1 flex-1">
+            <Label htmlFor="tagKey">Key</Label>
+            <Input
+              id="tagKey"
+              value={newTagKey}
+              onChange={(e) => setNewTagKey(e.target.value)}
+              placeholder="env"
+              onKeyDown={(e) => e.key === "Enter" && addTag()}
+            />
+          </div>
+          <div className="space-y-1 flex-1">
+            <Label htmlFor="tagValue">Value</Label>
+            <Input
+              id="tagValue"
+              value={newTagValue}
+              onChange={(e) => setNewTagValue(e.target.value)}
+              placeholder="production"
+              onKeyDown={(e) => e.key === "Enter" && addTag()}
+            />
+          </div>
+          <Button type="button" variant="outline" size="icon" onClick={addTag} disabled={!newTagKey.trim()}>
+            <Plus className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 

@@ -28,6 +28,7 @@ import (
 	novagrpc "github.com/oriys/nova/internal/grpc"
 	"github.com/oriys/nova/internal/kubernetes"
 	"github.com/oriys/nova/internal/layer"
+	"github.com/oriys/nova/internal/applevz"
 	"github.com/oriys/nova/internal/libkrun"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
@@ -160,6 +161,10 @@ func daemonCmd() *cobra.Command {
 				domain.BackendLibKrun: func() (backend.Backend, error) {
 					logging.Op().Info("initializing libkrun backend")
 					return libkrun.NewManager(&cfg.LibKrun)
+				},
+				domain.BackendAppleVZ: func() (backend.Backend, error) {
+					logging.Op().Info("initializing Apple VZ backend")
+					return applevz.NewManager(&cfg.AppleVZ)
 				},
 				domain.BackendFirecracker: func() (backend.Backend, error) {
 					logging.Op().Info("initializing Firecracker backend")

@@ -21,6 +21,9 @@ export interface NovaFunction {
   backend?: string;
   limits?: ResourceLimits;
   env_vars?: Record<string, string>;
+  tags?: Record<string, string>;
+  log_retention_days?: number;
+  async_destinations?: AsyncDestinations;
   network_policy?: NetworkPolicy;
   rollout_policy?: RolloutPolicy;
   auto_scale_policy?: AutoScalePolicy;
@@ -64,6 +67,16 @@ export interface ResourceLimits {
   disk_bandwidth?: number;
   net_rx_bandwidth?: number;
   net_tx_bandwidth?: number;
+}
+
+export interface AsyncDestinations {
+  on_success?: Destination;
+  on_failure?: Destination;
+}
+
+export interface Destination {
+  type: 'function' | 'topic';
+  target: string;
 }
 
 export interface EgressRule {
@@ -248,6 +261,12 @@ export interface SetFunctionLayersResponse {
   function: string;
   layers: FunctionLayerBinding[];
   note?: string;
+}
+
+export interface LayerFunctionRef {
+  id: string;
+  name: string;
+  runtime: string;
 }
 
 export interface TenantEntry {
@@ -1265,6 +1284,27 @@ export const functionsApi = {
 
   getDurableExecution: (id: string) =>
     request<DurableExecution>(`/durable-executions/${encodeURIComponent(id)}`),
+
+  listFunctionTriggers: (name: string, limit?: number, offset?: number) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(limit ?? 20));
+    if (offset && offset > 0) params.set("offset", String(offset));
+    return requestPaged<TriggerEntry>(`/functions/${encodeURIComponent(name)}/triggers?${params.toString()}`);
+  },
+
+  listFunctionSubscriptions: (name: string, limit?: number, offset?: number) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(limit ?? 20));
+    if (offset && offset > 0) params.set("offset", String(offset));
+    return requestPaged<EventSubscription>(`/functions/${encodeURIComponent(name)}/subscriptions?${params.toString()}`);
+  },
+
+  listFunctionWorkflows: (name: string, limit?: number, offset?: number) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(limit ?? 20));
+    if (offset && offset > 0) params.set("offset", String(offset));
+    return requestPaged<Workflow>(`/functions/${encodeURIComponent(name)}/workflows?${params.toString()}`);
+  },
 };
 
 // Tenant and namespace management API
@@ -1756,6 +1796,15 @@ export const layersApi = {
     return result.items;
   },
 
+  listPage: (limit: number = 20, offset: number = 0) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    return requestPaged<LayerEntry>(`/layers?${params.toString()}`);
+  },
+
   get: (name: string) =>
     request<LayerEntry>(`/layers/${encodeURIComponent(name)}`),
 
@@ -1786,6 +1835,17 @@ export const layersApi = {
       `/functions/${encodeURIComponent(functionName)}/layers?${params.toString()}`
     );
     return result.items;
+  },
+
+  getLayerFunctions: (layerName: string, limit: number = 20, offset: number = 0) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.max(1, Math.floor(limit))));
+    if (offset > 0) {
+      params.set("offset", String(Math.floor(offset)));
+    }
+    return requestPaged<LayerFunctionRef>(
+      `/layers/${encodeURIComponent(layerName)}/functions?${params.toString()}`
+    );
   },
 };
 

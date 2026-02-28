@@ -1515,6 +1515,33 @@
       "completedAt": "完成時間",
       "input": "輸入",
       "output": "輸出"
+    },
+    "triggers_section": {
+      "title": "事件觸發器",
+      "empty": "該函式未配置事件觸發器。",
+      "colName": "名稱",
+      "colType": "類型",
+      "colEnabled": "狀態",
+      "colCreated": "建立時間"
+    },
+    "subscriptions": {
+      "title": "事件訂閱",
+      "empty": "沒有指向該函式的事件訂閱。",
+      "colName": "名稱",
+      "colTopic": "主題",
+      "colGroup": "消費群組",
+      "colEnabled": "狀態",
+      "colLag": "積壓",
+      "colCreated": "建立時間"
+    },
+    "workflows_section": {
+      "title": "工作流",
+      "empty": "該函式未被任何工作流引用。",
+      "colName": "名稱",
+      "colDescription": "描述",
+      "colStatus": "狀態",
+      "colVersion": "版本",
+      "colUpdated": "更新時間"
     }
   },
   "landingPage": {
@@ -2462,6 +2489,7 @@
     "namePlaceholder": "例如 numpy-layer",
     "runtime": "執行環境",
     "runtimePlaceholder": "例如 python",
+    "runtimeSelect": "選擇執行環境",
     "version": "版本",
     "versionPlaceholder": "例如 1.0.0",
     "creating": "建立中...",
@@ -2473,7 +2501,31 @@
     "colCreated": "建立時間",
     "colActions": "操作",
     "noLayers": "尚無依賴層",
-    "filesCount": "{count} 個檔案"
+    "filesCount": "{count} 個檔案",
+    "deleteConfirm": "確定要刪除此依賴層嗎？",
+    "deleteConfirmDesc": "這將永久刪除依賴層「{name}」，此操作無法復原。",
+    "searchPlaceholder": "搜尋依賴層...",
+    "filterRuntime": "所有執行環境",
+    "uploadFiles": "上傳檔案",
+    "uploadFilesDesc": "選擇要包含在依賴層中的檔案",
+    "selectedFiles": "已選擇 {count} 個檔案",
+    "noFiles": "未選擇檔案",
+    "dropzone": "點擊選擇檔案或拖放檔案",
+    "detail": {
+      "backToLayers": "返回依賴層",
+      "layerNotFound": "找不到依賴層",
+      "metadata": "中繼資料",
+      "contentHash": "內容雜湊",
+      "imagePath": "映像路徑",
+      "createdAt": "建立時間",
+      "updatedAt": "更新時間",
+      "filesSection": "檔案清單",
+      "noFiles": "此依賴層中沒有檔案",
+      "functionsSection": "關聯函式",
+      "noFunctions": "沒有函式使用此依賴層",
+      "functionName": "函式",
+      "functionRuntime": "執行環境"
+    }
   },
   "notificationsPage": {
     "failedToLoad": "載入通知失敗",

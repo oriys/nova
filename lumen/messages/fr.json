@@ -1515,6 +1515,33 @@
       "completedAt": "Terminé le",
       "input": "Entrée",
       "output": "Sortie"
+    },
+    "triggers_section": {
+      "title": "Déclencheurs d'événements",
+      "empty": "Aucun déclencheur d'événement configuré pour cette fonction.",
+      "colName": "Nom",
+      "colType": "Type",
+      "colEnabled": "Activé",
+      "colCreated": "Créé"
+    },
+    "subscriptions": {
+      "title": "Abonnements aux événements",
+      "empty": "Aucun abonnement d'événement ciblant cette fonction.",
+      "colName": "Nom",
+      "colTopic": "Sujet",
+      "colGroup": "Groupe de consommateurs",
+      "colEnabled": "Activé",
+      "colLag": "Retard",
+      "colCreated": "Créé"
+    },
+    "workflows_section": {
+      "title": "Flux de travail",
+      "empty": "Cette fonction n'est référencée par aucun flux de travail.",
+      "colName": "Nom",
+      "colDescription": "Description",
+      "colStatus": "Statut",
+      "colVersion": "Version",
+      "colUpdated": "Mis à jour"
     }
   },
   "landingPage": {
@@ -2462,6 +2489,7 @@
     "namePlaceholder": "ex. numpy-layer",
     "runtime": "Runtime",
     "runtimePlaceholder": "ex. python",
+    "runtimeSelect": "Sélectionner le runtime",
     "version": "Version",
     "versionPlaceholder": "ex. 1.0.0",
     "creating": "Création...",
@@ -2473,7 +2501,31 @@
     "colCreated": "Créé le",
     "colActions": "Actions",
     "noLayers": "Aucune couche",
-    "filesCount": "{count} fichiers"
+    "filesCount": "{count} fichiers",
+    "deleteConfirm": "Voulez-vous vraiment supprimer cette couche ?",
+    "deleteConfirmDesc": "La couche « {name} » sera définitivement supprimée. Cette action est irréversible.",
+    "searchPlaceholder": "Rechercher des couches...",
+    "filterRuntime": "Tous les runtimes",
+    "uploadFiles": "Téléverser des fichiers",
+    "uploadFilesDesc": "Sélectionnez les fichiers à inclure dans la couche",
+    "selectedFiles": "{count} fichier(s) sélectionné(s)",
+    "noFiles": "Aucun fichier sélectionné",
+    "dropzone": "Cliquez pour sélectionner ou glissez-déposez des fichiers",
+    "detail": {
+      "backToLayers": "Retour aux couches",
+      "layerNotFound": "Couche introuvable",
+      "metadata": "Métadonnées",
+      "contentHash": "Hachage du contenu",
+      "imagePath": "Chemin de l'image",
+      "createdAt": "Créé le",
+      "updatedAt": "Mis à jour le",
+      "filesSection": "Fichiers",
+      "noFiles": "Aucun fichier dans cette couche",
+      "functionsSection": "Utilisé par les fonctions",
+      "noFunctions": "Aucune fonction n'utilise cette couche",
+      "functionName": "Fonction",
+      "functionRuntime": "Runtime"
+    }
   },
   "notificationsPage": {
     "failedToLoad": "Échec du chargement des notifications",

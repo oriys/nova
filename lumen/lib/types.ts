@@ -26,6 +26,7 @@ export interface FunctionData {
   mode?: string;
   backend?: string;
   envVars?: Record<string, string>;
+  tags?: Record<string, string>;
   compileStatus?: CompileStatus;
   compileError?: string;
   limits?: ResourceLimits;
@@ -186,6 +187,7 @@ export function transformFunction(
     mode: fn.mode,
     backend: fn.backend,
     envVars: fn.env_vars,
+    tags: fn.tags,
     compileStatus: fn.compile_status,
     compileError: fn.compile_error,
     limits: fn.limits,

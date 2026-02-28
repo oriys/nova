@@ -57,8 +57,11 @@ type FunctionUpdate struct {
 	SLOPolicy           *domain.SLOPolicy       `json:"slo_policy,omitempty"`
 	EnvVars             map[string]string       `json:"env_vars,omitempty"`
 	MergeEnvVars        bool                    `json:"merge_env_vars,omitempty"`
-	Layers              []string                `json:"layers,omitempty"` // layer IDs (max 6)
-	Mounts              []domain.VolumeMount    `json:"mounts,omitempty"` // persistent volume mounts
+	Tags                map[string]string          `json:"tags,omitempty"`
+	LogRetentionDays    *int                       `json:"log_retention_days,omitempty"`
+	AsyncDestinations   *domain.AsyncDestinations  `json:"async_destinations,omitempty"`
+	Layers              []string                   `json:"layers,omitempty"` // layer IDs (max 6)
+	Mounts              []domain.VolumeMount       `json:"mounts,omitempty"` // persistent volume mounts
 }
 
 // MetadataStore is the durable metadata store (functions, versions, aliases).
@@ -167,6 +170,7 @@ type MetadataStore interface {
 	CreateEventSubscription(ctx context.Context, sub *EventSubscription) error
 	GetEventSubscription(ctx context.Context, id string) (*EventSubscription, error)
 	ListEventSubscriptions(ctx context.Context, topicID string, limit, offset int) ([]*EventSubscription, error)
+	ListSubscriptionsByFunction(ctx context.Context, functionName string, limit, offset int) ([]*EventSubscription, error)
 	UpdateEventSubscription(ctx context.Context, id string, update *EventSubscriptionUpdate) (*EventSubscription, error)
 	DeleteEventSubscription(ctx context.Context, id string) error
 
@@ -265,12 +269,14 @@ type MetadataStore interface {
 	SetFunctionLayers(ctx context.Context, funcID string, layerIDs []string) error
 	GetFunctionLayers(ctx context.Context, funcID string) ([]*domain.Layer, error)
 	ListFunctionsByLayer(ctx context.Context, layerID string) ([]string, error)
+	ListFunctionSummariesByLayer(ctx context.Context, layerID string, limit, offset int) ([]LayerFunctionSummary, error)
 
 	// Triggers
 	CreateTrigger(ctx context.Context, trigger *TriggerRecord) error
 	GetTrigger(ctx context.Context, id string) (*TriggerRecord, error)
 	GetTriggerByName(ctx context.Context, name string) (*TriggerRecord, error)
 	ListTriggers(ctx context.Context, limit, offset int) ([]*TriggerRecord, error)
+	ListTriggersByFunction(ctx context.Context, functionName string, limit, offset int) ([]*TriggerRecord, error)
 	UpdateTrigger(ctx context.Context, id string, update *TriggerUpdate) (*TriggerRecord, error)
 	DeleteTrigger(ctx context.Context, id string) error
 

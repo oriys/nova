@@ -24,6 +24,7 @@ func DetectAvailableBackends() []BackendInfo {
 		detectKubernetes(),
 		detectLibKrun(),
 		detectKata(),
+		detectAppleVZ(),
 	}
 }
 
@@ -41,6 +42,9 @@ func DetectDefaultBackend() domain.BackendType {
 	}
 	// Fall back to other available backends
 	if runtime.GOOS == "darwin" {
+		if _, err := exec.LookPath("vfkit"); err == nil {
+			return domain.BackendAppleVZ
+		}
 		if _, err := exec.LookPath("krunvm"); err == nil {
 			return domain.BackendLibKrun
 		}
@@ -153,6 +157,20 @@ func detectKata() BackendInfo {
 	}
 	if _, err := exec.LookPath("kata-runtime"); err != nil {
 		info.Reason = "kata-runtime not found in PATH"
+		return info
+	}
+	info.Available = true
+	return info
+}
+
+func detectAppleVZ() BackendInfo {
+	info := BackendInfo{Name: "applevz"}
+	if runtime.GOOS != "darwin" {
+		info.Reason = "requires macOS"
+		return info
+	}
+	if _, err := exec.LookPath("vfkit"); err != nil {
+		info.Reason = "vfkit not found in PATH (install with: brew install vfkit)"
 		return info
 	}
 	info.Available = true

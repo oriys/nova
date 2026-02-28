@@ -1520,6 +1520,33 @@
       "completedAt": "完成时间",
       "input": "输入",
       "output": "输出"
+    },
+    "triggers_section": {
+      "title": "事件触发器",
+      "empty": "该函数未配置事件触发器。",
+      "colName": "名称",
+      "colType": "类型",
+      "colEnabled": "状态",
+      "colCreated": "创建时间"
+    },
+    "subscriptions": {
+      "title": "事件订阅",
+      "empty": "没有指向该函数的事件订阅。",
+      "colName": "名称",
+      "colTopic": "主题",
+      "colGroup": "消费组",
+      "colEnabled": "状态",
+      "colLag": "积压",
+      "colCreated": "创建时间"
+    },
+    "workflows_section": {
+      "title": "工作流",
+      "empty": "该函数未被任何工作流引用。",
+      "colName": "名称",
+      "colDescription": "描述",
+      "colStatus": "状态",
+      "colVersion": "版本",
+      "colUpdated": "更新时间"
     }
   },
   "landingPage": {
@@ -2467,6 +2494,7 @@
     "namePlaceholder": "例如 numpy-layer",
     "runtime": "运行时",
     "runtimePlaceholder": "例如 python",
+    "runtimeSelect": "选择运行时",
     "version": "版本",
     "versionPlaceholder": "例如 1.0.0",
     "creating": "创建中...",
@@ -2478,7 +2506,31 @@
     "colCreated": "创建时间",
     "colActions": "操作",
     "noLayers": "暂无依赖层",
-    "filesCount": "{count} 个文件"
+    "filesCount": "{count} 个文件",
+    "deleteConfirm": "确定要删除此依赖层吗？",
+    "deleteConfirmDesc": "这将永久删除依赖层「{name}」，此操作无法撤销。",
+    "searchPlaceholder": "搜索依赖层...",
+    "filterRuntime": "所有运行时",
+    "uploadFiles": "上传文件",
+    "uploadFilesDesc": "选择要包含在依赖层中的文件",
+    "selectedFiles": "已选择 {count} 个文件",
+    "noFiles": "未选择文件",
+    "dropzone": "点击选择文件或拖放文件",
+    "detail": {
+      "backToLayers": "返回依赖层",
+      "layerNotFound": "未找到依赖层",
+      "metadata": "元数据",
+      "contentHash": "内容哈希",
+      "imagePath": "镜像路径",
+      "createdAt": "创建时间",
+      "updatedAt": "更新时间",
+      "filesSection": "文件列表",
+      "noFiles": "此依赖层中没有文件",
+      "functionsSection": "关联函数",
+      "noFunctions": "没有函数使用此依赖层",
+      "functionName": "函数",
+      "functionRuntime": "运行时"
+    }
   },
   "notificationsPage": {
     "failedToLoad": "加载通知失败",

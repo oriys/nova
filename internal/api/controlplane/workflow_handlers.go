@@ -222,3 +222,21 @@ return
 
 wfWriteJSON(w, http.StatusCreated, inv)
 }
+
+// ListFunctionWorkflows handles GET /functions/{name}/workflows
+func (h *Handler) ListFunctionWorkflows(w http.ResponseWriter, r *http.Request) {
+functionName := r.PathValue("name")
+limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+
+items, err := h.Store.ListWorkflowsByFunction(r.Context(), functionName, limit, offset)
+if err != nil {
+http.Error(w, err.Error(), http.StatusInternalServerError)
+return
+}
+if items == nil {
+items = []*domain.Workflow{}
+}
+total := estimatePaginatedTotal(limit, offset, len(items))
+writePaginatedList(w, limit, offset, len(items), total, items)
+}

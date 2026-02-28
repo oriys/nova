@@ -106,13 +106,15 @@ const (
 	BackendLibKrun BackendType = "libkrun"
 	// BackendKata uses Kata Containers
 	BackendKata BackendType = "kata"
+	// BackendAppleVZ uses Apple Virtualization.framework via vfkit
+	BackendAppleVZ BackendType = "applevz"
 )
 
 // AllBackendTypes returns all valid backend type values
 func AllBackendTypes() []BackendType {
 	return []BackendType{
 		BackendAuto, BackendFirecracker, BackendDocker, BackendWasm,
-		BackendKubernetes, BackendLibKrun, BackendKata,
+		BackendKubernetes, BackendLibKrun, BackendKata, BackendAppleVZ,
 	}
 }
 
@@ -275,6 +277,31 @@ type SLOPolicy struct {
 	Notifications []SLONotificationTarget `json:"notifications,omitempty"`
 }
 
+// AsyncDestinations configures automatic chaining after async invocation completion.
+type AsyncDestinations struct {
+	OnSuccess *Destination `json:"on_success,omitempty"`
+	OnFailure *Destination `json:"on_failure,omitempty"`
+}
+
+// Destination defines a target for async invocation result forwarding.
+type Destination struct {
+	Type   string `json:"type"`   // "function" or "topic"
+	Target string `json:"target"` // function name or topic name
+}
+
+// CloudEvent represents a CNCF CloudEvents 1.0 envelope.
+type CloudEvent struct {
+	SpecVersion     string          `json:"specversion"`
+	ID              string          `json:"id"`
+	Source          string          `json:"source"`
+	Type            string          `json:"type"`
+	DataContentType string          `json:"datacontenttype"`
+	Time            time.Time       `json:"time"`
+	Subject         string          `json:"subject,omitempty"`
+	DataSchema      string          `json:"dataschema,omitempty"`
+	Data            json.RawMessage `json:"data"`
+}
+
 // Layer represents a shared dependency layer that can be mounted as a read-only drive
 type Layer struct {
 	ID          string    `json:"id"`
@@ -373,9 +400,12 @@ type Function struct {
 	LayerPaths          []string          `json:"-"`                // resolved at invocation time
 	Mounts              []VolumeMount     `json:"mounts,omitempty"` // persistent volume mounts
 	ResolvedMounts      []ResolvedMount   `json:"-"`                // resolved at invocation time (image_path + mount config)
-	EnvVars             map[string]string `json:"env_vars,omitempty"`
-	CreatedAt           time.Time         `json:"created_at"`
-	UpdatedAt           time.Time         `json:"updated_at"`
+	EnvVars             map[string]string  `json:"env_vars,omitempty"`
+	Tags                map[string]string  `json:"tags,omitempty"`
+	LogRetentionDays    int                `json:"log_retention_days,omitempty"` // 0 = use global default
+	AsyncDestinations   *AsyncDestinations `json:"async_destinations,omitempty"`
+	CreatedAt           time.Time          `json:"created_at"`
+	UpdatedAt           time.Time          `json:"updated_at"`
 
 	// Versioning
 	Version        int         `json:"version"`                   // Current version number (1, 2, 3, ...)

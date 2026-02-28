@@ -606,6 +606,59 @@ func (s *PostgresStore) ListEventSubscriptions(ctx context.Context, topicID stri
 	return out, nil
 }
 
+// ListSubscriptionsByFunction returns all event subscriptions targeting a given function name, across all topics.
+func (s *PostgresStore) ListSubscriptionsByFunction(ctx context.Context, functionName string, limit, offset int) ([]*EventSubscription, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	scope := tenantScopeFromContext(ctx)
+	rows, err := s.pool.Query(ctx, `
+		SELECT s.id, s.tenant_id, s.namespace, s.topic_id, t.name, s.name, s.consumer_group, s.function_id, s.function_name, s.workflow_id, s.workflow_name,
+		       s.enabled, s.max_attempts, s.backoff_base_ms, s.backoff_max_ms,
+		       s.max_inflight, s.rate_limit_per_sec, s.last_dispatch_at, s.last_acked_sequence, s.last_acked_at,
+		       COALESCE(stats.inflight_count, 0), COALESCE(stats.queued_count, 0), COALESCE(stats.dlq_count, 0),
+		       GREATEST(COALESCE(stats.latest_sequence, s.last_acked_sequence) - s.last_acked_sequence, 0), stats.oldest_unacked_at,
+		       s.created_at, s.updated_at,
+		       s.type, s.webhook_url, s.webhook_method, s.webhook_headers, s.webhook_signing_secret, s.webhook_timeout_ms
+		FROM event_subscriptions s
+		JOIN event_topics t ON t.id = s.topic_id
+		LEFT JOIN LATERAL (
+			SELECT
+				COUNT(*) FILTER (WHERE d.status = 'running') AS inflight_count,
+				COUNT(*) FILTER (WHERE d.status = 'queued') AS queued_count,
+				COUNT(*) FILTER (WHERE d.status = 'dlq') AS dlq_count,
+				MAX(m.sequence) AS latest_sequence,
+				MIN(d.created_at) FILTER (WHERE d.status IN ('queued', 'running', 'dlq')) AS oldest_unacked_at
+			FROM event_deliveries d
+			JOIN event_messages m ON m.id = d.message_id
+			WHERE d.subscription_id = s.id
+		) stats ON TRUE
+		WHERE s.function_name = $1 AND s.tenant_id = $2 AND s.namespace = $3
+		ORDER BY s.created_at ASC
+		LIMIT $4 OFFSET $5
+	`, functionName, scope.TenantID, scope.Namespace, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list subscriptions by function: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]*EventSubscription, 0)
+	for rows.Next() {
+		sub, err := scanEventSubscription(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan event subscription: %w", err)
+		}
+		out = append(out, sub)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list subscriptions by function rows: %w", err)
+	}
+	return out, nil
+}
+
 func (s *PostgresStore) UpdateEventSubscription(ctx context.Context, id string, update *EventSubscriptionUpdate) (*EventSubscription, error) {
 	sub, err := s.GetEventSubscription(ctx, id)
 	if err != nil {

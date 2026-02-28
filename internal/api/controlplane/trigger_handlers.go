@@ -181,3 +181,21 @@ func (h *Handler) GetTriggerStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
 }
+
+// ListFunctionTriggers handles GET /functions/{name}/triggers
+func (h *Handler) ListFunctionTriggers(w http.ResponseWriter, r *http.Request) {
+	functionName := r.PathValue("name")
+	limit := parsePaginationParam(r.URL.Query().Get("limit"), 100, 500)
+	offset := parsePaginationParam(r.URL.Query().Get("offset"), 0, 0)
+
+	items, err := h.Store.ListTriggersByFunction(r.Context(), functionName, limit, offset)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if items == nil {
+		items = []*store.TriggerRecord{}
+	}
+	total := estimatePaginatedTotal(limit, offset, len(items))
+	writePaginatedList(w, limit, offset, len(items), total, items)
+}

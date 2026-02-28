@@ -187,6 +187,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /layers", h.CreateLayer)
 	mux.HandleFunc("GET /layers", h.ListLayers)
 	mux.HandleFunc("GET /layers/{name}", h.GetLayer)
+	mux.HandleFunc("GET /layers/{name}/functions", h.ListLayerFunctions)
 	mux.HandleFunc("DELETE /layers/{name}", h.DeleteLayer)
 	mux.HandleFunc("PUT /functions/{name}/layers", h.SetFunctionLayers)
 	mux.HandleFunc("GET /functions/{name}/layers", h.GetFunctionLayers)
@@ -198,6 +199,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /volumes/{name}", h.DeleteVolume)
 	mux.HandleFunc("PUT /functions/{name}/mounts", h.SetFunctionMounts)
 	mux.HandleFunc("GET /functions/{name}/mounts", h.GetFunctionMounts)
+
+	// Function associations (bidirectional)
+	mux.HandleFunc("GET /functions/{name}/triggers", h.ListFunctionTriggers)
+	mux.HandleFunc("GET /functions/{name}/subscriptions", h.ListFunctionSubscriptions)
+	mux.HandleFunc("GET /functions/{name}/workflows", h.ListFunctionWorkflows)
 
 	// Triggers
 	mux.HandleFunc("POST /triggers", h.CreateTrigger)

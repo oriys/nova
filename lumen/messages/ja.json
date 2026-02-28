@@ -1515,6 +1515,33 @@
       "completedAt": "完了日時",
       "input": "入力",
       "output": "出力"
+    },
+    "triggers_section": {
+      "title": "イベントトリガー",
+      "empty": "この関数にイベントトリガーは設定されていません。",
+      "colName": "名前",
+      "colType": "タイプ",
+      "colEnabled": "状態",
+      "colCreated": "作成日時"
+    },
+    "subscriptions": {
+      "title": "イベントサブスクリプション",
+      "empty": "この関数を対象とするイベントサブスクリプションはありません。",
+      "colName": "名前",
+      "colTopic": "トピック",
+      "colGroup": "コンシューマーグループ",
+      "colEnabled": "状態",
+      "colLag": "ラグ",
+      "colCreated": "作成日時"
+    },
+    "workflows_section": {
+      "title": "ワークフロー",
+      "empty": "この関数はどのワークフローからも参照されていません。",
+      "colName": "名前",
+      "colDescription": "説明",
+      "colStatus": "ステータス",
+      "colVersion": "バージョン",
+      "colUpdated": "更新日時"
     }
   },
   "landingPage": {
@@ -2462,6 +2489,7 @@
     "namePlaceholder": "例: numpy-layer",
     "runtime": "ランタイム",
     "runtimePlaceholder": "例: python",
+    "runtimeSelect": "ランタイムを選択",
     "version": "バージョン",
     "versionPlaceholder": "例: 1.0.0",
     "creating": "作成中...",
@@ -2473,7 +2501,31 @@
     "colCreated": "作成日",
     "colActions": "操作",
     "noLayers": "レイヤーはまだありません",
-    "filesCount": "{count} ファイル"
+    "filesCount": "{count} ファイル",
+    "deleteConfirm": "このレイヤーを削除しますか？",
+    "deleteConfirmDesc": "レイヤー「{name}」を完全に削除します。この操作は元に戻せません。",
+    "searchPlaceholder": "レイヤーを検索...",
+    "filterRuntime": "すべてのランタイム",
+    "uploadFiles": "ファイルをアップロード",
+    "uploadFilesDesc": "レイヤーに含めるファイルを選択",
+    "selectedFiles": "{count} 件のファイルを選択",
+    "noFiles": "ファイル未選択",
+    "dropzone": "クリックしてファイルを選択またはドラッグ＆ドロップ",
+    "detail": {
+      "backToLayers": "レイヤー一覧に戻る",
+      "layerNotFound": "レイヤーが見つかりません",
+      "metadata": "メタデータ",
+      "contentHash": "コンテンツハッシュ",
+      "imagePath": "イメージパス",
+      "createdAt": "作成日時",
+      "updatedAt": "更新日時",
+      "filesSection": "ファイル一覧",
+      "noFiles": "このレイヤーにはファイルがありません",
+      "functionsSection": "使用中の関数",
+      "noFunctions": "このレイヤーを使用している関数はありません",
+      "functionName": "関数",
+      "functionRuntime": "ランタイム"
+    }
   },
   "notificationsPage": {
     "failedToLoad": "通知の読み込みに失敗",
