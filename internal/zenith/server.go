@@ -556,6 +556,9 @@ func isCometOnlyHTTPPath(path string) bool {
 	if strings.HasPrefix(path, "/async-invocations") {
 		return true
 	}
+	if strings.HasPrefix(path, "/durable-executions") {
+		return true
+	}
 	if strings.HasPrefix(path, "/metrics") {
 		return true
 	}
@@ -570,7 +573,7 @@ func isCometOnlyHTTPPath(path string) bool {
 	if function, action, ok := splitFunctionPath(path); ok {
 		_ = function
 		switch action {
-		case "invoke-stream", "invoke-async", "async-invocations", "logs", "metrics", "diagnostics", "heatmap", "state", "prewarm":
+		case "invoke-stream", "invoke-async", "invoke-durable", "async-invocations", "durable-executions", "logs", "metrics", "diagnostics", "heatmap", "state", "prewarm":
 			return true
 		}
 	}

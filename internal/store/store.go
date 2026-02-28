@@ -379,6 +379,17 @@ type MetadataStore interface {
 	ListAuditLogs(ctx context.Context, filter *AuditLogFilter, limit, offset int) ([]*AuditLog, error)
 	GetAuditLog(ctx context.Context, id string) (*AuditLog, error)
 	CountAuditLogs(ctx context.Context, filter *AuditLogFilter) (int64, error)
+
+	// Durable executions (multi-step stateful function invocations)
+	CreateDurableExecution(ctx context.Context, exec *domain.DurableExecution) error
+	GetDurableExecution(ctx context.Context, id string) (*domain.DurableExecution, error)
+	UpdateDurableExecution(ctx context.Context, exec *domain.DurableExecution) error
+	ListDurableExecutions(ctx context.Context, functionID string, limit, offset int) ([]*domain.DurableExecution, error)
+	CountDurableExecutions(ctx context.Context, functionID string) (int64, error)
+	CreateDurableStep(ctx context.Context, step *domain.DurableStep) error
+	CompleteDurableStep(ctx context.Context, stepID string, output json.RawMessage, durationMs int64) error
+	FailDurableStep(ctx context.Context, stepID string, errMsg string, durationMs int64) error
+	ListDurableSteps(ctx context.Context, executionID string) ([]domain.DurableStep, error)
 }
 
 // Store wraps the MetadataStore, WorkflowStore, and ScheduleStore (Postgres) for all persistence.

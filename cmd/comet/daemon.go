@@ -29,6 +29,7 @@ import (
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/queue"
 	"github.com/oriys/nova/internal/secrets"
+	"github.com/oriys/nova/internal/stateproxy"
 	"github.com/oriys/nova/internal/store"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
@@ -304,6 +305,15 @@ func daemonCmd() *cobra.Command {
 				return fmt.Errorf("start Comet gRPC server: %w", err)
 			}
 			logging.Op().Info("Comet gRPC API started", "addr", cfg.GRPC.Addr)
+
+			// State proxy listener for in-VM state access
+			stateProxy, err := stateproxy.Start(":9998", s)
+			if err != nil {
+				logging.Op().Warn("failed to start state proxy", "error", err)
+			} else {
+				defer stateProxy.Close()
+				logging.Op().Info("State proxy started", "addr", ":9998")
+			}
 
 			// Pool metrics recorder: write periodic snapshots for dashboard charts.
 			poolMetricsDone := make(chan struct{})

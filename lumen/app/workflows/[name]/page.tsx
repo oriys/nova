@@ -36,6 +36,8 @@ import { DagEditor } from "@/components/workflow/dag-editor"
 import { CodeDisplay } from "@/components/code-editor"
 import { WorkflowDocs } from "@/components/workflow-docs"
 import { WorkflowTestSuite } from "@/components/workflow-test-suite"
+import { WorkflowGateway } from "@/components/workflow-gateway"
+import { WorkflowMetrics } from "@/components/workflow-metrics"
 import type { LayoutMap } from "@/components/workflow/dag-layout"
 import { Play, RefreshCw, ArrowLeft, Pencil, X, ExternalLink, Loader2, Terminal, Copy, Check } from "lucide-react"
 
@@ -310,38 +312,64 @@ export default function WorkflowDetailPage() {
         </div>
 
         {workflow && (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <div className="rounded-lg border border-border bg-card p-4">
-              <p className="text-sm text-muted-foreground">{t("summary.status")}</p>
-              <Badge variant={workflow.status === "active" ? "default" : "secondary"}>
-                {workflow.status}
-              </Badge>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-4">
-              <p className="text-sm text-muted-foreground">{t("summary.currentVersion")}</p>
-              <p className="text-2xl font-semibold">
-                {workflow.current_version > 0 ? `v${workflow.current_version}` : "-"}
-              </p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-4">
-              <p className="text-sm text-muted-foreground">{t("summary.totalVersions")}</p>
-              <p className="text-2xl font-semibold">{versions.length}</p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-4">
-              <p className="text-sm text-muted-foreground">{t("summary.totalRuns")}</p>
-              <p className="text-2xl font-semibold">{runs.length}</p>
-            </div>
+          <div className="flex items-center gap-3">
+            <Badge variant={workflow.status === "active" ? "default" : "secondary"}>
+              {workflow.status}
+            </Badge>
           </div>
         )}
 
-        <Tabs defaultValue="graph">
-          <TabsList>
-            <TabsTrigger value="graph">{t("tabs.graph")}</TabsTrigger>
-            <TabsTrigger value="runs">{t("tabs.runs")}</TabsTrigger>
-            <TabsTrigger value="versions">{t("tabs.versions")}</TabsTrigger>
-            <TabsTrigger value="tests">{t("tabs.tests")}</TabsTrigger>
-            <TabsTrigger value="docs">{t("tabs.docs")}</TabsTrigger>
+        <Tabs defaultValue="overview">
+          <TabsList className="h-12 w-full justify-start rounded-none border-0 bg-transparent p-0">
+            <TabsTrigger
+              value="overview"
+              className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
+            >
+              {t("tabs.overview")}
+            </TabsTrigger>
+            <TabsTrigger
+              value="graph"
+              className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
+            >
+              {t("tabs.graph")}
+            </TabsTrigger>
+            <TabsTrigger
+              value="runs"
+              className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
+            >
+              {t("tabs.runs")}
+            </TabsTrigger>
+            <TabsTrigger
+              value="versions"
+              className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
+            >
+              {t("tabs.versions")}
+            </TabsTrigger>
+            <TabsTrigger
+              value="tests"
+              className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
+            >
+              {t("tabs.tests")}
+            </TabsTrigger>
+            <TabsTrigger
+              value="docs"
+              className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
+            >
+              {t("tabs.docs")}
+            </TabsTrigger>
+            <TabsTrigger
+              value="gateway"
+              className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
+            >
+              {t("tabs.gateway")}
+            </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="overview" className="mt-4">
+            {workflow && (
+              <WorkflowMetrics workflow={workflow} versions={versions} runs={runs} />
+            )}
+          </TabsContent>
 
           <TabsContent value="graph" className="mt-4">
             {graphEditing ? (
@@ -520,6 +548,10 @@ export default function WorkflowDetailPage() {
               workflowName={name}
               hasPublishedVersion={!!workflow && workflow.current_version > 0}
             />
+          </TabsContent>
+
+          <TabsContent value="gateway" className="mt-4">
+            <WorkflowGateway workflowName={name} />
           </TabsContent>
         </Tabs>
 

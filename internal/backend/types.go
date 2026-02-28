@@ -98,6 +98,7 @@ type InitPayload struct {
 	Extension       string            `json:"extension,omitempty"`
 	Mode            string            `json:"mode,omitempty"`
 	FunctionName    string            `json:"function_name,omitempty"`
+	FunctionID      string            `json:"function_id,omitempty"`
 	FunctionVersion int               `json:"function_version,omitempty"`
 	MemoryMB        int               `json:"memory_mb,omitempty"`
 	TimeoutS        int               `json:"timeout_s,omitempty"`
@@ -109,6 +110,10 @@ type InitPayload struct {
 	// that user functions can call other functions through the host without
 	// routing through the public gateway.
 	InternalInvokeEnabled bool `json:"internal_invoke_enabled,omitempty"`
+
+	// StateEnabled tells the agent to start a local state proxy HTTP server
+	// so function code can access durable state via NOVA_STATE_URL.
+	StateEnabled bool `json:"state_enabled,omitempty"`
 }
 
 // VolumeMountInfo tells the agent where to mount a volume drive inside the VM.

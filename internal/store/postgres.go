@@ -992,6 +992,37 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant_time ON audit_logs(tenant_id, namespace, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs(resource_type, resource_name, created_at DESC)`,
+
+		// Durable executions: multi-step function invocations with checkpoint support
+		`CREATE TABLE IF NOT EXISTS durable_executions (
+			id TEXT PRIMARY KEY,
+			tenant_id TEXT NOT NULL DEFAULT 'default',
+			namespace TEXT NOT NULL DEFAULT 'default',
+			function_id TEXT NOT NULL,
+			function_name TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'running',
+			input JSONB,
+			output JSONB,
+			error_message TEXT,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			completed_at TIMESTAMPTZ
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_durable_executions_function ON durable_executions(tenant_id, namespace, function_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_durable_executions_status ON durable_executions(status)`,
+		`CREATE TABLE IF NOT EXISTS durable_steps (
+			id TEXT PRIMARY KEY,
+			execution_id TEXT NOT NULL REFERENCES durable_executions(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'running',
+			input JSONB,
+			output JSONB,
+			error_message TEXT,
+			duration_ms BIGINT NOT NULL DEFAULT 0,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			completed_at TIMESTAMPTZ
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_durable_steps_execution ON durable_steps(execution_id, created_at)`,
 	}
 
 	for _, stmt := range stmts {

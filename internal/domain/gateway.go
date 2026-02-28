@@ -13,6 +13,7 @@ type GatewayRoute struct {
 	Path          string            `json:"path"`                      // "/v1/process" or "/v1/users/{id}"
 	Methods       []string          `json:"methods,omitempty"`         // empty = all methods
 	FunctionName  string            `json:"function_name"`
+	WorkflowName  string            `json:"workflow_name,omitempty"`
 	AuthStrategy  string            `json:"auth_strategy"`             // "none", "inherit", "apikey", "jwt"
 	AuthConfig    map[string]string `json:"auth_config,omitempty"`
 	RequestSchema json.RawMessage   `json:"request_schema,omitempty"`

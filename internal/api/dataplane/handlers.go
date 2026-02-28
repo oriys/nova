@@ -222,6 +222,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /async-invocations/dlq", h.ListDLQInvocations)
 	mux.HandleFunc("POST /async-invocations/dlq/retry-all", h.RetryAllDLQ)
 
+	// Durable executions
+	h.RegisterDurableRoutes(mux)
+
 	// Health probes
 	mux.HandleFunc("GET /health", h.Health)
 	mux.HandleFunc("GET /health/live", h.HealthLive)

@@ -78,6 +78,9 @@ const (
 	ModeProcess ExecutionMode = "process"
 	// ModePersistent keeps function process alive for connection reuse
 	ModePersistent ExecutionMode = "persistent"
+	// ModeDurable enables stateful execution with in-VM state access and
+	// checkpoint/replay for long-running multi-step functions.
+	ModeDurable ExecutionMode = "durable"
 )
 
 // BackendType determines which execution backend a function uses.

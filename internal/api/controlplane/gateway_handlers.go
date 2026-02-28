@@ -46,6 +46,7 @@ func (h *GatewayHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 		Path          string                 `json:"path"`
 		Methods       []string               `json:"methods,omitempty"`
 		FunctionName  string                 `json:"function_name"`
+		WorkflowName  string                 `json:"workflow_name"`
 		AuthStrategy  string                 `json:"auth_strategy"`
 		AuthConfig    map[string]string      `json:"auth_config,omitempty"`
 		RequestSchema json.RawMessage        `json:"request_schema,omitempty"`
@@ -60,16 +61,23 @@ func (h *GatewayHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "path is required", http.StatusBadRequest)
 		return
 	}
-	if req.FunctionName == "" {
-		http.Error(w, "function_name is required", http.StatusBadRequest)
+	if req.FunctionName == "" && req.WorkflowName == "" {
+		http.Error(w, "function_name or workflow_name is required", http.StatusBadRequest)
 		return
 	}
 
-	// Verify function exists
-	_, err := h.Store.GetFunctionByName(r.Context(), req.FunctionName)
-	if err != nil {
-		http.Error(w, "function not found: "+req.FunctionName, http.StatusBadRequest)
-		return
+	// Verify target exists
+	if req.FunctionName != "" {
+		if _, err := h.Store.GetFunctionByName(r.Context(), req.FunctionName); err != nil {
+			http.Error(w, "function not found: "+req.FunctionName, http.StatusBadRequest)
+			return
+		}
+	}
+	if req.WorkflowName != "" {
+		if _, err := h.Store.GetWorkflowByName(r.Context(), req.WorkflowName); err != nil {
+			http.Error(w, "workflow not found: "+req.WorkflowName, http.StatusBadRequest)
+			return
+		}
 	}
 
 	enabled := true
@@ -96,6 +104,7 @@ func (h *GatewayHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 		Path:          req.Path,
 		Methods:       req.Methods,
 		FunctionName:  req.FunctionName,
+		WorkflowName:  req.WorkflowName,
 		AuthStrategy:  req.AuthStrategy,
 		AuthConfig:    req.AuthConfig,
 		RequestSchema: req.RequestSchema,
@@ -163,6 +172,7 @@ func (h *GatewayHandler) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 		Path          *string                `json:"path"`
 		Methods       []string               `json:"methods"`
 		FunctionName  *string                `json:"function_name"`
+		WorkflowName  *string                `json:"workflow_name"`
 		AuthStrategy  *string                `json:"auth_strategy"`
 		AuthConfig    map[string]string      `json:"auth_config"`
 		RequestSchema json.RawMessage        `json:"request_schema"`
@@ -190,6 +200,15 @@ func (h *GatewayHandler) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		existing.FunctionName = *req.FunctionName
+	}
+	if req.WorkflowName != nil {
+		if *req.WorkflowName != "" {
+			if _, err := h.Store.GetWorkflowByName(r.Context(), *req.WorkflowName); err != nil {
+				http.Error(w, "workflow not found: "+*req.WorkflowName, http.StatusBadRequest)
+				return
+			}
+		}
+		existing.WorkflowName = *req.WorkflowName
 	}
 	if req.AuthStrategy != nil {
 		existing.AuthStrategy = *req.AuthStrategy
