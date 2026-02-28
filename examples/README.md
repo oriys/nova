@@ -5,6 +5,45 @@
 同时提供 **Hello** 用例覆盖 Nova 当前支持的全部 VM runtime：
 `python, go, rust, wasm, node, ruby, java, php, deno, bun`。
 
+## 依赖层 + 持久卷示例
+
+`layer_volume_demo.py` 演示如何同时使用依赖层（Dependency Layer）和持久卷（Persistent Volume）：
+
+```bash
+# 1. 创建依赖层（包含 pyyaml）
+curl -X POST http://localhost:9000/layers -H 'Content-Type: application/json' -d '{
+  "name": "pyyaml-layer",
+  "runtime": "python",
+  "files": {"yaml/__init__.py": "'$(base64 < /path/to/yaml/__init__.py)'"}
+}'
+# → 返回 layer id
+
+# 2. 创建持久卷
+curl -X POST http://localhost:9000/volumes -H 'Content-Type: application/json' -d '{
+  "name": "demo-store", "size_mb": 64, "description": "KV store for demo"
+}'
+# → 返回 volume id
+
+# 3. 注册函数
+nova register layer-volume-demo --runtime python --code examples/layer_volume_demo.py
+
+# 4. 挂载依赖层和卷
+curl -X PUT http://localhost:9000/functions/layer-volume-demo/layers \
+  -H 'Content-Type: application/json' -d '{"layer_ids": ["<layer-id>"]}'
+
+curl -X PUT http://localhost:9000/functions/layer-volume-demo/mounts \
+  -H 'Content-Type: application/json' -d '{
+    "mounts": [{"volume_id": "<volume-id>", "mount_path": "/mnt/data", "read_only": false}]
+  }'
+
+# 5. 使用
+nova invoke layer-volume-demo '{"action": "set", "key": "greeting", "value": "hello"}'
+nova invoke layer-volume-demo '{"action": "get", "key": "greeting"}'
+nova invoke layer-volume-demo '{"action": "get", "key": "greeting", "format": "yaml"}'
+nova invoke layer-volume-demo '{"action": "list"}'
+nova invoke layer-volume-demo '{"action": "clear"}'
+```
+
 ## 快速测试
 
 ```bash
@@ -27,6 +66,7 @@
 | 网络请求 | `network_test.py` | `network_test.go` | `network_test.rs` |
 | 磁盘 I/O | `disk_test.py` | `disk_test.go` | `disk_test.rs` |
 | Hello World | `hello.py` | `hello.go` | `hello.rs` |
+| 层+卷 Demo | `layer_volume_demo.py` | — | — |
 
 ## Hello（全运行时）
 

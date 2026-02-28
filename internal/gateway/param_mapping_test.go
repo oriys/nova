@@ -28,7 +28,7 @@ func TestTransformCase(t *testing.T) {
 		{"", domain.ParamTransformUpperFirst, ""},
 	}
 	for _, tt := range tests {
-		got := transformCase(tt.input, tt.transform)
+		got := domain.TransformCase(tt.input, tt.transform)
 		if got != tt.want {
 			t.Errorf("transformCase(%q, %q) = %q, want %q", tt.input, tt.transform, got, tt.want)
 		}
@@ -54,7 +54,7 @@ func TestCoerceString(t *testing.T) {
 		{"not-json", domain.ParamTypeJSON, nil, true},
 	}
 	for _, tt := range tests {
-		got, err := coerceString(tt.input, tt.typ)
+		got, err := domain.CoerceString(tt.input, tt.typ)
 		if (err != nil) != tt.err {
 			t.Errorf("coerceString(%q, %q) error = %v, wantErr %v", tt.input, tt.typ, err, tt.err)
 			continue

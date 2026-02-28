@@ -12,6 +12,7 @@ import (
 	"github.com/oriys/nova/internal/asyncqueue"
 	"github.com/oriys/nova/internal/autoscaler"
 	"github.com/oriys/nova/internal/backend"
+	"github.com/oriys/nova/internal/cluster"
 	"github.com/oriys/nova/internal/config"
 	"github.com/oriys/nova/internal/docker"
 	"github.com/oriys/nova/internal/domain"
@@ -306,6 +307,20 @@ func daemonCmd() *cobra.Command {
 			}
 			logging.Op().Info("Comet gRPC API started", "addr", cfg.GRPC.Addr)
 
+			// Self-register this node in the cluster registry so the
+			// dashboard /cluster page always shows at least the local node.
+			clusterReg := cluster.NewRegistry(s, cluster.DefaultConfig(nodeID()))
+			selfNode := &cluster.Node{
+				ID:      nodeID(),
+				Name:    nodeName(),
+				Address: cfg.GRPC.Addr,
+				State:   cluster.NodeStateActive,
+				MaxVMs:  64,
+			}
+			if err := clusterReg.RegisterNode(context.Background(), selfNode); err != nil {
+				logging.Op().Warn("failed to self-register cluster node", "error", err)
+			}
+
 			// State proxy listener for in-VM state access
 			stateProxy, err := stateproxy.Start(":9998", s)
 			if err != nil {
@@ -315,7 +330,8 @@ func daemonCmd() *cobra.Command {
 				logging.Op().Info("State proxy started", "addr", ":9998")
 			}
 
-			// Pool metrics recorder: write periodic snapshots for dashboard charts.
+			// Pool metrics recorder: write periodic snapshots for dashboard charts
+			// and send cluster heartbeats with live pool data.
 			poolMetricsDone := make(chan struct{})
 			go func() {
 				defer close(poolMetricsDone)
@@ -332,6 +348,10 @@ func daemonCmd() *cobra.Command {
 				if err := s.RecordPoolMetrics(context.Background(), snap); err != nil {
 					logging.Op().Warn("failed to record pool metrics", "error", err)
 				}
+				_ = clusterReg.UpdateHeartbeat(context.Background(), nodeID(), &cluster.NodeMetrics{
+					ActiveVMs:  p.TotalVMCount(),
+					QueueDepth: 0,
+				})
 				for {
 					select {
 					case <-ticker.C:
@@ -345,6 +365,10 @@ func daemonCmd() *cobra.Command {
 						if err := s.RecordPoolMetrics(context.Background(), snap); err != nil {
 							logging.Op().Warn("failed to record pool metrics", "error", err)
 						}
+						_ = clusterReg.UpdateHeartbeat(context.Background(), nodeID(), &cluster.NodeMetrics{
+							ActiveVMs:  p.TotalVMCount(),
+							QueueDepth: 0,
+						})
 						// Prune old records (keep 7 days)
 						if err := s.PrunePoolMetrics(context.Background(), 7*24*3600); err != nil {
 							logging.Op().Warn("failed to prune pool metrics", "error", err)
@@ -401,4 +425,26 @@ func daemonCmd() *cobra.Command {
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level")
 
 	return cmd
+}
+
+// nodeID returns a stable identifier for this comet instance.
+func nodeID() string {
+	if id := os.Getenv("NOVA_NODE_ID"); id != "" {
+		return id
+	}
+	if h, err := os.Hostname(); err == nil {
+		return "comet-" + h
+	}
+	return "comet-local"
+}
+
+// nodeName returns a human-readable name for this comet instance.
+func nodeName() string {
+	if name := os.Getenv("NOVA_NODE_NAME"); name != "" {
+		return name
+	}
+	if h, err := os.Hostname(); err == nil {
+		return h
+	}
+	return "comet-local"
 }

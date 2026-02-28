@@ -5,6 +5,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
+import { SubNav } from "@/components/sub-nav"
 import { Pagination } from "@/components/pagination"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -259,6 +260,12 @@ export default function AsyncInvocationsPage() {
   return (
     <DashboardLayout>
       <Header title={t("asyncInvocations.title")} description={t("asyncInvocations.description")} />
+      <div className="px-6 pt-4">
+        <SubNav items={[
+          { label: t("history.title"), href: "/history" },
+          { label: t("asyncInvocations.title"), href: "/async-invocations" },
+        ]} />
+      </div>
 
       <div className="space-y-6 p-6">
         {error && (

@@ -3,8 +3,9 @@
 import Link from "next/link"
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
+import { EmptyState } from "@/components/empty-state"
 import { LogEntry } from "@/lib/types"
-import { ArrowRight, Info, AlertTriangle, XCircle, Bug, Loader2 } from "lucide-react"
+import { ArrowRight, Info, AlertTriangle, XCircle, Bug, Loader2, FileText } from "lucide-react"
 
 interface RecentLogsProps {
   logs: LogEntry[]
@@ -61,9 +62,11 @@ export function RecentLogs({ logs, loading }: RecentLogsProps) {
         </Link>
       </div>
       {logs.length === 0 ? (
-        <div className="py-8 text-center">
-          <p className="text-sm text-muted-foreground">{t("noLogs")}</p>
-        </div>
+        <EmptyState
+          title={t("noLogs")}
+          icon={FileText}
+          compact
+        />
       ) : (
         <div className="divide-y divide-border">
           {logs.map((log) => {

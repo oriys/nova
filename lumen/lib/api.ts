@@ -1460,8 +1460,7 @@ export const eventsApi = {
     if (typeof offset === "number" && Number.isFinite(offset) && offset > 0) {
       params.set("offset", String(Math.floor(offset)));
     }
-    const result = await requestPaged<EventTopic>(`/topics?${params.toString()}`);
-    return result.items;
+    return requestPaged<EventTopic>(`/topics?${params.toString()}`);
   },
 
   getTopic: (name: string) =>
@@ -1530,7 +1529,7 @@ export const eventsApi = {
     }
     return requestPaged<EventOutboxJob>(
       `/topics/${encodeURIComponent(topicName)}/outbox?${params.toString()}`
-    ).then((result) => result.items);
+    );
   },
 
   listMessages: async (topicName: string, limit: number = 50, offset?: number) => {
@@ -1542,7 +1541,7 @@ export const eventsApi = {
     const result = await requestPaged<EventMessage>(
       `/topics/${encodeURIComponent(topicName)}/messages?${params.toString()}`
     );
-    return result.items;
+    return result;
   },
 
   listSubscriptions: async (topicName: string, limit?: number, offset?: number) => {
@@ -1558,7 +1557,7 @@ export const eventsApi = {
     const result = await requestPaged<EventSubscription>(
       `/topics/${encodeURIComponent(topicName)}/subscriptions?${params.toString()}`
     );
-    return result.items;
+    return result;
   },
 
   createSubscription: (
@@ -1634,7 +1633,7 @@ export const eventsApi = {
     }
     return requestPaged<EventDelivery>(
       `/subscriptions/${encodeURIComponent(subscriptionID)}/deliveries?${params.toString()}`
-    ).then((result) => result.items);
+    );
   },
 
   getDelivery: (id: string) =>

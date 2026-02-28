@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react"
 import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
+import { SubNav } from "@/components/sub-nav"
 import { Button } from "@/components/ui/button"
 import { notificationsApi } from "@/lib/api"
 import type { NotificationEntry, NotificationStatus } from "@/lib/api"
@@ -70,6 +71,12 @@ export default function NotificationsPage() {
   return (
     <DashboardLayout>
       <Header title={t("notifications.title")} description={t("notifications.description")} />
+      <div className="px-6 pt-4">
+        <SubNav items={[
+          { label: t("alerts.title"), href: "/alerts" },
+          { label: t("notifications.title"), href: "/notifications" },
+        ]} />
+      </div>
 
       <div className="p-6 space-y-6">
         {error && (

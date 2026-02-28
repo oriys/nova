@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
+import { SubNav } from "@/components/sub-nav"
 import { EmptyState } from "@/components/empty-state"
 import { Pagination } from "@/components/pagination"
 import { Button } from "@/components/ui/button"
@@ -222,6 +223,12 @@ export default function HistoryPage() {
   return (
     <DashboardLayout>
       <Header title={tp("history.title")} description={tp("history.description")} />
+        <div className="px-6 pt-4">
+          <SubNav items={[
+            { label: tp("history.title"), href: "/history" },
+            { label: tp("asyncInvocations.title"), href: "/async-invocations" },
+          ]} />
+        </div>
 
       <div className="p-6 space-y-6">
         {/* Filters */}

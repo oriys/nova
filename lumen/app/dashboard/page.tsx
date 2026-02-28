@@ -197,8 +197,8 @@ export default function DashboardPage() {
           onCreateFunction={() => router.push("/functions")}
         />
 
-        {/* Stats Grid */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Stats + System Indicators — unified grid */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4">
           <StatsCard
             title={td("totalInvocations")}
             value={totalInvocations.toLocaleString()}
@@ -229,92 +229,40 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* System Indicators */}
         {systemMetrics && (
-          <div>
-            <h3 className="mb-3 text-sm font-semibold text-card-foreground">{td("systemIndicators")}</h3>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-              <div className="rounded-xl border border-border bg-card p-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">{td("uptime")}</p>
-                    <p className="mt-1 text-lg font-semibold text-card-foreground">
-                      {formatUptime(systemMetrics.uptime_seconds, td)}
-                    </p>
-                  </div>
-                  <div className="rounded-lg bg-primary/10 p-2">
-                    <Timer className="h-4 w-4 text-primary" />
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-xl border border-border bg-card p-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">{td("coldStartRate")}</p>
-                    <p className="mt-1 text-lg font-semibold text-card-foreground">
-                      {systemMetrics.invocations.cold_pct != null ? `${systemMetrics.invocations.cold_pct.toFixed(1)}%` : "—"}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {td("coldWarmRatio", { cold: systemMetrics.invocations.cold, warm: systemMetrics.invocations.warm })}
-                    </p>
-                  </div>
-                  <div className="rounded-lg bg-blue-500/10 p-2">
-                    <Snowflake className="h-4 w-4 text-blue-600" />
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-xl border border-border bg-card p-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">{td("vmPool")}</p>
-                    <p className="mt-1 text-lg font-semibold text-card-foreground">
-                      {healthStatus?.components?.pool?.active_vms ?? 0}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {td("activeVms", { count: healthStatus?.components?.pool?.active_vms ?? 0 })}
-                    </p>
-                  </div>
-                  <div className="rounded-lg bg-primary/10 p-2">
-                    <Server className="h-4 w-4 text-primary" />
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-xl border border-border bg-card p-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">{td("latencyRange")}</p>
-                    <p className="mt-1 text-lg font-semibold text-card-foreground">
-                      {systemMetrics.latency_ms.max > 0 ? td("latencyMinMax", { min: systemMetrics.latency_ms.min, max: systemMetrics.latency_ms.max }) : "—"}
-                    </p>
-                  </div>
-                  <div className="rounded-lg bg-primary/10 p-2">
-                    <Clock className="h-4 w-4 text-primary" />
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-xl border border-border bg-card p-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">{td("systemStatus")}</p>
-                    <p className={cn(
-                      "mt-1 text-lg font-semibold",
-                      healthStatus?.status === "ok" ? "text-green-600" : "text-yellow-600"
-                    )}>
-                      {healthStatus?.status === "ok" ? td("statusOk") : td("statusDegraded")}
-                    </p>
-                  </div>
-                  <div className={cn(
-                    "rounded-lg p-2",
-                    healthStatus?.status === "ok" ? "bg-green-500/10" : "bg-yellow-500/10"
-                  )}>
-                    <HeartPulse className={cn(
-                      "h-4 w-4",
-                      healthStatus?.status === "ok" ? "text-green-600" : "text-yellow-600"
-                    )} />
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            <SystemIndicatorCard
+              label={td("uptime")}
+              value={formatUptime(systemMetrics.uptime_seconds, td)}
+              icon={Timer}
+            />
+            <SystemIndicatorCard
+              label={td("coldStartRate")}
+              value={systemMetrics.invocations.cold_pct != null ? `${systemMetrics.invocations.cold_pct.toFixed(1)}%` : "—"}
+              sub={td("coldWarmRatio", { cold: systemMetrics.invocations.cold, warm: systemMetrics.invocations.warm })}
+              icon={Snowflake}
+              iconColor="text-blue-600"
+              iconBg="bg-blue-500/10"
+            />
+            <SystemIndicatorCard
+              label={td("vmPool")}
+              value={String(healthStatus?.components?.pool?.active_vms ?? 0)}
+              sub={td("activeVms", { count: healthStatus?.components?.pool?.active_vms ?? 0 })}
+              icon={Server}
+            />
+            <SystemIndicatorCard
+              label={td("latencyRange")}
+              value={systemMetrics.latency_ms.max > 0 ? td("latencyMinMax", { min: systemMetrics.latency_ms.min, max: systemMetrics.latency_ms.max }) : "—"}
+              icon={Clock}
+            />
+            <SystemIndicatorCard
+              label={td("systemStatus")}
+              value={healthStatus?.status === "ok" ? td("statusOk") : td("statusDegraded")}
+              icon={HeartPulse}
+              iconColor={healthStatus?.status === "ok" ? "text-green-600" : "text-yellow-600"}
+              iconBg={healthStatus?.status === "ok" ? "bg-green-500/10" : "bg-yellow-500/10"}
+              valueColor={healthStatus?.status === "ok" ? "text-green-600" : "text-yellow-600"}
+            />
           </div>
         )}
 
@@ -342,5 +290,42 @@ export default function DashboardPage() {
         </div>
       </div>
     </DashboardLayout>
+  )
+}
+
+function SystemIndicatorCard({
+  label,
+  value,
+  sub,
+  icon: Icon,
+  iconColor = "text-primary",
+  iconBg = "bg-primary/10",
+  valueColor,
+}: {
+  label: string
+  value: string
+  sub?: string
+  icon: typeof Timer
+  iconColor?: string
+  iconBg?: string
+  valueColor?: string
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 transition-all hover:shadow-md">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-xs font-medium text-muted-foreground">{label}</p>
+          <p className={cn("mt-1 text-lg font-semibold font-mono tabular-nums", valueColor || "text-card-foreground")}>
+            {value}
+          </p>
+          {sub && (
+            <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>
+          )}
+        </div>
+        <div className={cn("rounded-lg p-2", iconBg)}>
+          <Icon className={cn("h-4 w-4", iconColor)} />
+        </div>
+      </div>
+    </div>
   )
 }

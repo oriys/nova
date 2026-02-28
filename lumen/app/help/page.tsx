@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl"
 import Image from "next/image"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
+import { SubNav } from "@/components/sub-nav"
 import {
   Code2,
   Network,
@@ -314,10 +315,17 @@ function FeatureSection({ guide }: { guide: FeatureGuide }) {
 
 export default function HelpPage() {
   const t = useTranslations("helpPage")
+  const tp = useTranslations("pages")
 
   return (
     <DashboardLayout>
       <Header title={t("title")} description={t("description")} />
+      <div className="px-6 pt-4">
+        <SubNav items={[
+          { label: t("title"), href: "/help" },
+          { label: tp("apiDocs.title"), href: "/api-docs" },
+        ]} />
+      </div>
 
       <div className="p-6 space-y-6">
         {/* Quick Start */}

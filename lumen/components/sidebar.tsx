@@ -15,28 +15,29 @@ import {
   Settings,
   History,
   GitBranch,
-  KeyRound,
-  Lock,
   RadioTower,
   Building2,
-  Clock3,
   Network,
   FileText,
   ShieldCheck,
-  ShieldAlert,
   HardDrive,
   Layers,
-  Bell,
   Camera,
   Zap,
   Server,
   Activity,
-  RotateCcw,
-  SlidersHorizontal,
-  HelpCircle,
 } from "lucide-react"
 
-type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "asyncJobs" | "history" | "replay" | "runtimes" | "configurations" | "secrets" | "apiKeys" | "gateway" | "apiDocs" | "rbac" | "volumes" | "layers" | "notifications" | "snapshots" | "triggers" | "cluster" | "alerts" | "tuning" | "auditLogs" | "help"
+type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "invocations" | "runtimes" | "gateway" | "triggers" | "volumes" | "layers" | "cluster" | "snapshots" | "accessControl" | "alerting" | "settings" | "docs"
+
+// Extra paths that should highlight a merged nav item
+const extraActivePaths: Record<string, string[]> = {
+  "/history": ["/async-invocations"],
+  "/rbac": ["/audit-logs"],
+  "/alerts": ["/notifications"],
+  "/configurations": ["/secrets", "/api-keys"],
+  "/help": ["/api-docs"],
+}
 
 const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] = [
   { key: "dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -46,24 +47,17 @@ const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] 
   { key: "triggers", href: "/triggers", icon: Zap },
   { key: "workflows", href: "/workflows", icon: GitBranch },
   { key: "tenancy", href: "/tenancy", icon: Building2 },
-  { key: "asyncJobs", href: "/async-invocations", icon: Clock3 },
-  { key: "history", href: "/history", icon: History },
-  { key: "replay", href: "/replay", icon: RotateCcw },
+  { key: "invocations", href: "/history", icon: History },
   { key: "runtimes", href: "/runtimes", icon: Play },
   { key: "layers", href: "/layers", icon: Layers },
   { key: "volumes", href: "/volumes", icon: HardDrive },
   { key: "cluster", href: "/cluster", icon: Server },
   { key: "snapshots", href: "/snapshots", icon: Camera },
-  { key: "tuning", href: "/tuning", icon: SlidersHorizontal },
-  { key: "rbac", href: "/rbac", icon: ShieldCheck },
-  { key: "auditLogs", href: "/audit-logs", icon: ShieldAlert },
-  { key: "notifications", href: "/notifications", icon: Bell },
-  { key: "alerts", href: "/alerts", icon: Activity },
-  { key: "configurations", href: "/configurations", icon: Settings },
-  { key: "secrets", href: "/secrets", icon: Lock },
-  { key: "apiKeys", href: "/api-keys", icon: KeyRound },
-  { key: "apiDocs", href: "/api-docs", icon: FileText },
-  { key: "help", href: "/help", icon: HelpCircle },
+
+  { key: "accessControl", href: "/rbac", icon: ShieldCheck },
+  { key: "alerting", href: "/alerts", icon: Activity },
+  { key: "settings", href: "/configurations", icon: Settings },
+  { key: "docs", href: "/help", icon: FileText },
 ]
 
 function LumenLogo({ className }: { className?: string }) {
@@ -157,7 +151,8 @@ export function Sidebar() {
           const label = t(item.key)
           const isActive =
             pathname === item.href ||
-            (item.href !== "/dashboard" && pathname.startsWith(item.href))
+            (item.href !== "/dashboard" && pathname.startsWith(item.href)) ||
+            (extraActivePaths[item.href]?.some(p => pathname === p || pathname.startsWith(p + "/")))
 
           return (
             <Link

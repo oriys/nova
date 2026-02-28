@@ -186,6 +186,16 @@ func (s *PostgresStore) CreateTenant(ctx context.Context, tenant *TenantRecord) 
 		return nil, err
 	}
 
+	// Seed sample event topics and subscriptions.
+	if err := seedTenantSampleEvents(ctx, tx, tenantID); err != nil {
+		return nil, err
+	}
+
+	// Seed sample triggers (webhook, kafka, filesystem).
+	if err := seedTenantSampleTriggers(ctx, tx, tenantID); err != nil {
+		return nil, err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit tenant create tx: %w", err)
 	}

@@ -4,8 +4,9 @@ import Link from "next/link"
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
+import { EmptyState } from "@/components/empty-state"
 import { FunctionData } from "@/lib/types"
-import { ArrowRight, Loader2 } from "lucide-react"
+import { ArrowRight, Loader2, Code2 } from "lucide-react"
 
 interface ActiveFunctionsTableProps {
   functions: FunctionData[]
@@ -56,9 +57,12 @@ export function ActiveFunctionsTable({ functions, loading }: ActiveFunctionsTabl
         </Link>
       </div>
       {functions.length === 0 ? (
-        <div className="py-8 text-center">
-          <p className="text-sm text-muted-foreground">{t("noFunctions")}</p>
-        </div>
+        <EmptyState
+          title={t("noFunctions")}
+          icon={Code2}
+          primaryAction={{ label: t("viewAll"), href: "/functions" }}
+          compact
+        />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full">

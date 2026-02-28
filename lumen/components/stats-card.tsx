@@ -21,14 +21,14 @@ export function StatsCard({
   return (
     <div
       className={cn(
-        "rounded-xl border border-border bg-card p-6 transition-shadow hover:shadow-md",
+        "rounded-xl border border-border bg-card p-6 transition-all hover:shadow-md active:scale-[0.99] cursor-default",
         className
       )}
     >
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm font-medium text-muted-foreground">{title}</p>
-          <p className="mt-2 text-3xl font-semibold text-card-foreground">
+          <p className="mt-2 text-3xl font-semibold text-card-foreground font-mono tabular-nums">
             {value}
           </p>
           {change && (

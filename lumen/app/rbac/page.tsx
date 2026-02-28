@@ -6,6 +6,7 @@ import { ShieldCheck, Plus, Trash2, RefreshCw } from "lucide-react"
 
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
+import { SubNav } from "@/components/sub-nav"
 import { TenantButtonPermissionsPanel } from "@/components/tenant-button-permissions-panel"
 import { TenantMenuPermissionsPanel } from "@/components/tenant-menu-permissions-panel"
 import { Button } from "@/components/ui/button"
@@ -52,6 +53,7 @@ export default function RBACPage() {
   const t = useTranslations("pages")
   const tr = useTranslations("rbacPage")
   const tc = useTranslations("common")
+  const ta = useTranslations("auditLogsPage")
 
   const [tab, setTab] = useState<Tab>("roles")
   const [roles, setRoles] = useState<RBACRole[]>([])
@@ -244,6 +246,12 @@ export default function RBACPage() {
   return (
     <DashboardLayout>
       <Header title={t("rbac.title")} description={t("rbac.description")} />
+      <div className="px-6 pt-4">
+        <SubNav items={[
+          { label: t("rbac.title"), href: "/rbac" },
+          { label: ta("title"), href: "/audit-logs" },
+        ]} />
+      </div>
 
       <div className="space-y-6 p-6">
         {error && (

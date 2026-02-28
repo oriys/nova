@@ -318,7 +318,7 @@ func DefaultConfig() *Config {
 				IncludeTraceID: true,
 			},
 			OutputCapture: OutputCaptureConfig{
-				Enabled:    false,
+				Enabled:    true,
 				MaxSize:    1 << 20, // 1MB
 				StorageDir: "/tmp/nova/output",
 				RetentionS: 3600,
@@ -377,12 +377,12 @@ func DefaultConfig() *Config {
 			AutoHealMaxReplicas: 10,
 		},
 		Layers: LayerConfig{
-			Enabled:    false,
+			Enabled:    true,
 			StorageDir: "/opt/nova/layers",
 			MaxPerFunc: 6,
 		},
 		Volumes: VolumeConfig{
-			Enabled:    false,
+			Enabled:    true,
 			StorageDir: "/opt/nova/volumes",
 		},
 		AI: ai.DefaultConfig(),

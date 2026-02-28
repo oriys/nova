@@ -381,3 +381,145 @@ func seedTenantSampleGatewayRoutes(ctx context.Context, exec dbExecer, tenantID 
 
 	return nil
 }
+
+// seedTenantSampleEvents inserts sample event topics and subscriptions so the
+// events dashboard is populated for new tenants.
+func seedTenantSampleEvents(ctx context.Context, exec dbExecer, tenantID string) error {
+	ns := DefaultNamespace
+	now := time.Now()
+
+	type topicSpec struct {
+		name           string
+		description    string
+		retentionHours int
+	}
+
+	topics := []topicSpec{
+		{"user.events", "User lifecycle events (signup, login, profile updates)", 168},
+		{"order.events", "Order processing events (created, paid, shipped)", 720},
+		{"system.alerts", "System alerts and notifications", 72},
+	}
+
+	topicIDs := make(map[string]string, len(topics))
+	for _, t := range topics {
+		id := uuid.New().String()
+		topicIDs[t.name] = id
+		_, err := exec.Exec(ctx, `
+			INSERT INTO event_topics (id, tenant_id, namespace, name, description, retention_hours, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			ON CONFLICT DO NOTHING
+		`, id, tenantID, ns, t.name, t.description, t.retentionHours, now, now)
+		if err != nil {
+			return fmt.Errorf("seed event topic %s for tenant %s: %w", t.name, tenantID, err)
+		}
+	}
+
+	type subSpec struct {
+		topicName     string
+		name          string
+		consumerGroup string
+		functionName  string
+	}
+
+	subs := []subSpec{
+		{"user.events", "greet-new-users", "user-greet-group", "hello-python"},
+		{"order.events", "transform-orders", "order-transform-group", "json-transform"},
+		{"system.alerts", "alert-handler", "alert-handler-group", "hello-node"},
+	}
+
+	for _, s := range subs {
+		topicID, ok := topicIDs[s.topicName]
+		if !ok {
+			continue
+		}
+		subID := uuid.New().String()
+		_, err := exec.Exec(ctx, `
+			INSERT INTO event_subscriptions (
+				id, tenant_id, namespace, topic_id, name, consumer_group,
+				function_id, function_name, workflow_id, workflow_name,
+				enabled, max_attempts, backoff_base_ms, backoff_max_ms,
+				max_inflight, rate_limit_per_sec, last_acked_sequence,
+				type, webhook_url, webhook_method, webhook_headers, webhook_signing_secret, webhook_timeout_ms,
+				created_at, updated_at
+			) VALUES (
+				$1, $2, $3, $4, $5, $6,
+				'', $7, '', '',
+				true, 3, 1000, 60000,
+				10, 100, 0,
+				'function', '', '', '{}', '', 30000,
+				$8, $9
+			) ON CONFLICT DO NOTHING
+		`, subID, tenantID, ns, topicID, s.name, s.consumerGroup,
+			s.functionName, now, now)
+		if err != nil {
+			return fmt.Errorf("seed event subscription %s for tenant %s: %w", s.name, tenantID, err)
+		}
+	}
+
+	return nil
+}
+
+// seedTenantSampleTriggers inserts sample triggers so the triggers dashboard
+// is populated for new tenants.
+func seedTenantSampleTriggers(ctx context.Context, exec dbExecer, tenantID string) error {
+	ns := DefaultNamespace
+	now := time.Now()
+
+	type triggerSpec struct {
+		name         string
+		triggerType  string
+		functionName string
+		config       map[string]interface{}
+	}
+
+	triggers := []triggerSpec{
+		{
+			name:         "webhook-greeter",
+			triggerType:  "webhook",
+			functionName: "hello-python",
+			config: map[string]interface{}{
+				"listen_addr": ":8090",
+				"path":        "/hook/" + tenantID + "/greet",
+			},
+		},
+		{
+			name:         "kafka-orders",
+			triggerType:  "kafka",
+			functionName: "json-transform",
+			config: map[string]interface{}{
+				"brokers": "localhost:9092",
+				"topic":   "orders",
+				"group":   tenantID + "-order-group",
+			},
+		},
+		{
+			name:         "fs-watcher",
+			triggerType:  "filesystem",
+			functionName: "hello-node",
+			config: map[string]interface{}{
+				"path":          "/var/data/incoming",
+				"pattern":       "*.json",
+				"poll_interval": 60,
+			},
+		},
+	}
+
+	for _, t := range triggers {
+		id := uuid.New().String()
+		configJSON, err := json.Marshal(t.config)
+		if err != nil {
+			return fmt.Errorf("marshal trigger config %s: %w", t.name, err)
+		}
+
+		_, err = exec.Exec(ctx, `
+			INSERT INTO triggers (id, tenant_id, namespace, name, type, function_id, function_name, enabled, config, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, '', $6, $7, $8, $9, $10)
+			ON CONFLICT DO NOTHING
+		`, id, tenantID, ns, t.name, t.triggerType, t.functionName, true, configJSON, now, now)
+		if err != nil {
+			return fmt.Errorf("seed trigger %s for tenant %s: %w", t.name, tenantID, err)
+		}
+	}
+
+	return nil
+}

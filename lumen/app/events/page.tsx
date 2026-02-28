@@ -33,6 +33,7 @@ import {
 } from "@/lib/api"
 import { toUserErrorMessage } from "@/lib/error-map"
 import { Plus, RefreshCw, Send, Trash2, RotateCcw } from "lucide-react"
+import { Pagination } from "@/components/pagination"
 
 function formatDate(ts?: string) {
   if (!ts) return "-"
@@ -60,19 +61,30 @@ type Notice = {
 export default function EventsPage() {
   const t = useTranslations("pages.events")
   const [topics, setTopics] = useState<EventTopic[]>([])
+  const [topicsTotal, setTopicsTotal] = useState(0)
   const [functions, setFunctions] = useState<NovaFunction[]>([])
   const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [selectedTopicName, setSelectedTopicName] = useState("")
   const [subscriptions, setSubscriptions] = useState<EventSubscription[]>([])
+  const [subscriptionsTotal, setSubscriptionsTotal] = useState(0)
   const [messages, setMessages] = useState<EventMessage[]>([])
+  const [messagesTotal, setMessagesTotal] = useState(0)
   const [outboxJobs, setOutboxJobs] = useState<EventOutboxJob[]>([])
+  const [outboxTotal, setOutboxTotal] = useState(0)
   const [selectedSubscriptionID, setSelectedSubscriptionID] = useState("")
   const [deliveries, setDeliveries] = useState<EventDelivery[]>([])
+  const [deliveriesTotal, setDeliveriesTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [pendingTopicDelete, setPendingTopicDelete] = useState<string | null>(null)
   const [pendingSubscriptionDelete, setPendingSubscriptionDelete] = useState<string | null>(null)
+
+  const PAGE_SIZE = 20
+  const [subsPage, setSubsPage] = useState(1)
+  const [messagesPage, setMessagesPage] = useState(1)
+  const [outboxPage, setOutboxPage] = useState(1)
+  const [deliveriesPage, setDeliveriesPage] = useState(1)
 
   const [createTopicName, setCreateTopicName] = useState("")
   const [createTopicDesc, setCreateTopicDesc] = useState("")
@@ -124,21 +136,22 @@ export default function EventsPage() {
     try {
       setLoading(true)
       setError(null)
-      const [topicData, functionData, workflowData] = await Promise.all([
+      const [topicResult, functionData, workflowData] = await Promise.all([
         eventsApi.listTopics(200),
         functionsApi.list(),
         workflowsApi.list(),
       ])
-      setTopics(topicData)
+      setTopics(topicResult.items)
+      setTopicsTotal(topicResult.total)
       setFunctions(functionData)
       setWorkflows(workflowData)
 
-      if (topicData.length > 0) {
+      if (topicResult.items.length > 0) {
         setSelectedTopicName((prev) => {
-          if (prev && topicData.some((t) => t.name === prev)) {
+          if (prev && topicResult.items.some((t) => t.name === prev)) {
             return prev
           }
-          return topicData[0].name
+          return topicResult.items[0].name
         })
       } else {
         setSelectedTopicName("")
@@ -163,7 +176,7 @@ export default function EventsPage() {
     }
   }, [newSubFunction, newSubWorkflow])
 
-  const fetchTopicDetails = useCallback(async (topicName: string) => {
+  const fetchTopicDetails = useCallback(async (topicName: string, subPage = 1, msgPage = 1, obPage = 1) => {
     if (!topicName) {
       setSubscriptions([])
       setMessages([])
@@ -174,21 +187,24 @@ export default function EventsPage() {
     }
 
     try {
-      const [subData, messageData, outboxData] = await Promise.all([
-        eventsApi.listSubscriptions(topicName),
-        eventsApi.listMessages(topicName, 100),
-        eventsApi.listOutbox(topicName, 100),
+      const [subResult, messageResult, outboxResult] = await Promise.all([
+        eventsApi.listSubscriptions(topicName, PAGE_SIZE, (subPage - 1) * PAGE_SIZE),
+        eventsApi.listMessages(topicName, PAGE_SIZE, (msgPage - 1) * PAGE_SIZE),
+        eventsApi.listOutbox(topicName, PAGE_SIZE, undefined, (obPage - 1) * PAGE_SIZE),
       ])
-      setSubscriptions(subData)
-      setMessages(messageData)
-      setOutboxJobs(outboxData)
+      setSubscriptions(subResult.items)
+      setSubscriptionsTotal(subResult.total)
+      setMessages(messageResult.items)
+      setMessagesTotal(messageResult.total)
+      setOutboxJobs(outboxResult.items)
+      setOutboxTotal(outboxResult.total)
 
-      if (subData.length > 0) {
+      if (subResult.items.length > 0) {
         setSelectedSubscriptionID((prev) => {
-          if (prev && subData.some((s) => s.id === prev)) {
+          if (prev && subResult.items.some((s) => s.id === prev)) {
             return prev
           }
-          return subData[0].id
+          return subResult.items[0].id
         })
       } else {
         setSelectedSubscriptionID("")
@@ -200,14 +216,15 @@ export default function EventsPage() {
     }
   }, [])
 
-  const fetchDeliveries = useCallback(async (subscriptionID: string) => {
+  const fetchDeliveries = useCallback(async (subscriptionID: string, page = 1) => {
     if (!subscriptionID) {
       setDeliveries([])
       return
     }
     try {
-      const data = await eventsApi.listDeliveries(subscriptionID, 100)
-      setDeliveries(data)
+      const result = await eventsApi.listDeliveries(subscriptionID, PAGE_SIZE, undefined, (page - 1) * PAGE_SIZE)
+      setDeliveries(result.items)
+      setDeliveriesTotal(result.total)
     } catch (err) {
       console.error("Failed to load deliveries:", err)
       setError(toUserErrorMessage(err))
@@ -219,6 +236,10 @@ export default function EventsPage() {
   }, [fetchBaseData])
 
   useEffect(() => {
+    setSubsPage(1)
+    setMessagesPage(1)
+    setOutboxPage(1)
+    setDeliveriesPage(1)
     fetchTopicDetails(selectedTopicName)
   }, [selectedTopicName, fetchTopicDetails])
 
@@ -227,6 +248,7 @@ export default function EventsPage() {
   }, [selectedTopicName])
 
   useEffect(() => {
+    setDeliveriesPage(1)
     fetchDeliveries(selectedSubscriptionID)
   }, [selectedSubscriptionID, fetchDeliveries])
 
@@ -566,6 +588,46 @@ export default function EventsPage() {
       setNotice({ kind: "error", text: err instanceof Error ? err.message : t("errors.retryOutboxFailed") })
     } finally {
       setBusy(false)
+    }
+  }
+
+  const handleSubsPageChange = (page: number) => {
+    setSubsPage(page)
+    if (selectedTopicName) {
+      eventsApi.listSubscriptions(selectedTopicName, PAGE_SIZE, (page - 1) * PAGE_SIZE).then((r) => {
+        setSubscriptions(r.items)
+        setSubscriptionsTotal(r.total)
+      })
+    }
+  }
+
+  const handleMessagesPageChange = (page: number) => {
+    setMessagesPage(page)
+    if (selectedTopicName) {
+      eventsApi.listMessages(selectedTopicName, PAGE_SIZE, (page - 1) * PAGE_SIZE).then((r) => {
+        setMessages(r.items)
+        setMessagesTotal(r.total)
+      })
+    }
+  }
+
+  const handleOutboxPageChange = (page: number) => {
+    setOutboxPage(page)
+    if (selectedTopicName) {
+      eventsApi.listOutbox(selectedTopicName, PAGE_SIZE, undefined, (page - 1) * PAGE_SIZE).then((r) => {
+        setOutboxJobs(r.items)
+        setOutboxTotal(r.total)
+      })
+    }
+  }
+
+  const handleDeliveriesPageChange = (page: number) => {
+    setDeliveriesPage(page)
+    if (selectedSubscriptionID) {
+      eventsApi.listDeliveries(selectedSubscriptionID, PAGE_SIZE, undefined, (page - 1) * PAGE_SIZE).then((r) => {
+        setDeliveries(r.items)
+        setDeliveriesTotal(r.total)
+      })
     }
   }
 
@@ -1083,6 +1145,15 @@ export default function EventsPage() {
                       </tbody>
                     </table>
                   </div>
+                  {subscriptionsTotal > PAGE_SIZE && (
+                    <Pagination
+                      className="mt-3"
+                      totalItems={subscriptionsTotal}
+                      page={subsPage}
+                      pageSize={PAGE_SIZE}
+                      onPageChange={handleSubsPageChange}
+                    />
+                  )}
                 </div>
 
                 <div className="rounded-lg border border-border bg-card p-4 space-y-4">
@@ -1267,6 +1338,15 @@ export default function EventsPage() {
                       </tbody>
                     </table>
                   </div>
+                  {deliveriesTotal > PAGE_SIZE && (
+                    <Pagination
+                      className="mt-3"
+                      totalItems={deliveriesTotal}
+                      page={deliveriesPage}
+                      pageSize={PAGE_SIZE}
+                      onPageChange={handleDeliveriesPageChange}
+                    />
+                  )}
                 </div>
 
                 <div className="rounded-lg border border-border bg-card p-4">
@@ -1297,6 +1377,15 @@ export default function EventsPage() {
                       </tbody>
                     </table>
                   </div>
+                  {messagesTotal > PAGE_SIZE && (
+                    <Pagination
+                      className="mt-3"
+                      totalItems={messagesTotal}
+                      page={messagesPage}
+                      pageSize={PAGE_SIZE}
+                      onPageChange={handleMessagesPageChange}
+                    />
+                  )}
                 </div>
 
                 <div className="rounded-lg border border-border bg-card p-4">
@@ -1353,6 +1442,15 @@ export default function EventsPage() {
                       </tbody>
                     </table>
                   </div>
+                  {outboxTotal > PAGE_SIZE && (
+                    <Pagination
+                      className="mt-3"
+                      totalItems={outboxTotal}
+                      page={outboxPage}
+                      pageSize={PAGE_SIZE}
+                      onPageChange={handleOutboxPageChange}
+                    />
+                  )}
                 </div>
               </>
             )}

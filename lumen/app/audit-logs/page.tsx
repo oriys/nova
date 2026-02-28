@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react"
 import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
+import { SubNav } from "@/components/sub-nav"
 import { EmptyState } from "@/components/empty-state"
 import { Pagination } from "@/components/pagination"
 import { Button } from "@/components/ui/button"
@@ -76,6 +77,7 @@ const RESOURCE_TYPES = [
 
 export default function AuditLogsPage() {
   const t = useTranslations("auditLogsPage")
+  const tp = useTranslations("pages")
   const [logs, setLogs] = useState<AuditLogEntry[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -140,6 +142,12 @@ export default function AuditLogsPage() {
   return (
     <DashboardLayout>
       <Header title={t("title")} description={t("description")} />
+      <div className="px-6 pt-4">
+        <SubNav items={[
+          { label: tp("rbac.title"), href: "/rbac" },
+          { label: t("title"), href: "/audit-logs" },
+        ]} />
+      </div>
       <div className="p-6 space-y-4">
         {error && <ErrorBanner error={error} onRetry={() => setError(null)} />}
 

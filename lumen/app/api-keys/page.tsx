@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react"
 import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Header } from "@/components/header"
+import { SubNav } from "@/components/sub-nav"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -373,6 +374,13 @@ export default function APIKeysPage() {
   return (
     <DashboardLayout>
       <Header title={t("apiKeys.title")} description={t("apiKeys.description")} />
+      <div className="px-6 pt-4">
+        <SubNav items={[
+          { label: t("configurations.title"), href: "/configurations" },
+          { label: t("secrets.title"), href: "/secrets" },
+          { label: t("apiKeys.title"), href: "/api-keys" },
+        ]} />
+      </div>
 
       <div className="p-6 space-y-6">
         {error && (

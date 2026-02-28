@@ -14,7 +14,8 @@ import {
 } from "recharts"
 import { FunctionData } from "@/lib/types"
 import type { FunctionMetrics as FunctionMetricsType } from "@/lib/api"
-import { Activity, Clock, Zap, AlertTriangle, HardDrive, Server } from "lucide-react"
+import { Activity, Clock, Zap, AlertTriangle, HardDrive, Server, BarChart3 } from "lucide-react"
+import { EmptyState } from "@/components/empty-state"
 
 interface FunctionMetricsProps {
   func: FunctionData
@@ -225,11 +226,12 @@ export function FunctionMetrics({ func: fn, metrics }: FunctionMetricsProps) {
           </div>
         </div>
       ) : (
-        <div className="rounded-xl border border-border bg-card p-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            No invocation data yet. Invoke this function to see charts.
-          </p>
-        </div>
+        <EmptyState
+          title="No invocation data yet"
+          description="Invoke this function to see performance charts and metrics."
+          icon={BarChart3}
+          compact
+        />
       )}
     </div>
   )

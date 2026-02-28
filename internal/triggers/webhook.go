@@ -14,21 +14,24 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/logging"
 )
 
 // WebhookConnector receives HTTP POST requests and triggers function invocations.
-// Config keys: "listen_addr" (e.g. ":8090"), "path" (e.g. "/webhook"), "secret" (optional HMAC-SHA256).
+// Config keys: "listen_addr" (e.g. ":8090"), "path" (e.g. "/webhook"), "secret" (optional HMAC-SHA256),
+// "param_mapping" (optional, same format as gateway routes).
 type WebhookConnector struct {
-	trigger    *Trigger
-	handler    EventHandler
-	listenAddr string
-	path       string
-	secret     string
-	server     *http.Server
-	healthy    bool
-	mu         sync.Mutex
-	doneCh     chan struct{}
+	trigger      *Trigger
+	handler      EventHandler
+	listenAddr   string
+	path         string
+	secret       string
+	paramMapping []domain.ParamMapping
+	server       *http.Server
+	healthy      bool
+	mu           sync.Mutex
+	doneCh       chan struct{}
 }
 
 // NewWebhookConnector creates a connector that starts an HTTP server for inbound webhooks.
@@ -48,13 +51,23 @@ func NewWebhookConnector(trigger *Trigger, handler EventHandler) (*WebhookConnec
 		secret = v
 	}
 
+	// Parse param_mapping from trigger config (same format as gateway routes).
+	var paramMapping []domain.ParamMapping
+	if raw, ok := trigger.Config["param_mapping"]; ok {
+		b, err := json.Marshal(raw)
+		if err == nil {
+			_ = json.Unmarshal(b, &paramMapping)
+		}
+	}
+
 	return &WebhookConnector{
-		trigger:    trigger,
-		handler:    handler,
-		listenAddr: listenAddr,
-		path:       path,
-		secret:     secret,
-		doneCh:     make(chan struct{}),
+		trigger:      trigger,
+		handler:      handler,
+		listenAddr:   listenAddr,
+		path:         path,
+		secret:       secret,
+		paramMapping: paramMapping,
+		doneCh:       make(chan struct{}),
 	}, nil
 }
 
@@ -112,12 +125,26 @@ func (w *WebhookConnector) handleRequest(rw http.ResponseWriter, r *http.Request
 		}
 	}
 
+	// Apply parameter mapping if configured.
+	data := json.RawMessage(body)
+	if len(w.paramMapping) > 0 {
+		if len(data) == 0 {
+			data = json.RawMessage(`{}`)
+		}
+		mapped, err := domain.ApplyParamMappings(data, r, nil, w.paramMapping)
+		if err != nil {
+			http.Error(rw, fmt.Sprintf("param mapping: %s", err), http.StatusBadRequest)
+			return
+		}
+		data = mapped
+	}
+
 	event := &TriggerEvent{
 		TriggerID: w.trigger.ID,
 		EventID:   uuid.New().String(),
 		Source:    fmt.Sprintf("webhook://%s%s", r.Host, r.URL.Path),
 		Type:      "webhook.request",
-		Data:      json.RawMessage(body),
+		Data:      data,
 		Metadata: map[string]interface{}{
 			"content_type": r.Header.Get("Content-Type"),
 			"remote_addr":  r.RemoteAddr,
