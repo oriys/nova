@@ -1,11 +1,10 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { useParams } from "next/navigation"
 import { useTranslations } from "next-intl"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
-import { Header } from "@/components/header"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -39,6 +38,7 @@ import { WorkflowTestSuite } from "@/components/workflow-test-suite"
 import { WorkflowGateway } from "@/components/workflow-gateway"
 import { WorkflowMetrics } from "@/components/workflow-metrics"
 import type { LayoutMap } from "@/components/workflow/dag-layout"
+import { cn } from "@/lib/utils"
 import { Play, RefreshCw, ArrowLeft, Pencil, X, ExternalLink, Loader2, Terminal, Copy, Check } from "lucide-react"
 
 type Notice = {
@@ -55,8 +55,11 @@ export default function WorkflowDetailPage() {
   const [versions, setVersions] = useState<WorkflowVersion[]>([])
   const [runs, setRuns] = useState<WorkflowRun[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
+  const [activeTab, setActiveTab] = useState("overview")
+  const hasLoadedRef = useRef(false)
 
   const [functionNames, setFunctionNames] = useState<string[]>([])
   const [workflowNames, setWorkflowNames] = useState<string[]>([])
@@ -113,7 +116,11 @@ export default function WorkflowDetailPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      setLoading(true)
+      if (hasLoadedRef.current) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
       setError(null)
       const [wf, vers, rns, fns, wfs] = await Promise.all([
         workflowsApi.get(name),
@@ -140,6 +147,8 @@ export default function WorkflowDetailPage() {
       setError(err instanceof Error ? err.message : t("loadFailed"))
     } finally {
       setLoading(false)
+      setRefreshing(false)
+      hasLoadedRef.current = true
     }
   }, [name, t])
 
@@ -242,15 +251,26 @@ export default function WorkflowDetailPage() {
     setGraphEditing(false)
   }, [])
 
-  if (error) {
+  if (loading && !workflow) {
     return (
       <DashboardLayout>
-        <Header title={t("headerTitle", { name })} />
-        <div className="p-6">
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
-            <p className="font-medium">{t("loadFailed")}</p>
-            <p className="text-sm mt-1">{error}</p>
-          </div>
+        <div className="flex items-center justify-center h-[60vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardLayout>
+    )
+  }
+
+  if (error && !workflow) {
+    return (
+      <DashboardLayout>
+        <div className="flex flex-col items-center justify-center h-[60vh]">
+          <p className="mb-4 text-muted-foreground">
+            {error}
+          </p>
+          <Button asChild variant="outline">
+            <Link href="/workflows">{t("backToWorkflows")}</Link>
+          </Button>
         </div>
       </DashboardLayout>
     )
@@ -267,41 +287,71 @@ export default function WorkflowDetailPage() {
 
   return (
     <DashboardLayout>
-      <Header title={t("headerTitle", { name })} description={workflow?.description} />
-
-      <div className="p-6 space-y-6">
-        {notice && (
-          <div
-            className={`rounded-lg border p-4 text-sm ${
-              notice.kind === "success"
-                ? "border-success/50 bg-success/10 text-success"
-                : notice.kind === "error"
-                  ? "border-destructive/50 bg-destructive/10 text-destructive"
-                  : "border-primary/40 bg-primary/10 text-primary"
-            }`}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <p>{notice.text}</p>
-              <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
-                {t("dismiss")}
-              </Button>
+      <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur-sm">
+        <div className="flex items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="icon" asChild>
+              <Link href="/workflows">
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
+            </Button>
+            <div>
+              <div className="flex items-center gap-3">
+                <h1 className="text-xl font-semibold text-foreground">
+                  {name}
+                </h1>
+                {workflow && (
+                  <Badge
+                    variant="secondary"
+                    className={cn(
+                      "text-xs font-medium",
+                      workflow.status === "active" && "bg-success/10 text-success border-0",
+                      workflow.status === "deleted" &&
+                        "bg-destructive/10 text-destructive border-0",
+                      workflow.status !== "active" &&
+                        workflow.status !== "deleted" &&
+                        "bg-muted text-muted-foreground border-0"
+                    )}
+                  >
+                    {workflow.status}
+                  </Badge>
+                )}
+              </div>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {workflow?.description?.trim() ||
+                  `${t("tabs.versions")}: ${versions.length} · ${t("tabs.runs")}: ${runs.length}`}
+                {workflow && (
+                  <>
+                    {" · "}
+                    <Badge
+                      variant="outline"
+                      className="align-middle px-1.5 py-0 font-mono text-[10px]"
+                    >
+                      {workflow.current_version}
+                    </Badge>
+                  </>
+                )}
+              </p>
             </div>
           </div>
-        )}
 
-        <div className="flex items-center justify-between">
-          <Link href="/workflows">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              {t("backToWorkflows")}
-            </Button>
-          </Link>
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={fetchData} disabled={loading}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchData}
+              disabled={loading || refreshing}
+            >
+              <RefreshCw
+                className={cn(
+                  "mr-2 h-4 w-4",
+                  (loading || refreshing) && "animate-spin"
+                )}
+              />
               {t("refresh")}
             </Button>
             <Button
+              size="sm"
               onClick={() => setIsTriggerOpen(true)}
               disabled={!workflow || workflow.current_version === 0}
             >
@@ -311,15 +361,7 @@ export default function WorkflowDetailPage() {
           </div>
         </div>
 
-        {workflow && (
-          <div className="flex items-center gap-3">
-            <Badge variant={workflow.status === "active" ? "default" : "secondary"}>
-              {workflow.status}
-            </Badge>
-          </div>
-        )}
-
-        <Tabs defaultValue="overview">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="px-6">
           <TabsList className="h-12 w-full justify-start rounded-none border-0 bg-transparent p-0">
             <TabsTrigger
               value="overview"
@@ -364,17 +406,51 @@ export default function WorkflowDetailPage() {
               {t("tabs.gateway")}
             </TabsTrigger>
           </TabsList>
+        </Tabs>
+      </header>
 
-          <TabsContent value="overview" className="mt-4">
+      <div className="p-6">
+        {error && workflow && (
+          <div className="mb-6 rounded-xl border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+            <div className="flex items-center justify-between gap-3">
+              <p>{error}</p>
+              <Button variant="ghost" size="sm" onClick={() => setError(null)}>
+                {t("dismiss")}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {notice && (
+          <div
+            className={`mb-6 rounded-xl border p-4 text-sm ${
+              notice.kind === "success"
+                ? "border-success/50 bg-success/10 text-success"
+                : notice.kind === "error"
+                  ? "border-destructive/50 bg-destructive/10 text-destructive"
+                  : "border-primary/40 bg-primary/10 text-primary"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <p>{notice.text}</p>
+              <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
+                {t("dismiss")}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsContent value="overview" className="mt-0">
             {workflow && (
               <WorkflowMetrics workflow={workflow} versions={versions} runs={runs} />
             )}
           </TabsContent>
 
-          <TabsContent value="graph" className="mt-4">
+          <TabsContent value="graph" className="mt-0">
             {graphEditing ? (
               /* ---- Edit mode ---- */
-              <div className="rounded-lg border border-border bg-card overflow-hidden" style={{ height: 600 }}>
+              <div className="overflow-hidden rounded-xl border border-border bg-card" style={{ height: 600 }}>
                 <DagEditor
                   key={editorKey}
                   functions={functionNames}
@@ -388,7 +464,7 @@ export default function WorkflowDetailPage() {
               </div>
             ) : (
               /* ---- View mode ---- */
-              <div className="space-y-2">
+              <div className="space-y-4">
                 <div className="flex items-center justify-end gap-2">
                   {aiEnabled && currentVersionDetail && (
                     <Button variant="outline" size="sm" onClick={handleAiCurl} disabled={aiCurlGenerating}>
@@ -438,7 +514,7 @@ export default function WorkflowDetailPage() {
                 {currentVersionDetail ? (
                   <DagViewer version={currentVersionDetail} onFunctionClick={handleFunctionClick} />
                 ) : (
-                  <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-border bg-card text-muted-foreground" style={{ height: 400 }}>
+                  <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card text-muted-foreground" style={{ height: 400 }}>
                     <p>{t("noPublishedVersion")}</p>
                     <Button variant="outline" size="sm" onClick={() => enterEdit()}>
                       <Pencil className="mr-1.5 h-3.5 w-3.5" />
@@ -450,8 +526,8 @@ export default function WorkflowDetailPage() {
             )}
           </TabsContent>
 
-          <TabsContent value="runs" className="mt-4">
-            <div className="rounded-lg border border-border bg-card">
+          <TabsContent value="runs" className="mt-0">
+            <div className="overflow-hidden rounded-xl border border-border bg-card">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
@@ -482,7 +558,7 @@ export default function WorkflowDetailPage() {
                           </Link>
                         </td>
                         <td className="px-4 py-3 text-sm text-muted-foreground">
-                          v{run.version}
+                          {run.version}
                         </td>
                         <td className="px-4 py-3">
                           <Badge variant={statusColor(run.status) as "default" | "secondary" | "destructive" | "outline"}>
@@ -506,8 +582,8 @@ export default function WorkflowDetailPage() {
             </div>
           </TabsContent>
 
-          <TabsContent value="versions" className="mt-4">
-            <div className="rounded-lg border border-border bg-card">
+          <TabsContent value="versions" className="mt-0">
+            <div className="overflow-hidden rounded-xl border border-border bg-card">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
@@ -525,7 +601,7 @@ export default function WorkflowDetailPage() {
                   ) : (
                     versions.map((v) => (
                       <tr key={v.id} className="border-b border-border last:border-0 hover:bg-muted/50">
-                        <td className="px-4 py-3 font-medium">v{v.version}</td>
+                        <td className="px-4 py-3 font-medium">{v.version}</td>
                         <td className="px-4 py-3 text-sm text-muted-foreground">
                           {new Date(v.created_at).toLocaleString()}
                         </td>
@@ -537,20 +613,20 @@ export default function WorkflowDetailPage() {
             </div>
           </TabsContent>
 
-          <TabsContent value="docs" className="mt-4">
+          <TabsContent value="docs" className="mt-0">
             {workflow && (
               <WorkflowDocs workflow={workflow} currentVersion={currentVersionDetail} />
             )}
           </TabsContent>
 
-          <TabsContent value="tests" className="mt-4">
+          <TabsContent value="tests" className="mt-0">
             <WorkflowTestSuite
               workflowName={name}
               hasPublishedVersion={!!workflow && workflow.current_version > 0}
             />
           </TabsContent>
 
-          <TabsContent value="gateway" className="mt-4">
+          <TabsContent value="gateway" className="mt-0">
             <WorkflowGateway workflowName={name} />
           </TabsContent>
         </Tabs>
