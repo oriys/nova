@@ -36,6 +36,7 @@ import type {
 } from "@/lib/api"
 import {
   ArrowLeft,
+  Copy,
   Play,
   RefreshCw,
   Loader2,
@@ -418,6 +419,24 @@ export default function FunctionDetailPage({
       <div className="p-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsContent value="overview" className="mt-0 space-y-6">
+            {/* Function URL */}
+            <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3">
+              <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">{t("functionUrl") ?? "Function URL"}</span>
+              <code className="flex-1 truncate text-sm font-mono text-foreground">
+                {typeof window !== "undefined" ? `${window.location.origin}/fn/${encodeURIComponent(func.name)}` : `/fn/${encodeURIComponent(func.name)}`}
+              </code>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                onClick={() => {
+                  const url = `${window.location.origin}/fn/${encodeURIComponent(func.name)}`
+                  navigator.clipboard.writeText(url)
+                }}
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </Button>
+            </div>
             <FunctionMetrics func={func} metrics={metrics} />
             <InvocationHeatmap functionName={func.name} />
           </TabsContent>

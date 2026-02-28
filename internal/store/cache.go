@@ -44,6 +44,7 @@ type CachedMetadataStore struct {
 	fnFiles  sync.Map // funcID → *cacheEntry[map[string][]byte]
 	hasFiles sync.Map // funcID → *cacheEntry[bool]
 	fnLayers sync.Map // funcID → *cacheEntry[[]*domain.Layer]
+	fnVols   sync.Map // funcID → *cacheEntry[[]*domain.Volume]
 }
 
 // DefaultCacheTTL is the default time-to-live for cache entries.
@@ -238,6 +239,18 @@ func (c *CachedMetadataStore) GetFunctionLayers(ctx context.Context, funcID stri
 	return layers, nil
 }
 
+func (c *CachedMetadataStore) GetFunctionVolumes(ctx context.Context, funcID string) ([]*domain.Volume, error) {
+	if vols, ok := cacheGet[[]*domain.Volume](&c.fnVols, funcID); ok {
+		return vols, nil
+	}
+	vols, err := c.MetadataStore.GetFunctionVolumes(ctx, funcID)
+	if err != nil {
+		return nil, err
+	}
+	cachePut(&c.fnVols, funcID, vols, c.ttl)
+	return vols, nil
+}
+
 // ─── uncached pagination delegates ──────────────────────────────────────────
 
 func (c *CachedMetadataStore) ListFunctionsFiltered(ctx context.Context, query, runtime string, limit, offset int) ([]*domain.Function, error) {
@@ -369,6 +382,7 @@ func (c *CachedMetadataStore) invalidateFunction(fn *domain.Function) {
 	c.fnFiles.Delete(fn.ID)
 	c.hasFiles.Delete(fn.ID)
 	c.fnLayers.Delete(fn.ID)
+	c.fnVols.Delete(fn.ID)
 }
 
 // invalidateFunctionByID removes cache entries when only the function ID is known.
@@ -392,6 +406,7 @@ func (c *CachedMetadataStore) invalidateFunctionByID(funcID string) {
 	c.fnFiles.Delete(funcID)
 	c.hasFiles.Delete(funcID)
 	c.fnLayers.Delete(funcID)
+	c.fnVols.Delete(funcID)
 }
 
 // --- Function writes ---
@@ -432,6 +447,7 @@ func (c *CachedMetadataStore) DeleteFunction(ctx context.Context, id string) err
 		c.fnFiles.Delete(id)
 		c.hasFiles.Delete(id)
 		c.fnLayers.Delete(id)
+		c.fnVols.Delete(id)
 	}
 	return err
 }

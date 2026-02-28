@@ -1,13 +1,17 @@
 // Package applevz provides a backend that uses Apple's Virtualization.framework
-// via the vfkit CLI tool for running functions in lightweight Linux VMs on macOS.
+// for running functions in lightweight Linux VMs on macOS.
+//
+// Two VM managers are supported:
+//   - nova-vz (preferred): Custom Swift tool with full snapshot save/restore support
+//   - vfkit (fallback): Third-party CLI, no snapshot support
 //
 // The backend boots Linux VMs with direct kernel boot, shares function code
 // via VirtioFS, and communicates with the nova-agent over virtio-vsock
 // (exposed as a UNIX socket on the host).
 //
 // Prerequisites:
-//   - macOS 13+ (Ventura or later)
-//   - vfkit installed (brew install vfkit)
+//   - macOS 13+ (Ventura or later; macOS 14+ for snapshots)
+//   - nova-vz (built from tools/nova-vz/) or vfkit (brew install vfkit)
 //   - Linux kernel image (arm64 for Apple Silicon, x86_64 for Intel)
 //   - Runtime rootfs images (ext4 or raw disk images)
 package applevz
@@ -26,6 +30,8 @@ type Config struct {
 	CodeDir        string        `json:"code_dir"`         // Base directory for function code (shared via VirtioFS)
 	SocketDir      string        `json:"socket_dir"`       // Directory for vsock UNIX sockets
 	VfkitPath      string        `json:"vfkit_path"`       // Path to vfkit binary (auto-detected if empty)
+	NovaVZPath     string        `json:"nova_vz_path"`     // Path to nova-vz binary (preferred over vfkit)
+	SnapshotDirVal string        `json:"snapshot_dir"`     // Directory for snapshot state files (empty = disabled)
 	DefaultMemMB   int           `json:"default_mem_mb"`   // Default memory in MB per VM (default: 256)
 	DefaultCPUs    int           `json:"default_cpus"`     // Default CPU count per VM (default: 1)
 	AgentTimeout   time.Duration `json:"agent_timeout"`    // Agent startup timeout (default: 15s)
@@ -52,17 +58,21 @@ func DefaultConfig() *Config {
 		socketDir = "/tmp/nova/applevz-socks"
 	}
 	vfkitPath := os.Getenv("NOVA_APPLEVZ_VFKIT_PATH")
+	novaVZPath := os.Getenv("NOVA_APPLEVZ_NOVA_VZ_PATH")
+	snapshotDir := os.Getenv("NOVA_APPLEVZ_SNAPSHOT_DIR")
 
 	return &Config{
-		KernelPath:   kernelPath,
-		InitrdPath:   initrdPath,
-		RootfsDir:    rootfsDir,
-		CodeDir:      codeDir,
-		SocketDir:    socketDir,
-		VfkitPath:    vfkitPath,
-		DefaultMemMB: 256,
-		DefaultCPUs:  1,
-		AgentTimeout: 15 * time.Second,
+		KernelPath:     kernelPath,
+		InitrdPath:     initrdPath,
+		RootfsDir:      rootfsDir,
+		CodeDir:        codeDir,
+		SocketDir:      socketDir,
+		VfkitPath:      vfkitPath,
+		NovaVZPath:     novaVZPath,
+		SnapshotDirVal: snapshotDir,
+		DefaultMemMB:   256,
+		DefaultCPUs:    1,
+		AgentTimeout:   15 * time.Second,
 	}
 }
 

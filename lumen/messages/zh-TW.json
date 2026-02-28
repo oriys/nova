@@ -1354,6 +1354,7 @@
   },
   "functionDetailPage": {
     "loadFailed": "Failed to load function",
+    "functionUrl": "函數 URL",
     "functionNotFound": "Function not found",
     "backToFunctions": "Back to Functions",
     "refresh": "Refresh",
@@ -2602,7 +2603,11 @@
     "optionalPlaceholder": "可選",
     "colConfig": "設定",
     "editTrigger": "編輯觸發器",
-    "selectFunction": "選擇函數..."
+    "selectFunction": "選擇函數...",
+    "batchProcessing": "批次處理",
+    "batchSize": "批次大小",
+    "batchWindow": "視窗（秒）",
+    "batchDescription": "在呼叫函式之前，累積記錄直到達到批次大小或視窗逾時。將批次大小設為 0 或留空以停用。"
   },
   "clusterPage": {
     "title": "叢集",

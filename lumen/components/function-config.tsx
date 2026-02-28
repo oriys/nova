@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -17,6 +17,8 @@ import {
   type NetworkPolicy,
   type RolloutPolicy,
   type ResourceLimits,
+  type AsyncDestinations,
+  type NovaFunction,
 } from "@/lib/api"
 import { Save, Plus, Trash2, Loader2 } from "lucide-react"
 import { FunctionConfigEnv } from "@/components/function-config-env"
@@ -68,6 +70,7 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
   const [timeout, setTimeout] = useState(func.timeout.toString())
   const [handler, setHandler] = useState(func.handler)
   const [maxReplicas, setMaxReplicas] = useState((func.maxReplicas ?? 0).toString())
+  const [logRetentionDays, setLogRetentionDays] = useState((func.logRetentionDays ?? 0).toString())
   const [saving, setSaving] = useState(false)
 
   // Resource limits state
@@ -111,6 +114,17 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
     })
   }
 
+  // Async destinations state
+  const [onSuccessType, setOnSuccessType] = useState(func.asyncDestinations?.on_success?.type || "")
+  const [onSuccessTarget, setOnSuccessTarget] = useState(func.asyncDestinations?.on_success?.target || "")
+  const [onFailureType, setOnFailureType] = useState(func.asyncDestinations?.on_failure?.type || "")
+  const [onFailureTarget, setOnFailureTarget] = useState(func.asyncDestinations?.on_failure?.target || "")
+  const [allFunctions, setAllFunctions] = useState<NovaFunction[]>([])
+
+  useEffect(() => {
+    functionsApi.list().then(setAllFunctions).catch(() => {})
+  }, [])
+
   const addEgressRule = () => {
     setEgressRules((prev) => [...prev, { host: "", port: "", protocol: "tcp" }])
   }
@@ -137,6 +151,17 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
 
   const removeIngressRule = (index: number) => {
     setIngressRules((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const buildAsyncDestinations = (): AsyncDestinations | undefined => {
+    const dest: AsyncDestinations = {}
+    if (onSuccessType && onSuccessTarget.trim()) {
+      dest.on_success = { type: onSuccessType as 'function' | 'topic', target: onSuccessTarget.trim() }
+    }
+    if (onFailureType && onFailureTarget.trim()) {
+      dest.on_failure = { type: onFailureType as 'function' | 'topic', target: onFailureTarget.trim() }
+    }
+    return (dest.on_success || dest.on_failure) ? dest : undefined
   }
 
   const handleSave = async () => {
@@ -198,10 +223,12 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
         memory_mb: parseInt(memory),
         timeout_s: parseInt(timeout),
         max_replicas: parseInt(maxReplicas) || 0,
+        log_retention_days: parseInt(logRetentionDays) || 0,
         limits,
         network_policy: networkPolicy,
         rollout_policy: rolloutPolicy,
         tags,
+        async_destinations: buildAsyncDestinations(),
       })
       onUpdate?.()
     } catch (err) {
@@ -257,6 +284,21 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
             />
             <p className="text-xs text-muted-foreground">
               Maximum concurrent VMs for this function (0 = unlimited)
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="logRetention">Log Retention (days)</Label>
+            <Input
+              id="logRetention"
+              type="number"
+              min="0"
+              max="365"
+              value={logRetentionDays}
+              onChange={(e) => setLogRetentionDays(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Auto-delete logs older than this (0 = use global default)
             </p>
           </div>
         </div>
@@ -623,6 +665,86 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
             >
               Rollback
             </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Async Destinations */}
+      <div className="rounded-xl border border-border bg-card p-6">
+        <h3 className="text-lg font-semibold text-card-foreground mb-1">
+          Async Destinations
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Automatically invoke a function or publish to a topic after async invocation completes.
+        </p>
+
+        <div className="grid gap-6 sm:grid-cols-2">
+          <div className="space-y-3">
+            <Label className="font-medium">On Success</Label>
+            <Select value={onSuccessType} onValueChange={setOnSuccessType}>
+              <SelectTrigger>
+                <SelectValue placeholder="Disabled" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Disabled</SelectItem>
+                <SelectItem value="function">Function</SelectItem>
+                <SelectItem value="topic">Topic</SelectItem>
+              </SelectContent>
+            </Select>
+            {onSuccessType && onSuccessType !== "none" && (
+              onSuccessType === "function" ? (
+                <Select value={onSuccessTarget} onValueChange={setOnSuccessTarget}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select function" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allFunctions.filter(f => f.name !== func.name).map(f => (
+                      <SelectItem key={f.name} value={f.name}>{f.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={onSuccessTarget}
+                  onChange={(e) => setOnSuccessTarget(e.target.value)}
+                  placeholder="topic name"
+                />
+              )
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <Label className="font-medium">On Failure</Label>
+            <Select value={onFailureType} onValueChange={setOnFailureType}>
+              <SelectTrigger>
+                <SelectValue placeholder="Disabled" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Disabled</SelectItem>
+                <SelectItem value="function">Function</SelectItem>
+                <SelectItem value="topic">Topic</SelectItem>
+              </SelectContent>
+            </Select>
+            {onFailureType && onFailureType !== "none" && (
+              onFailureType === "function" ? (
+                <Select value={onFailureTarget} onValueChange={setOnFailureTarget}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select function" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allFunctions.filter(f => f.name !== func.name).map(f => (
+                      <SelectItem key={f.name} value={f.name}>{f.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={onFailureTarget}
+                  onChange={(e) => setOnFailureTarget(e.target.value)}
+                  placeholder="topic name"
+                />
+              )
+            )}
           </div>
         </div>
       </div>

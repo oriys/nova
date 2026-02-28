@@ -1,7 +1,7 @@
 // Frontend types and transformers
 // Converts between nova backend types and lumen display types
 
-import type { NovaFunction, LogEntry as ApiLogEntry, FunctionMetrics, Runtime, CompileStatus, ResourceLimits, RolloutPolicy } from "./api";
+import type { NovaFunction, LogEntry as ApiLogEntry, FunctionMetrics, Runtime, CompileStatus, ResourceLimits, RolloutPolicy, AsyncDestinations } from "./api";
 
 // Frontend display types
 export interface FunctionData {
@@ -27,11 +27,13 @@ export interface FunctionData {
   backend?: string;
   envVars?: Record<string, string>;
   tags?: Record<string, string>;
+  logRetentionDays?: number;
   compileStatus?: CompileStatus;
   compileError?: string;
   limits?: ResourceLimits;
   networkPolicy?: NetworkPolicy;
   rolloutPolicy?: RolloutPolicy;
+  asyncDestinations?: AsyncDestinations;
 }
 
 export interface NetworkPolicy {
@@ -188,11 +190,13 @@ export function transformFunction(
     backend: fn.backend,
     envVars: fn.env_vars,
     tags: fn.tags,
+    logRetentionDays: fn.log_retention_days,
     compileStatus: fn.compile_status,
     compileError: fn.compile_error,
     limits: fn.limits,
     networkPolicy: fn.network_policy,
     rolloutPolicy: fn.rollout_policy,
+    asyncDestinations: fn.async_destinations,
   };
 }
 

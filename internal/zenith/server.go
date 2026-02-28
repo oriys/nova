@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/oriys/nova/api/proto/novapb"
@@ -99,7 +100,14 @@ func New(cfg Config) (*Server, error) {
 		novaProxy:   newReverseProxy(novaTarget),
 		cometConn:   conn,
 		cometClient: novapb.NewNovaServiceClient(conn),
-		httpClient:  &http.Client{Timeout: cfg.Timeout},
+		httpClient: &http.Client{
+			Timeout: cfg.Timeout,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:     90 * time.Second,
+			},
+		},
 	}
 
 	return s, nil
@@ -139,6 +147,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.handleInvokeViaGRPC(w, r, function)
 			return
 		}
+	}
+
+	// Function URLs: /fn/{name} — invoke function with HTTP context
+	if function, ok := matchFunctionURL(path); ok {
+		s.handleFunctionURL(w, r, function)
+		return
 	}
 
 	if isCometOnlyHTTPPath(path) {
@@ -278,6 +292,7 @@ func (s *Server) handleCompositeHealth(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.Timeout)
 	defer cancel()
 
+	var mu sync.Mutex
 	components := map[string]any{
 		"zenith": "healthy",
 	}
@@ -285,37 +300,62 @@ func (s *Server) handleCompositeHealth(w http.ResponseWriter, r *http.Request) {
 	postgresKnown := false
 	postgresHealthy := true
 
-	novaHealth, err := s.checkNova(ctx)
-	if err != nil {
-		components["nova"] = "unhealthy: " + err.Error()
-		allHealthy = false
-	} else {
-		components["nova"] = "healthy"
-		if ok, known := extractPostgresHealth(novaHealth); known {
-			postgresKnown = true
-			postgresHealthy = postgresHealthy && ok
-		}
-	}
+	var wg sync.WaitGroup
 
-	cometHealth, err := s.checkComet(ctx)
-	if err != nil {
-		components["comet"] = "unhealthy: " + err.Error()
-		allHealthy = false
-	} else {
-		components["comet"] = "healthy"
-		if status, ok := cometHealth.Components["postgres"]; ok {
-			postgresKnown = true
-			postgresHealthy = postgresHealthy && isHealthyStatus(status)
+	// Check Nova concurrently
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		novaHealth, err := s.checkNova(ctx)
+		mu.Lock()
+		defer mu.Unlock()
+		if err != nil {
+			components["nova"] = "unhealthy: " + err.Error()
+			allHealthy = false
+		} else {
+			components["nova"] = "healthy"
+			if ok, known := extractPostgresHealth(novaHealth); known {
+				postgresKnown = true
+				postgresHealthy = postgresHealthy && ok
+			}
 		}
-	}
+	}()
 
-	if activeVMs, totalPools, err := s.fetchCometPoolStats(ctx); err == nil {
-		components["pool"] = map[string]any{
-			"active_vms":  activeVMs,
-			"total_pools": totalPools,
+	// Check Comet concurrently
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		cometHealth, err := s.checkComet(ctx)
+		mu.Lock()
+		defer mu.Unlock()
+		if err != nil {
+			components["comet"] = "unhealthy: " + err.Error()
+			allHealthy = false
+		} else {
+			components["comet"] = "healthy"
+			if status, ok := cometHealth.Components["postgres"]; ok {
+				postgresKnown = true
+				postgresHealthy = postgresHealthy && isHealthyStatus(status)
+			}
 		}
-	}
+	}()
 
+	// Fetch pool stats concurrently
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		activeVMs, totalPools, err := s.fetchCometPoolStats(ctx)
+		if err == nil {
+			mu.Lock()
+			components["pool"] = map[string]any{
+				"active_vms":  activeVMs,
+				"total_pools": totalPools,
+			}
+			mu.Unlock()
+		}
+	}()
+
+	// Check optional components (corona, nebula, aurora) concurrently
 	for _, dep := range []struct {
 		name string
 		url  string
@@ -327,17 +367,25 @@ func (s *Server) handleCompositeHealth(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(dep.url) == "" {
 			continue
 		}
-		status, err := s.checkHTTPComponent(ctx, dep.url)
-		if err != nil {
-			components[dep.name] = "unhealthy: " + err.Error()
-			allHealthy = false
-			continue
-		}
-		components[dep.name] = status
-		if status != "healthy" {
-			allHealthy = false
-		}
+		wg.Add(1)
+		go func(name, url string) {
+			defer wg.Done()
+			st, err := s.checkHTTPComponent(ctx, url)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				components[name] = "unhealthy: " + err.Error()
+				allHealthy = false
+			} else {
+				components[name] = st
+				if st != "healthy" {
+					allHealthy = false
+				}
+			}
+		}(dep.name, dep.url)
 	}
+
+	wg.Wait()
 
 	if !postgresKnown {
 		postgresHealthy = allHealthy
@@ -745,6 +793,100 @@ func matchFunctionPath(path, action string) (string, bool) {
 		return "", false
 	}
 	return function, true
+}
+
+// matchFunctionURL matches /fn/{name} paths for function URLs.
+func matchFunctionURL(path string) (string, bool) {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 2 || parts[0] != "fn" || parts[1] == "" {
+		return "", false
+	}
+	name, err := url.PathUnescape(parts[1])
+	if err != nil || name == "" {
+		return "", false
+	}
+	return name, true
+}
+
+// handleFunctionURL invokes a function via its dedicated URL, passing full HTTP context.
+func (s *Server) handleFunctionURL(w http.ResponseWriter, r *http.Request, function string) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, defaultBodyLimit))
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "failed to read request body")
+		return
+	}
+
+	// Build HTTP context event
+	headers := make(map[string]string, len(r.Header))
+	for k := range r.Header {
+		headers[k] = r.Header.Get(k)
+	}
+	queryParams := make(map[string]string, len(r.URL.Query()))
+	for k, v := range r.URL.Query() {
+		if len(v) > 0 {
+			queryParams[k] = v[0]
+		}
+	}
+
+	httpEvent := map[string]any{
+		"method":       r.Method,
+		"path":         r.URL.Path,
+		"headers":      headers,
+		"query_params": queryParams,
+	}
+	if len(body) > 0 {
+		if json.Valid(body) {
+			httpEvent["body"] = json.RawMessage(body)
+		} else {
+			httpEvent["body"] = base64.StdEncoding.EncodeToString(body)
+			httpEvent["body_encoding"] = "base64"
+		}
+	}
+
+	payload, _ := json.Marshal(httpEvent)
+
+	ctx, cancel, timeoutSeconds := cometContextFromRequest(r)
+	defer cancel()
+
+	resp, err := s.cometClient.Invoke(ctx, &novapb.InvokeRequest{
+		Function: function,
+		Payload:  payload,
+		TimeoutS: timeoutSeconds,
+	})
+	if err != nil {
+		statusCode, message := mapGRPCError(err)
+		writeJSONError(w, statusCode, message)
+		return
+	}
+
+	// If the function returns a structured HTTP response, respect it
+	var httpResp struct {
+		StatusCode int               `json:"statusCode"`
+		Headers    map[string]string `json:"headers"`
+		Body       json.RawMessage   `json:"body"`
+	}
+	if err := json.Unmarshal(resp.Output, &httpResp); err == nil && httpResp.StatusCode > 0 {
+		for k, v := range httpResp.Headers {
+			w.Header().Set(k, v)
+		}
+		if w.Header().Get("Content-Type") == "" {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		w.WriteHeader(httpResp.StatusCode)
+		if len(httpResp.Body) > 0 {
+			w.Write(httpResp.Body)
+		}
+		return
+	}
+
+	// Default: return raw output as JSON
+	output := resp.Output
+	if len(output) == 0 {
+		output = []byte("null")
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(output)
 }
 
 func mapGRPCError(err error) (int, string) {

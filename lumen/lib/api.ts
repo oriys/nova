@@ -738,6 +738,9 @@ export interface UpdateFunctionRequest {
   mode?: string;
   backend?: string;
   env_vars?: Record<string, string>;
+  tags?: Record<string, string>;
+  log_retention_days?: number;
+  async_destinations?: AsyncDestinations;
   limits?: ResourceLimits;
   network_policy?: NetworkPolicy;
   rollout_policy?: RolloutPolicy;

@@ -182,7 +182,24 @@ func (h *Handler) PublishEvent(w http.ResponseWriter, r *http.Request) {
 
 	req := publishEventRequest{}
 	if r.ContentLength > 0 {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Accept CloudEvents format: extract data field as payload
+		if strings.Contains(r.Header.Get("Content-Type"), "application/cloudevents+json") {
+			var ce struct {
+				Data        json.RawMessage `json:"data"`
+				Subject     string          `json:"subject"`
+				OrderingKey string          `json:"ordering_key"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&ce); err != nil {
+				http.Error(w, "invalid CloudEvents JSON", http.StatusBadRequest)
+				return
+			}
+			req.Payload = ce.Data
+			if ce.Subject != "" {
+				req.OrderingKey = ce.Subject
+			} else if ce.OrderingKey != "" {
+				req.OrderingKey = ce.OrderingKey
+			}
+		} else if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid JSON payload", http.StatusBadRequest)
 			return
 		}

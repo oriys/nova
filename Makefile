@@ -24,7 +24,7 @@ AGENT_ARCH   ?= amd64
 
 # ─── Backend ──────────────────────────────────────────────────────────────────
 
-.PHONY: build build-linux agent agent-arm64 agent-all comet comet-linux zenith zenith-linux corona corona-linux nebula nebula-linux aurora aurora-linux proto
+.PHONY: build build-linux agent agent-arm64 agent-all comet comet-linux zenith zenith-linux corona corona-linux nebula nebula-linux aurora aurora-linux proto nova-vz
 
 proto:  ## Generate gRPC/protobuf code via buf (nova.proto)
 	cd api/proto && buf generate --path nova.proto
@@ -51,6 +51,17 @@ nebula: $(NEBULA_BIN)  ## Build Nebula event ingestion plane (native)
 nebula-linux: $(NEBULA_LINUX)  ## Cross-compile Nebula for linux/amd64
 aurora: $(AURORA_BIN)  ## Build Aurora observability plane (native)
 aurora-linux: $(AURORA_LINUX)  ## Cross-compile Aurora for linux/amd64
+
+nova-vz:  ## Build nova-vz Swift VM manager (macOS only, requires Swift 5.9+)
+ifeq ($(shell uname -s),Darwin)
+	@mkdir -p $(BINARY_DIR)
+	cd tools/nova-vz && swift build -c release
+	cp tools/nova-vz/.build/release/nova-vz $(BINARY_DIR)/nova-vz
+	codesign --entitlements tools/nova-vz/nova-vz.entitlements --force -s - $(BINARY_DIR)/nova-vz
+	@echo "Built $(BINARY_DIR)/nova-vz"
+else
+	@echo "nova-vz requires macOS (skipped on $$(uname -s))"
+endif
 
 $(NOVA_BIN): cmd/nova/main.go internal/**/*.go
 	@mkdir -p $(BINARY_DIR)

@@ -1,0 +1,13 @@
+{
+  "": {
+    "dependencies": "/Users/cyo/Projects/GoProjects/nova/tools/nova-vz/.build/arm64-apple-macosx/release/nova_vz.build/nova_vz.d",
+    "object": "/Users/cyo/Projects/GoProjects/nova/tools/nova-vz/.build/arm64-apple-macosx/release/nova_vz.build/nova_vz.o",
+    "swift-dependencies": "/Users/cyo/Projects/GoProjects/nova/tools/nova-vz/.build/arm64-apple-macosx/release/nova_vz.build/master.swiftdeps"
+  },
+  "/Users/cyo/Projects/GoProjects/nova/tools/nova-vz/Sources/main.swift": {
+    "object": "/Users/cyo/Projects/GoProjects/nova/tools/nova-vz/.build/arm64-apple-macosx/release/nova_vz.build/main.swift.o",
+    "swiftmodule": "/Users/cyo/Projects/GoProjects/nova/tools/nova-vz/.build/arm64-apple-macosx/release/nova_vz.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/cyo/Projects/GoProjects/nova/tools/nova-vz/.build/arm64-apple-macosx/release/nova_vz.build/main.swiftdeps",
+    "diagnostics": "/Users/cyo/Projects/GoProjects/nova/tools/nova-vz/.build/arm64-apple-macosx/release/nova_vz.build/main.dia"
+  }
+}

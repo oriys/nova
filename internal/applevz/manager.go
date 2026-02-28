@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"time"
@@ -24,20 +25,22 @@ const (
 	agentVsockPort = 9999
 )
 
-// Manager manages Apple Virtualization.framework VMs via vfkit for function execution.
+// Manager manages Apple Virtualization.framework VMs via nova-vz or vfkit for function execution.
 type Manager struct {
 	config    *Config
 	vms       map[string]*vmInfo
 	mu        sync.RWMutex
-	vfkitPath string
+	vmTool    string // path to nova-vz or vfkit
+	useNovaVZ bool   // true if using nova-vz (supports snapshots)
 }
 
-// vmInfo tracks a running vfkit VM.
+// vmInfo tracks a running VM.
 type vmInfo struct {
-	vm         *backend.VM
-	cmd        *exec.Cmd
-	codeDir    string
-	socketPath string
+	vm                *backend.VM
+	cmd               *exec.Cmd
+	codeDir           string
+	socketPath        string
+	controlSocketPath string // nova-vz only: control socket for save/restore
 }
 
 // NewManager creates a new Apple VZ backend manager.
@@ -46,14 +49,22 @@ func NewManager(cfg *Config) (*Manager, error) {
 		return nil, fmt.Errorf("Apple Virtualization backend requires macOS")
 	}
 
-	// Locate vfkit binary
-	vfkitPath := cfg.VfkitPath
-	if vfkitPath == "" {
-		var err error
-		vfkitPath, err = exec.LookPath("vfkit")
-		if err != nil {
-			return nil, fmt.Errorf("vfkit not found in PATH: %w (install with: brew install vfkit)", err)
-		}
+	// Locate VM tool: prefer nova-vz (supports snapshots), fall back to vfkit
+	var vmTool string
+	var useNovaVZ bool
+
+	if cfg.NovaVZPath != "" {
+		vmTool = cfg.NovaVZPath
+		useNovaVZ = true
+	} else if p, err := exec.LookPath("nova-vz"); err == nil {
+		vmTool = p
+		useNovaVZ = true
+	} else if cfg.VfkitPath != "" {
+		vmTool = cfg.VfkitPath
+	} else if p, err := exec.LookPath("vfkit"); err == nil {
+		vmTool = p
+	} else {
+		return nil, fmt.Errorf("neither nova-vz nor vfkit found in PATH (install nova-vz from tools/nova-vz/ or vfkit via: brew install vfkit)")
 	}
 
 	// Verify kernel exists
@@ -64,7 +75,11 @@ func NewManager(cfg *Config) (*Manager, error) {
 		return nil, fmt.Errorf("kernel not found at %s: %w", cfg.KernelPath, err)
 	}
 
-	for _, dir := range []string{cfg.CodeDir, cfg.SocketDir} {
+	dirs := []string{cfg.CodeDir, cfg.SocketDir}
+	if useNovaVZ && cfg.SnapshotDirVal != "" {
+		dirs = append(dirs, cfg.SnapshotDirVal)
+	}
+	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return nil, fmt.Errorf("create directory %s: %w", dir, err)
 		}
@@ -73,11 +88,13 @@ func NewManager(cfg *Config) (*Manager, error) {
 	return &Manager{
 		config:    cfg,
 		vms:       make(map[string]*vmInfo),
-		vfkitPath: vfkitPath,
+		vmTool:    vmTool,
+		useNovaVZ: useNovaVZ,
 	}, nil
 }
 
 // rootfsForRuntime maps a runtime to its rootfs disk image path.
+// On arm64 (Apple Silicon), looks for <base>-arm64.ext4 first, then falls back to <base>.ext4.
 func (m *Manager) rootfsForRuntime(rt domain.Runtime) string {
 	r := string(rt)
 	base := "base"
@@ -105,6 +122,15 @@ func (m *Manager) rootfsForRuntime(rt domain.Runtime) string {
 		base = "lua"
 	case r == string(domain.RuntimeWasm) || strings.HasPrefix(r, "wasm"):
 		base = "wasm"
+	case r == string(domain.RuntimeC) || r == string(domain.RuntimeCpp):
+		base = "base"
+	}
+	// Prefer arch-specific rootfs (e.g. base-arm64.ext4) on Apple Silicon
+	if goruntime.GOARCH == "arm64" {
+		archPath := filepath.Join(m.config.RootfsDir, base+"-arm64.ext4")
+		if _, err := os.Stat(archPath); err == nil {
+			return archPath
+		}
 	}
 	return filepath.Join(m.config.RootfsDir, base+".ext4")
 }
@@ -179,7 +205,7 @@ func (m *Manager) CreateVMWithFiles(ctx context.Context, fn *domain.Function, fi
 	return vm, nil
 }
 
-// startVM launches a vfkit VM and waits for the agent.
+// startVM launches a VM via nova-vz or vfkit and waits for the agent.
 func (m *Manager) startVM(ctx context.Context, fn *domain.Function, vmID string, codeDir string) (*backend.VM, error) {
 	rootfs := m.rootfsForRuntime(fn.Runtime)
 	socketPath := filepath.Join(m.config.SocketDir, fmt.Sprintf("nova-vz-%s.sock", vmID))
@@ -202,42 +228,32 @@ func (m *Manager) startVM(ctx context.Context, fn *domain.Function, vmID string,
 		cmdline += " " + m.config.KernelCmdline
 	}
 
-	// Build vfkit arguments
-	bootloaderArg := fmt.Sprintf("linux,kernel=%s,cmdline=%s", m.config.KernelPath, cmdline)
-	if m.config.InitrdPath != "" {
-		bootloaderArg = fmt.Sprintf("linux,kernel=%s,initrd=%s,cmdline=%s",
-			m.config.KernelPath, m.config.InitrdPath, cmdline)
-	}
+	var args []string
+	var controlSocketPath string
 
-	args := []string{
-		"--cpus", fmt.Sprintf("%d", cpus),
-		"--memory", fmt.Sprintf("%d", memMB),
-		"--bootloader", bootloaderArg,
-		// Root filesystem as virtio block device
-		"--device", fmt.Sprintf("virtio-blk,path=%s", rootfs),
-		// Share code directory via VirtioFS
-		"--device", fmt.Sprintf("virtio-fs,sharedDir=%s,mountTag=code", codeDir),
-		// Vsock for agent communication (UNIX socket on host)
-		"--device", fmt.Sprintf("virtio-vsock,port=%d,socketURL=%s", agentVsockPort, socketPath),
-		// NAT networking for outbound connectivity
-		"--device", "virtio-net,nat",
+	if m.useNovaVZ {
+		args, controlSocketPath = m.buildNovaVZArgs(vmID, cpus, memMB, cmdline, rootfs, codeDir, socketPath)
+	} else {
+		args = m.buildVfkitArgs(cpus, memMB, cmdline, rootfs, codeDir, socketPath)
 	}
 
 	logging.Op().Info("creating Apple VZ VM",
 		"vmID", vmID,
+		"tool", filepath.Base(m.vmTool),
 		"rootfs", rootfs,
 		"codeDir", codeDir,
 		"socket", socketPath,
 		"memory", memMB,
 		"cpus", cpus,
+		"snapshots", m.useNovaVZ && m.config.SnapshotDirVal != "",
 	)
 
-	cmd := exec.CommandContext(ctx, m.vfkitPath, args...)
+	cmd := exec.CommandContext(ctx, m.vmTool, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("vfkit start failed: %w", err)
+		return nil, fmt.Errorf("%s start failed: %w", filepath.Base(m.vmTool), err)
 	}
 
 	vm := &backend.VM{
@@ -257,7 +273,7 @@ func (m *Manager) startVM(ctx context.Context, fn *domain.Function, vmID string,
 		agentTimeout = 15 * time.Second
 	}
 	if err := waitForVsockAgent(socketPath, agentTimeout); err != nil {
-		m.stopVfkit(cmd, codeDir, socketPath)
+		m.stopProcess(cmd, codeDir, socketPath, controlSocketPath)
 		return nil, fmt.Errorf("agent not ready: %w", err)
 	}
 
@@ -266,15 +282,57 @@ func (m *Manager) startVM(ctx context.Context, fn *domain.Function, vmID string,
 
 	m.mu.Lock()
 	m.vms[vmID] = &vmInfo{
-		vm:         vm,
-		cmd:        cmd,
-		codeDir:    codeDir,
-		socketPath: socketPath,
+		vm:                vm,
+		cmd:               cmd,
+		codeDir:           codeDir,
+		socketPath:        socketPath,
+		controlSocketPath: controlSocketPath,
 	}
 	m.mu.Unlock()
 
 	logging.Op().Info("Apple VZ VM ready", "vmID", vmID, "socket", socketPath)
 	return vm, nil
+}
+
+// buildNovaVZArgs builds CLI arguments for nova-vz.
+func (m *Manager) buildNovaVZArgs(vmID string, cpus, memMB int, cmdline, rootfs, codeDir, socketPath string) ([]string, string) {
+	ctlSocket := filepath.Join(m.config.SocketDir, fmt.Sprintf("nova-vz-%s-ctl.sock", vmID))
+	os.Remove(ctlSocket)
+
+	args := []string{
+		"--kernel", m.config.KernelPath,
+		"--cmdline", cmdline,
+		"--rootfs", rootfs,
+		"--cpus", fmt.Sprintf("%d", cpus),
+		"--memory", fmt.Sprintf("%d", memMB),
+		"--shared-dir", codeDir,
+		"--mount-tag", "code",
+		"--vsock-port", fmt.Sprintf("%d", agentVsockPort),
+		"--vsock-socket", socketPath,
+		"--control-socket", ctlSocket,
+	}
+	if m.config.InitrdPath != "" {
+		args = append(args, "--initrd", m.config.InitrdPath)
+	}
+	return args, ctlSocket
+}
+
+// buildVfkitArgs builds CLI arguments for vfkit.
+func (m *Manager) buildVfkitArgs(cpus, memMB int, cmdline, rootfs, codeDir, socketPath string) []string {
+	bootloaderArg := fmt.Sprintf("linux,kernel=%s,cmdline=%s", m.config.KernelPath, cmdline)
+	if m.config.InitrdPath != "" {
+		bootloaderArg = fmt.Sprintf("linux,kernel=%s,initrd=%s,cmdline=%s",
+			m.config.KernelPath, m.config.InitrdPath, cmdline)
+	}
+	return []string{
+		"--cpus", fmt.Sprintf("%d", cpus),
+		"--memory", fmt.Sprintf("%d", memMB),
+		"--bootloader", bootloaderArg,
+		"--device", fmt.Sprintf("virtio-blk,path=%s", rootfs),
+		"--device", fmt.Sprintf("virtio-fs,sharedDir=%s,mountTag=code", codeDir),
+		"--device", fmt.Sprintf("virtio-vsock,port=%d,socketURL=%s", agentVsockPort, socketPath),
+		"--device", "virtio-net,nat",
+	}
 }
 
 // waitForVsockAgent polls the vsock UNIX socket until the agent is reachable.
@@ -309,16 +367,18 @@ func (m *Manager) StopVM(vmID string) error {
 	m.mu.Unlock()
 
 	metrics.Global().RecordVMStopped()
-	return m.stopVfkit(info.cmd, info.codeDir, info.socketPath)
+	return m.stopProcess(info.cmd, info.codeDir, info.socketPath, info.controlSocketPath)
 }
 
-func (m *Manager) stopVfkit(cmd *exec.Cmd, codeDir, socketPath string) error {
+func (m *Manager) stopProcess(cmd *exec.Cmd, codeDir, socketPath, ctlSocketPath string) error {
 	if cmd != nil && cmd.Process != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 	}
-	if socketPath != "" {
-		os.Remove(socketPath)
+	for _, path := range []string{socketPath, ctlSocketPath} {
+		if path != "" {
+			os.Remove(path)
+		}
 	}
 	if codeDir != "" {
 		os.RemoveAll(codeDir)
@@ -351,7 +411,10 @@ func (m *Manager) Shutdown() {
 	wg.Wait()
 }
 
-// SnapshotDir returns empty string — Apple VZ backend doesn't support snapshots yet.
+// SnapshotDir returns the snapshot directory if nova-vz is available (supports save/restore).
 func (m *Manager) SnapshotDir() string {
+	if m.useNovaVZ {
+		return m.config.SnapshotDirVal
+	}
 	return ""
 }

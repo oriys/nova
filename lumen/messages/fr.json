@@ -1354,6 +1354,7 @@
   },
   "functionDetailPage": {
     "loadFailed": "Failed to load function",
+    "functionUrl": "URL de fonction",
     "functionNotFound": "Function not found",
     "backToFunctions": "Back to Functions",
     "refresh": "Refresh",
@@ -2602,7 +2603,11 @@
     "optionalPlaceholder": "Optionnel",
     "colConfig": "Config",
     "editTrigger": "Modifier le trigger",
-    "selectFunction": "Sélectionner une fonction..."
+    "selectFunction": "Sélectionner une fonction...",
+    "batchProcessing": "Traitement par lots",
+    "batchSize": "Taille du lot",
+    "batchWindow": "Fenêtre (secondes)",
+    "batchDescription": "Accumuler les enregistrements jusqu'à la taille du lot ou le délai de la fenêtre avant d'invoquer la fonction. Définir la taille du lot à 0 ou laisser vide pour désactiver."
   },
   "clusterPage": {
     "title": "Cluster",

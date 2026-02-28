@@ -37,7 +37,14 @@ func NewProxy(timeout time.Duration) *Proxy {
 		timeout = 30 * time.Second
 	}
 	return &Proxy{
-		client:    &http.Client{Timeout: timeout},
+		client: &http.Client{
+			Timeout: timeout,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:     90 * time.Second,
+			},
+		},
 		timeout:   timeout,
 		grpcConns: make(map[string]*grpc.ClientConn),
 	}

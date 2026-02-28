@@ -88,6 +88,10 @@ export default function TriggersPage() {
   const [webhookSecret, setWebhookSecret] = useState("")
   const [webhookParamMappings, setWebhookParamMappings] = useState<ParamMapping[]>([])
 
+  // Batch config (shared across all trigger types)
+  const [batchSize, setBatchSize] = useState("")
+  const [batchWindow, setBatchWindow] = useState("")
+
   const fetchTriggers = useCallback(async () => {
     try {
       setLoading(true)
@@ -138,6 +142,8 @@ export default function TriggersPage() {
     setWebhookPath("/webhook")
     setWebhookSecret("")
     setWebhookParamMappings([])
+    setBatchSize("")
+    setBatchWindow("")
   }
 
   const populateForm = (tr: TriggerEntry) => {
@@ -176,6 +182,8 @@ export default function TriggersPage() {
         setWebhookParamMappings(Array.isArray(c.param_mapping) ? c.param_mapping as ParamMapping[] : [])
         break
     }
+    setBatchSize(c.batch_size ? String(c.batch_size) : "")
+    setBatchWindow(c.batch_window_seconds ? String(c.batch_window_seconds) : "")
   }
 
   const buildConfig = (): Record<string, unknown> => {
@@ -218,6 +226,10 @@ export default function TriggersPage() {
     try {
       setSaving(true)
       const config = buildConfig()
+      const bs = Number(batchSize)
+      const bw = Number(batchWindow)
+      if (bs > 1) config.batch_size = bs
+      if (bw > 0) config.batch_window_seconds = bw
       if (editingTrigger) {
         await triggersApi.update(editingTrigger.id, { enabled: newEnabled, config })
       } else {
@@ -450,6 +462,22 @@ export default function TriggersPage() {
                     </div>
                   </div>
                 )}
+
+                {/* Batch Processing */}
+                <div className="space-y-3 rounded-md border border-border p-3">
+                  <p className="text-sm font-medium">{tt("batchProcessing")}</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">{tt("batchSize")}</label>
+                      <Input type="number" min={0} value={batchSize} onChange={(e) => setBatchSize(e.target.value)} placeholder="0" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">{tt("batchWindow")}</label>
+                      <Input type="number" min={0} value={batchWindow} onChange={(e) => setBatchWindow(e.target.value)} placeholder="5" />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{tt("batchDescription")}</p>
+                </div>
 
                 <div className="flex items-center gap-2">
                   <input

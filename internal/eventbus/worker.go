@@ -365,7 +365,17 @@ func buildEventInvocationPayload(delivery *store.EventDelivery) (json.RawMessage
 	}
 
 	envelope := map[string]any{
-		"event": eventPayload,
+		// CloudEvents 1.0 standard fields
+		"specversion":     "1.0",
+		"id":              delivery.MessageID,
+		"source":          fmt.Sprintf("/nova/%s/topics/%s", delivery.TenantID, delivery.TopicName),
+		"type":            fmt.Sprintf("nova.event.%s", delivery.TopicName),
+		"datacontenttype": "application/json",
+		"time":            delivery.CreatedAt.UTC().Format(time.RFC3339),
+		"subject":         delivery.OrderingKey,
+		// Original event data
+		"data": eventPayload,
+		// Nova-specific metadata
 		"_nova_event": map[string]any{
 			"topic": map[string]any{
 				"id":   delivery.TopicID,

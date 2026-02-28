@@ -1354,6 +1354,7 @@
   },
   "functionDetailPage": {
     "loadFailed": "Failed to load function",
+    "functionUrl": "関数 URL",
     "functionNotFound": "Function not found",
     "backToFunctions": "Back to Functions",
     "refresh": "Refresh",
@@ -2602,7 +2603,11 @@
     "optionalPlaceholder": "オプション",
     "colConfig": "設定",
     "editTrigger": "トリガーを編集",
-    "selectFunction": "関数を選択..."
+    "selectFunction": "関数を選択...",
+    "batchProcessing": "バッチ処理",
+    "batchSize": "バッチサイズ",
+    "batchWindow": "ウィンドウ（秒）",
+    "batchDescription": "関数を呼び出す前に、バッチサイズまたはウィンドウタイムアウトに達するまでレコードを蓄積します。バッチサイズを 0 に設定するか空にすると無効になります。"
   },
   "clusterPage": {
     "title": "クラスター",

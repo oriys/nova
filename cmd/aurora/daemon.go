@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -126,6 +127,35 @@ func daemonCmd() *cobra.Command {
 
 			sloService.Start()
 			defer sloService.Stop()
+
+			// Log retention cleanup: periodically delete old invocation logs
+			logCleanupCtx, logCleanupCancel := context.WithCancel(context.Background())
+			defer logCleanupCancel()
+			go func() {
+				ticker := time.NewTicker(1 * time.Hour)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-logCleanupCtx.Done():
+						return
+					case <-ticker.C:
+						globalRetention := 30
+						if config, err := s.GetConfig(logCleanupCtx); err == nil {
+							if v, ok := config["log_retention_days"]; ok {
+								if days, err := strconv.Atoi(v); err == nil && days > 0 {
+									globalRetention = days
+								}
+							}
+						}
+						deleted, err := pgStore.CleanupExpiredLogs(logCleanupCtx, globalRetention)
+						if err != nil {
+							logging.Op().Error("log retention cleanup failed", "error", err)
+						} else if deleted > 0 {
+							logging.Op().Info("log retention cleanup completed", "deleted", deleted, "retention_days", globalRetention)
+						}
+					}
+				}
+			}()
 
 			// HTTP endpoint for Prometheus scraping and health checks
 			var httpServer *http.Server

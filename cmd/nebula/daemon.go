@@ -144,6 +144,7 @@ func daemonCmd() *cobra.Command {
 			} else {
 				// Fallback: local executor with its own backend/pool.
 				var fcAdapter *firecracker.Adapter
+				var vzManager *applevz.Manager
 				defaultBackend := domain.BackendType(cfg.Firecracker.Backend)
 				if defaultBackend == "" || defaultBackend == domain.BackendAuto {
 					detected := backend.DetectDefaultBackend()
@@ -160,7 +161,14 @@ func daemonCmd() *cobra.Command {
 						return kubernetes.NewManager(&cfg.Kubernetes)
 					},
 					domain.BackendLibKrun: func() (backend.Backend, error) { return libkrun.NewManager(&cfg.LibKrun) },
-					domain.BackendAppleVZ: func() (backend.Backend, error) { return applevz.NewManager(&cfg.AppleVZ) },
+					domain.BackendAppleVZ: func() (backend.Backend, error) {
+						mgr, err := applevz.NewManager(&cfg.AppleVZ)
+						if err != nil {
+							return nil, err
+						}
+						vzManager = mgr
+						return mgr, nil
+					},
 					domain.BackendFirecracker: func() (backend.Backend, error) {
 						adapter, err := firecracker.NewAdapter(&cfg.Firecracker)
 						if err != nil {
@@ -191,6 +199,14 @@ func daemonCmd() *cobra.Command {
 							return err
 						}
 						return mgr.ResumeVM(ctx, vmID)
+					})
+				}
+				if vzManager != nil && vzManager.SnapshotDir() != "" {
+					p.SetSnapshotCallback(func(ctx context.Context, vmID, funcID string) error {
+						if err := vzManager.CreateSnapshot(ctx, vmID, funcID); err != nil {
+							return err
+						}
+						return vzManager.ResumeVM(ctx, vmID)
 					})
 				}
 				defer be.Shutdown()

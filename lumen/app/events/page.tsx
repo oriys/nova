@@ -1356,6 +1356,7 @@ export default function EventsPage() {
                       <thead>
                         <tr className="border-b border-border">
                           <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.sequence")}</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">CE Type</th>
                           <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.orderingKey")}</th>
                           <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("fields.published")}</th>
                         </tr>
@@ -1363,12 +1364,17 @@ export default function EventsPage() {
                       <tbody>
                         {messages.length === 0 ? (
                           <tr>
-                            <td colSpan={3} className="px-3 py-4 text-center text-muted-foreground">{t("empty.noMessages")}</td>
+                            <td colSpan={4} className="px-3 py-4 text-center text-muted-foreground">{t("empty.noMessages")}</td>
                           </tr>
                         ) : (
                           messages.map((message) => (
                             <tr key={message.id} className="border-b border-border last:border-0">
                               <td className="px-3 py-2 text-muted-foreground">{message.sequence}</td>
+                              <td className="px-3 py-2">
+                                <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">
+                                  {selectedTopic ? `nova.event.${selectedTopic.name}` : "nova.event"}
+                                </Badge>
+                              </td>
                               <td className="px-3 py-2 text-muted-foreground">{message.ordering_key || "-"}</td>
                               <td className="px-3 py-2 text-muted-foreground">{formatDate(message.published_at)}</td>
                             </tr>

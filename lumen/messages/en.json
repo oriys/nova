@@ -1359,6 +1359,7 @@
   },
   "functionDetailPage": {
     "loadFailed": "Failed to load function",
+    "functionUrl": "Function URL",
     "functionNotFound": "Function not found",
     "backToFunctions": "Back to Functions",
     "refresh": "Refresh",
@@ -2607,7 +2608,11 @@
     "optionalPlaceholder": "Optional",
     "colConfig": "Config",
     "editTrigger": "Edit Trigger",
-    "selectFunction": "Select a function..."
+    "selectFunction": "Select a function...",
+    "batchProcessing": "Batch Processing",
+    "batchSize": "Batch Size",
+    "batchWindow": "Window (seconds)",
+    "batchDescription": "Accumulate records up to batch size or window timeout before invoking the function. Set batch size to 0 or leave empty to disable."
   },
   "clusterPage": {
     "title": "Cluster",

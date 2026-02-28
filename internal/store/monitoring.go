@@ -846,3 +846,34 @@ func (s *PostgresStore) GetFunctionSLOSnapshot(ctx context.Context, functionID s
 	}
 	return snapshot, nil
 }
+
+// CleanupExpiredLogs deletes invocation logs older than the configured retention period.
+// It respects per-function log_retention_days (stored in function JSONB data) or falls
+// back to the provided global default. Returns the number of rows deleted.
+func (s *PostgresStore) CleanupExpiredLogs(ctx context.Context, globalRetentionDays int) (int64, error) {
+	if globalRetentionDays <= 0 {
+		globalRetentionDays = 30
+	}
+
+	// Delete logs where:
+	// - Function has a custom log_retention_days > 0: use that
+	// - Otherwise: use global default
+	tag, err := s.pool.Exec(ctx, `
+		DELETE FROM invocation_logs l
+		WHERE l.created_at < NOW() - make_interval(days :=
+			COALESCE(
+				NULLIF((
+					SELECT (f.data->>'log_retention_days')::int
+					FROM functions f
+					WHERE f.id = l.function_id
+					  AND (f.data->>'log_retention_days')::int > 0
+				), 0),
+				$1
+			)
+		)
+	`, globalRetentionDays)
+	if err != nil {
+		return 0, fmt.Errorf("cleanup expired logs: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}

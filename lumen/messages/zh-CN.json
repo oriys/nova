@@ -1359,6 +1359,7 @@
   },
   "functionDetailPage": {
     "loadFailed": "Failed to load function",
+    "functionUrl": "函数 URL",
     "functionNotFound": "Function not found",
     "backToFunctions": "Back to Functions",
     "refresh": "Refresh",
@@ -2607,7 +2608,11 @@
     "optionalPlaceholder": "可选",
     "colConfig": "配置",
     "editTrigger": "编辑触发器",
-    "selectFunction": "选择函数..."
+    "selectFunction": "选择函数...",
+    "batchProcessing": "批处理",
+    "batchSize": "批量大小",
+    "batchWindow": "窗口（秒）",
+    "batchDescription": "在调用函数之前，累积记录直到达到批量大小或窗口超时。将批量大小设为 0 或留空以禁用。"
   },
   "clusterPage": {
     "title": "集群",

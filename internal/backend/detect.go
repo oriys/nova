@@ -169,10 +169,15 @@ func detectAppleVZ() BackendInfo {
 		info.Reason = "requires macOS"
 		return info
 	}
-	if _, err := exec.LookPath("vfkit"); err != nil {
-		info.Reason = "vfkit not found in PATH (install with: brew install vfkit)"
+	// Prefer nova-vz (supports snapshots), fall back to vfkit
+	if _, err := exec.LookPath("nova-vz"); err == nil {
+		info.Available = true
 		return info
 	}
-	info.Available = true
+	if _, err := exec.LookPath("vfkit"); err == nil {
+		info.Available = true
+		return info
+	}
+	info.Reason = "neither nova-vz nor vfkit found in PATH"
 	return info
 }

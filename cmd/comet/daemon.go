@@ -152,6 +152,7 @@ func daemonCmd() *cobra.Command {
 
 			var be backend.Backend
 			var fcAdapter *firecracker.Adapter
+			var vzManager *applevz.Manager
 
 			defaultBackend := domain.BackendType(cfg.Firecracker.Backend)
 			if defaultBackend == "" || defaultBackend == domain.BackendAuto {
@@ -189,7 +190,12 @@ func daemonCmd() *cobra.Command {
 				},
 				domain.BackendAppleVZ: func() (backend.Backend, error) {
 					logging.Op().Info("initializing Apple VZ backend")
-					return applevz.NewManager(&cfg.AppleVZ)
+					mgr, err := applevz.NewManager(&cfg.AppleVZ)
+					if err != nil {
+						return nil, err
+					}
+					vzManager = mgr
+					return mgr, nil
 				},
 				domain.BackendFirecracker: func() (backend.Backend, error) {
 					logging.Op().Info("initializing Firecracker backend")
@@ -230,6 +236,14 @@ func daemonCmd() *cobra.Command {
 						return err
 					}
 					return mgr.ResumeVM(ctx, vmID)
+				})
+			}
+			if defaultBackend == domain.BackendAppleVZ && vzManager != nil && vzManager.SnapshotDir() != "" {
+				p.SetSnapshotCallback(func(ctx context.Context, vmID, funcID string) error {
+					if err := vzManager.CreateSnapshot(ctx, vmID, funcID); err != nil {
+						return err
+					}
+					return vzManager.ResumeVM(ctx, vmID)
 				})
 			}
 

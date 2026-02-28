@@ -2,6 +2,7 @@ package asyncqueue
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -9,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/queue"
@@ -295,6 +297,9 @@ func (w *WorkerPool) processJob(workerID string, job *store.AsyncInvocation) {
 			return
 		}
 		logging.Op().Debug("async invocation succeeded", "job", job.ID, "function", job.FunctionName, "attempt", job.Attempt)
+
+		// Dispatch to OnSuccess destination if configured
+		w.dispatchDestination(ctx, job, "success", resp.Output, "")
 		return
 	}
 
@@ -304,6 +309,9 @@ func (w *WorkerPool) processJob(workerID string, job *store.AsyncInvocation) {
 			return
 		}
 		logging.Op().Warn("async invocation moved to dlq", "job", job.ID, "function", job.FunctionName, "attempt", job.Attempt, "max_attempts", job.MaxAttempts, "error", errMsg)
+
+		// Dispatch to OnFailure destination if configured
+		w.dispatchDestination(ctx, job, "failure", nil, errMsg)
 		return
 	}
 
@@ -314,6 +322,68 @@ func (w *WorkerPool) processJob(workerID string, job *store.AsyncInvocation) {
 		return
 	}
 	logging.Op().Warn("async invocation retry scheduled", "job", job.ID, "function", job.FunctionName, "attempt", job.Attempt, "next_run_at", nextRun, "error", errMsg)
+}
+
+// dispatchDestination invokes the configured OnSuccess/OnFailure destination for the function.
+func (w *WorkerPool) dispatchDestination(ctx context.Context, job *store.AsyncInvocation, status string, output json.RawMessage, errMsg string) {
+	fn, err := w.store.GetFunctionByName(ctx, job.FunctionName)
+	if err != nil || fn.AsyncDestinations == nil {
+		return
+	}
+
+	var dest *domain.Destination
+	if status == "success" && fn.AsyncDestinations.OnSuccess != nil {
+		dest = fn.AsyncDestinations.OnSuccess
+	} else if status == "failure" && fn.AsyncDestinations.OnFailure != nil {
+		dest = fn.AsyncDestinations.OnFailure
+	}
+	if dest == nil {
+		return
+	}
+
+	// Build destination payload
+	destPayload, _ := json.Marshal(map[string]any{
+		"source_function": job.FunctionName,
+		"request_id":      job.RequestID,
+		"status":          status,
+		"payload":         job.Payload,
+		"result":          output,
+		"error":           errMsg,
+		"timestamp":       time.Now().UTC(),
+	})
+
+	switch dest.Type {
+	case "function":
+		go func() {
+			dCtx, dCancel := context.WithTimeout(context.Background(), w.cfg.InvokeTimeout)
+			dCtx = store.WithTenantScope(dCtx, job.TenantID, job.Namespace)
+			defer dCancel()
+			if _, err := w.exec.Invoke(dCtx, dest.Target, destPayload); err != nil {
+				logging.Op().Error("async destination invoke failed",
+					"source", job.FunctionName, "destination", dest.Target, "status", status, "error", err)
+			} else {
+				logging.Op().Debug("async destination invoked",
+					"source", job.FunctionName, "destination", dest.Target, "status", status)
+			}
+		}()
+	case "topic":
+		go func() {
+			dCtx := store.WithTenantScope(context.Background(), job.TenantID, job.Namespace)
+			topic, err := w.store.GetEventTopicByName(dCtx, dest.Target)
+			if err != nil {
+				logging.Op().Error("async destination topic lookup failed",
+					"source", job.FunctionName, "topic", dest.Target, "error", err)
+				return
+			}
+			if _, _, err := w.store.PublishEvent(dCtx, topic.ID, "", json.RawMessage(destPayload), nil); err != nil {
+				logging.Op().Error("async destination publish failed",
+					"source", job.FunctionName, "topic", dest.Target, "error", err)
+			} else {
+				logging.Op().Debug("async destination published",
+					"source", job.FunctionName, "topic", dest.Target, "status", status)
+			}
+		}()
+	}
 }
 
 // elasticWorkerManager dynamically adjusts the number of active workers
