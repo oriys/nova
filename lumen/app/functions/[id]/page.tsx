@@ -446,12 +446,12 @@ export default function FunctionDetailPage({
                 setLogsPage(1)
               }}
             />
-            <FunctionSLOPanel functionName={func.name} />
             <FunctionDiagnosticsPanel functionName={func.name} />
           </TabsContent>
 
           <TabsContent value="config" className="mt-0 space-y-6">
             <FunctionConfig func={func} onUpdate={fetchData} />
+            <FunctionSLOPanel functionName={func.name} />
             <FunctionVersions versions={versions} />
           </TabsContent>
 
