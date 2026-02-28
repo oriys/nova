@@ -131,7 +131,7 @@ export function InvocationHeatmap({ functionName }: InvocationHeatmapProps) {
     for (let week = 0; week < numWeeks; week++) {
       for (let day = 0; day < 7; day++) {
         if (current > today) break
-        const dateStr = current.toISOString().slice(0, 10)
+        const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}`
         const count = lookup.get(dateStr) || 0
         if (count > maxC) maxC = count
         cells.push({ date: dateStr, count, col: week, row: day })
