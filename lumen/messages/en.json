@@ -1316,7 +1316,8 @@
       "schedules": "Schedules",
       "docs": "Docs",
       "tests": "Tests",
-      "gateway": "Gateway"
+      "gateway": "Gateway",
+      "dependencies": "Dependencies"
     },
     "versions": {
       "colVersion": "Version",
@@ -1408,6 +1409,25 @@
       "deleteSuccess": "Route deleted",
       "error": "Operation failed",
       "paramMapping": "Parameter Mapping"
+    },
+    "dependencies": {
+      "title": "Dependencies",
+      "description": "Manage external package dependencies for this function.",
+      "depFile": "Dependency File",
+      "save": "Save Dependencies",
+      "saving": "Saving...",
+      "saved": "Dependencies saved",
+      "saveFailed": "Failed to save dependencies",
+      "discard": "Discard",
+      "noChanges": "No changes",
+      "empty": "No dependency file configured.",
+      "emptyHint": "Add a {file} to install external packages during deployment.",
+      "addDeps": "Add Dependencies",
+      "removeDeps": "Remove",
+      "help": "Add external dependencies via {file}. They will be installed during deployment.",
+      "unsupported": "This runtime does not support dependency files.",
+      "loadFailed": "Failed to load dependency file",
+      "loading": "Loading dependency file..."
     }
   },
   "landingPage": {

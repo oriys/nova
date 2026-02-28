@@ -123,6 +123,13 @@ if (process.argv.includes('--persistent')) {
 
 const bootstrapRuby = `require 'json'
 
+# Load bundler-installed gems if present
+vendor_dirs = ['/code/vendor/bundle', '/code/vendor']
+vendor_dirs.each do |vdir|
+  gemspec_dirs = Dir.glob(File.join(vdir, 'ruby/*/gems/*/lib'))
+  gemspec_dirs.each { |d| $LOAD_PATH.unshift(d) unless $LOAD_PATH.include?(d) }
+end
+
 class LambdaContext
   attr_accessor :function_name, :function_version, :invoked_function_arn,
                 :memory_limit_in_mb, :request_id, :log_group_name, :log_stream_name

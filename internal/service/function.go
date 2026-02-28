@@ -141,6 +141,10 @@ func (s *FunctionService) CreateFunction(ctx context.Context, req CreateFunction
 		// Determine entry point filename
 		entryPoint := fn.Handler
 		ext := compiler.RuntimeExtension(rt)
+		// For Java-style handlers like "Handler::handleRequest", extract class name
+		if idx := strings.Index(entryPoint, "::"); idx > 0 {
+			entryPoint = entryPoint[:idx]
+		}
 		if entryPoint == "" {
 			entryPoint = "handler" + ext
 		} else if ext != "" && !strings.Contains(entryPoint, ".") {

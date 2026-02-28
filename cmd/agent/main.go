@@ -1014,6 +1014,18 @@ func appendDependencyEnv(env []string, runtime string) []string {
 		if len(paths) > 0 {
 			env = append(env, "RUBYLIB="+strings.Join(paths, ":"))
 		}
+		// Support bundler-installed gems in /code/vendor/bundle
+		for _, vendorBase := range []string{"/code/vendor/bundle", "/code/vendor"} {
+			matches, _ := filepath.Glob(vendorBase + "/ruby/*/gems")
+			if len(matches) > 0 {
+				gemDir := filepath.Dir(matches[0])
+				env = append(env, "GEM_PATH="+gemDir)
+				env = append(env, "GEM_HOME="+gemDir)
+				env = append(env, "BUNDLE_PATH="+vendorBase)
+				env = append(env, "BUNDLE_DISABLE_SHARED_GEMS=1")
+				break
+			}
+		}
 	case "deno":
 		env = append(env, "DENO_DIR=/code/.deno")
 		env = append(env, "LD_PRELOAD=/lib/libresolv_stub.so")
@@ -1027,6 +1039,8 @@ func appendDependencyEnv(env []string, runtime string) []string {
 			paths = append(paths, "/layers/merged/node_modules")
 		}
 		env = append(env, "NODE_PATH="+strings.Join(paths, ":"))
+		// Bun needs a writable cache directory
+		env = append(env, "BUN_INSTALL_CACHE_DIR=/tmp/.bun-cache")
 	}
 
 	// Add layer paths to generic PATH for compiled binaries

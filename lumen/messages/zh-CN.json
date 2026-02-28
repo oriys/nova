@@ -1316,7 +1316,8 @@
       "schedules": "Schedules",
       "docs": "Docs",
       "tests": "测试套件",
-      "gateway": "网关"
+      "gateway": "网关",
+      "dependencies": "依赖"
     },
     "versions": {
       "colVersion": "Version",
@@ -1408,6 +1409,25 @@
       "deleteSuccess": "路由已删除",
       "error": "操作失败",
       "paramMapping": "参数映射"
+    },
+    "dependencies": {
+      "title": "依赖管理",
+      "description": "管理此函数的外部包依赖。",
+      "depFile": "依赖文件",
+      "save": "保存依赖",
+      "saving": "保存中...",
+      "saved": "依赖已保存",
+      "saveFailed": "保存依赖失败",
+      "discard": "放弃更改",
+      "noChanges": "无更改",
+      "empty": "尚未配置依赖文件。",
+      "emptyHint": "添加 {file} 以在部署时安装外部包。",
+      "addDeps": "添加依赖",
+      "removeDeps": "移除",
+      "help": "通过 {file} 添加外部依赖，部署时将自动安装。",
+      "unsupported": "此运行时不支持依赖文件。",
+      "loadFailed": "加载依赖文件失败",
+      "loading": "加载依赖文件中..."
     }
   },
   "landingPage": {
