@@ -13,102 +13,87 @@ import (
 	"github.com/oriys/nova/internal/logging"
 )
 
-// buildCodeDrive creates an ext4 image and injects the function code at /handler.
-// Uses a cached template image for small functions to avoid repeated mkfs calls.
-// For larger functions, creates a custom-sized drive.
+// buildCodeDrive creates an ext4 image containing the function code at /handler.
+// Uses mke2fs -d to build the image directly from a staging directory.
 func (m *Manager) buildCodeDrive(drivePath string, codeContent []byte) error {
-	// Get code size
 	codeSizeMB := float64(len(codeContent)) / (1024 * 1024)
 
-	// Use config values with fallback to defaults
-	defaultSize := m.config.CodeDriveSizeMB
-	if defaultSize <= 0 {
-		defaultSize = defaultCodeDriveSizeMB
-	}
-	minSize := m.config.MinCodeDriveSizeMB
-	if minSize <= 0 {
-		minSize = minCodeDriveSizeMB
-	}
-
-	// Calculate required drive size (code + ext4 overhead + buffer)
-	requiredSizeMB := int(codeSizeMB/ext4OverheadFactor) + 2 // +2MB buffer for ext4 metadata
-
-	// Determine if we can use the standard template
-	useTemplate := requiredSizeMB <= defaultSize
-	var driveSizeMB int
-
-	if useTemplate {
-		// Use cached template for small functions
-		templatePath := filepath.Join(m.config.SocketDir, "template-code.ext4")
-
-		// Retryable template creation using atomic bool + mutex
-		if !m.templateReady.Load() {
-			m.templateMu.Lock()
-			if !m.templateReady.Load() {
-				if err := createTemplateDrive(templatePath, defaultSize); err != nil {
-					m.templateMu.Unlock()
-					return err
-				}
-				m.templateReady.Store(true)
-			}
-			m.templateMu.Unlock()
-		}
-
-		// Buffered copy of template to new drive
-		if err := copyFileBuffered(templatePath, drivePath); err != nil {
-			return err
-		}
-		driveSizeMB = defaultSize
-	} else {
-		// Create custom-sized drive for large functions
-		driveSizeMB = requiredSizeMB
-		if driveSizeMB < minSize {
-			driveSizeMB = minSize
-		}
-		logging.Op().Info("creating custom code drive",
-			"size_mb", driveSizeMB,
-			"code_size_mb", codeSizeMB)
-		if err := createTemplateDrive(drivePath, driveSizeMB); err != nil {
-			return err
-		}
-	}
-
-	// Write code content to a temp file for debugfs
-	tmpFile, err := os.CreateTemp("", "nova-code-*")
+	// Stage the code into a temp directory
+	stageDir, err := os.MkdirTemp("", "nova-code-*")
 	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
+		return fmt.Errorf("create staging dir: %w", err)
 	}
-	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
+	defer os.RemoveAll(stageDir)
 
-	if _, err := tmpFile.Write(codeContent); err != nil {
-		tmpFile.Close()
-		return fmt.Errorf("write temp file: %w", err)
-	}
-	tmpFile.Close()
-
-	// Inject function code using debugfs (no mount needed)
-	debugfsCmd := fmt.Sprintf("write %s handler\nsif handler mode 0100755\n", tmpPath)
-	cmd := exec.Command("debugfs", "-w", drivePath)
-	cmd.Stdin = strings.NewReader(debugfsCmd)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("debugfs inject (drive=%dMB, code=%.1fMB): %s: %w", driveSizeMB, codeSizeMB, out, err)
+	handlerPath := filepath.Join(stageDir, "handler")
+	if err := os.WriteFile(handlerPath, codeContent, 0755); err != nil {
+		return fmt.Errorf("write handler: %w", err)
 	}
 
-	return nil
+	driveSizeMB := m.calcDriveSizeMB(codeSizeMB, 2)
+
+	return mke2fsFromDir(stageDir, drivePath, driveSizeMB)
 }
 
-// buildCodeDriveMulti creates an ext4 image and injects multiple files.
+// buildCodeDriveMulti creates an ext4 image containing multiple files.
 // files is a map of relative path -> content.
 func (m *Manager) buildCodeDriveMulti(drivePath string, files map[string][]byte) error {
-	// Calculate total size
 	var totalSize int64
 	for _, content := range files {
 		totalSize += int64(len(content))
 	}
 	totalSizeMB := float64(totalSize) / (1024 * 1024)
 
-	// Use config values with fallback to defaults
+	// Stage all files into a temp directory
+	stageDir, err := os.MkdirTemp("", "nova-multifile-*")
+	if err != nil {
+		return fmt.Errorf("create staging dir: %w", err)
+	}
+	defer os.RemoveAll(stageDir)
+
+	for relPath, content := range files {
+		dst := filepath.Join(stageDir, relPath)
+		if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", filepath.Dir(dst), err)
+		}
+		perm := os.FileMode(0644)
+		if isExecutable(relPath, content) {
+			perm = 0755
+		}
+		if err := os.WriteFile(dst, content, perm); err != nil {
+			return fmt.Errorf("write %s: %w", relPath, err)
+		}
+	}
+
+	driveSizeMB := m.calcDriveSizeMB(totalSizeMB*1.5, 4)
+
+	logging.Op().Info("creating multi-file code drive",
+		"size_mb", driveSizeMB,
+		"total_size_mb", totalSizeMB,
+		"file_count", len(files))
+
+	return mke2fsFromDir(stageDir, drivePath, driveSizeMB)
+}
+
+// buildCodeDriveFromDir creates an ext4 image directly from an existing directory.
+func (m *Manager) buildCodeDriveFromDir(drivePath string, srcDir string) error {
+	dirSizeMB, err := dirSizeInMB(srcDir)
+	if err != nil {
+		return fmt.Errorf("calculate dir size: %w", err)
+	}
+
+	driveSizeMB := m.calcDriveSizeMB(dirSizeMB*1.5, 4)
+
+	logging.Op().Info("creating code drive from directory",
+		"size_mb", driveSizeMB,
+		"dir_size_mb", dirSizeMB,
+		"src", srcDir)
+
+	return mke2fsFromDir(srcDir, drivePath, driveSizeMB)
+}
+
+// calcDriveSizeMB computes the ext4 image size given content size and overhead buffer.
+func (m *Manager) calcDriveSizeMB(contentMB float64, metadataBufferMB int) int {
 	defaultSize := m.config.CodeDriveSizeMB
 	if defaultSize <= 0 {
 		defaultSize = defaultCodeDriveSizeMB
@@ -118,107 +103,54 @@ func (m *Manager) buildCodeDriveMulti(drivePath string, files map[string][]byte)
 		minSize = minCodeDriveSizeMB
 	}
 
-	// Calculate required drive size:
-	// - Add 50% headroom for future growth
-	// - Account for ext4 overhead (15%)
-	// - Add buffer for directory inodes and metadata
-	contentWithHeadroom := totalSizeMB * 1.5
-	requiredSizeMB := int(contentWithHeadroom/ext4OverheadFactor) + 4 // +4MB for metadata
+	requiredMB := int(contentMB/ext4OverheadFactor) + metadataBufferMB
 
-	// Determine drive size with min/max limits
-	driveSizeMB := defaultSize
-	if requiredSizeMB > defaultSize {
-		driveSizeMB = requiredSizeMB
+	sizeMB := defaultSize
+	if requiredMB > sizeMB {
+		sizeMB = requiredMB
 	}
-	if driveSizeMB < minSize {
-		driveSizeMB = minSize
+	if sizeMB < minSize {
+		sizeMB = minSize
 	}
-	// Cap at 512MB to prevent excessive resource usage
 	const maxCodeDriveSizeMB = 512
-	if driveSizeMB > maxCodeDriveSizeMB {
-		driveSizeMB = maxCodeDriveSizeMB
+	if sizeMB > maxCodeDriveSizeMB {
+		sizeMB = maxCodeDriveSizeMB
 	}
+	return sizeMB
+}
 
-	// Create the ext4 drive
-	logging.Op().Info("creating multi-file code drive",
-		"size_mb", driveSizeMB,
-		"total_size_mb", totalSizeMB,
-		"file_count", len(files))
-	if err := createTemplateDrive(drivePath, driveSizeMB); err != nil {
-		return err
-	}
-
-	// Collect all directories that need to be created
-	dirs := make(map[string]bool)
-	for path := range files {
-		parts := strings.Split(path, "/")
-		for i := 1; i < len(parts); i++ {
-			dir := strings.Join(parts[:i], "/")
-			if dir != "" {
-				dirs[dir] = true
-			}
-		}
-	}
-
-	// Build debugfs commands
-	var debugfsCmds strings.Builder
-
-	// Create directories first (sorted to ensure parent dirs exist)
-	sortedDirs := make([]string, 0, len(dirs))
-	for dir := range dirs {
-		sortedDirs = append(sortedDirs, dir)
-	}
-	// Simple sort by path depth then alphabetically
-	for i := range sortedDirs {
-		for j := i + 1; j < len(sortedDirs); j++ {
-			iDepth := strings.Count(sortedDirs[i], "/")
-			jDepth := strings.Count(sortedDirs[j], "/")
-			if iDepth > jDepth || (iDepth == jDepth && sortedDirs[i] > sortedDirs[j]) {
-				sortedDirs[i], sortedDirs[j] = sortedDirs[j], sortedDirs[i]
-			}
-		}
-	}
-
-	for _, dir := range sortedDirs {
-		debugfsCmds.WriteString(fmt.Sprintf("mkdir %s\n", dir))
-	}
-
-	// Write files to temp dir and build injection commands
-	tmpDir, err := os.MkdirTemp("", "nova-multifile-*")
-	if err != nil {
-		return fmt.Errorf("create temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	for path, content := range files {
-		// Write to temp file
-		tmpFile := filepath.Join(tmpDir, strings.ReplaceAll(path, "/", "_"))
-		if err := os.WriteFile(tmpFile, content, 0644); err != nil {
-			return fmt.Errorf("write temp file %s: %w", path, err)
-		}
-
-		// Add debugfs commands
-		debugfsCmds.WriteString(fmt.Sprintf("write %s %s\n", tmpFile, path))
-		// Make executable if it looks like an executable
-		if isExecutable(path, content) {
-			debugfsCmds.WriteString(fmt.Sprintf("sif %s mode 0100755\n", path))
-		}
-	}
-
-	// Run debugfs to inject all files
-	cmd := exec.Command("debugfs", "-w", drivePath)
-	cmd.Stdin = strings.NewReader(debugfsCmds.String())
+// mke2fsFromDir builds an ext4 image from a host directory using mke2fs -d.
+// Preserves file permissions; no root or mount required.
+func mke2fsFromDir(srcDir, drivePath string, sizeMB int) error {
+	sizeArg := fmt.Sprintf("%dM", sizeMB)
+	cmd := exec.Command("mke2fs", "-d", srcDir, "-t", "ext4", "-q", drivePath, sizeArg)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("debugfs inject (drive=%dMB, total=%.1fMB, files=%d): %s: %w",
-			driveSizeMB, totalSizeMB, len(files), out, err)
+		os.Remove(drivePath)
+		return fmt.Errorf("mke2fs -d (size=%s, src=%s): %s: %w", sizeArg, srcDir, out, err)
 	}
-
 	return nil
 }
 
-// isExecutable determines if a file should be executable based on path and content
+// dirSizeInMB calculates the total size of files in a directory tree.
+func dirSizeInMB(dir string) (float64, error) {
+	var total int64
+	err := filepath.Walk(dir, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			total += info.Size()
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return float64(total) / (1024 * 1024), nil
+}
+
+// isExecutable determines if a file should be executable based on path and content.
 func isExecutable(path string, content []byte) bool {
-	// Check extension
 	ext := filepath.Ext(path)
 	execExtensions := map[string]bool{
 		".sh": true, ".bash": true, ".py": true, ".rb": true, ".pl": true,
@@ -227,41 +159,20 @@ func isExecutable(path string, content []byte) bool {
 		return true
 	}
 
-	// Check for shebang
 	if len(content) >= 2 && content[0] == '#' && content[1] == '!' {
 		return true
 	}
 
-	// Check for ELF binary (compiled Go/Rust/etc)
 	if len(content) >= 4 && content[0] == 0x7f && content[1] == 'E' && content[2] == 'L' && content[3] == 'F' {
 		return true
 	}
 
-	// Check for "handler" in path (main entry point)
 	base := filepath.Base(path)
 	if base == "handler" || strings.HasPrefix(base, "handler.") {
 		return true
 	}
 
 	return false
-}
-
-func createTemplateDrive(path string, sizeMB int) error {
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	if err := f.Truncate(int64(sizeMB) * 1024 * 1024); err != nil {
-		f.Close()
-		return err
-	}
-	f.Close()
-
-	if out, err := exec.Command("mkfs.ext4", "-F", "-q", path).CombinedOutput(); err != nil {
-		os.Remove(path)
-		return fmt.Errorf("mkfs.ext4: %s: %w", out, err)
-	}
-	return nil
 }
 
 func copyFileBuffered(src, dst string) error {

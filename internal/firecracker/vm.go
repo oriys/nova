@@ -122,9 +122,7 @@ type Manager struct {
 	mu            sync.RWMutex
 	cidPool       *resourcePool[uint32] // pre-allocated CID free-list
 	ipPool        *resourcePool[string] // pre-allocated IP free-list
-	templateReady atomic.Bool
-	templateMu    sync.Mutex
-	bridgeReady   atomic.Bool
+	bridgeReady atomic.Bool
 	bridgeMu      sync.Mutex
 	httpClient    *http.Client
 }
