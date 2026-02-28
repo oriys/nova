@@ -28,6 +28,17 @@ const (
 	MsgTypeStop   = 5
 	MsgTypeReload = 6 // Hot reload code files
 	MsgTypeStream = 7 // Streaming response chunk
+
+	// State operations: function ↔ host state proxy via vsock
+	MsgTypeStateGet    = 8  // Get state key
+	MsgTypeStatePut    = 9  // Put state key
+	MsgTypeStateDelete = 10 // Delete state key
+	MsgTypeStateList   = 11 // List state keys
+	MsgTypeStateResp   = 12 // State operation response
+
+	// Durable execution step operations
+	MsgTypeDurableStep     = 13 // Register/complete a durable step
+	MsgTypeDurableStepResp = 14 // Durable step response
 )
 
 type VsockMessage struct {

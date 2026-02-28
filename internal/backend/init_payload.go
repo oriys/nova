@@ -25,11 +25,13 @@ func BuildInitPayload(fn *domain.Function) *InitPayload {
 		Extension:       fn.RuntimeExtension,
 		Mode:            string(fn.Mode),
 		FunctionName:    fn.Name,
+		FunctionID:      fn.ID,
 		FunctionVersion: fn.Version,
 		MemoryMB:        fn.MemoryMB,
 		TimeoutS:        fn.TimeoutS,
 		LayerCount:      len(fn.LayerPaths),
 		VolumeMounts:    volumeMounts,
+		StateEnabled:    fn.Mode == domain.ModeDurable,
 	}
 }
 

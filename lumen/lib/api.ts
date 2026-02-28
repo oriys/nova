@@ -177,6 +177,7 @@ export interface GatewayRoute {
   path: string;
   methods?: string[];
   function_name: string;
+  workflow_name?: string;
   auth_strategy: string;
   auth_config?: Record<string, string>;
   request_schema?: unknown;
@@ -192,7 +193,8 @@ export interface CreateGatewayRouteRequest {
   domain?: string;
   path: string;
   methods?: string[];
-  function_name: string;
+  function_name?: string;
+  workflow_name?: string;
   auth_strategy?: string;
   auth_config?: Record<string, string>;
   request_schema?: unknown;
@@ -206,6 +208,7 @@ export interface UpdateGatewayRouteRequest {
   path?: string;
   methods?: string[];
   function_name?: string;
+  workflow_name?: string;
   auth_strategy?: string;
   auth_config?: Record<string, string>;
   request_schema?: unknown;
@@ -760,6 +763,53 @@ export interface PaginatedResult<T> {
   total: number;
 }
 
+// Function state entry (KV storage)
+export interface FunctionStateEntry {
+  function_id: string;
+  key: string;
+  value: unknown;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  expires_at?: string;
+}
+
+// Durable execution tracking
+export interface DurableExecution {
+  id: string;
+  function_id: string;
+  function_name: string;
+  status: "running" | "completed" | "failed" | "suspended";
+  input?: unknown;
+  output?: unknown;
+  error?: string;
+  steps?: DurableStep[];
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
+}
+
+export interface DurableStep {
+  id: string;
+  execution_id: string;
+  name: string;
+  status: "running" | "completed" | "failed";
+  input?: unknown;
+  output?: unknown;
+  error?: string;
+  duration_ms: number;
+  created_at: string;
+  completed_at?: string;
+}
+
+// Paginated list wrapper used by state/durable API responses
+export interface PaginatedList<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 interface ApiPaginationMetadata {
   limit?: number;
   offset?: number;
@@ -1173,19 +1223,48 @@ export const functionsApi = {
       method: "POST",
     }),
 
-  getState: (name: string) =>
-    request<Record<string, unknown>>(`/functions/${encodeURIComponent(name)}/state`),
+  getState: (name: string, key?: string, prefix?: string, limit?: number, offset?: number) => {
+    const params = new URLSearchParams();
+    if (key) params.set("key", key);
+    if (prefix) params.set("prefix", prefix);
+    if (limit) params.set("limit", String(limit));
+    if (offset) params.set("offset", String(offset));
+    const qs = params.toString();
+    return request<PaginatedList<FunctionStateEntry> | FunctionStateEntry>(
+      `/functions/${encodeURIComponent(name)}/state${qs ? `?${qs}` : ""}`
+    );
+  },
 
-  putState: (name: string, state: Record<string, unknown>) =>
-    request<Record<string, unknown>>(`/functions/${encodeURIComponent(name)}/state`, {
+  putState: (name: string, key: string, value: unknown, ttlS?: number, expectedVersion?: number) =>
+    request<FunctionStateEntry>(`/functions/${encodeURIComponent(name)}/state?key=${encodeURIComponent(key)}`, {
       method: "PUT",
-      body: JSON.stringify(state),
+      body: JSON.stringify({ value, ttl_s: ttlS, expected_version: expectedVersion }),
     }),
 
-  deleteState: (name: string) =>
-    request<{ status: string }>(`/functions/${encodeURIComponent(name)}/state`, {
+  deleteState: (name: string, key: string) =>
+    request<{ status: string }>(`/functions/${encodeURIComponent(name)}/state?key=${encodeURIComponent(key)}`, {
       method: "DELETE",
     }),
+
+  // Durable executions
+  invokeDurable: (name: string, payload: unknown) =>
+    request<DurableExecution>(`/functions/${encodeURIComponent(name)}/invoke-durable`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listDurableExecutions: (name: string, limit?: number, offset?: number) => {
+    const params = new URLSearchParams();
+    if (limit) params.set("limit", String(limit));
+    if (offset) params.set("offset", String(offset));
+    const qs = params.toString();
+    return request<PaginatedList<DurableExecution>>(
+      `/functions/${encodeURIComponent(name)}/durable-executions${qs ? `?${qs}` : ""}`
+    );
+  },
+
+  getDurableExecution: (id: string) =>
+    request<DurableExecution>(`/durable-executions/${encodeURIComponent(id)}`),
 };
 
 // Tenant and namespace management API

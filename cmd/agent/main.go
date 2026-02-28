@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -33,6 +35,17 @@ const (
 	MsgTypeReload = 6 // Hot reload code files
 	MsgTypeStream = 7 // Streaming response chunk
 
+	// State operations: function ↔ host state proxy via vsock
+	MsgTypeStateGet    = 8  // Get state key
+	MsgTypeStatePut    = 9  // Put state key
+	MsgTypeStateDelete = 10 // Delete state key
+	MsgTypeStateList   = 11 // List state keys
+	MsgTypeStateResp   = 12 // State operation response
+
+	// Durable execution step operations
+	MsgTypeDurableStep     = 13 // Register/complete a durable step
+	MsgTypeDurableStepResp = 14 // Durable step response
+
 	VsockPort = 9999
 
 	CodeMountPoint = "/code"
@@ -44,6 +57,9 @@ const (
 	// for direct function-to-function calls. CID 2 is the host in Firecracker,
 	// port 9090 is the Comet gRPC listener.
 	internalInvokeEndpoint = "vsock://2:9090/invoke"
+
+	// stateProxyPort is the local HTTP server for in-VM state access
+	stateProxyPort = 8399
 
 	pythonPath   = "/usr/bin/python3"
 	wasmtimePath = "/usr/local/bin/wasmtime"
@@ -67,6 +83,8 @@ const (
 	// ModePersistent: Keep function process alive, send requests via stdin/stdout
 	// Enables connection reuse for databases, etc.
 	ModePersistent ExecutionMode = "persistent"
+	// ModeDurable: Stateful execution with in-VM state access and checkpoint/replay
+	ModeDurable ExecutionMode = "durable"
 )
 
 type Message struct {
@@ -80,8 +98,9 @@ type InitPayload struct {
 	EnvVars         map[string]string `json:"env_vars"`
 	Command         []string          `json:"command,omitempty"`
 	Extension       string            `json:"extension,omitempty"`
-	Mode            ExecutionMode     `json:"mode,omitempty"` // "process" or "persistent"
+	Mode            ExecutionMode     `json:"mode,omitempty"` // "process", "persistent", or "durable"
 	FunctionName    string            `json:"function_name,omitempty"`
+	FunctionID      string            `json:"function_id,omitempty"`
 	FunctionVersion int               `json:"function_version,omitempty"`
 	MemoryMB        int               `json:"memory_mb,omitempty"`
 	TimeoutS        int               `json:"timeout_s,omitempty"`
@@ -91,6 +110,9 @@ type InitPayload struct {
 	// InternalInvokeEnabled tells the agent to expose NOVA_INVOKE_ENDPOINT
 	// so user functions can call other functions through the host.
 	InternalInvokeEnabled bool `json:"internal_invoke_enabled,omitempty"`
+
+	// StateEnabled tells the agent to start the local state proxy HTTP server.
+	StateEnabled bool `json:"state_enabled,omitempty"`
 }
 
 // VolumeMountInfo tells the agent where to mount a volume drive inside the VM.
@@ -133,13 +155,61 @@ type StreamChunkPayload struct {
 	Error     string `json:"error,omitempty"` // Error message if execution failed
 }
 
+// StateRequestPayload is sent from agent to host for state operations
+type StateRequestPayload struct {
+	Key             string          `json:"key"`
+	Value           json.RawMessage `json:"value,omitempty"`
+	Prefix          string          `json:"prefix,omitempty"`
+	TTLSeconds      int             `json:"ttl_s,omitempty"`
+	ExpectedVersion int64           `json:"expected_version,omitempty"`
+	Limit           int             `json:"limit,omitempty"`
+}
+
+// StateResponsePayload is the host response to a state operation
+type StateResponsePayload struct {
+	Key     string          `json:"key,omitempty"`
+	Value   json.RawMessage `json:"value,omitempty"`
+	Version int64           `json:"version,omitempty"`
+	Error   string          `json:"error,omitempty"`
+	Entries []StateEntry    `json:"entries,omitempty"`
+}
+
+// StateEntry is a single state entry in list responses
+type StateEntry struct {
+	Key     string          `json:"key"`
+	Value   json.RawMessage `json:"value"`
+	Version int64           `json:"version"`
+}
+
+// DurableStepPayload is sent from agent to host for durable step operations
+type DurableStepPayload struct {
+	ExecutionID string          `json:"execution_id"`
+	StepName    string          `json:"step_name"`
+	Action      string          `json:"action"` // "start", "complete", "fail"
+	StepID      string          `json:"step_id,omitempty"`
+	Input       json.RawMessage `json:"input,omitempty"`
+	Output      json.RawMessage `json:"output,omitempty"`
+	Error       string          `json:"error,omitempty"`
+	DurationMs  int64           `json:"duration_ms,omitempty"`
+}
+
+// DurableStepResponsePayload is the host response to a durable step operation
+type DurableStepResponsePayload struct {
+	StepID  string          `json:"step_id,omitempty"`
+	Cached  bool            `json:"cached,omitempty"` // True if step was already completed (replay)
+	Output  json.RawMessage `json:"output,omitempty"`
+	Error   string          `json:"error,omitempty"`
+}
+
 type Agent struct {
 	function         *InitPayload
 	persistentProc   *exec.Cmd
 	persistentIn     io.WriteCloser
 	persistentOut    *bufio.Reader
 	persistentOutRaw io.ReadCloser
-	useProtobuf      bool // true when this connection uses protobuf codec
+	useProtobuf      bool     // true when this connection uses protobuf codec
+	stateConn        net.Conn // vsock connection for state proxy requests to host
+	stateConnMu      sync.Mutex
 }
 
 func main() {
@@ -335,6 +405,19 @@ func (a *Agent) handleInit(payload json.RawMessage) (*Message, error) {
 		}
 	}
 
+	// For durable mode, treat as persistent + start state proxy
+	if init.Mode == ModeDurable {
+		init.StateEnabled = true
+		if err := a.startPersistentProcess(); err != nil {
+			return nil, fmt.Errorf("start persistent process: %w", err)
+		}
+	}
+
+	// Start state proxy HTTP server if state is enabled
+	if init.StateEnabled {
+		go a.startStateProxy()
+	}
+
 	return &Message{
 		Type:    MsgTypeResp,
 		Payload: json.RawMessage(`{"status":"initialized"}`),
@@ -389,11 +472,15 @@ func (a *Agent) startPersistentProcess() error {
 	// Inject context env vars for persistent bootstraps
 	cmd.Env = append(cmd.Env,
 		"NOVA_FUNCTION_NAME="+a.function.FunctionName,
+		"NOVA_FUNCTION_ID="+a.function.FunctionID,
 		fmt.Sprintf("NOVA_FUNCTION_VERSION=%d", a.function.FunctionVersion),
 		fmt.Sprintf("NOVA_MEMORY_LIMIT_MB=%d", a.function.MemoryMB),
 		fmt.Sprintf("NOVA_TIMEOUT_S=%d", a.function.TimeoutS),
 		"NOVA_RUNTIME="+a.function.Runtime,
 	)
+	if a.function.StateEnabled {
+		cmd.Env = append(cmd.Env, "NOVA_STATE_URL=http://127.0.0.1:8399")
+	}
 	// Add dependency paths based on runtime
 	cmd.Env = appendDependencyEnv(cmd.Env, a.function.Runtime)
 	for k, v := range a.function.EnvVars {
@@ -645,11 +732,15 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID s
 	cmd.Env = append(cmd.Env,
 		"NOVA_REQUEST_ID="+requestID,
 		"NOVA_FUNCTION_NAME="+a.function.FunctionName,
+		"NOVA_FUNCTION_ID="+a.function.FunctionID,
 		fmt.Sprintf("NOVA_FUNCTION_VERSION=%d", a.function.FunctionVersion),
 		fmt.Sprintf("NOVA_MEMORY_LIMIT_MB=%d", a.function.MemoryMB),
 		fmt.Sprintf("NOVA_TIMEOUT_S=%d", a.function.TimeoutS),
 		"NOVA_RUNTIME="+a.function.Runtime,
 	)
+	if a.function.StateEnabled {
+		cmd.Env = append(cmd.Env, "NOVA_STATE_URL=http://127.0.0.1:8399")
+	}
 	// Inject W3C trace context for automatic propagation (Feature 5)
 	if traceParent != "" {
 		cmd.Env = append(cmd.Env, "TRACEPARENT="+traceParent)
@@ -763,11 +854,15 @@ func (a *Agent) handleStreamingExec(conn net.Conn, req *ExecPayload) (*Message, 
 	cmd.Env = append(cmd.Env,
 		"NOVA_REQUEST_ID="+req.RequestID,
 		"NOVA_FUNCTION_NAME="+a.function.FunctionName,
+		"NOVA_FUNCTION_ID="+a.function.FunctionID,
 		fmt.Sprintf("NOVA_FUNCTION_VERSION=%d", a.function.FunctionVersion),
 		fmt.Sprintf("NOVA_MEMORY_LIMIT_MB=%d", a.function.MemoryMB),
 		fmt.Sprintf("NOVA_TIMEOUT_S=%d", a.function.TimeoutS),
 		"NOVA_RUNTIME="+a.function.Runtime,
 	)
+	if a.function.StateEnabled {
+		cmd.Env = append(cmd.Env, "NOVA_STATE_URL=http://127.0.0.1:8399")
+	}
 	// Inject W3C trace context for automatic propagation
 	if req.TraceParent != "" {
 		cmd.Env = append(cmd.Env, "TRACEPARENT="+req.TraceParent)
@@ -1308,4 +1403,211 @@ func writeProtobufMessage(conn net.Conn, msg *Message) error {
 	copy(buf[4:], data)
 	_, err = conn.Write(buf)
 	return err
+}
+
+// ─── State Proxy HTTP Server ─────────────────────────────────
+// The state proxy runs at 127.0.0.1:8399 inside the VM and provides
+// a simple HTTP API for function code to access durable state. Requests
+// are proxied to the host's state API via vsock/TCP.
+
+func (a *Agent) startStateProxy() {
+	mux := http.NewServeMux()
+
+	// GET /state?key=xxx → get single state entry
+	mux.HandleFunc("GET /state", a.handleStateGet)
+	// PUT /state?key=xxx → put state entry
+	mux.HandleFunc("PUT /state", a.handleStatePut)
+	// DELETE /state?key=xxx → delete state entry
+	mux.HandleFunc("DELETE /state", a.handleStateDelete)
+	// GET /state/list → list state entries
+	mux.HandleFunc("GET /state/list", a.handleStateList)
+
+	addr := fmt.Sprintf("127.0.0.1:%d", stateProxyPort)
+	fmt.Printf("[agent] State proxy starting on %s\n", addr)
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		fmt.Fprintf(os.Stderr, "[agent] State proxy error: %v\n", err)
+	}
+}
+
+func (a *Agent) sendStateRequest(msgType int, payload interface{}) (*StateResponsePayload, error) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	msg := &Message{Type: msgType, Payload: data}
+	msgData, err := json.Marshal(msg)
+	if err != nil {
+		return nil, err
+	}
+
+	a.stateConnMu.Lock()
+	defer a.stateConnMu.Unlock()
+
+	conn, err := a.dialStateConn()
+	if err != nil {
+		return nil, fmt.Errorf("dial state conn: %w", err)
+	}
+	defer conn.Close()
+
+	// Send message with length prefix
+	buf := make([]byte, 4+len(msgData))
+	binary.BigEndian.PutUint32(buf[:4], uint32(len(msgData)))
+	copy(buf[4:], msgData)
+	if _, err := conn.Write(buf); err != nil {
+		return nil, fmt.Errorf("write state request: %w", err)
+	}
+
+	// Read response
+	lenBuf := make([]byte, 4)
+	if _, err := io.ReadFull(conn, lenBuf); err != nil {
+		return nil, fmt.Errorf("read state response length: %w", err)
+	}
+	respLen := binary.BigEndian.Uint32(lenBuf)
+	respData := make([]byte, respLen)
+	if _, err := io.ReadFull(conn, respData); err != nil {
+		return nil, fmt.Errorf("read state response: %w", err)
+	}
+
+	var respMsg Message
+	if err := json.Unmarshal(respData, &respMsg); err != nil {
+		return nil, fmt.Errorf("unmarshal state response message: %w", err)
+	}
+
+	var resp StateResponsePayload
+	if err := json.Unmarshal(respMsg.Payload, &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal state response: %w", err)
+	}
+	return &resp, nil
+}
+
+func (a *Agent) dialStateConn() (net.Conn, error) {
+	mode := os.Getenv("NOVA_AGENT_MODE")
+
+	// TCP mode for Docker containers — connect back to host state port
+	if mode == "tcp" {
+		hostAddr := os.Getenv("NOVA_HOST_ADDR")
+		if hostAddr == "" {
+			hostAddr = "host.docker.internal:9998"
+		}
+		return net.DialTimeout("tcp", hostAddr, 5*time.Second)
+	}
+
+	// In Firecracker VM, connect to host via TCP over bridge network.
+	// The host's state proxy listens on port 9998.
+	// Use the gateway IP (172.30.x.1) which is set as default route.
+	if runtime.GOOS == "linux" {
+		// Try connecting to common gateway addresses
+		for _, addr := range []string{"172.30.0.1:9998", "10.0.0.1:9998"} {
+			conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+			if err == nil {
+				return conn, nil
+			}
+		}
+	}
+
+	// Fallback: unix socket for local dev
+	sockPath := "/tmp/nova-state-9998.sock"
+	return net.DialTimeout("unix", sockPath, 5*time.Second)
+}
+
+func (a *Agent) handleStateGet(w http.ResponseWriter, r *http.Request) {
+	key := r.URL.Query().Get("key")
+	if key == "" {
+		http.Error(w, `{"error":"key parameter required"}`, http.StatusBadRequest)
+		return
+	}
+
+	resp, err := a.sendStateRequest(MsgTypeStateGet, &StateRequestPayload{Key: key})
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	if resp.Error != "" {
+		status := http.StatusInternalServerError
+		if resp.Error == "not found" {
+			status = http.StatusNotFound
+		}
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, resp.Error), status)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (a *Agent) handleStatePut(w http.ResponseWriter, r *http.Request) {
+	key := r.URL.Query().Get("key")
+	if key == "" {
+		http.Error(w, `{"error":"key parameter required"}`, http.StatusBadRequest)
+		return
+	}
+
+	var req StateRequestPayload
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+		return
+	}
+	req.Key = key
+
+	resp, err := a.sendStateRequest(MsgTypeStatePut, &req)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	if resp.Error != "" {
+		status := http.StatusInternalServerError
+		if resp.Error == "conflict" {
+			status = http.StatusConflict
+		}
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, resp.Error), status)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (a *Agent) handleStateDelete(w http.ResponseWriter, r *http.Request) {
+	key := r.URL.Query().Get("key")
+	if key == "" {
+		http.Error(w, `{"error":"key parameter required"}`, http.StatusBadRequest)
+		return
+	}
+
+	resp, err := a.sendStateRequest(MsgTypeStateDelete, &StateRequestPayload{Key: key})
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	if resp.Error != "" {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, resp.Error), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *Agent) handleStateList(w http.ResponseWriter, r *http.Request) {
+	prefix := r.URL.Query().Get("prefix")
+	limit := 100
+	if l := r.URL.Query().Get("limit"); l != "" {
+		fmt.Sscanf(l, "%d", &limit)
+	}
+
+	resp, err := a.sendStateRequest(MsgTypeStateList, &StateRequestPayload{
+		Prefix: prefix,
+		Limit:  limit,
+	})
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	if resp.Error != "" {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, resp.Error), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
