@@ -9,6 +9,7 @@
 #   scripts/dev-native.sh status   # show service status
 #   scripts/dev-native.sh logs     # tail all logs
 #   scripts/dev-native.sh seed     # seed sample functions
+#   scripts/dev-native.sh no-frontend  # start backend only (no Lumen)
 
 set -euo pipefail
 
@@ -174,6 +175,11 @@ do_start() {
 
     wait_for_port 9000 "zenith" 10
 
+    # Lumen frontend (unless --no-frontend)
+    if [ "${NO_FRONTEND:-0}" != "1" ]; then
+        start_lumen
+    fi
+
     echo ""
     log "All services started! 🚀"
     echo ""
@@ -184,6 +190,9 @@ do_start() {
     info "  Corona:     http://localhost:9003"
     info "  Nebula:     http://localhost:9004"
     info "  Postgres:   localhost:5432"
+    if [ "${NO_FRONTEND:-0}" != "1" ]; then
+        info "  Lumen:      http://localhost:3000"
+    fi
     echo ""
     info "  Logs: $LOG_DIR/"
     info "  PIDs: $PID_DIR/"
@@ -191,12 +200,33 @@ do_start() {
     info "  Stop:   scripts/dev-native.sh stop"
     info "  Status: scripts/dev-native.sh status"
     info "  Seed:   scripts/dev-native.sh seed"
-    info "  Lumen:  cd lumen && BACKEND_URL=http://localhost:9000 npm run dev"
+}
+
+start_lumen() {
+    local pid_file="$PID_DIR/lumen.pid"
+    local log_file="$LOG_DIR/lumen.log"
+
+    if [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+        warn "lumen already running (PID $(cat "$pid_file"))"
+        return 0
+    fi
+
+    # Install dependencies if needed
+    if [ ! -d "$ROOT_DIR/lumen/node_modules" ]; then
+        log "Installing Lumen dependencies..."
+        (cd "$ROOT_DIR/lumen" && npm install --silent) >> "$log_file" 2>&1
+    fi
+
+    log "Starting lumen..."
+    (cd "$ROOT_DIR/lumen" && BACKEND_URL=http://localhost:9000 npx next dev --port 3000) > "$log_file" 2>&1 &
+    local pid=$!
+    echo "$pid" > "$pid_file"
+    info "lumen started (PID $pid, log: $log_file)"
 }
 
 do_stop() {
     log "Stopping all native services..."
-    for svc in zenith nebula corona aurora comet nova; do
+    for svc in lumen zenith nebula corona aurora comet nova; do
         stop_service "$svc"
     done
     log "All services stopped"
@@ -208,7 +238,7 @@ do_status() {
     echo ""
     printf "  %-12s %-8s %-6s %s\n" "SERVICE" "STATUS" "PID" "PORT"
     printf "  %-12s %-8s %-6s %s\n" "-------" "------" "---" "----"
-    for svc_port in nova:9001 comet:9090 aurora:9002 corona:9003 nebula:9004 zenith:9000; do
+    for svc_port in nova:9001 comet:9090 aurora:9002 corona:9003 nebula:9004 zenith:9000 lumen:3000; do
         svc="${svc_port%%:*}"
         port="${svc_port##*:}"
         pid_file="$PID_DIR/$svc.pid"
@@ -245,6 +275,7 @@ do_seed() {
 
 case "${1:-start}" in
     start)  do_start ;;
+    no-frontend) NO_FRONTEND=1 do_start ;;
     stop)   do_stop ;;
     status) do_status ;;
     logs)   do_logs ;;
@@ -256,7 +287,7 @@ case "${1:-start}" in
         do_start
         ;;
     *)
-        echo "Usage: $0 {start|stop|status|logs|seed|build|restart}"
+        echo "Usage: $0 {start|no-frontend|stop|status|logs|seed|build|restart}"
         exit 1
         ;;
 esac
