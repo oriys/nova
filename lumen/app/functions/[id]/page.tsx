@@ -6,8 +6,6 @@ import { useTranslations } from "next-intl"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FunctionMetrics } from "@/components/function-metrics"
 import { FunctionCode } from "@/components/function-code"
@@ -20,14 +18,9 @@ import { FunctionGateway } from "@/components/function-gateway"
 import { FunctionTestSuite } from "@/components/function-test-suite"
 import { FunctionDependencies } from "@/components/function-dependencies"
 import { FunctionState } from "@/components/function-state"
+import { FunctionVersions } from "@/components/function-versions"
+import { FunctionSchedules } from "@/components/function-schedules"
 import { InvocationHeatmap } from "@/components/invocation-heatmap"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { functionsApi, schedulesApi } from "@/lib/api"
 import { markOnboardingStep } from "@/lib/onboarding-state"
@@ -43,11 +36,6 @@ import {
   Play,
   RefreshCw,
   Loader2,
-  Plus,
-  Trash2,
-  Pencil,
-  ToggleLeft,
-  ToggleRight,
 } from "lucide-react"
 
 export default function FunctionDetailPage({
@@ -69,6 +57,7 @@ export default function FunctionDetailPage({
       "code",
       "logs",
       "config",
+      "state",
       "triggers",
       "tests",
       "docs",
@@ -77,7 +66,6 @@ export default function FunctionDetailPage({
     const tabAliases: Record<string, string> = {
       diagnostics: "logs",
       versions: "config",
-      state: "config",
       dependencies: "code",
       schedules: "triggers",
       gateway: "triggers",
@@ -115,13 +103,6 @@ export default function FunctionDetailPage({
   const [retryingAsyncJobId, setRetryingAsyncJobId] = useState<string | null>(null)
   const [versions, setVersions] = useState<FunctionVersionEntry[]>([])
   const [schedules, setSchedules] = useState<ScheduleEntry[]>([])
-  const [schedDialogOpen, setSchedDialogOpen] = useState(false)
-  const [newCron, setNewCron] = useState("")
-  const [newSchedInput, setNewSchedInput] = useState("")
-  const [creatingSchedule, setCreatingSchedule] = useState(false)
-  const [editingSchedule, setEditingSchedule] = useState<ScheduleEntry | null>(null)
-  const [editCron, setEditCron] = useState("")
-  const [editDialogOpen, setEditDialogOpen] = useState(false)
   const loadedFunctionIDRef = useRef<string | null>(null)
 
   const refreshAsyncJobs = useCallback(async (functionName?: string) => {
@@ -391,6 +372,14 @@ export default function FunctionDetailPage({
             >
               {t("tabs.configuration")}
             </TabsTrigger>
+            {func && func.mode === "durable" && (
+              <TabsTrigger
+                value="state"
+                className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
+              >
+                {t("tabs.state")}
+              </TabsTrigger>
+            )}
             <TabsTrigger
               value="triggers"
               className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
@@ -463,313 +452,21 @@ export default function FunctionDetailPage({
 
           <TabsContent value="config" className="mt-0 space-y-6">
             <FunctionConfig func={func} onUpdate={fetchData} />
-
-            {/* Versions */}
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground mb-3">{t("tabs.versions")}</h3>
-              <div className="rounded-xl border border-border bg-card overflow-hidden">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colVersion")}</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colCodeHash")}</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colHandler")}</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colMemory")}</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colTimeout")}</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colMode")}</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colCreated")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {versions.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
-                          {t("versions.empty")}
-                        </td>
-                      </tr>
-                    ) : (
-                      versions.map((v) => (
-                        <tr key={v.version} className="border-b border-border hover:bg-muted/50">
-                          <td className="px-4 py-3">
-                            <Badge variant="secondary" className="text-xs">v{v.version}</Badge>
-                          </td>
-                          <td className="px-4 py-3">
-                            <code className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                              {v.code_hash ? v.code_hash.slice(0, 12) + "..." : "-"}
-                            </code>
-                          </td>
-                          <td className="px-4 py-3 text-sm">{v.handler || "-"}</td>
-                          <td className="px-4 py-3 text-sm text-muted-foreground">{v.memory_mb} MB</td>
-                          <td className="px-4 py-3 text-sm text-muted-foreground">{v.timeout_s}s</td>
-                          <td className="px-4 py-3">
-                            <Badge variant="secondary" className="text-xs">{v.mode || t("modeProcess")}</Badge>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-muted-foreground">
-                            {new Date(v.created_at).toLocaleString()}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* State */}
-            <FunctionState functionName={func.name} />
+            <FunctionVersions versions={versions} />
           </TabsContent>
 
+          {func.mode === "durable" && (
+            <TabsContent value="state" className="mt-0 space-y-6">
+              <FunctionState functionName={func.name} />
+            </TabsContent>
+          )}
+
           <TabsContent value="triggers" className="mt-0 space-y-6">
-            {/* Schedules */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Dialog open={schedDialogOpen} onOpenChange={setSchedDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm">
-                      <Plus className="mr-2 h-4 w-4" />
-                      {t("schedules.createSchedule")}
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>{t("schedules.createTitle")}</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">{t("schedules.cronExpression")}</label>
-                        <Input
-                          value={newCron}
-                          onChange={(e) => setNewCron(e.target.value)}
-                          placeholder={t("schedules.cronPlaceholder")}
-                        />
-                        <div className="flex flex-wrap gap-1.5">
-                          {[
-                            { label: t("schedules.presets.every1m"), value: "@every 1m" },
-                            { label: t("schedules.presets.every5m"), value: "@every 5m" },
-                            { label: t("schedules.presets.every15m"), value: "*/15 * * * *" },
-                            { label: t("schedules.presets.every30m"), value: "*/30 * * * *" },
-                            { label: t("schedules.presets.hourly"), value: "@hourly" },
-                            { label: t("schedules.presets.daily"), value: "@daily" },
-                            { label: t("schedules.presets.weekly"), value: "@weekly" },
-                          ].map((preset) => (
-                            <button
-                              key={preset.value}
-                              type="button"
-                              className={cn(
-                                "px-2 py-0.5 rounded text-xs border transition-colors",
-                                newCron === preset.value
-                                  ? "bg-primary text-primary-foreground border-primary"
-                                  : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                              )}
-                              onClick={() => setNewCron(preset.value)}
-                            >
-                              {preset.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">{t("schedules.inputOptionalJson")}</label>
-                        <Textarea
-                          value={newSchedInput}
-                          onChange={(e) => setNewSchedInput(e.target.value)}
-                          placeholder={t("schedules.inputPlaceholder")}
-                          className="min-h-[80px] font-mono text-xs"
-                        />
-                      </div>
-                      <Button
-                        className="w-full"
-                        onClick={async () => {
-                          if (!func || !newCron.trim()) return
-                          setCreatingSchedule(true)
-                          try {
-                            let input: unknown = undefined
-                            if (newSchedInput.trim()) {
-                              input = JSON.parse(newSchedInput)
-                            }
-                            await schedulesApi.create(func.name, newCron.trim(), input)
-                            setSchedDialogOpen(false)
-                            setNewCron("")
-                            setNewSchedInput("")
-                            const updated = await schedulesApi.list(func.name)
-                            setSchedules(updated || [])
-                          } catch (err) {
-                            console.error("Failed to create schedule:", err)
-                          } finally {
-                            setCreatingSchedule(false)
-                          }
-                        }}
-                        disabled={creatingSchedule || !newCron.trim()}
-                      >
-                        {creatingSchedule ? t("schedules.creating") : t("schedules.create")}
-                      </Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-
-                {/* Edit Schedule Dialog */}
-                <Dialog open={editDialogOpen} onOpenChange={(open) => {
-                  setEditDialogOpen(open)
-                  if (!open) setEditingSchedule(null)
-                }}>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>{t("schedules.editTitle")}</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">{t("schedules.cronExpression")}</label>
-                        <Input
-                          value={editCron}
-                          onChange={(e) => setEditCron(e.target.value)}
-                          placeholder={t("schedules.cronPlaceholder")}
-                        />
-                        <div className="flex flex-wrap gap-1.5">
-                          {[
-                            { label: t("schedules.presets.every1m"), value: "@every 1m" },
-                            { label: t("schedules.presets.every5m"), value: "@every 5m" },
-                            { label: t("schedules.presets.every15m"), value: "*/15 * * * *" },
-                            { label: t("schedules.presets.every30m"), value: "*/30 * * * *" },
-                            { label: t("schedules.presets.hourly"), value: "@hourly" },
-                            { label: t("schedules.presets.daily"), value: "@daily" },
-                            { label: t("schedules.presets.weekly"), value: "@weekly" },
-                          ].map((preset) => (
-                            <button
-                              key={preset.value}
-                              type="button"
-                              className={cn(
-                                "px-2 py-0.5 rounded text-xs border transition-colors",
-                                editCron === preset.value
-                                  ? "bg-primary text-primary-foreground border-primary"
-                                  : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                              )}
-                              onClick={() => setEditCron(preset.value)}
-                            >
-                              {preset.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <Button
-                        className="w-full"
-                        onClick={async () => {
-                          if (!func || !editingSchedule || !editCron.trim()) return
-                          try {
-                            await schedulesApi.updateCron(func.name, editingSchedule.id, editCron.trim())
-                            setEditDialogOpen(false)
-                            setEditingSchedule(null)
-                            const updated = await schedulesApi.list(func.name)
-                            setSchedules(updated || [])
-                          } catch (err) {
-                            console.error("Failed to update schedule:", err)
-                          }
-                        }}
-                        disabled={!editCron.trim() || editCron.trim() === editingSchedule?.cron_expression}
-                      >
-                        {t("schedules.save")}
-                      </Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
-
-              <div className="rounded-xl border border-border bg-card overflow-hidden">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("schedules.table.colCron")}</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("schedules.table.colStatus")}</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("schedules.table.colLastRun")}</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("schedules.table.colCreated")}</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">{t("schedules.table.colActions")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {schedules.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                          {t("schedules.table.empty")}
-                        </td>
-                      </tr>
-                    ) : (
-                      schedules.map((s) => (
-                        <tr key={s.id} className="border-b border-border hover:bg-muted/50">
-                          <td className="px-4 py-3">
-                            <code className="text-sm font-mono">{s.cron_expression}</code>
-                          </td>
-                          <td className="px-4 py-3">
-                            <Badge
-                              variant="secondary"
-                              className={cn(
-                                "text-xs",
-                                s.enabled
-                                  ? "bg-success/10 text-success border-0"
-                                  : "bg-muted text-muted-foreground border-0"
-                              )}
-                            >
-                              {s.enabled ? t("schedules.statusActive") : t("schedules.statusDisabled")}
-                            </Badge>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-muted-foreground">
-                            {s.last_run_at ? new Date(s.last_run_at).toLocaleString() : t("schedules.never")}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-muted-foreground">
-                            {new Date(s.created_at).toLocaleString()}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setEditingSchedule(s)
-                                  setEditCron(s.cron_expression)
-                                  setEditDialogOpen(true)
-                                }}
-                                title={t("actions.edit")}
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={async () => {
-                                  if (!func) return
-                                  await schedulesApi.toggle(func.name, s.id, !s.enabled)
-                                  const updated = await schedulesApi.list(func.name)
-                                  setSchedules(updated || [])
-                                }}
-                                title={s.enabled ? t("actions.disable") : t("actions.enable")}
-                              >
-                                {s.enabled ? (
-                                  <ToggleRight className="h-4 w-4 text-success" />
-                                ) : (
-                                  <ToggleLeft className="h-4 w-4 text-muted-foreground" />
-                                )}
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={async () => {
-                                  if (!func) return
-                                  await schedulesApi.delete(func.name, s.id)
-                                  const updated = await schedulesApi.list(func.name)
-                                  setSchedules(updated || [])
-                                }}
-                              >
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Gateway */}
+            <FunctionSchedules
+              functionName={func.name}
+              schedules={schedules}
+              onSchedulesChange={setSchedules}
+            />
             <FunctionGateway functionName={func.name} />
           </TabsContent>
 
