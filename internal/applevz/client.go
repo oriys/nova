@@ -50,19 +50,24 @@ func (c *Client) Init(fn *domain.Function) error {
 	})
 	c.initPayload = payload
 
-	// Connect with retry
-	var dialErr error
+	// Retry dial+init with backoff — the vsock proxy may accept connections
+	// before the guest agent is fully ready to process messages (EOF on first attempt).
+	var lastErr error
 	for i := 0; i < 50; i++ {
-		dialErr = c.dialLocked(500 * time.Millisecond)
-		if dialErr == nil {
-			break
+		_ = c.closeLocked()
+		lastErr = c.dialLocked(500 * time.Millisecond)
+		if lastErr != nil {
+			time.Sleep(200 * time.Millisecond)
+			continue
 		}
+		lastErr = c.initLocked()
+		if lastErr == nil {
+			return nil
+		}
+		_ = c.closeLocked()
 		time.Sleep(200 * time.Millisecond)
 	}
-	if dialErr != nil {
-		return fmt.Errorf("dial agent via vsock: %w", dialErr)
-	}
-	return c.initLocked()
+	return fmt.Errorf("init agent via vsock: %w", lastErr)
 }
 
 // Execute runs a function invocation.

@@ -52,12 +52,11 @@ nebula-linux: $(NEBULA_LINUX)  ## Cross-compile Nebula for linux/amd64
 aurora: $(AURORA_BIN)  ## Build Aurora observability plane (native)
 aurora-linux: $(AURORA_LINUX)  ## Cross-compile Aurora for linux/amd64
 
-nova-vz:  ## Build nova-vz Swift VM manager (macOS only, requires Swift 5.9+)
+nova-vz:  ## Build nova-vz Go VM manager (macOS only, requires Apple Virtualization.framework)
 ifeq ($(shell uname -s),Darwin)
 	@mkdir -p $(BINARY_DIR)
-	cd tools/nova-vz && swift build -c release
-	cp tools/nova-vz/.build/release/nova-vz $(BINARY_DIR)/nova-vz
-	codesign --entitlements tools/nova-vz/nova-vz.entitlements --force -s - $(BINARY_DIR)/nova-vz
+	CGO_ENABLED=1 go build -o $(BINARY_DIR)/nova-vz ./cmd/nova-vz/
+	codesign --entitlements cmd/nova-vz/nova-vz.entitlements --force -s - $(BINARY_DIR)/nova-vz
 	@echo "Built $(BINARY_DIR)/nova-vz"
 else
 	@echo "nova-vz requires macOS (skipped on $$(uname -s))"
@@ -232,10 +231,19 @@ env-down:  ## Stop test dependencies
 
 # ─── Dev Environment ──────────────────────────────────────────────────────────
 
-.PHONY: dev seed
+.PHONY: dev dev-native dev-native-stop dev-native-status seed
 
 dev: download-assets  ## Start full stack via docker compose (Postgres + Nova + Comet + Corona + Nebula + Aurora + Zenith + Lumen)
 	docker-compose up --build
+
+dev-native:  ## Start all services natively on macOS (enables Apple VZ backend)
+	./scripts/dev-native.sh start
+
+dev-native-stop:  ## Stop native services
+	./scripts/dev-native.sh stop
+
+dev-native-status:  ## Show native service status
+	./scripts/dev-native.sh status
 
 seed:  ## Seed sample functions via scripts/seed-functions.sh
 	./scripts/seed-functions.sh

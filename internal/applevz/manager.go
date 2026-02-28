@@ -64,7 +64,7 @@ func NewManager(cfg *Config) (*Manager, error) {
 	} else if p, err := exec.LookPath("vfkit"); err == nil {
 		vmTool = p
 	} else {
-		return nil, fmt.Errorf("neither nova-vz nor vfkit found in PATH (install nova-vz from tools/nova-vz/ or vfkit via: brew install vfkit)")
+		return nil, fmt.Errorf("neither nova-vz nor vfkit found in PATH (build nova-vz via: make nova-vz, or install vfkit via: brew install vfkit)")
 	}
 
 	// Verify kernel exists
@@ -223,7 +223,7 @@ func (m *Manager) startVM(ctx context.Context, fn *domain.Function, vmID string,
 	}
 
 	// Build kernel command line
-	cmdline := "console=hvc0 root=/dev/vda rw"
+	cmdline := "console=hvc0 root=/dev/vda rw init=/init modules=virtio_blk,ext4,vsock,vmw_vsock_virtio_transport_common,vmw_vsock_virtio_transport"
 	if m.config.KernelCmdline != "" {
 		cmdline += " " + m.config.KernelCmdline
 	}

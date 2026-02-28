@@ -576,10 +576,21 @@ func (c *Client) Init(fn *domain.Function) error {
 	}
 	c.initPayload = payload
 
-	if err := c.redialAndInit(5 * time.Second); err != nil {
-		return err
+	// Retry Init with backoff — the agent TCP listener may accept connections
+	// before it is fully ready to process messages, causing EOF on first attempt.
+	backoff := []time.Duration{100 * time.Millisecond, 250 * time.Millisecond, 500 * time.Millisecond}
+	var lastErr error
+	for attempt := 0; attempt <= len(backoff); attempt++ {
+		if err := c.redialAndInit(5 * time.Second); err != nil {
+			lastErr = err
+			if attempt < len(backoff) {
+				time.Sleep(backoff[attempt])
+			}
+			continue
+		}
+		return c.closeLocked()
 	}
-	return c.closeLocked()
+	return lastErr
 }
 
 // Execute runs a function invocation.

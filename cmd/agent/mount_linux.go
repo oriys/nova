@@ -13,18 +13,21 @@ import (
 )
 
 func remountCodeDriveRW() error {
-	if os.Getenv("NOVA_SKIP_MOUNT") == "true" {
-		return nil // Docker mode: /code is a regular directory, no remount needed
+	if os.Getenv("NOVA_SKIP_MOUNT") == "true" || codeVirtioFS {
+		return nil // Docker/VirtioFS mode: /code is already writable
 	}
 	return unix.Mount("", CodeMountPoint, "", unix.MS_REMOUNT, "")
 }
 
 func remountCodeDriveRO() error {
-	if os.Getenv("NOVA_SKIP_MOUNT") == "true" {
+	if os.Getenv("NOVA_SKIP_MOUNT") == "true" || codeVirtioFS {
 		return nil
 	}
 	return unix.Mount("", CodeMountPoint, "", unix.MS_REMOUNT|unix.MS_RDONLY, "")
 }
+
+// codeVirtioFS indicates whether /code was mounted via VirtioFS (writable, no remount needed).
+var codeVirtioFS bool
 
 func mountCodeDrive() {
 	if os.Getenv("NOVA_SKIP_MOUNT") == "true" {
@@ -57,6 +60,14 @@ func mountCodeDrive() {
 		os.Exit(1)
 	}
 
+	// Try VirtioFS first (Apple Virtualization.framework shares code via virtiofs tag).
+	if err := unix.Mount("code", CodeMountPoint, "virtiofs", 0, ""); err == nil {
+		codeVirtioFS = true
+		fmt.Printf("[agent] Mounted code via VirtioFS at %s\n", CodeMountPoint)
+		return
+	}
+
+	// Fall back to virtio-blk code drive (/dev/vdb).
 	var lastErr error
 	for i := 0; i < 40; i++ { // ~2s total
 		err := unix.Mount("/dev/vdb", CodeMountPoint, "ext4", unix.MS_RDONLY, "")

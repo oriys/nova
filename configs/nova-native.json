@@ -1,0 +1,50 @@
+{
+  "postgres": {
+    "dsn": "postgres://nova:nova@localhost:5432/nova?sslmode=disable"
+  },
+  "secrets": {
+    "master_key": "1710f674b5e29cd55bba9c1481625ac255886d763ed7dd6aeab8b21382910d1e"
+  },
+  "auth": {
+    "enabled": false,
+    "jwt": {
+      "enabled": true,
+      "algorithm": "HS256",
+      "secret": "nova-dev-jwt-secret"
+    }
+  },
+  "firecracker": {
+    "backend": "docker",
+    "binary": "/opt/nova/bin/firecracker",
+    "kernel": "/opt/nova/kernel/vmlinux",
+    "rootfs_dir": "assets/rootfs",
+    "snapshot_dir": "/tmp/nova/snapshots",
+    "socket_dir": "/tmp/nova/sockets",
+    "vsock_dir": "/tmp/nova/vsock",
+    "log_dir": "/tmp/nova/logs"
+  },
+  "docker": {
+    "code_dir": "/tmp/nova/code",
+    "image_prefix": "nova-runtime"
+  },
+  "applevz": {
+    "kernel_path": "assets/kernel/Image-alpine-arm64",
+    "initrd_path": "assets/kernel/initramfs-alpine-arm64-vsock",
+    "rootfs_dir": "assets/rootfs",
+    "code_dir": "/tmp/nova/applevz-code",
+    "socket_dir": "/tmp/nova/applevz-socks",
+    "nova_vz_path": "bin/nova-vz",
+    "snapshot_dir": "/tmp/nova/applevz-snapshots",
+    "default_mem_mb": 256,
+    "default_cpus": 1
+  },
+  "pool": {
+    "idle_ttl": 120000000000
+  },
+  "runtime_pool": {
+    "enabled": false
+  },
+  "gateway": {
+    "enabled": true
+  }
+}

@@ -2,7 +2,7 @@
 // for running functions in lightweight Linux VMs on macOS.
 //
 // Two VM managers are supported:
-//   - nova-vz (preferred): Custom Swift tool with full snapshot save/restore support
+//   - nova-vz (preferred): Go tool using Code-Hex/vz with snapshot save/restore support
 //   - vfkit (fallback): Third-party CLI, no snapshot support
 //
 // The backend boots Linux VMs with direct kernel boot, shares function code
@@ -11,9 +11,10 @@
 //
 // Prerequisites:
 //   - macOS 13+ (Ventura or later; macOS 14+ for snapshots)
-//   - nova-vz (built from tools/nova-vz/) or vfkit (brew install vfkit)
+//   - nova-vz (built from cmd/nova-vz/) or vfkit (brew install vfkit)
 //   - Linux kernel image (arm64 for Apple Silicon, x86_64 for Intel)
-//   - Runtime rootfs images (ext4 or raw disk images)
+//   - Initramfs with vsock modules (vsock, vmw_vsock_virtio_transport)
+//   - Runtime rootfs images (ext4 disk images)
 package applevz
 
 import (

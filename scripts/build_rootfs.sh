@@ -20,7 +20,6 @@ set -euxo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-ALPINE_URL="${ALPINE_URL:-https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.3-x86_64.tar.gz}"
 WASMTIME_VERSION="${WASMTIME_VERSION:-v41.0.1}"
 DENO_VERSION="${DENO_VERSION:-v2.6.7}"
 BUN_VERSION="${BUN_VERSION:-bun-v1.3.8}"
