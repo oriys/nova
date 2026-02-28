@@ -1311,7 +1311,8 @@
       "schedules": "Schedules",
       "docs": "Docs",
       "tests": "テスト",
-      "gateway": "ゲートウェイ"
+      "gateway": "ゲートウェイ",
+      "dependencies": "依存関係"
     },
     "versions": {
       "colVersion": "Version",
@@ -1403,6 +1404,25 @@
       "deleteSuccess": "ルートを削除しました",
       "error": "操作に失敗しました",
       "paramMapping": "パラメータマッピング"
+    },
+    "dependencies": {
+      "title": "依存関係",
+      "description": "この関数の外部パッケージ依存関係を管理します。",
+      "depFile": "依存ファイル",
+      "save": "依存関係を保存",
+      "saving": "保存中...",
+      "saved": "依存関係を保存しました",
+      "saveFailed": "依存関係の保存に失敗しました",
+      "discard": "変更を破棄",
+      "noChanges": "変更なし",
+      "empty": "依存ファイルが設定されていません。",
+      "emptyHint": "{file} を追加して、デプロイ時に外部パッケージをインストールします。",
+      "addDeps": "依存関係を追加",
+      "removeDeps": "削除",
+      "help": "{file} で外部依存関係を追加します。デプロイ時に自動的にインストールされます。",
+      "unsupported": "このランタイムは依存ファイルをサポートしていません。",
+      "loadFailed": "依存ファイルの読み込みに失敗しました",
+      "loading": "依存ファイルを読み込み中..."
     }
   },
   "landingPage": {

@@ -1311,7 +1311,8 @@
       "schedules": "Schedules",
       "docs": "Docs",
       "tests": "測試套件",
-      "gateway": "閘道"
+      "gateway": "閘道",
+      "dependencies": "依賴"
     },
     "versions": {
       "colVersion": "Version",
@@ -1403,6 +1404,25 @@
       "deleteSuccess": "路由已刪除",
       "error": "操作失敗",
       "paramMapping": "參數映射"
+    },
+    "dependencies": {
+      "title": "依賴管理",
+      "description": "管理此函數的外部套件依賴。",
+      "depFile": "依賴檔案",
+      "save": "儲存依賴",
+      "saving": "儲存中...",
+      "saved": "依賴已儲存",
+      "saveFailed": "儲存依賴失敗",
+      "discard": "放棄變更",
+      "noChanges": "無變更",
+      "empty": "尚未設定依賴檔案。",
+      "emptyHint": "新增 {file} 以在部署時安裝外部套件。",
+      "addDeps": "新增依賴",
+      "removeDeps": "移除",
+      "help": "透過 {file} 新增外部依賴，部署時將自動安裝。",
+      "unsupported": "此執行環境不支援依賴檔案。",
+      "loadFailed": "載入依賴檔案失敗",
+      "loading": "載入依賴檔案中..."
     }
   },
   "landingPage": {

@@ -634,6 +634,34 @@ func (h *Handler) ListFunctionFiles(w http.ResponseWriter, r *http.Request) {
 	writePaginatedList(w, limit, offset, len(pagedItems), int64(total), pagedItems)
 }
 
+// GetFunctionFileContents handles GET /functions/{name}/files/content
+func (h *Handler) GetFunctionFileContents(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	fn, err := h.Store.GetFunctionByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	files, err := h.Store.GetFunctionFiles(r.Context(), fn.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Convert []byte values to string
+	result := make(map[string]string, len(files))
+	for path, content := range files {
+		result[path] = string(content)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"function_id": fn.ID,
+		"files":       result,
+	})
+}
+
 // detectEntryPoint tries to find the entry point file based on runtime conventions
 func detectEntryPoint(files map[string][]byte, runtime domain.Runtime) string {
 	// Common entry point names by runtime

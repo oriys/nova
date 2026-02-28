@@ -1311,7 +1311,8 @@
       "schedules": "Schedules",
       "docs": "Docs",
       "tests": "Tests",
-      "gateway": "Passerelle"
+      "gateway": "Passerelle",
+      "dependencies": "Dépendances"
     },
     "versions": {
       "colVersion": "Version",
@@ -1403,6 +1404,25 @@
       "deleteSuccess": "Route supprimée",
       "error": "Opération échouée",
       "paramMapping": "Mappage de paramètres"
+    },
+    "dependencies": {
+      "title": "Dépendances",
+      "description": "Gérer les dépendances de packages externes pour cette fonction.",
+      "depFile": "Fichier de dépendances",
+      "save": "Enregistrer les dépendances",
+      "saving": "Enregistrement...",
+      "saved": "Dépendances enregistrées",
+      "saveFailed": "Échec de l'enregistrement des dépendances",
+      "discard": "Annuler",
+      "noChanges": "Aucune modification",
+      "empty": "Aucun fichier de dépendances configuré.",
+      "emptyHint": "Ajoutez un {file} pour installer des packages externes lors du déploiement.",
+      "addDeps": "Ajouter des dépendances",
+      "removeDeps": "Supprimer",
+      "help": "Ajoutez des dépendances externes via {file}. Elles seront installées lors du déploiement.",
+      "unsupported": "Ce runtime ne prend pas en charge les fichiers de dépendances.",
+      "loadFailed": "Échec du chargement du fichier de dépendances",
+      "loading": "Chargement du fichier de dépendances..."
     }
   },
   "landingPage": {

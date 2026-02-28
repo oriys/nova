@@ -53,6 +53,11 @@ export interface UpdateCodeResponse {
   entry_point?: string;
 }
 
+export interface FunctionFileContentsResponse {
+  function_id: string;
+  files: Record<string, string>;
+}
+
 export interface ResourceLimits {
   vcpus?: number;
   disk_iops?: number;
@@ -1057,6 +1062,9 @@ export const functionsApi = {
 
   getCode: (name: string) =>
     request<FunctionCodeResponse>(`/functions/${encodeURIComponent(name)}/code`),
+
+  getFileContents: (name: string) =>
+    request<FunctionFileContentsResponse>(`/functions/${encodeURIComponent(name)}/files/content`),
 
   updateCode: (name: string, code: string) =>
     request<UpdateCodeResponse>(`/functions/${encodeURIComponent(name)}/code`, {

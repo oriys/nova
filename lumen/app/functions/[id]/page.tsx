@@ -18,6 +18,7 @@ import { FunctionSLOPanel } from "@/components/function-slo-panel"
 import { FunctionDocs } from "@/components/function-docs"
 import { FunctionGateway } from "@/components/function-gateway"
 import { FunctionTestSuite } from "@/components/function-test-suite"
+import { FunctionDependencies } from "@/components/function-dependencies"
 import { InvocationHeatmap } from "@/components/invocation-heatmap"
 import {
   Dialog,
@@ -73,6 +74,7 @@ export default function FunctionDetailPage({
       "tests",
       "docs",
       "gateway",
+      "dependencies",
     ])
     if (validTabs.has(requestedTab)) {
       return requestedTab
@@ -415,6 +417,12 @@ export default function FunctionDetailPage({
               className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
             >
               {t("tabs.gateway")}
+            </TabsTrigger>
+            <TabsTrigger
+              value="dependencies"
+              className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
+            >
+              {t("tabs.dependencies")}
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -781,6 +789,10 @@ export default function FunctionDetailPage({
 
           <TabsContent value="gateway" className="mt-0">
             <FunctionGateway functionName={func.name} />
+          </TabsContent>
+
+          <TabsContent value="dependencies" className="mt-0">
+            <FunctionDependencies func={func} onDependenciesSaved={() => fetchData()} />
           </TabsContent>
         </Tabs>
       </div>
