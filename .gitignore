@@ -4,6 +4,9 @@ bin/
 /agent
 /comet
 /nebula
+/aurora
+/zenith
+/corona
 /atlas/atlas
 *.exe
 *.dll
@@ -46,6 +49,10 @@ lumen/playwright.config.ts
 assets/kernel/
 assets/rootfs/*.ext4
 assets/downloads/
+assets/downloads-arm64/
 
 # Rust
 orbit/target/
+
+# Swift (nova-vz)
+tools/nova-vz/.build/
