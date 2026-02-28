@@ -152,7 +152,7 @@ func (c *Compiler) CompileWithDeps(ctx context.Context, fn *domain.Function, fil
 				logging.Op().Warn("failed to install Ruby deps", "function", fn.Name, "error", err)
 			} else {
 				for k, v := range deps {
-					result["vendor/bundle/"+k] = v
+					result["vendor/"+k] = v
 				}
 				logging.Op().Info("installed Ruby deps", "function", fn.Name, "dep_files", len(deps))
 			}
@@ -168,6 +168,19 @@ func (c *Compiler) CompileWithDeps(ctx context.Context, fn *domain.Function, fil
 					result["vendor/"+k] = v
 				}
 				logging.Op().Info("installed PHP deps", "function", fn.Name, "dep_files", len(deps))
+			}
+		}
+
+	case domain.RuntimeBun:
+		if pkgJson, ok := files["package.json"]; ok && len(pkgJson) > 0 {
+			deps, err := c.installNodeDeps(ctx, pkgJson)
+			if err != nil {
+				logging.Op().Warn("failed to install Bun deps", "function", fn.Name, "error", err)
+			} else {
+				for k, v := range deps {
+					result["node_modules/"+k] = v
+				}
+				logging.Op().Info("installed Bun deps", "function", fn.Name, "dep_files", len(deps))
 			}
 		}
 	}
@@ -488,7 +501,8 @@ func findEntryPointFile(files map[string][]byte, runtime domain.Runtime, handler
 // (e.g., "python3.11" -> RuntimePython, "go1.21" -> RuntimeGo)
 func baseRuntimeID(runtime domain.Runtime) domain.Runtime {
 	rt := string(runtime)
-	prefixMap := map[string]domain.Runtime{
+	// Check exact match first to avoid prefix collisions (e.g. "c" matching "cpp")
+	exactMap := map[string]domain.Runtime{
 		"python":  domain.RuntimePython,
 		"node":    domain.RuntimeNode,
 		"go":      domain.RuntimeGo,
@@ -506,9 +520,34 @@ func baseRuntimeID(runtime domain.Runtime) domain.Runtime {
 		"cpp":     domain.RuntimeCpp,
 		"graalvm": domain.RuntimeGraalVM,
 	}
-	for prefix, base := range prefixMap {
-		if strings.HasPrefix(rt, prefix) {
-			return base
+	if base, ok := exactMap[rt]; ok {
+		return base
+	}
+	// Then try prefix matching (longest prefix first to avoid collisions)
+	prefixes := []struct {
+		prefix string
+		base   domain.Runtime
+	}{
+		{"python", domain.RuntimePython},
+		{"node", domain.RuntimeNode},
+		{"kotlin", domain.RuntimeKotlin},
+		{"graalvm", domain.RuntimeGraalVM},
+		{"swift", domain.RuntimeSwift},
+		{"scala", domain.RuntimeScala},
+		{"rust", domain.RuntimeRust},
+		{"ruby", domain.RuntimeRuby},
+		{"java", domain.RuntimeJava},
+		{"deno", domain.RuntimeDeno},
+		{"php", domain.RuntimePHP},
+		{"bun", domain.RuntimeBun},
+		{"cpp", domain.RuntimeCpp},
+		{"zig", domain.RuntimeZig},
+		{"go", domain.RuntimeGo},
+		{"c", domain.RuntimeC},
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(rt, p.prefix) {
+			return p.base
 		}
 	}
 	return runtime
