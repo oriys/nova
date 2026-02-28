@@ -33,10 +33,12 @@ class _LambdaContext:
         return max(0, int(self._timeout_s * 1000 - (_time.time() * 1000 - self._start_ms)))
 
 def _load_handler():
-    with open("/code/handler") as f:
+    _code_dir = os.environ.get("NOVA_CODE_DIR", "/code")
+    _handler_path = os.path.join(_code_dir, "handler")
+    with open(_handler_path) as f:
         code = f.read()
     ns = {}
-    exec(compile(code, "/code/handler", "exec"), ns)
+    exec(compile(code, _handler_path, "exec"), ns)
     return ns["handler"]
 
 _handler = _load_handler()
@@ -86,7 +88,7 @@ function buildContext() {
   };
 }
 
-const mod = require('/code/handler');
+const mod = require(path.join(process.env.NOVA_CODE_DIR || '/code', 'handler'));
 const handler = mod.handler || mod.default || mod;
 
 if (process.argv.includes('--persistent')) {
@@ -123,8 +125,10 @@ if (process.argv.includes('--persistent')) {
 
 const bootstrapRuby = `require 'json'
 
+_code_dir = ENV['NOVA_CODE_DIR'] || '/code'
+
 # Load bundler-installed gems if present
-vendor_dirs = ['/code/vendor/bundle', '/code/vendor']
+vendor_dirs = [File.join(_code_dir, 'vendor/bundle'), File.join(_code_dir, 'vendor')]
 vendor_dirs.each do |vdir|
   gemspec_dirs = Dir.glob(File.join(vdir, 'ruby/*/gems/*/lib'))
   gemspec_dirs.each { |d| $LOAD_PATH.unshift(d) unless $LOAD_PATH.include?(d) }
@@ -153,7 +157,7 @@ class LambdaContext
   end
 end
 
-load '/code/handler'
+load File.join(_code_dir, 'handler')
 
 if ARGV.include?('--persistent')
   STDIN.each_line do |line|
@@ -198,7 +202,7 @@ function nova_build_context() {
     ];
 }
 
-require '/code/handler';
+require (getenv('NOVA_CODE_DIR') ?: '/code') . '/handler';
 
 if (in_array('--persistent', $argv)) {
     while ($line = fgets(STDIN)) {
@@ -225,7 +229,7 @@ if (in_array('--persistent', $argv)) {
 `
 
 const bootstrapDeno = `// Read and evaluate user handler
-const _handlerCode = await Deno.readTextFile("/code/handler");
+const _handlerCode = await Deno.readTextFile((Deno.env.get("NOVA_CODE_DIR") || "/code") + "/handler");
 const _blob = new Blob([_handlerCode], { type: "application/javascript" });
 const _url = URL.createObjectURL(_blob);
 const _mod = await import(_url);
@@ -337,7 +341,7 @@ local function build_context()
     }
 end
 
-dofile("/code/handler")
+dofile((os.getenv("NOVA_CODE_DIR") or "/code") .. "/handler")
 
 if persistent then
     while true do

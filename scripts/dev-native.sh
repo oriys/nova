@@ -135,7 +135,14 @@ do_start() {
     do_postgres
 
     # Create working directories
-    mkdir -p /tmp/nova/code /tmp/nova/applevz-code /tmp/nova/applevz-socks /tmp/nova/applevz-snapshots
+    mkdir -p /tmp/nova/code /tmp/nova/wasm-code /tmp/nova/applevz-code /tmp/nova/applevz-socks /tmp/nova/applevz-snapshots
+
+    # Build macOS-native agent for WASM backend (nova-agent default is linux/amd64)
+    if [ ! -f "$ROOT_DIR/bin/nova-agent-darwin" ]; then
+        log "Building macOS-native agent for WASM backend..."
+        CGO_ENABLED=0 go build -o "$ROOT_DIR/bin/nova-agent-darwin" ./cmd/agent
+    fi
+    export NOVA_AGENT_PATH="$ROOT_DIR/bin/nova-agent-darwin"
 
     # Nova (control plane) - port 9001
     # Start nova first to run DB migrations before other services

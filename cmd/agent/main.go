@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -48,9 +49,6 @@ const (
 
 	VsockPort = 9999
 
-	CodeMountPoint = "/code"
-	CodePath       = "/code/handler"
-
 	defaultPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 	// internalInvokeEndpoint is the vsock endpoint exposed to user functions
@@ -72,6 +70,11 @@ const (
 	bunPath      = "/usr/local/bin/bun"
 
 	maxPersistentResponseBytes = 4 * 1024 * 1024 // 4MB
+)
+
+var (
+	CodeMountPoint = "/code"
+	CodePath       = "/code/handler"
 )
 
 // ExecutionMode determines how functions are executed
@@ -215,19 +218,33 @@ type Agent struct {
 func main() {
 	fmt.Println("[agent] Nova guest agent starting...")
 
+	// Allow overriding code directory (used by WASM backend on host)
+	if dir := os.Getenv("NOVA_CODE_DIR"); dir != "" {
+		CodeMountPoint = dir
+		CodePath = filepath.Join(dir, "handler")
+		fmt.Printf("[agent] Code directory overridden to %s\n", dir)
+	}
+
 	ensurePath()
 	mountCodeDrive()
 	mountLayerDrives()
 	mountLayerOverlay(countMountedLayers())
 
-	listener, err := listen(VsockPort)
+	listenPort := VsockPort
+	if p := os.Getenv("NOVA_AGENT_PORT"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil {
+			listenPort = v
+		}
+	}
+
+	listener, err := listen(listenPort)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[agent] Failed to listen: %v\n", err)
 		os.Exit(1)
 	}
 	defer listener.Close()
 
-	fmt.Printf("[agent] Listening on port %d\n", VsockPort)
+	fmt.Printf("[agent] Listening on port %d\n", listenPort)
 
 	for {
 		conn, err := listener.Accept()
