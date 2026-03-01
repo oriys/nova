@@ -315,3 +315,41 @@ export interface StackFrame {
   file: string;
   line: number;
 }
+
+// Sandbox display types
+
+import type { Sandbox } from "./api";
+
+export interface SandboxData {
+  id: string;
+  template: string;
+  status: "creating" | "running" | "paused" | "stopped" | "error";
+  memoryMB: number;
+  vcpus: number;
+  timeoutS: number;
+  onIdleS: number;
+  networkPolicy: string;
+  envVars?: Record<string, string>;
+  createdAt: string;
+  lastActiveAt: string;
+  expiresAt: string;
+  error?: string;
+}
+
+export function transformSandbox(sb: Sandbox): SandboxData {
+  return {
+    id: sb.id,
+    template: sb.template,
+    status: sb.status,
+    memoryMB: sb.memory_mb,
+    vcpus: sb.vcpus,
+    timeoutS: sb.timeout_s,
+    onIdleS: sb.on_idle_s,
+    networkPolicy: sb.network_policy,
+    envVars: sb.env_vars,
+    createdAt: sb.created_at,
+    lastActiveAt: sb.last_active_at,
+    expiresAt: sb.expires_at,
+    error: sb.error,
+  };
+}

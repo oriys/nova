@@ -41,7 +41,8 @@
     "groupOperations": "Opérations",
     "groupPlatform": "Plateforme",
     "groupSystem": "Système",
-    "groupHelp": "Aide"
+    "groupHelp": "Aide",
+    "sandboxes": "Bacs à sable"
   },
   "pages": {
     "dashboard": {
@@ -462,6 +463,101 @@
     "tuning": {
       "title": "Réglage",
       "description": "Conseiller de réglage automatique avec expériences canari et rollback"
+    },
+    "sandboxes": {
+      "title": "Bacs à sable",
+      "description": "Environnements VM interactifs pour les agents IA et les LLM",
+      "loading": "Chargement des bacs à sable…",
+      "empty": "Aucun bac à sable",
+      "emptyDescription": "Créez un bac à sable pour obtenir un environnement VM interactif avec terminal, système de fichiers et gestion de paquets",
+      "table": {
+        "id": "ID",
+        "template": "Modèle",
+        "status": "Statut",
+        "resources": "Ressources",
+        "created": "Créé le",
+        "expires": "Expire le",
+        "actions": "Actions"
+      },
+      "buttons": {
+        "create": "Créer un bac à sable",
+        "refresh": "Actualiser",
+        "open": "Ouvrir le terminal",
+        "destroy": "Détruire",
+        "keepalive": "Maintenir actif"
+      },
+      "notices": {
+        "created": "Bac à sable créé avec succès",
+        "destroyed": "Bac à sable détruit",
+        "keepalive": "Signal de maintien envoyé"
+      },
+      "createDialog": {
+        "title": "Créer un bac à sable",
+        "template": "Modèle",
+        "memory": "Mémoire (Mo)",
+        "vcpus": "vCPU",
+        "timeout": "Durée de vie max (s)",
+        "idleTimeout": "Délai d'inactivité (s)",
+        "networkPolicy": "Politique réseau",
+        "networkRestricted": "Restreint",
+        "networkOpen": "Ouvert",
+        "cancel": "Annuler",
+        "create": "Créer",
+        "creating": "Création…"
+      },
+      "detail": {
+        "loading": "Chargement…",
+        "error": "Erreur",
+        "notFound": "Bac à sable introuvable",
+        "titlePrefix": "Bac à sable",
+        "backToList": "Retour aux bacs à sable",
+        "network": "Réseau",
+        "expires": "Expire",
+        "keepalive": "Maintenir actif",
+        "destroy": "Détruire",
+        "notRunning": "Le bac à sable n'est pas en cours d'exécution",
+        "tabs": {
+          "terminal": "Terminal",
+          "files": "Fichiers",
+          "processes": "Processus",
+          "code": "Code"
+        }
+      },
+      "terminal": {
+        "title": "Terminal",
+        "clear": "Effacer",
+        "cleared": "Terminal effacé",
+        "placeholder": "Tapez une commande…",
+        "running": "En cours…"
+      },
+      "files": {
+        "backToList": "Retour",
+        "save": "Enregistrer",
+        "up": "Dossier parent",
+        "newFile": "Nouveau fichier",
+        "refresh": "Actualiser",
+        "create": "Créer",
+        "newFilePlaceholder": "nom_fichier.txt",
+        "loading": "Chargement…",
+        "empty": "Répertoire vide"
+      },
+      "processes": {
+        "title": "Processus",
+        "refresh": "Actualiser",
+        "loading": "Chargement des processus…",
+        "empty": "Aucun processus en cours",
+        "command": "Commande",
+        "memory": "Mémoire",
+        "kill": "Terminer le processus"
+      },
+      "codeExec": {
+        "notRunning": "Le bac à sable n'est pas en cours d'exécution",
+        "run": "Exécuter le code",
+        "executing": "Exécution…",
+        "placeholder": "# Écrivez votre code ici…",
+        "output": "Sortie",
+        "noOutput": "Aucune sortie"
+      }
     }
   },
   "common": {

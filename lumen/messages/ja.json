@@ -41,7 +41,8 @@
     "groupOperations": "オペレーション",
     "groupPlatform": "プラットフォーム",
     "groupSystem": "システム",
-    "groupHelp": "ヘルプ"
+    "groupHelp": "ヘルプ",
+    "sandboxes": "サンドボックス"
   },
   "pages": {
     "dashboard": {
@@ -462,6 +463,101 @@
     "tuning": {
       "title": "チューニング",
       "description": "自動チューニングアドバイザー：カナリア実験とロールバック"
+    },
+    "sandboxes": {
+      "title": "サンドボックス",
+      "description": "AIエージェントとLLM向けのインタラクティブVM環境",
+      "loading": "サンドボックスを読み込み中…",
+      "empty": "サンドボックスなし",
+      "emptyDescription": "サンドボックスを作成して、ターミナル、ファイルシステム、パッケージ管理機能を備えたインタラクティブVM環境を取得しましょう",
+      "table": {
+        "id": "ID",
+        "template": "テンプレート",
+        "status": "ステータス",
+        "resources": "リソース",
+        "created": "作成日時",
+        "expires": "有効期限",
+        "actions": "操作"
+      },
+      "buttons": {
+        "create": "サンドボックスを作成",
+        "refresh": "更新",
+        "open": "ターミナルを開く",
+        "destroy": "破棄",
+        "keepalive": "キープアライブ"
+      },
+      "notices": {
+        "created": "サンドボックスが作成されました",
+        "destroyed": "サンドボックスが破棄されました",
+        "keepalive": "キープアライブを送信しました"
+      },
+      "createDialog": {
+        "title": "サンドボックスを作成",
+        "template": "テンプレート",
+        "memory": "メモリ (MB)",
+        "vcpus": "vCPU数",
+        "timeout": "最大存続時間 (秒)",
+        "idleTimeout": "アイドルタイムアウト (秒)",
+        "networkPolicy": "ネットワークポリシー",
+        "networkRestricted": "制限付き",
+        "networkOpen": "オープン",
+        "cancel": "キャンセル",
+        "create": "作成",
+        "creating": "作成中…"
+      },
+      "detail": {
+        "loading": "読み込み中…",
+        "error": "エラー",
+        "notFound": "サンドボックスが見つかりません",
+        "titlePrefix": "サンドボックス",
+        "backToList": "サンドボックス一覧に戻る",
+        "network": "ネットワーク",
+        "expires": "有効期限",
+        "keepalive": "キープアライブ",
+        "destroy": "破棄",
+        "notRunning": "サンドボックスが実行中ではありません",
+        "tabs": {
+          "terminal": "ターミナル",
+          "files": "ファイル",
+          "processes": "プロセス",
+          "code": "コード"
+        }
+      },
+      "terminal": {
+        "title": "ターミナル",
+        "clear": "クリア",
+        "cleared": "ターミナルをクリアしました",
+        "placeholder": "コマンドを入力…",
+        "running": "実行中…"
+      },
+      "files": {
+        "backToList": "戻る",
+        "save": "保存",
+        "up": "上位ディレクトリ",
+        "newFile": "新規ファイル",
+        "refresh": "更新",
+        "create": "作成",
+        "newFilePlaceholder": "ファイル名.txt",
+        "loading": "読み込み中…",
+        "empty": "空のディレクトリ"
+      },
+      "processes": {
+        "title": "プロセス",
+        "refresh": "更新",
+        "loading": "プロセスを読み込み中…",
+        "empty": "実行中のプロセスはありません",
+        "command": "コマンド",
+        "memory": "メモリ",
+        "kill": "プロセスを終了"
+      },
+      "codeExec": {
+        "notRunning": "サンドボックスが実行中ではありません",
+        "run": "コードを実行",
+        "executing": "実行中…",
+        "placeholder": "# ここにコードを書いてください…",
+        "output": "出力",
+        "noOutput": "出力なし"
+      }
     }
   },
   "common": {

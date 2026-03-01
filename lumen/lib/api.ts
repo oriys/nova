@@ -3436,3 +3436,142 @@ export const auditLogsApi = {
   get: (id: string) =>
     request<AuditLogEntry>(`/audit-logs/${encodeURIComponent(id)}`),
 };
+
+// Sandbox types
+export interface Sandbox {
+  id: string;
+  template: string;
+  status: "creating" | "running" | "paused" | "stopped" | "error";
+  memory_mb: number;
+  vcpus: number;
+  timeout_s: number;
+  on_idle_s: number;
+  network_policy: string;
+  env_vars?: Record<string, string>;
+  vm_id?: string;
+  created_at: string;
+  last_active_at: string;
+  expires_at: string;
+  error?: string;
+}
+
+export interface CreateSandboxRequest {
+  template: string;
+  memory_mb?: number;
+  vcpus?: number;
+  timeout_s?: number;
+  network_policy?: string;
+  env_vars?: Record<string, string>;
+  on_idle_s?: number;
+}
+
+export interface SandboxExecRequest {
+  command: string;
+  timeout_s?: number;
+  workdir?: string;
+}
+
+export interface SandboxExecResponse {
+  exit_code: number;
+  stdout: string;
+  stderr: string;
+}
+
+export interface SandboxCodeRequest {
+  code: string;
+  language: string;
+  timeout_s?: number;
+}
+
+export interface SandboxFileInfo {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+  mod_time?: string;
+}
+
+export interface SandboxProcessInfo {
+  pid: number;
+  command: string;
+  cpu?: string;
+  memory?: string;
+}
+
+// Sandbox API
+export const sandboxApi = {
+  create: (data: CreateSandboxRequest) =>
+    request<Sandbox>("/sandboxes", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  list: async () => {
+    const res = await request<{ sandboxes: Sandbox[]; count: number }>("/sandboxes");
+    return res.sandboxes ?? [];
+  },
+
+  get: (id: string) =>
+    request<Sandbox>(`/sandboxes/${encodeURIComponent(id)}`),
+
+  destroy: (id: string) =>
+    request<{ status: string }>(`/sandboxes/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+
+  keepalive: (id: string) =>
+    request<Sandbox>(`/sandboxes/${encodeURIComponent(id)}/keepalive`, {
+      method: "PATCH",
+    }),
+
+  exec: (id: string, data: SandboxExecRequest) =>
+    request<SandboxExecResponse>(`/sandboxes/${encodeURIComponent(id)}/exec`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  execCode: (id: string, data: SandboxCodeRequest) =>
+    request<SandboxExecResponse>(`/sandboxes/${encodeURIComponent(id)}/code`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  fileReadOrList: async (id: string, path?: string) => {
+    const params = new URLSearchParams();
+    if (path) params.set("path", path);
+    return request<{ path: string; content?: string; entries?: SandboxFileInfo[] }>(
+      `/sandboxes/${encodeURIComponent(id)}/files?${params.toString()}`
+    );
+  },
+
+  fileWrite: (id: string, path: string, content: string) =>
+    request<{ status: string }>(`/sandboxes/${encodeURIComponent(id)}/files`, {
+      method: "PUT",
+      body: JSON.stringify({ path, content }),
+    }),
+
+  fileDelete: (id: string, path: string) => {
+    const params = new URLSearchParams({ path });
+    return request<{ status: string }>(
+      `/sandboxes/${encodeURIComponent(id)}/files?${params.toString()}`,
+      { method: "DELETE" }
+    );
+  },
+
+  processList: async (id: string) => {
+    const res = await request<{ processes: SandboxProcessInfo[] }>(
+      `/sandboxes/${encodeURIComponent(id)}/processes`
+    );
+    return res.processes ?? [];
+  },
+
+  processKill: (id: string, pid: number, signal?: number) => {
+    const params = new URLSearchParams();
+    if (signal) params.set("signal", String(signal));
+    const qs = params.toString();
+    return request<{ status: string }>(
+      `/sandboxes/${encodeURIComponent(id)}/processes/${pid}${qs ? `?${qs}` : ""}`,
+      { method: "DELETE" }
+    );
+  },
+};

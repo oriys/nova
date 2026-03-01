@@ -41,7 +41,8 @@
     "groupOperations": "运维",
     "groupPlatform": "平台",
     "groupSystem": "系统",
-    "groupHelp": "帮助"
+    "groupHelp": "帮助",
+    "sandboxes": "沙箱"
   },
   "pages": {
     "dashboard": {
@@ -462,6 +463,101 @@
     "tuning": {
       "title": "调优",
       "description": "自动调优顾问：金丝雀实验与回滚"
+    },
+    "sandboxes": {
+      "title": "沙箱",
+      "description": "为 AI Agent 和 LLM 提供的交互式 VM 环境",
+      "loading": "加载沙箱中…",
+      "empty": "暂无沙箱",
+      "emptyDescription": "创建沙箱以获取具有终端、文件系统和包管理功能的交互式 VM 环境",
+      "table": {
+        "id": "ID",
+        "template": "模板",
+        "status": "状态",
+        "resources": "资源",
+        "created": "创建时间",
+        "expires": "过期时间",
+        "actions": "操作"
+      },
+      "buttons": {
+        "create": "创建沙箱",
+        "refresh": "刷新",
+        "open": "打开终端",
+        "destroy": "销毁",
+        "keepalive": "保持活跃"
+      },
+      "notices": {
+        "created": "沙箱创建成功",
+        "destroyed": "沙箱已销毁",
+        "keepalive": "已发送保持活跃信号"
+      },
+      "createDialog": {
+        "title": "创建沙箱",
+        "template": "模板",
+        "memory": "内存 (MB)",
+        "vcpus": "虚拟CPU",
+        "timeout": "最大生命周期 (秒)",
+        "idleTimeout": "空闲超时 (秒)",
+        "networkPolicy": "网络策略",
+        "networkRestricted": "受限",
+        "networkOpen": "开放",
+        "cancel": "取消",
+        "create": "创建",
+        "creating": "创建中…"
+      },
+      "detail": {
+        "loading": "加载中…",
+        "error": "错误",
+        "notFound": "未找到沙箱",
+        "titlePrefix": "沙箱",
+        "backToList": "返回沙箱列表",
+        "network": "网络",
+        "expires": "过期",
+        "keepalive": "保持活跃",
+        "destroy": "销毁",
+        "notRunning": "沙箱未运行",
+        "tabs": {
+          "terminal": "终端",
+          "files": "文件",
+          "processes": "进程",
+          "code": "代码"
+        }
+      },
+      "terminal": {
+        "title": "终端",
+        "clear": "清除",
+        "cleared": "终端已清除",
+        "placeholder": "输入命令…",
+        "running": "执行中…"
+      },
+      "files": {
+        "backToList": "返回",
+        "save": "保存",
+        "up": "上级目录",
+        "newFile": "新建文件",
+        "refresh": "刷新",
+        "create": "创建",
+        "newFilePlaceholder": "文件名.txt",
+        "loading": "加载中…",
+        "empty": "空目录"
+      },
+      "processes": {
+        "title": "进程",
+        "refresh": "刷新",
+        "loading": "加载进程中…",
+        "empty": "没有运行中的进程",
+        "command": "命令",
+        "memory": "内存",
+        "kill": "终止进程"
+      },
+      "codeExec": {
+        "notRunning": "沙箱未运行",
+        "run": "运行代码",
+        "executing": "执行中…",
+        "placeholder": "# 在这里编写代码…",
+        "output": "输出",
+        "noOutput": "无输出"
+      }
     }
   },
   "common": {

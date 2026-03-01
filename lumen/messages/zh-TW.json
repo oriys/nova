@@ -41,7 +41,8 @@
     "groupOperations": "運維",
     "groupPlatform": "平台",
     "groupSystem": "系統",
-    "groupHelp": "幫助"
+    "groupHelp": "幫助",
+    "sandboxes": "沙箱"
   },
   "pages": {
     "dashboard": {
@@ -462,6 +463,101 @@
     "tuning": {
       "title": "調優",
       "description": "自動調優顧問：金絲雀實驗與回滾"
+    },
+    "sandboxes": {
+      "title": "沙箱",
+      "description": "為 AI Agent 和 LLM 提供的互動式 VM 環境",
+      "loading": "載入沙箱中…",
+      "empty": "暫無沙箱",
+      "emptyDescription": "建立沙箱以取得具有終端、檔案系統和套件管理功能的互動式 VM 環境",
+      "table": {
+        "id": "ID",
+        "template": "範本",
+        "status": "狀態",
+        "resources": "資源",
+        "created": "建立時間",
+        "expires": "到期時間",
+        "actions": "操作"
+      },
+      "buttons": {
+        "create": "建立沙箱",
+        "refresh": "重新整理",
+        "open": "開啟終端",
+        "destroy": "銷毀",
+        "keepalive": "保持活躍"
+      },
+      "notices": {
+        "created": "沙箱建立成功",
+        "destroyed": "沙箱已銷毀",
+        "keepalive": "已傳送保持活躍訊號"
+      },
+      "createDialog": {
+        "title": "建立沙箱",
+        "template": "範本",
+        "memory": "記憶體 (MB)",
+        "vcpus": "虛擬CPU",
+        "timeout": "最大生命週期 (秒)",
+        "idleTimeout": "閒置逾時 (秒)",
+        "networkPolicy": "網路策略",
+        "networkRestricted": "受限",
+        "networkOpen": "開放",
+        "cancel": "取消",
+        "create": "建立",
+        "creating": "建立中…"
+      },
+      "detail": {
+        "loading": "載入中…",
+        "error": "錯誤",
+        "notFound": "未找到沙箱",
+        "titlePrefix": "沙箱",
+        "backToList": "返回沙箱列表",
+        "network": "網路",
+        "expires": "到期",
+        "keepalive": "保持活躍",
+        "destroy": "銷毀",
+        "notRunning": "沙箱未執行",
+        "tabs": {
+          "terminal": "終端",
+          "files": "檔案",
+          "processes": "處理程序",
+          "code": "程式碼"
+        }
+      },
+      "terminal": {
+        "title": "終端",
+        "clear": "清除",
+        "cleared": "終端已清除",
+        "placeholder": "輸入指令…",
+        "running": "執行中…"
+      },
+      "files": {
+        "backToList": "返回",
+        "save": "儲存",
+        "up": "上層目錄",
+        "newFile": "新增檔案",
+        "refresh": "重新整理",
+        "create": "建立",
+        "newFilePlaceholder": "檔案名稱.txt",
+        "loading": "載入中…",
+        "empty": "空目錄"
+      },
+      "processes": {
+        "title": "處理程序",
+        "refresh": "重新整理",
+        "loading": "載入處理程序中…",
+        "empty": "沒有執行中的處理程序",
+        "command": "指令",
+        "memory": "記憶體",
+        "kill": "終止處理程序"
+      },
+      "codeExec": {
+        "notRunning": "沙箱未執行",
+        "run": "執行程式碼",
+        "executing": "執行中…",
+        "placeholder": "# 在此編寫程式碼…",
+        "output": "輸出",
+        "noOutput": "無輸出"
+      }
     }
   },
   "common": {

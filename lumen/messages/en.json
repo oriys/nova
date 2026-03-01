@@ -41,7 +41,8 @@
     "groupOperations": "Operations",
     "groupPlatform": "Platform",
     "groupSystem": "System",
-    "groupHelp": "Help"
+    "groupHelp": "Help",
+    "sandboxes": "Sandboxes"
   },
   "pages": {
     "dashboard": {
@@ -462,6 +463,101 @@
     "tuning": {
       "title": "Tuning",
       "description": "Auto-tuning advisor with canary experiments and rollback"
+    },
+    "sandboxes": {
+      "title": "Sandboxes",
+      "description": "Interactive VM environments for AI agents and LLMs",
+      "loading": "Loading sandboxes…",
+      "empty": "No sandboxes",
+      "emptyDescription": "Create a sandbox to get an interactive VM environment with terminal, file system, and package management",
+      "table": {
+        "id": "ID",
+        "template": "Template",
+        "status": "Status",
+        "resources": "Resources",
+        "created": "Created",
+        "expires": "Expires",
+        "actions": "Actions"
+      },
+      "buttons": {
+        "create": "Create Sandbox",
+        "refresh": "Refresh",
+        "open": "Open Terminal",
+        "destroy": "Destroy",
+        "keepalive": "Keep Alive"
+      },
+      "notices": {
+        "created": "Sandbox created successfully",
+        "destroyed": "Sandbox destroyed",
+        "keepalive": "Sandbox keepalive sent"
+      },
+      "createDialog": {
+        "title": "Create Sandbox",
+        "template": "Template",
+        "memory": "Memory (MB)",
+        "vcpus": "vCPUs",
+        "timeout": "Max Lifetime (s)",
+        "idleTimeout": "Idle Timeout (s)",
+        "networkPolicy": "Network Policy",
+        "networkRestricted": "Restricted",
+        "networkOpen": "Open",
+        "cancel": "Cancel",
+        "create": "Create",
+        "creating": "Creating…"
+      },
+      "detail": {
+        "loading": "Loading…",
+        "error": "Error",
+        "notFound": "Sandbox not found",
+        "titlePrefix": "Sandbox",
+        "backToList": "Back to Sandboxes",
+        "network": "Network",
+        "expires": "Expires",
+        "keepalive": "Keep Alive",
+        "destroy": "Destroy",
+        "notRunning": "Sandbox is not running",
+        "tabs": {
+          "terminal": "Terminal",
+          "files": "Files",
+          "processes": "Processes",
+          "code": "Code"
+        }
+      },
+      "terminal": {
+        "title": "Terminal",
+        "clear": "Clear",
+        "cleared": "Terminal cleared",
+        "placeholder": "Type a command…",
+        "running": "Running…"
+      },
+      "files": {
+        "backToList": "Back",
+        "save": "Save",
+        "up": "Go up",
+        "newFile": "New File",
+        "refresh": "Refresh",
+        "create": "Create",
+        "newFilePlaceholder": "filename.txt",
+        "loading": "Loading…",
+        "empty": "Empty directory"
+      },
+      "processes": {
+        "title": "Processes",
+        "refresh": "Refresh",
+        "loading": "Loading processes…",
+        "empty": "No processes running",
+        "command": "Command",
+        "memory": "Memory",
+        "kill": "Kill Process"
+      },
+      "codeExec": {
+        "notRunning": "Sandbox is not running",
+        "run": "Run Code",
+        "executing": "Executing…",
+        "placeholder": "# Write your code here…",
+        "output": "Output",
+        "noOutput": "No output"
+      }
     }
   },
   "common": {

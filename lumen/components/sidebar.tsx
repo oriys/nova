@@ -18,6 +18,7 @@ import {
   RadioTower,
   Building2,
   Network,
+  Terminal,
 
   ShieldCheck,
   HardDrive,
@@ -28,7 +29,7 @@ import {
   Activity,
 } from "lucide-react"
 
-type NavKey = "dashboard" | "functions" | "events" | "workflows" | "tenancy" | "invocations" | "runtimes" | "gateway" | "triggers" | "volumes" | "layers" | "cluster" | "snapshots" | "accessControl" | "alerting" | "settings" | "docs"
+type NavKey = "dashboard" | "functions" | "sandboxes" | "events" | "workflows" | "tenancy" | "invocations" | "runtimes" | "gateway" | "triggers" | "volumes" | "layers" | "cluster" | "snapshots" | "accessControl" | "alerting" | "settings" | "docs"
 
 // Extra paths that should highlight a merged nav item
 const extraActivePaths: Record<string, string[]> = {
@@ -41,6 +42,7 @@ const extraActivePaths: Record<string, string[]> = {
 const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] = [
   { key: "dashboard", href: "/dashboard", icon: LayoutDashboard },
   { key: "functions", href: "/functions", icon: Code2 },
+  { key: "sandboxes", href: "/sandboxes", icon: Terminal },
   { key: "gateway", href: "/gateway", icon: Network },
   { key: "events", href: "/events", icon: RadioTower },
   { key: "triggers", href: "/triggers", icon: Zap },
