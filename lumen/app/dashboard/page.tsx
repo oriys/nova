@@ -18,7 +18,7 @@ import { transformFunction, transformLog, FunctionData, LogEntry } from "@/lib/t
 import { useAutoRefresh } from "@/lib/use-auto-refresh"
 import { syncOnboardingStateFromData } from "@/lib/onboarding-state"
 import { cn } from "@/lib/utils"
-import { GlobalHeatmap } from "@/components/global-heatmap"
+import { Heatmap } from "@/components/heatmap"
 
 function formatUptime(seconds: number, td: (key: string, values?: Record<string, string | number | Date>) => string): string {
   if (!seconds || seconds <= 0) return "—"
@@ -281,7 +281,7 @@ export default function DashboardPage() {
         />
 
         {/* Heatmap */}
-        <GlobalHeatmap />
+        <Heatmap fetchData={(weeks) => metricsApi.heatmap(weeks)} />
 
         {/* Tables */}
         <div className="grid gap-6 lg:grid-cols-2">

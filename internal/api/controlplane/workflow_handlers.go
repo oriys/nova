@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/oriys/nova/internal/domain"
+	"github.com/oriys/nova/internal/pkg/httpjson"
 	"github.com/oriys/nova/internal/store"
 )
 
@@ -43,7 +44,7 @@ func (h *Handler) CreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	wfWriteJSON(w, http.StatusCreated, wf)
+	httpjson.WriteJSON(w, http.StatusCreated, wf)
 }
 
 func (h *Handler) ListWorkflows(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +69,7 @@ func (h *Handler) GetWorkflow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	wfWriteJSON(w, http.StatusOK, wf)
+	httpjson.WriteJSON(w, http.StatusOK, wf)
 }
 
 func (h *Handler) DeleteWorkflow(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +78,7 @@ func (h *Handler) DeleteWorkflow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	wfWriteJSON(w, http.StatusOK, map[string]string{"status": "deleted", "name": name})
+	httpjson.WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted", "name": name})
 }
 
 func (h *Handler) PublishWorkflowVersion(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +98,7 @@ func (h *Handler) PublishWorkflowVersion(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), status)
 		return
 	}
-	wfWriteJSON(w, http.StatusCreated, v)
+	httpjson.WriteJSON(w, http.StatusCreated, v)
 }
 
 func (h *Handler) ListWorkflowVersions(w http.ResponseWriter, r *http.Request) {
@@ -130,7 +131,7 @@ func (h *Handler) GetWorkflowVersion(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	wfWriteJSON(w, http.StatusOK, v)
+	httpjson.WriteJSON(w, http.StatusOK, v)
 }
 
 func (h *Handler) TriggerWorkflowRun(w http.ResponseWriter, r *http.Request) {
@@ -148,7 +149,7 @@ func (h *Handler) TriggerWorkflowRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	wfWriteJSON(w, http.StatusCreated, run)
+	httpjson.WriteJSON(w, http.StatusCreated, run)
 }
 
 func (h *Handler) ListWorkflowRuns(w http.ResponseWriter, r *http.Request) {
@@ -179,13 +180,7 @@ func (h *Handler) GetWorkflowRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "run not found", http.StatusNotFound)
 		return
 	}
-	wfWriteJSON(w, http.StatusOK, run)
-}
-
-func wfWriteJSON(w http.ResponseWriter, status int, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	httpjson.WriteJSON(w, http.StatusOK, run)
 }
 
 func isValidationError(err error) bool {
@@ -220,7 +215,7 @@ http.Error(w, err.Error(), http.StatusInternalServerError)
 return
 }
 
-wfWriteJSON(w, http.StatusCreated, inv)
+httpjson.WriteJSON(w, http.StatusCreated, inv)
 }
 
 // ListFunctionWorkflows handles GET /functions/{name}/workflows

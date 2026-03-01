@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/oriys/nova/internal/ai"
+	"github.com/oriys/nova/internal/pkg/httpjson"
 	"github.com/oriys/nova/internal/api/controlplane"
 	"github.com/oriys/nova/internal/api/dataplane"
 	"github.com/oriys/nova/internal/audit"
@@ -304,7 +305,7 @@ func tenantScopeMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestedTenant, requestedNamespace, explicit, err := requestedScopeFromHeaders(r)
 		if err != nil {
-			writeTenantScopeError(w, http.StatusBadRequest, "invalid tenant scope headers")
+			httpjson.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "tenant_scope_error", "message": "invalid tenant scope headers"})
 			logging.Op().Warn("tenant scope rejected: invalid header", "path", r.URL.Path, "method", r.Method, "error", err.Error())
 			return
 		}
@@ -317,12 +318,12 @@ func tenantScopeMiddleware(next http.Handler) http.Handler {
 			if !explicit {
 				primary, ok := identity.PrimaryScope()
 				if !ok {
-					writeTenantScopeError(w, http.StatusForbidden, "tenant scope is required")
+					httpjson.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "tenant_scope_error", "message": "tenant scope is required"})
 					logging.Op().Warn("tenant scope denied", "subject", identity.Subject, "path", r.URL.Path, "method", r.Method, "reason", "missing_allowed_scope")
 					return
 				}
 				if primary.TenantID == "*" || primary.Namespace == "*" {
-					writeTenantScopeError(w, http.StatusBadRequest, "explicit X-Nova-Tenant and X-Nova-Namespace headers are required")
+					httpjson.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "tenant_scope_error", "message": "explicit X-Nova-Tenant and X-Nova-Namespace headers are required"})
 					logging.Op().Warn("tenant scope denied", "subject", identity.Subject, "path", r.URL.Path, "method", r.Method, "reason", "ambiguous_scope")
 					return
 				}
@@ -331,7 +332,7 @@ func tenantScopeMiddleware(next http.Handler) http.Handler {
 			}
 
 			if !identity.AllowsScope(effectiveTenant, effectiveNamespace) {
-				writeTenantScopeError(w, http.StatusForbidden, "tenant scope is not allowed for this identity")
+				httpjson.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "tenant_scope_error", "message": "tenant scope is not allowed for this identity"})
 				logging.Op().Warn("tenant scope denied", "subject", identity.Subject, "path", r.URL.Path, "method", r.Method, "tenant_id", effectiveTenant, "namespace", effectiveNamespace, "reason", "out_of_scope")
 				return
 			}
@@ -374,15 +375,6 @@ type tenantScopeHeaderError struct {
 
 func (e *tenantScopeHeaderError) Error() string {
 	return "invalid header: " + e.Field
-}
-
-func writeTenantScopeError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"error":   "tenant_scope_error",
-		"message": msg,
-	})
 }
 
 func subjectOrAnonymous(identity *auth.Identity) string {

@@ -2,7 +2,11 @@
 
 import { useEffect, useState, useMemo, useRef } from "react"
 import { useLocale, useTranslations } from "next-intl"
-import { metricsApi, type HeatmapPoint } from "@/lib/api"
+import type { HeatmapPoint } from "@/lib/api"
+
+interface HeatmapProps {
+  fetchData: (weeks: number) => Promise<HeatmapPoint[]>
+}
 
 const CELL_SIZE = 13
 const CELL_GAP = 3
@@ -25,7 +29,7 @@ function getColor(count: number, max: number): string {
   return "color-mix(in oklch, var(--foreground) 90%, transparent)"
 }
 
-export function GlobalHeatmap() {
+export function Heatmap({ fetchData }: HeatmapProps) {
   const locale = useLocale()
   const tc = useTranslations("common")
   const td = useTranslations("dashboard")
@@ -86,7 +90,7 @@ export function GlobalHeatmap() {
     if (numWeeks === 0) return
     let cancelled = false
     setLoading(true)
-    metricsApi.heatmap(numWeeks).then((res) => {
+    fetchData(numWeeks).then((res) => {
       if (!cancelled) {
         setData(res || [])
         setLoading(false)
@@ -95,7 +99,7 @@ export function GlobalHeatmap() {
       if (!cancelled) setLoading(false)
     })
     return () => { cancelled = true }
-  }, [numWeeks])
+  }, [fetchData, numWeeks])
 
   const { grid, weeks, maxCount, monthMarkers, totalInvocations } = useMemo(() => {
     if (numWeeks === 0) return { grid: [], weeks: 0, maxCount: 0, monthMarkers: [], totalInvocations: 0 }

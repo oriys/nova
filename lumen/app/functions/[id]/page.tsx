@@ -23,7 +23,7 @@ import { FunctionSchedules } from "@/components/function-schedules"
 import { FunctionTriggers } from "@/components/function-triggers"
 import { FunctionSubscriptions } from "@/components/function-subscriptions"
 import { FunctionWorkflows } from "@/components/function-workflows"
-import { InvocationHeatmap } from "@/components/invocation-heatmap"
+import { Heatmap } from "@/components/heatmap"
 import { cn } from "@/lib/utils"
 import { functionsApi, schedulesApi } from "@/lib/api"
 import { markOnboardingStep } from "@/lib/onboarding-state"
@@ -435,7 +435,7 @@ export default function FunctionDetailPage({
               </Button>
             </div>
             <FunctionMetrics func={func} metrics={metrics} />
-            <InvocationHeatmap functionName={func.name} />
+            <Heatmap fetchData={(weeks) => functionsApi.heatmap(func.name, weeks)} />
           </TabsContent>
 
           <TabsContent value="code" className="mt-0 space-y-6">

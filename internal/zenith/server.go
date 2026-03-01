@@ -18,6 +18,7 @@ import (
 
 	"github.com/oriys/nova/api/proto/novapb"
 	"github.com/oriys/nova/internal/logging"
+	"github.com/oriys/nova/internal/pkg/httpjson"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -166,7 +167,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleInvokeViaGRPC(w http.ResponseWriter, r *http.Request, function string) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, defaultBodyLimit))
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "failed to read request body")
+		httpjson.Error(w, http.StatusBadRequest, "failed to read request body")
 		return
 	}
 
@@ -174,7 +175,7 @@ func (s *Server) handleInvokeViaGRPC(w http.ResponseWriter, r *http.Request, fun
 	if len(payload) == 0 {
 		payload = []byte("{}")
 	} else if !json.Valid(payload) {
-		writeJSONError(w, http.StatusBadRequest, "payload must be valid JSON")
+		httpjson.Error(w, http.StatusBadRequest, "payload must be valid JSON")
 		return
 	}
 
@@ -188,7 +189,7 @@ func (s *Server) handleInvokeViaGRPC(w http.ResponseWriter, r *http.Request, fun
 	})
 	if err != nil {
 		statusCode, message := mapGRPCError(err)
-		writeJSONError(w, statusCode, message)
+		httpjson.Error(w, statusCode, message)
 		return
 	}
 
@@ -216,7 +217,7 @@ func (s *Server) handleProxyHTTPViaGRPC(w http.ResponseWriter, r *http.Request) 
 	if r.Body != nil {
 		b, err := io.ReadAll(io.LimitReader(r.Body, defaultBodyLimit))
 		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, "failed to read request body")
+			httpjson.Error(w, http.StatusBadRequest, "failed to read request body")
 			return
 		}
 		body = b
@@ -258,7 +259,7 @@ func (s *Server) handleProxyHTTPViaGRPC(w http.ResponseWriter, r *http.Request) 
 	})
 	if err != nil {
 		statusCode, message := mapGRPCError(err)
-		writeJSONError(w, statusCode, message)
+		httpjson.Error(w, statusCode, message)
 		return
 	}
 
@@ -812,7 +813,7 @@ func matchFunctionURL(path string) (string, bool) {
 func (s *Server) handleFunctionURL(w http.ResponseWriter, r *http.Request, function string) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, defaultBodyLimit))
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "failed to read request body")
+		httpjson.Error(w, http.StatusBadRequest, "failed to read request body")
 		return
 	}
 
@@ -855,7 +856,7 @@ func (s *Server) handleFunctionURL(w http.ResponseWriter, r *http.Request, funct
 	})
 	if err != nil {
 		statusCode, message := mapGRPCError(err)
-		writeJSONError(w, statusCode, message)
+		httpjson.Error(w, statusCode, message)
 		return
 	}
 
@@ -921,14 +922,6 @@ func mapGRPCError(err error) (int, string) {
 	}
 }
 
-func writeJSONError(w http.ResponseWriter, statusCode int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"error": message,
-	})
-}
-
 func parseTargetURL(raw string) (*url.URL, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -960,7 +953,7 @@ func newReverseProxy(target *url.URL) *httputil.ReverseProxy {
 			code = http.StatusGatewayTimeout
 		}
 		logging.Op().Error("reverse proxy error", "target", target.String(), "path", r.URL.Path, "error", err)
-		writeJSONError(w, code, "upstream request failed")
+		httpjson.Error(w, code, "upstream request failed")
 	}
 	return proxy
 }

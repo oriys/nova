@@ -9,6 +9,7 @@ import (
 
 	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/logging"
+	"github.com/oriys/nova/internal/pkg/httpjson"
 	"github.com/oriys/nova/internal/store"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -65,40 +66,40 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		DisplayName string `json:"display_name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeAuthError(w, http.StatusBadRequest, "invalid JSON")
+		httpjson.Error(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	tenantID := strings.TrimSpace(req.TenantID)
 	if tenantID == "" {
-		writeAuthError(w, http.StatusBadRequest, "tenant_id is required")
+		httpjson.Error(w, http.StatusBadRequest, "tenant_id is required")
 		return
 	}
 	// Prevent registration with the default tenant ID to avoid
 	// auto-granting admin role via issueToken.
 	if tenantID == store.DefaultTenantID {
-		writeAuthError(w, http.StatusForbidden, "cannot register with the default tenant ID")
+		httpjson.Error(w, http.StatusForbidden, "cannot register with the default tenant ID")
 		return
 	}
 	if req.Password == "" {
-		writeAuthError(w, http.StatusBadRequest, "password is required")
+		httpjson.Error(w, http.StatusBadRequest, "password is required")
 		return
 	}
 	if len(req.Password) < 8 {
-		writeAuthError(w, http.StatusBadRequest, "password must be at least 8 characters")
+		httpjson.Error(w, http.StatusBadRequest, "password must be at least 8 characters")
 		return
 	}
 
 	// Check if tenant already exists
 	existing, _ := h.Store.GetTenant(r.Context(), tenantID)
 	if existing != nil {
-		writeAuthError(w, http.StatusConflict, "tenant already exists")
+		httpjson.Error(w, http.StatusConflict, "tenant already exists")
 		return
 	}
 
 	// Hash password
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "failed to hash password")
+		httpjson.Error(w, http.StatusInternalServerError, "failed to hash password")
 		return
 	}
 
@@ -113,14 +114,14 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		PasswordHash: string(hash),
 	})
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, err.Error())
+		httpjson.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	// Generate JWT
 	token, err := h.issueToken(tenantID)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "failed to generate token")
+		httpjson.Error(w, http.StatusInternalServerError, "failed to generate token")
 		return
 	}
 
@@ -139,23 +140,23 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeAuthError(w, http.StatusBadRequest, "invalid JSON")
+		httpjson.Error(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	tenantID := strings.TrimSpace(req.TenantID)
 	if tenantID == "" {
-		writeAuthError(w, http.StatusBadRequest, "tenant_id is required")
+		httpjson.Error(w, http.StatusBadRequest, "tenant_id is required")
 		return
 	}
 	if req.Password == "" {
-		writeAuthError(w, http.StatusBadRequest, "password is required")
+		httpjson.Error(w, http.StatusBadRequest, "password is required")
 		return
 	}
 
 	tenant, err := h.Store.GetTenant(r.Context(), tenantID)
 	if err != nil {
 		logging.Op().Warn("login failed: tenant not found", "tenant", tenantID, "ip", r.RemoteAddr)
-		writeAuthError(w, http.StatusUnauthorized, "invalid tenant or password")
+		httpjson.Error(w, http.StatusUnauthorized, "invalid tenant or password")
 		return
 	}
 
@@ -163,18 +164,18 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// login and require explicit password setup via registration.
 	if tenant.PasswordHash == "" {
 		logging.Op().Warn("login failed: bootstrap tenant without password", "tenant", tenantID, "ip", r.RemoteAddr)
-		writeAuthError(w, http.StatusUnauthorized, "tenant requires password setup, please register first")
+		httpjson.Error(w, http.StatusUnauthorized, "tenant requires password setup, please register first")
 		return
 	} else if err := bcrypt.CompareHashAndPassword([]byte(tenant.PasswordHash), []byte(req.Password)); err != nil {
 		logging.Op().Warn("login failed: invalid password", "tenant", tenantID, "ip", r.RemoteAddr)
-		writeAuthError(w, http.StatusUnauthorized, "invalid tenant or password")
+		httpjson.Error(w, http.StatusUnauthorized, "invalid tenant or password")
 		return
 	}
 
 	// Generate JWT
 	token, err := h.issueToken(tenantID)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "failed to generate token")
+		httpjson.Error(w, http.StatusInternalServerError, "failed to generate token")
 		return
 	}
 
@@ -203,7 +204,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	identity := auth.GetIdentity(r.Context())
 	if identity == nil {
-		writeAuthError(w, http.StatusUnauthorized, "authentication required")
+		httpjson.Error(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
 
@@ -212,45 +213,45 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		NewPassword string `json:"new_password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeAuthError(w, http.StatusBadRequest, "invalid JSON")
+		httpjson.Error(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if req.OldPassword == "" || req.NewPassword == "" {
-		writeAuthError(w, http.StatusBadRequest, "old_password and new_password are required")
+		httpjson.Error(w, http.StatusBadRequest, "old_password and new_password are required")
 		return
 	}
 	if len(req.NewPassword) < 8 {
-		writeAuthError(w, http.StatusBadRequest, "new_password must be at least 8 characters")
+		httpjson.Error(w, http.StatusBadRequest, "new_password must be at least 8 characters")
 		return
 	}
 
 	// Extract tenant ID from identity subject (format: "user:tenantID")
 	tenantID := strings.TrimPrefix(identity.Subject, "user:")
 	if tenantID == "" || tenantID == identity.Subject {
-		writeAuthError(w, http.StatusBadRequest, "cannot determine tenant from identity")
+		httpjson.Error(w, http.StatusBadRequest, "cannot determine tenant from identity")
 		return
 	}
 
 	tenant, err := h.Store.GetTenant(r.Context(), tenantID)
 	if err != nil {
-		writeAuthError(w, http.StatusNotFound, "tenant not found")
+		httpjson.Error(w, http.StatusNotFound, "tenant not found")
 		return
 	}
 
 	// Verify old password
 	if err := bcrypt.CompareHashAndPassword([]byte(tenant.PasswordHash), []byte(req.OldPassword)); err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "old password is incorrect")
+		httpjson.Error(w, http.StatusUnauthorized, "old password is incorrect")
 		return
 	}
 
 	// Hash and set new password
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "failed to hash password")
+		httpjson.Error(w, http.StatusInternalServerError, "failed to hash password")
 		return
 	}
 	if err := h.Store.SetTenantPasswordHash(r.Context(), tenantID, string(hash)); err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "failed to update password")
+		httpjson.Error(w, http.StatusInternalServerError, "failed to update password")
 		return
 	}
 
@@ -273,10 +274,4 @@ func (h *AuthHandler) issueToken(tenantID string) (string, error) {
 		claims["role"] = "admin"
 	}
 	return auth.SignToken([]byte(h.JWTSecret), claims)
-}
-
-func writeAuthError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
