@@ -6,7 +6,7 @@ set -euxo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ASSETS_DIR="${REPO_ROOT}/assets/downloads"
-NOVA_CACHE_DIR="${NOVA_CACHE_DIR:-/var/cache/nova/downloads}"
+NOVA_CACHE_DIR="${NOVA_CACHE_DIR:-}"
 
 # Versions (must match build_rootfs.sh defaults or be overridden)
 ALPINE_VERSION="3.23.3"
