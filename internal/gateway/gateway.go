@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/oriys/nova/internal/auth"
@@ -25,15 +28,22 @@ type GatewayStore interface {
 	GetRouteByDomainPath(ctx context.Context, domain, path string) (*domain.GatewayRoute, error)
 }
 
+// WorkflowInvoker triggers a workflow run. Implemented by *workflow.Service.
+type WorkflowInvoker interface {
+	TriggerRun(ctx context.Context, workflowName string, input json.RawMessage, triggerType string) (*domain.WorkflowRun, error)
+}
+
 // Gateway handles domain-based routing to functions
 type Gateway struct {
 	store          GatewayStore
 	exec           *executor.Executor
-	authenticators []auth.Authenticator // global authenticators for "inherit" strategy
-	routes         sync.Map             // "domain:path" -> *domain.GatewayRoute
-	rateLimiters   sync.Map             // route ID -> *rateLimiter
-	schemas        sync.Map             // route ID -> *compiledSchema
-	paramRoutes    sync.Map             // "domain" -> []*paramRoute (routes with path parameters)
+	workflowSvc    WorkflowInvoker      // optional: for workflow routes
+	authenticators []auth.Authenticator  // global authenticators for "inherit" strategy
+	routes         sync.Map              // "domain:path" -> *domain.GatewayRoute
+	rateLimiters   sync.Map              // route ID -> *rateLimiter
+	circuitBreakers sync.Map             // route ID -> *circuitState
+	schemas        sync.Map              // route ID -> *compiledSchema
+	paramRoutes    sync.Map              // "domain" -> []*paramRoute (routes with path parameters)
 }
 
 // compiledSchema holds a pre-parsed JSON Schema for fast validation
@@ -78,13 +88,55 @@ func min(a, b float64) float64 {
 	return b
 }
 
+// circuitState tracks consecutive failures for a route's circuit breaker.
+type circuitState struct {
+	failures  atomic.Int64
+	openUntil atomic.Int64 // unix nano; 0 = closed
+}
+
+// isOpen returns true if the circuit is currently open (blocking requests).
+func (cs *circuitState) isOpen() bool {
+	until := cs.openUntil.Load()
+	if until == 0 {
+		return false
+	}
+	return time.Now().UnixNano() < until
+}
+
+// recordSuccess resets the failure counter and closes the circuit.
+func (cs *circuitState) recordSuccess() {
+	cs.failures.Store(0)
+	cs.openUntil.Store(0)
+}
+
+// recordFailure increments failures and opens the circuit if threshold is reached.
+func (cs *circuitState) recordFailure(maxFailures, timeoutSec int) {
+	count := cs.failures.Add(1)
+	if int(count) >= maxFailures {
+		cs.openUntil.Store(time.Now().Add(time.Duration(timeoutSec) * time.Second).UnixNano())
+		cs.failures.Store(0) // reset counter for next cycle
+	}
+}
+
 // New creates a new Gateway
-func New(store GatewayStore, exec *executor.Executor, authenticators []auth.Authenticator) *Gateway {
-	return &Gateway{
+func New(store GatewayStore, exec *executor.Executor, authenticators []auth.Authenticator, opts ...GatewayOption) *Gateway {
+	gw := &Gateway{
 		store:          store,
 		exec:           exec,
 		authenticators: authenticators,
 	}
+	for _, opt := range opts {
+		opt(gw)
+	}
+	return gw
+}
+
+// GatewayOption configures optional Gateway dependencies.
+type GatewayOption func(*Gateway)
+
+// WithWorkflowInvoker sets the workflow invoker for workflow-based gateway routes.
+func WithWorkflowInvoker(svc WorkflowInvoker) GatewayOption {
+	return func(g *Gateway) { g.workflowSvc = svc }
 }
 
 // ReloadRoutes refreshes the in-memory route cache from the database
@@ -165,6 +217,21 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ── IP whitelist / blacklist ─────────────────────────────────────────
+	if len(route.IPBlacklist) > 0 || len(route.IPWhitelist) > 0 {
+		clientIP := extractClientIP(r)
+		if clientIP != nil {
+			if len(route.IPBlacklist) > 0 && ipMatchesAny(clientIP, route.IPBlacklist) {
+				writeJSON(w, http.StatusForbidden, `{"error":"forbidden","message":"IP address is blocked"}`)
+				return
+			}
+			if len(route.IPWhitelist) > 0 && !ipMatchesAny(clientIP, route.IPWhitelist) {
+				writeJSON(w, http.StatusForbidden, `{"error":"forbidden","message":"IP address is not allowed"}`)
+				return
+			}
+		}
+	}
+
 	// Handle CORS
 	if route.CORS != nil {
 		if r.Method == http.MethodOptions {
@@ -197,12 +264,39 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Request body validation
+	// ── Mock response — return fixed response without calling backend ────
+	if route.MockResponse != nil {
+		g.writeMockResponse(w, route)
+		return
+	}
+
+	// ── Circuit breaker check ────────────────────────────────────────────
+	if route.CircuitBreaker != nil {
+		cs := g.getOrCreateBreaker(route)
+		if cs.isOpen() {
+			writeJSON(w, http.StatusServiceUnavailable, `{"error":"circuit_open","message":"route is temporarily unavailable due to repeated failures"}`)
+			return
+		}
+	}
+
+	// ── Request body validation ──────────────────────────────────────────
+	maxBody := int64(10 << 20) // default 10MB
+	if route.MaxBodyBytes > 0 {
+		maxBody = route.MaxBodyBytes
+	}
 	var payload json.RawMessage
 	if r.ContentLength > 0 {
-		body, err := io.ReadAll(io.LimitReader(r.Body, 10<<20)) // 10MB limit
+		if r.ContentLength > maxBody {
+			writeJSON(w, http.StatusRequestEntityTooLarge, fmt.Sprintf(`{"error":"request_too_large","message":"body exceeds %d bytes limit"}`, maxBody))
+			return
+		}
+		body, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
 		if err != nil {
 			http.Error(w, `{"error":"read_body_failed"}`, http.StatusBadRequest)
+			return
+		}
+		if int64(len(body)) > maxBody {
+			writeJSON(w, http.StatusRequestEntityTooLarge, fmt.Sprintf(`{"error":"request_too_large","message":"body exceeds %d bytes limit"}`, maxBody))
 			return
 		}
 
@@ -253,18 +347,44 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		payload = mapped
 	}
 
-	// Execute function
+	// ── Execute function or workflow ─────────────────────────────────────
 	invokeCtx := r.Context()
 	var cancel context.CancelFunc
 	if route.TimeoutMs > 0 {
 		invokeCtx, cancel = context.WithTimeout(invokeCtx, time.Duration(route.TimeoutMs)*time.Millisecond)
 		defer cancel()
 	}
+
+	if route.WorkflowName != "" {
+		// Workflow route
+		if g.workflowSvc == nil {
+			http.Error(w, `{"error":"not_configured","message":"workflow invocation not available"}`, http.StatusServiceUnavailable)
+			return
+		}
+		run, err := g.workflowSvc.TriggerRun(invokeCtx, route.WorkflowName, payload, "gateway")
+		if err != nil {
+			g.recordCircuitResult(route, false)
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(invokeCtx.Err(), context.DeadlineExceeded) {
+				http.Error(w, `{"error":"invoke_timeout","message":"gateway route timed out"}`, http.StatusGatewayTimeout)
+				return
+			}
+			http.Error(w, `{"error":"workflow_failed","message":"`+err.Error()+`"}`, http.StatusInternalServerError)
+			return
+		}
+		g.recordCircuitResult(route, true)
+		setResponseHeaders(w, route)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(run)
+		return
+	}
+
+	// Function route
 	attempts, backoff := routeExecutionPolicy(route)
 	resp, err := invokeWithRetry(invokeCtx, attempts, backoff, func(ctx context.Context) (*domain.InvokeResponse, error) {
 		return g.exec.Invoke(ctx, route.FunctionName, payload)
 	})
 	if err != nil {
+		g.recordCircuitResult(route, false)
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(invokeCtx.Err(), context.DeadlineExceeded) {
 			http.Error(w, `{"error":"invoke_timeout","message":"gateway route timed out"}`, http.StatusGatewayTimeout)
 			return
@@ -272,7 +392,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invoke_failed","message":"`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
+	g.recordCircuitResult(route, true)
 
+	setResponseHeaders(w, route)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
@@ -363,6 +485,13 @@ func (g *Gateway) authenticateRequest(route *domain.GatewayRoute, w http.Respons
 		// Delegate to existing API key authenticators
 		for _, authenticator := range g.authenticators {
 			if id := authenticator.Authenticate(r); id != nil {
+				// Check that the API key's policy allows access to the route target
+				if !policyAllowsRouteTarget(id.Policies, route.FunctionName, route.WorkflowName) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusForbidden)
+					w.Write([]byte(`{"error":"forbidden","message":"API key does not have permission for this resource"}`))
+					return errUnauthorized
+				}
 				return bindGatewayIdentityScope(w, r, id)
 			}
 		}
@@ -678,4 +807,148 @@ func invokeWithRetry(
 		}
 	}
 	return nil, lastErr
+}
+
+// policyAllowsRouteTarget checks whether the identity's PolicyBindings permit
+// access to the given function and/or workflow. If no policies exist (empty slice),
+// the key is unrestricted and access is allowed. If policies exist, at least one
+// "allow" binding must cover the target, and no "deny" binding must block it.
+func policyAllowsRouteTarget(policies []domain.PolicyBinding, functionName, workflowName string) bool {
+	if len(policies) == 0 {
+		return true // no restrictions
+	}
+
+	for _, p := range policies {
+		if p.Effect == domain.EffectDeny {
+			if functionName != "" && matchesAny(p.Functions, functionName) {
+				return false
+			}
+			if workflowName != "" && matchesAny(p.Workflows, workflowName) {
+				return false
+			}
+		}
+	}
+
+	for _, p := range policies {
+		if p.Effect == domain.EffectDeny {
+			continue
+		}
+		// Effect is "allow" or empty (default allow)
+		fnOk := functionName == "" || len(p.Functions) == 0 || matchesAny(p.Functions, functionName)
+		wfOk := workflowName == "" || len(p.Workflows) == 0 || matchesAny(p.Workflows, workflowName)
+		if fnOk && wfOk {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesAny checks if name matches any pattern in the list (supports glob via filepath.Match).
+func matchesAny(patterns []string, name string) bool {
+	for _, p := range patterns {
+		if matched, _ := filepath.Match(p, name); matched {
+			return true
+		}
+	}
+	return false
+}
+
+// ── IP whitelist / blacklist helpers ─────────────────────────────────────────
+
+// extractClientIP returns the client IP from X-Forwarded-For, X-Real-IP, or RemoteAddr.
+func extractClientIP(r *http.Request) net.IP {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// First IP in the chain is the original client
+		if idx := strings.IndexByte(xff, ','); idx > 0 {
+			xff = xff[:idx]
+		}
+		if ip := net.ParseIP(strings.TrimSpace(xff)); ip != nil {
+			return ip
+		}
+	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		if ip := net.ParseIP(strings.TrimSpace(xri)); ip != nil {
+			return ip
+		}
+	}
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	return net.ParseIP(host)
+}
+
+// ipMatchesAny checks whether ip matches any entry in the list.
+// Entries can be plain IPs ("1.2.3.4") or CIDR notation ("10.0.0.0/8").
+func ipMatchesAny(ip net.IP, entries []string) bool {
+	for _, entry := range entries {
+		if strings.Contains(entry, "/") {
+			_, cidr, err := net.ParseCIDR(entry)
+			if err == nil && cidr.Contains(ip) {
+				return true
+			}
+		} else {
+			if net.ParseIP(entry) != nil && net.ParseIP(entry).Equal(ip) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ── Mock response ────────────────────────────────────────────────────────────
+
+func (g *Gateway) writeMockResponse(w http.ResponseWriter, route *domain.GatewayRoute) {
+	setResponseHeaders(w, route)
+	mock := route.MockResponse
+	for k, v := range mock.Headers {
+		w.Header().Set(k, v)
+	}
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json")
+	}
+	statusCode := mock.StatusCode
+	if statusCode == 0 {
+		statusCode = http.StatusOK
+	}
+	w.WriteHeader(statusCode)
+	if len(mock.Body) > 0 {
+		w.Write(mock.Body)
+	}
+}
+
+// ── Circuit breaker helpers ──────────────────────────────────────────────────
+
+func (g *Gateway) getOrCreateBreaker(route *domain.GatewayRoute) *circuitState {
+	if v, ok := g.circuitBreakers.Load(route.ID); ok {
+		return v.(*circuitState)
+	}
+	cs := &circuitState{}
+	actual, _ := g.circuitBreakers.LoadOrStore(route.ID, cs)
+	return actual.(*circuitState)
+}
+
+func (g *Gateway) recordCircuitResult(route *domain.GatewayRoute, success bool) {
+	if route.CircuitBreaker == nil {
+		return
+	}
+	cs := g.getOrCreateBreaker(route)
+	if success {
+		cs.recordSuccess()
+	} else {
+		cs.recordFailure(route.CircuitBreaker.MaxFailures, route.CircuitBreaker.TimeoutSec)
+	}
+}
+
+// ── Response headers ─────────────────────────────────────────────────────────
+
+func setResponseHeaders(w http.ResponseWriter, route *domain.GatewayRoute) {
+	for k, v := range route.ResponseHeaders {
+		w.Header().Set(k, v)
+	}
+}
+
+// ── Shared helpers ───────────────────────────────────────────────────────────
+
+func writeJSON(w http.ResponseWriter, status int, body string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write([]byte(body))
 }

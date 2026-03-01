@@ -232,7 +232,11 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 		if cfg.AuthCfg != nil && cfg.AuthCfg.Enabled {
 			authenticators = buildAuthenticators(cfg.AuthCfg, cfg.Store)
 		}
-		gw := gateway.New(cfg.Store, cfg.Exec, authenticators)
+		var gwOpts []gateway.GatewayOption
+		if cfg.WorkflowService != nil {
+			gwOpts = append(gwOpts, gateway.WithWorkflowInvoker(cfg.WorkflowService))
+		}
+		gw := gateway.New(cfg.Store, cfg.Exec, authenticators, gwOpts...)
 		if err := gw.ReloadRoutes(context.Background()); err != nil {
 			logging.Op().Warn("failed to load gateway routes", "error", err)
 		}

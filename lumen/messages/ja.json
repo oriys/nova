@@ -2397,7 +2397,19 @@
       "rateLimitBurstOptional": "Rate Limit Burst (optional)",
       "timeoutMsOptional": "Timeout ms (optional)",
       "retryAttemptsOptional": "Retry attempts (optional)",
-      "retryBackoffMsOptional": "Retry backoff ms (optional)"
+      "retryBackoffMsOptional": "Retry backoff ms (optional)",
+      "ipWhitelist": "IPホワイトリスト（カンマ区切り）",
+      "ipBlacklist": "IPブラックリスト（カンマ区切り）",
+      "responseHeaders": "レスポンスヘッダー（1行に1つ、キー: 値）",
+      "maxBodyBytes": "最大ボディバイト数",
+      "breakerMaxFailures": "サーキットブレーカー最大失敗回数",
+      "breakerTimeoutSec": "サーキットブレーカータイムアウト（秒）",
+      "mockEnabled": "モックレスポンスを有効化",
+      "mockStatusCode": "モックステータスコード",
+      "mockBody": "モックレスポンスボディ（JSON）"
+    },
+    "sections": {
+      "advancedFeatures": "高度な機能（IP、モック、サーキットブレーカー…）"
     },
     "placeholders": {
       "rps": "20",
@@ -2411,7 +2423,14 @@
       "burstExample": "e.g. 40",
       "timeoutMsExample": "e.g. 1500",
       "retryAttemptsExample": "e.g. 3",
-      "retryBackoffMsExample": "e.g. 100"
+      "retryBackoffMsExample": "e.g. 100",
+      "ipWhitelistExample": "10.0.0.1, 192.168.0.0/24",
+      "ipBlacklistExample": "1.2.3.4, 10.0.0.0/8",
+      "responseHeadersExample": "X-Custom: value\nCache-Control: no-cache",
+      "maxBodyBytesExample": "e.g. 1048576 (1 MB)",
+      "breakerMaxFailuresExample": "e.g. 5",
+      "breakerTimeoutSecExample": "e.g. 30",
+      "mockBodyExample": "e.g. JSON object"
     },
     "buttons": {
       "dismiss": "Dismiss",
@@ -2478,7 +2497,8 @@
       "status": "Status",
       "updated": "Updated",
       "actions": "Actions",
-      "resilience": "Resilience"
+      "resilience": "Resilience",
+      "features": "機能"
     },
     "notices": {
       "templateSaved": "Gateway default rate-limit template saved",

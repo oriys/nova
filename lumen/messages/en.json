@@ -2402,7 +2402,19 @@
       "rateLimitBurstOptional": "Rate Limit Burst (optional)",
       "timeoutMsOptional": "Timeout ms (optional)",
       "retryAttemptsOptional": "Retry attempts (optional)",
-      "retryBackoffMsOptional": "Retry backoff ms (optional)"
+      "retryBackoffMsOptional": "Retry backoff ms (optional)",
+      "ipWhitelist": "IP Whitelist (comma-separated)",
+      "ipBlacklist": "IP Blacklist (comma-separated)",
+      "responseHeaders": "Response Headers (one per line, key: value)",
+      "maxBodyBytes": "Max Body Bytes",
+      "breakerMaxFailures": "Circuit Breaker Max Failures",
+      "breakerTimeoutSec": "Circuit Breaker Timeout (sec)",
+      "mockEnabled": "Enable Mock Response",
+      "mockStatusCode": "Mock Status Code",
+      "mockBody": "Mock Response Body (JSON)"
+    },
+    "sections": {
+      "advancedFeatures": "Advanced Features (IP, Mock, Circuit Breaker...)"
     },
     "placeholders": {
       "rps": "20",
@@ -2416,7 +2428,14 @@
       "burstExample": "e.g. 40",
       "timeoutMsExample": "e.g. 1500",
       "retryAttemptsExample": "e.g. 3",
-      "retryBackoffMsExample": "e.g. 100"
+      "retryBackoffMsExample": "e.g. 100",
+      "ipWhitelistExample": "10.0.0.1, 192.168.0.0/24",
+      "ipBlacklistExample": "1.2.3.4, 10.0.0.0/8",
+      "responseHeadersExample": "X-Custom: value\nCache-Control: no-cache",
+      "maxBodyBytesExample": "e.g. 1048576 (1 MB)",
+      "breakerMaxFailuresExample": "e.g. 5",
+      "breakerTimeoutSecExample": "e.g. 30",
+      "mockBodyExample": "e.g. JSON object"
     },
     "buttons": {
       "dismiss": "Dismiss",
@@ -2483,7 +2502,8 @@
       "status": "Status",
       "updated": "Updated",
       "actions": "Actions",
-      "resilience": "Resilience"
+      "resilience": "Resilience",
+      "features": "Features"
     },
     "notices": {
       "templateSaved": "Gateway default rate-limit template saved",

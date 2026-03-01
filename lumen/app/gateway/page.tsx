@@ -11,6 +11,7 @@ import { OnboardingFlow } from "@/components/onboarding-flow"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Dialog,
@@ -255,6 +256,15 @@ export default function GatewayPage() {
   const [createRetryAttempts, setCreateRetryAttempts] = useState("")
   const [createRetryBackoffMs, setCreateRetryBackoffMs] = useState("")
   const [createParamMapping, setCreateParamMapping] = useState<ParamMapping[]>([])
+  const [createIpWhitelist, setCreateIpWhitelist] = useState("")
+  const [createIpBlacklist, setCreateIpBlacklist] = useState("")
+  const [createMockEnabled, setCreateMockEnabled] = useState(false)
+  const [createMockStatus, setCreateMockStatus] = useState("200")
+  const [createMockBody, setCreateMockBody] = useState("")
+  const [createResponseHeaders, setCreateResponseHeaders] = useState("")
+  const [createMaxBodyBytes, setCreateMaxBodyBytes] = useState("")
+  const [createBreakerMaxFailures, setCreateBreakerMaxFailures] = useState("")
+  const [createBreakerTimeoutSec, setCreateBreakerTimeoutSec] = useState("")
 
   const [editDomain, setEditDomain] = useState("")
   const [editPath, setEditPath] = useState("")
@@ -268,6 +278,15 @@ export default function GatewayPage() {
   const [editRetryAttempts, setEditRetryAttempts] = useState("")
   const [editRetryBackoffMs, setEditRetryBackoffMs] = useState("")
   const [editParamMapping, setEditParamMapping] = useState<ParamMapping[]>([])
+  const [editIpWhitelist, setEditIpWhitelist] = useState("")
+  const [editIpBlacklist, setEditIpBlacklist] = useState("")
+  const [editMockEnabled, setEditMockEnabled] = useState(false)
+  const [editMockStatus, setEditMockStatus] = useState("200")
+  const [editMockBody, setEditMockBody] = useState("")
+  const [editResponseHeaders, setEditResponseHeaders] = useState("")
+  const [editMaxBodyBytes, setEditMaxBodyBytes] = useState("")
+  const [editBreakerMaxFailures, setEditBreakerMaxFailures] = useState("")
+  const [editBreakerTimeoutSec, setEditBreakerTimeoutSec] = useState("")
 
   // Domain filtering is now handled server-side via the API call
 
@@ -350,6 +369,15 @@ export default function GatewayPage() {
     setCreateRetryAttempts("")
     setCreateRetryBackoffMs("")
     setCreateParamMapping([])
+    setCreateIpWhitelist("")
+    setCreateIpBlacklist("")
+    setCreateMockEnabled(false)
+    setCreateMockStatus("200")
+    setCreateMockBody("")
+    setCreateResponseHeaders("")
+    setCreateMaxBodyBytes("")
+    setCreateBreakerMaxFailures("")
+    setCreateBreakerTimeoutSec("")
   }
 
   const setEditFromRoute = (route: GatewayRoute) => {
@@ -366,6 +394,15 @@ export default function GatewayPage() {
     setEditRetryAttempts(route.retry_policy?.max_attempts ? String(route.retry_policy.max_attempts) : "")
     setEditRetryBackoffMs(route.retry_policy?.backoff_ms !== undefined ? String(route.retry_policy.backoff_ms) : "")
     setEditParamMapping(route.param_mapping || [])
+    setEditIpWhitelist(route.ip_whitelist?.join(", ") || "")
+    setEditIpBlacklist(route.ip_blacklist?.join(", ") || "")
+    setEditMockEnabled(!!route.mock_response)
+    setEditMockStatus(route.mock_response?.status_code ? String(route.mock_response.status_code) : "200")
+    setEditMockBody(route.mock_response?.body ? JSON.stringify(route.mock_response.body) : "")
+    setEditResponseHeaders(route.response_headers ? Object.entries(route.response_headers).map(([k, v]) => `${k}: ${v}`).join("\n") : "")
+    setEditMaxBodyBytes(route.max_body_bytes ? String(route.max_body_bytes) : "")
+    setEditBreakerMaxFailures(route.circuit_breaker?.max_failures ? String(route.circuit_breaker.max_failures) : "")
+    setEditBreakerTimeoutSec(route.circuit_breaker?.timeout_sec ? String(route.circuit_breaker.timeout_sec) : "")
   }
 
   const buildRateLimit = (rpsRaw: string, burstRaw: string) => {
@@ -393,6 +430,47 @@ export default function GatewayPage() {
       retryPolicy.backoff_ms = Math.floor(backoffMs)
     }
     return retryPolicy
+  }
+
+  const parseCSVList = (raw: string): string[] | undefined => {
+    const items = raw.split(",").map(s => s.trim()).filter(Boolean)
+    return items.length > 0 ? items : undefined
+  }
+
+  const parseHeaderLines = (raw: string): Record<string, string> | undefined => {
+    const lines = raw.split("\n").map(s => s.trim()).filter(Boolean)
+    if (lines.length === 0) return undefined
+    const obj: Record<string, string> = {}
+    for (const line of lines) {
+      const idx = line.indexOf(":")
+      if (idx > 0) {
+        obj[line.slice(0, idx).trim()] = line.slice(idx + 1).trim()
+      }
+    }
+    return Object.keys(obj).length > 0 ? obj : undefined
+  }
+
+  const buildMockResponse = (enabled: boolean, statusRaw: string, bodyRaw: string) => {
+    if (!enabled) return undefined
+    const status = Number(statusRaw) || 200
+    let body: unknown = undefined
+    if (bodyRaw.trim()) {
+      try { body = JSON.parse(bodyRaw) } catch { body = bodyRaw }
+    }
+    return { status_code: status, body: body !== undefined ? body : undefined }
+  }
+
+  const buildCircuitBreaker = (maxFailRaw: string, timeoutRaw: string) => {
+    const mf = Number(maxFailRaw)
+    const ts = Number(timeoutRaw)
+    if (!Number.isFinite(mf) || mf <= 0) return undefined
+    if (!Number.isFinite(ts) || ts <= 0) return undefined
+    return { max_failures: Math.floor(mf), timeout_sec: Math.floor(ts) }
+  }
+
+  const buildMaxBodyBytes = (raw: string): number | undefined => {
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined
   }
 
   const handleSaveTemplate = async () => {
@@ -453,6 +531,12 @@ export default function GatewayPage() {
       rate_limit: buildRateLimit(createRps, createBurst),
       timeout_ms: buildTimeoutMs(createTimeoutMs),
       retry_policy: buildRetryPolicy(createRetryAttempts, createRetryBackoffMs),
+      ip_whitelist: parseCSVList(createIpWhitelist),
+      ip_blacklist: parseCSVList(createIpBlacklist),
+      mock_response: buildMockResponse(createMockEnabled, createMockStatus, createMockBody),
+      response_headers: parseHeaderLines(createResponseHeaders),
+      max_body_bytes: buildMaxBodyBytes(createMaxBodyBytes),
+      circuit_breaker: buildCircuitBreaker(createBreakerMaxFailures, createBreakerTimeoutSec),
     }
 
     try {
@@ -494,6 +578,12 @@ export default function GatewayPage() {
       rate_limit: buildRateLimit(editRps, editBurst),
       timeout_ms: buildTimeoutMs(editTimeoutMs),
       retry_policy: buildRetryPolicy(editRetryAttempts, editRetryBackoffMs),
+      ip_whitelist: parseCSVList(editIpWhitelist),
+      ip_blacklist: parseCSVList(editIpBlacklist),
+      mock_response: buildMockResponse(editMockEnabled, editMockStatus, editMockBody),
+      response_headers: parseHeaderLines(editResponseHeaders),
+      max_body_bytes: buildMaxBodyBytes(editMaxBodyBytes),
+      circuit_breaker: buildCircuitBreaker(editBreakerMaxFailures, editBreakerTimeoutSec),
     }
 
     try {
@@ -1013,6 +1103,129 @@ export default function GatewayPage() {
                     />
                   </div>
                 </div>
+
+                {/* --- Advanced Features --- */}
+                <details className="border rounded-lg p-4 space-y-4">
+                  <summary className="cursor-pointer font-medium text-sm">{g("sections.advancedFeatures")}</summary>
+
+                  {/* IP Whitelist / Blacklist */}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="create-ip-whitelist">{g("fields.ipWhitelist")}</Label>
+                      <Input
+                        id="create-ip-whitelist"
+                        value={createIpWhitelist}
+                        onChange={(e) => setCreateIpWhitelist(e.target.value)}
+                        placeholder={g("placeholders.ipWhitelistExample")}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="create-ip-blacklist">{g("fields.ipBlacklist")}</Label>
+                      <Input
+                        id="create-ip-blacklist"
+                        value={createIpBlacklist}
+                        onChange={(e) => setCreateIpBlacklist(e.target.value)}
+                        placeholder={g("placeholders.ipBlacklistExample")}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Response Headers */}
+                  <div className="space-y-2">
+                    <Label htmlFor="create-response-headers">{g("fields.responseHeaders")}</Label>
+                    <Textarea
+                      id="create-response-headers"
+                      value={createResponseHeaders}
+                      onChange={(e) => setCreateResponseHeaders(e.target.value)}
+                      placeholder={g("placeholders.responseHeadersExample")}
+                      rows={2}
+                    />
+                  </div>
+
+                  {/* Max Body Bytes */}
+                  <div className="space-y-2">
+                    <Label htmlFor="create-max-body-bytes">{g("fields.maxBodyBytes")}</Label>
+                    <Input
+                      id="create-max-body-bytes"
+                      type="number"
+                      min="0"
+                      value={createMaxBodyBytes}
+                      onChange={(e) => setCreateMaxBodyBytes(e.target.value)}
+                      placeholder={g("placeholders.maxBodyBytesExample")}
+                    />
+                  </div>
+
+                  {/* Circuit Breaker */}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="create-breaker-max-failures">{g("fields.breakerMaxFailures")}</Label>
+                      <Input
+                        id="create-breaker-max-failures"
+                        type="number"
+                        min="1"
+                        value={createBreakerMaxFailures}
+                        onChange={(e) => setCreateBreakerMaxFailures(e.target.value)}
+                        placeholder={g("placeholders.breakerMaxFailuresExample")}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="create-breaker-timeout-sec">{g("fields.breakerTimeoutSec")}</Label>
+                      <Input
+                        id="create-breaker-timeout-sec"
+                        type="number"
+                        min="1"
+                        value={createBreakerTimeoutSec}
+                        onChange={(e) => setCreateBreakerTimeoutSec(e.target.value)}
+                        placeholder={g("placeholders.breakerTimeoutSecExample")}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Mock Response */}
+                  <div className="space-y-2">
+                    <Label>{g("fields.mockEnabled")}</Label>
+                    <Select
+                      value={createMockEnabled ? "true" : "false"}
+                      onValueChange={(v) => setCreateMockEnabled(v === "true")}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="false">{g("labels.disabled")}</SelectItem>
+                        <SelectItem value="true">{g("labels.enabled")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {createMockEnabled && (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="create-mock-status">{g("fields.mockStatusCode")}</Label>
+                        <Input
+                          id="create-mock-status"
+                          type="number"
+                          min="100"
+                          max="599"
+                          value={createMockStatus}
+                          onChange={(e) => setCreateMockStatus(e.target.value)}
+                          placeholder="200"
+                        />
+                      </div>
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label htmlFor="create-mock-body">{g("fields.mockBody")}</Label>
+                        <Textarea
+                          id="create-mock-body"
+                          className="font-mono"
+                          value={createMockBody}
+                          onChange={(e) => setCreateMockBody(e.target.value)}
+                          placeholder={g("placeholders.mockBodyExample")}
+                          rows={3}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </details>
+
                 <ParamMappingEditor
                   value={createParamMapping}
                   onChange={setCreateParamMapping}
@@ -1157,6 +1370,7 @@ export default function GatewayPage() {
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.auth")}</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.rateLimit")}</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.resilience")}</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.features")}</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.status")}</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.updated")}</th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">{g("table.actions")}</th>
@@ -1217,6 +1431,25 @@ export default function GatewayPage() {
                             backoff: route.retry_policy.backoff_ms ?? 0,
                           })
                           : "-"}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      <div className="flex flex-wrap gap-1">
+                        {route.mock_response && (
+                          <Badge variant="outline" className="text-[10px]">Mock</Badge>
+                        )}
+                        {route.circuit_breaker && (
+                          <Badge variant="outline" className="text-[10px]">Breaker</Badge>
+                        )}
+                        {(route.ip_whitelist?.length || route.ip_blacklist?.length) ? (
+                          <Badge variant="outline" className="text-[10px]">IP</Badge>
+                        ) : null}
+                        {route.max_body_bytes ? (
+                          <Badge variant="outline" className="text-[10px]">Size</Badge>
+                        ) : null}
+                        {route.response_headers && Object.keys(route.response_headers).length > 0 ? (
+                          <Badge variant="outline" className="text-[10px]">Headers</Badge>
+                        ) : null}
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -1451,6 +1684,124 @@ export default function GatewayPage() {
               />
             </div>
           </div>
+
+          {/* --- Advanced Features --- */}
+          <details className="border rounded-lg p-4 space-y-4">
+            <summary className="cursor-pointer font-medium text-sm">{g("sections.advancedFeatures")}</summary>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="edit-ip-whitelist">{g("fields.ipWhitelist")}</Label>
+                <Input
+                  id="edit-ip-whitelist"
+                  value={editIpWhitelist}
+                  onChange={(e) => setEditIpWhitelist(e.target.value)}
+                  placeholder={g("placeholders.ipWhitelistExample")}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-ip-blacklist">{g("fields.ipBlacklist")}</Label>
+                <Input
+                  id="edit-ip-blacklist"
+                  value={editIpBlacklist}
+                  onChange={(e) => setEditIpBlacklist(e.target.value)}
+                  placeholder={g("placeholders.ipBlacklistExample")}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-response-headers">{g("fields.responseHeaders")}</Label>
+              <Textarea
+                id="edit-response-headers"
+                value={editResponseHeaders}
+                onChange={(e) => setEditResponseHeaders(e.target.value)}
+                placeholder={g("placeholders.responseHeadersExample")}
+                rows={2}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-max-body-bytes">{g("fields.maxBodyBytes")}</Label>
+              <Input
+                id="edit-max-body-bytes"
+                type="number"
+                min="0"
+                value={editMaxBodyBytes}
+                onChange={(e) => setEditMaxBodyBytes(e.target.value)}
+                placeholder={g("placeholders.maxBodyBytesExample")}
+              />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="edit-breaker-max-failures">{g("fields.breakerMaxFailures")}</Label>
+                <Input
+                  id="edit-breaker-max-failures"
+                  type="number"
+                  min="1"
+                  value={editBreakerMaxFailures}
+                  onChange={(e) => setEditBreakerMaxFailures(e.target.value)}
+                  placeholder={g("placeholders.breakerMaxFailuresExample")}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-breaker-timeout-sec">{g("fields.breakerTimeoutSec")}</Label>
+                <Input
+                  id="edit-breaker-timeout-sec"
+                  type="number"
+                  min="1"
+                  value={editBreakerTimeoutSec}
+                  onChange={(e) => setEditBreakerTimeoutSec(e.target.value)}
+                  placeholder={g("placeholders.breakerTimeoutSecExample")}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>{g("fields.mockEnabled")}</Label>
+              <Select
+                value={editMockEnabled ? "true" : "false"}
+                onValueChange={(v) => setEditMockEnabled(v === "true")}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="false">{g("labels.disabled")}</SelectItem>
+                  <SelectItem value="true">{g("labels.enabled")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {editMockEnabled && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-mock-status">{g("fields.mockStatusCode")}</Label>
+                  <Input
+                    id="edit-mock-status"
+                    type="number"
+                    min="100"
+                    max="599"
+                    value={editMockStatus}
+                    onChange={(e) => setEditMockStatus(e.target.value)}
+                    placeholder="200"
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="edit-mock-body">{g("fields.mockBody")}</Label>
+                  <Textarea
+                    id="edit-mock-body"
+                    className="font-mono"
+                    value={editMockBody}
+                    onChange={(e) => setEditMockBody(e.target.value)}
+                    placeholder={g("placeholders.mockBodyExample")}
+                    rows={3}
+                  />
+                </div>
+              </div>
+            )}
+          </details>
+
           <ParamMappingEditor
             value={editParamMapping}
             onChange={setEditParamMapping}

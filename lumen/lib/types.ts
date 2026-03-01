@@ -62,6 +62,7 @@ export interface GatewayRoute {
   path: string;
   methods?: string[];
   function_name: string;
+  workflow_name?: string;
   auth_strategy: string;
   auth_config?: Record<string, string>;
   request_schema?: unknown;
@@ -70,6 +71,12 @@ export interface GatewayRoute {
   cors?: CORSConfig;
   timeout_ms?: number;
   retry_policy?: RouteRetryPolicy;
+  ip_whitelist?: string[];
+  ip_blacklist?: string[];
+  mock_response?: { status_code: number; headers?: Record<string, string>; body?: unknown };
+  response_headers?: Record<string, string>;
+  max_body_bytes?: number;
+  circuit_breaker?: { max_failures: number; timeout_sec: number };
   enabled: boolean;
   created_at: string;
   updated_at: string;

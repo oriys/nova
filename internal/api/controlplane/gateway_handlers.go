@@ -45,18 +45,24 @@ func (h *GatewayHandler) RegisterRoutes(mux *http.ServeMux) {
 
 func (h *GatewayHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Domain        string                   `json:"domain"`
-		Path          string                   `json:"path"`
-		Methods       []string                 `json:"methods,omitempty"`
-		FunctionName  string                   `json:"function_name"`
-		WorkflowName  string                   `json:"workflow_name"`
-		AuthStrategy  string                   `json:"auth_strategy"`
-		AuthConfig    map[string]string        `json:"auth_config,omitempty"`
-		RequestSchema json.RawMessage          `json:"request_schema,omitempty"`
-		RateLimit     *domain.RouteRateLimit   `json:"rate_limit,omitempty"`
-		TimeoutMs     *int                     `json:"timeout_ms,omitempty"`
-		RetryPolicy   *domain.RouteRetryPolicy `json:"retry_policy,omitempty"`
-		Enabled       *bool                    `json:"enabled"`
+		Domain          string                       `json:"domain"`
+		Path            string                       `json:"path"`
+		Methods         []string                     `json:"methods,omitempty"`
+		FunctionName    string                       `json:"function_name"`
+		WorkflowName    string                       `json:"workflow_name"`
+		AuthStrategy    string                       `json:"auth_strategy"`
+		AuthConfig      map[string]string            `json:"auth_config,omitempty"`
+		RequestSchema   json.RawMessage              `json:"request_schema,omitempty"`
+		RateLimit       *domain.RouteRateLimit       `json:"rate_limit,omitempty"`
+		TimeoutMs       *int                         `json:"timeout_ms,omitempty"`
+		RetryPolicy     *domain.RouteRetryPolicy     `json:"retry_policy,omitempty"`
+		IPWhitelist     []string                     `json:"ip_whitelist,omitempty"`
+		IPBlacklist     []string                     `json:"ip_blacklist,omitempty"`
+		MockResponse    *domain.MockResponseConfig   `json:"mock_response,omitempty"`
+		ResponseHeaders map[string]string            `json:"response_headers,omitempty"`
+		MaxBodyBytes    *int64                       `json:"max_body_bytes,omitempty"`
+		CircuitBreaker  *domain.CircuitBreakerConfig `json:"circuit_breaker,omitempty"`
+		Enabled         *bool                        `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -109,24 +115,39 @@ func (h *GatewayHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := validateCircuitBreaker(req.CircuitBreaker); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var maxBodyBytes int64
+	if req.MaxBodyBytes != nil {
+		maxBodyBytes = *req.MaxBodyBytes
+	}
 
 	now := time.Now()
 	route := &domain.GatewayRoute{
-		ID:            uuid.New().String()[:8],
-		Domain:        req.Domain,
-		Path:          req.Path,
-		Methods:       req.Methods,
-		FunctionName:  req.FunctionName,
-		WorkflowName:  req.WorkflowName,
-		AuthStrategy:  req.AuthStrategy,
-		AuthConfig:    req.AuthConfig,
-		RequestSchema: req.RequestSchema,
-		RateLimit:     req.RateLimit,
-		TimeoutMs:     timeoutMs,
-		RetryPolicy:   req.RetryPolicy,
-		Enabled:       enabled,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ID:              uuid.New().String()[:8],
+		Domain:          req.Domain,
+		Path:            req.Path,
+		Methods:         req.Methods,
+		FunctionName:    req.FunctionName,
+		WorkflowName:    req.WorkflowName,
+		AuthStrategy:    req.AuthStrategy,
+		AuthConfig:      req.AuthConfig,
+		RequestSchema:   req.RequestSchema,
+		RateLimit:       req.RateLimit,
+		TimeoutMs:       timeoutMs,
+		RetryPolicy:     req.RetryPolicy,
+		IPWhitelist:     req.IPWhitelist,
+		IPBlacklist:     req.IPBlacklist,
+		MockResponse:    req.MockResponse,
+		ResponseHeaders: req.ResponseHeaders,
+		MaxBodyBytes:    maxBodyBytes,
+		CircuitBreaker:  req.CircuitBreaker,
+		Enabled:         enabled,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 
 	if err := h.Store.SaveGatewayRoute(r.Context(), route); err != nil {
@@ -183,18 +204,24 @@ func (h *GatewayHandler) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Domain        *string                  `json:"domain"`
-		Path          *string                  `json:"path"`
-		Methods       []string                 `json:"methods"`
-		FunctionName  *string                  `json:"function_name"`
-		WorkflowName  *string                  `json:"workflow_name"`
-		AuthStrategy  *string                  `json:"auth_strategy"`
-		AuthConfig    map[string]string        `json:"auth_config"`
-		RequestSchema json.RawMessage          `json:"request_schema"`
-		RateLimit     *domain.RouteRateLimit   `json:"rate_limit"`
-		TimeoutMs     *int                     `json:"timeout_ms"`
-		RetryPolicy   *domain.RouteRetryPolicy `json:"retry_policy"`
-		Enabled       *bool                    `json:"enabled"`
+		Domain          *string                      `json:"domain"`
+		Path            *string                      `json:"path"`
+		Methods         []string                     `json:"methods"`
+		FunctionName    *string                      `json:"function_name"`
+		WorkflowName    *string                      `json:"workflow_name"`
+		AuthStrategy    *string                      `json:"auth_strategy"`
+		AuthConfig      map[string]string            `json:"auth_config"`
+		RequestSchema   json.RawMessage              `json:"request_schema"`
+		RateLimit       *domain.RouteRateLimit       `json:"rate_limit"`
+		TimeoutMs       *int                         `json:"timeout_ms"`
+		RetryPolicy     *domain.RouteRetryPolicy     `json:"retry_policy"`
+		IPWhitelist     []string                     `json:"ip_whitelist"`
+		IPBlacklist     []string                     `json:"ip_blacklist"`
+		MockResponse    *domain.MockResponseConfig   `json:"mock_response"`
+		ResponseHeaders map[string]string            `json:"response_headers"`
+		MaxBodyBytes    *int64                       `json:"max_body_bytes"`
+		CircuitBreaker  *domain.CircuitBreakerConfig `json:"circuit_breaker"`
+		Enabled         *bool                        `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -248,7 +275,29 @@ func (h *GatewayHandler) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 	if req.Enabled != nil {
 		existing.Enabled = *req.Enabled
 	}
+	if req.IPWhitelist != nil {
+		existing.IPWhitelist = req.IPWhitelist
+	}
+	if req.IPBlacklist != nil {
+		existing.IPBlacklist = req.IPBlacklist
+	}
+	if req.MockResponse != nil {
+		existing.MockResponse = req.MockResponse
+	}
+	if req.ResponseHeaders != nil {
+		existing.ResponseHeaders = req.ResponseHeaders
+	}
+	if req.MaxBodyBytes != nil {
+		existing.MaxBodyBytes = *req.MaxBodyBytes
+	}
+	if req.CircuitBreaker != nil {
+		existing.CircuitBreaker = req.CircuitBreaker
+	}
 	if err := validateRouteExecutionPolicy(existing.TimeoutMs, existing.RetryPolicy); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := validateCircuitBreaker(existing.CircuitBreaker); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -384,6 +433,19 @@ func validateRouteExecutionPolicy(timeoutMs int, retry *domain.RouteRetryPolicy)
 	}
 	if retry.BackoffMs < 0 || retry.BackoffMs > gatewayMaxRetryBackoff {
 		return fmt.Errorf("retry_policy.backoff_ms must be between 0 and %d", gatewayMaxRetryBackoff)
+	}
+	return nil
+}
+
+func validateCircuitBreaker(cb *domain.CircuitBreakerConfig) error {
+	if cb == nil {
+		return nil
+	}
+	if cb.MaxFailures < 1 || cb.MaxFailures > 1000 {
+		return fmt.Errorf("circuit_breaker.max_failures must be between 1 and 1000")
+	}
+	if cb.TimeoutSec < 1 || cb.TimeoutSec > 3600 {
+		return fmt.Errorf("circuit_breaker.timeout_sec must be between 1 and 3600")
 	}
 	return nil
 }

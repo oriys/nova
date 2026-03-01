@@ -2402,7 +2402,19 @@
       "rateLimitBurstOptional": "限流突发（可选）",
       "timeoutMsOptional": "超时毫秒（可选）",
       "retryAttemptsOptional": "重试次数（可选）",
-      "retryBackoffMsOptional": "重试退避毫秒（可选）"
+      "retryBackoffMsOptional": "重试退避毫秒（可选）",
+      "ipWhitelist": "IP 白名单（逗号分隔）",
+      "ipBlacklist": "IP 黑名单（逗号分隔）",
+      "responseHeaders": "响应头（每行一个，键: 值）",
+      "maxBodyBytes": "最大请求体字节数",
+      "breakerMaxFailures": "熔断器最大失败次数",
+      "breakerTimeoutSec": "熔断器超时时间（秒）",
+      "mockEnabled": "启用模拟响应",
+      "mockStatusCode": "模拟状态码",
+      "mockBody": "模拟响应体（JSON）"
+    },
+    "sections": {
+      "advancedFeatures": "高级功能（IP、模拟、熔断器…）"
     },
     "placeholders": {
       "rps": "20",
@@ -2416,7 +2428,14 @@
       "burstExample": "例如 40",
       "timeoutMsExample": "例如 1500",
       "retryAttemptsExample": "例如 3",
-      "retryBackoffMsExample": "例如 100"
+      "retryBackoffMsExample": "例如 100",
+      "ipWhitelistExample": "10.0.0.1, 192.168.0.0/24",
+      "ipBlacklistExample": "1.2.3.4, 10.0.0.0/8",
+      "responseHeadersExample": "X-Custom: value\nCache-Control: no-cache",
+      "maxBodyBytesExample": "e.g. 1048576 (1 MB)",
+      "breakerMaxFailuresExample": "e.g. 5",
+      "breakerTimeoutSecExample": "e.g. 30",
+      "mockBodyExample": "e.g. JSON object"
     },
     "buttons": {
       "dismiss": "关闭",
@@ -2483,7 +2502,8 @@
       "status": "状态",
       "updated": "更新时间",
       "actions": "操作",
-      "resilience": "韧性策略"
+      "resilience": "韧性策略",
+      "features": "功能特性"
     },
     "notices": {
       "templateSaved": "网关默认限流模板已保存",

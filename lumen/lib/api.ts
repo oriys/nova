@@ -204,9 +204,26 @@ export interface GatewayRoute {
   cors?: CORSConfig;
   timeout_ms?: number;
   retry_policy?: RouteRetryPolicy;
+  ip_whitelist?: string[];
+  ip_blacklist?: string[];
+  mock_response?: MockResponseConfig;
+  response_headers?: Record<string, string>;
+  max_body_bytes?: number;
+  circuit_breaker?: CircuitBreakerConfig;
   enabled: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface MockResponseConfig {
+  status_code: number;
+  headers?: Record<string, string>;
+  body?: unknown;
+}
+
+export interface CircuitBreakerConfig {
+  max_failures: number;
+  timeout_sec: number;
 }
 
 export interface CreateGatewayRouteRequest {
@@ -222,6 +239,12 @@ export interface CreateGatewayRouteRequest {
   rate_limit?: RouteRateLimit;
   timeout_ms?: number;
   retry_policy?: RouteRetryPolicy;
+  ip_whitelist?: string[];
+  ip_blacklist?: string[];
+  mock_response?: MockResponseConfig;
+  response_headers?: Record<string, string>;
+  max_body_bytes?: number;
+  circuit_breaker?: CircuitBreakerConfig;
   enabled?: boolean;
 }
 
@@ -238,6 +261,12 @@ export interface UpdateGatewayRouteRequest {
   rate_limit?: RouteRateLimit;
   timeout_ms?: number;
   retry_policy?: RouteRetryPolicy;
+  ip_whitelist?: string[];
+  ip_blacklist?: string[];
+  mock_response?: MockResponseConfig;
+  response_headers?: Record<string, string>;
+  max_body_bytes?: number;
+  circuit_breaker?: CircuitBreakerConfig;
   enabled?: boolean;
 }
 
