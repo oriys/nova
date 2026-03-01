@@ -54,6 +54,51 @@ type WorkflowStore interface {
 	GetNodeAttempts(ctx context.Context, runNodeID string) ([]domain.NodeAttempt, error)
 }
 
+type workflowPredecessorState struct {
+	NodeKey     string
+	Status      domain.NodeStatus
+	Output      json.RawMessage
+	IsCompleted bool
+}
+
+func buildSuccessorInput(completed *domain.RunNode, predecessors []workflowPredecessorState) (json.RawMessage, error) {
+	if len(predecessors) == 0 {
+		return nil, nil
+	}
+
+	if len(predecessors) == 1 {
+		pred := predecessors[0]
+		if pred.IsCompleted {
+			return completed.Output, nil
+		}
+		if pred.Status == domain.NodeStatusSucceeded {
+			return pred.Output, nil
+		}
+		return nil, nil
+	}
+
+	merged := make(map[string]json.RawMessage, len(predecessors))
+	for _, pred := range predecessors {
+		if pred.IsCompleted {
+			merged[pred.NodeKey] = completed.Output
+			continue
+		}
+		if pred.Status == domain.NodeStatusSucceeded {
+			merged[pred.NodeKey] = pred.Output
+		}
+	}
+
+	if len(merged) == 0 {
+		return nil, nil
+	}
+
+	payload, err := json.Marshal(merged)
+	if err != nil {
+		return nil, fmt.Errorf("marshal successor input: %w", err)
+	}
+	return payload, nil
+}
+
 // --- PostgresStore implements WorkflowStore ---
 
 func (s *PostgresStore) CreateWorkflow(ctx context.Context, w *domain.Workflow) error {
@@ -552,6 +597,140 @@ func (s *PostgresStore) UpdateRunNode(ctx context.Context, node *domain.RunNode)
 		node.ID, node.Status, node.Attempt, node.Input, node.Output, node.ErrorMessage,
 		node.LeaseOwner, node.LeaseExpiresAt, node.StartedAt, node.FinishedAt, node.ChildRunID)
 	return err
+}
+
+// AdvanceReadySuccessors atomically decrements unresolved dependencies for the
+// direct successors of the completed node and populates inputs for any nodes
+// that become ready in the same transaction. This prevents workers from
+// observing a ready node before its merged input has been persisted.
+func (s *PostgresStore) AdvanceReadySuccessors(ctx context.Context, completed *domain.RunNode) error {
+	if completed == nil || completed.RunID == "" || completed.NodeID == "" {
+		return nil
+	}
+
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin workflow advance tx: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	rows, err := tx.Query(ctx,
+		`SELECT DISTINCT n.id, n.node_key
+		 FROM dag_workflow_edges e
+		 JOIN dag_workflow_nodes n ON n.id = e.to_node_id
+		 WHERE e.from_node_id = $1`,
+		completed.NodeID)
+	if err != nil {
+		return fmt.Errorf("list workflow successors: %w", err)
+	}
+
+	successorByKey := make(map[string]string)
+	successorKeys := make([]string, 0)
+	for rows.Next() {
+		var succID, succKey string
+		if err := rows.Scan(&succID, &succKey); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan workflow successor: %w", err)
+		}
+		successorByKey[succKey] = succID
+		successorKeys = append(successorKeys, succKey)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("iterate workflow successors: %w", err)
+	}
+	rows.Close()
+
+	if len(successorKeys) == 0 {
+		return tx.Commit(ctx)
+	}
+
+	readyRows, err := tx.Query(ctx,
+		`WITH updated AS (
+			UPDATE dag_run_nodes
+			SET unresolved_deps = unresolved_deps - 1,
+			    status = CASE WHEN unresolved_deps - 1 <= 0 THEN 'ready' ELSE status END
+			WHERE run_id = $1 AND node_key = ANY($2) AND status = 'pending'
+			RETURNING node_key, status, unresolved_deps
+		)
+		SELECT node_key
+		FROM updated
+		WHERE status = 'ready' AND unresolved_deps <= 0`,
+		completed.RunID, successorKeys)
+	if err != nil {
+		return fmt.Errorf("decrement workflow dependencies: %w", err)
+	}
+
+	readyKeys := make([]string, 0)
+	for readyRows.Next() {
+		var nodeKey string
+		if err := readyRows.Scan(&nodeKey); err != nil {
+			readyRows.Close()
+			return fmt.Errorf("scan ready successor: %w", err)
+		}
+		readyKeys = append(readyKeys, nodeKey)
+	}
+	if err := readyRows.Err(); err != nil {
+		readyRows.Close()
+		return fmt.Errorf("iterate ready successors: %w", err)
+	}
+	readyRows.Close()
+
+	for _, readyKey := range readyKeys {
+		succID := successorByKey[readyKey]
+		if succID == "" {
+			continue
+		}
+
+		predRows, err := tx.Query(ctx,
+			`SELECT pred.node_key,
+			        COALESCE(rn.status, ''),
+			        rn.output,
+			        pred.id = $3 AS is_completed
+			 FROM dag_workflow_edges e
+			 JOIN dag_workflow_nodes pred ON pred.id = e.from_node_id
+			 LEFT JOIN dag_run_nodes rn ON rn.run_id = $1 AND rn.node_id = pred.id
+			 WHERE e.to_node_id = $2`,
+			completed.RunID, succID, completed.NodeID)
+		if err != nil {
+			return fmt.Errorf("list predecessor states: %w", err)
+		}
+
+		predecessors := make([]workflowPredecessorState, 0)
+		for predRows.Next() {
+			var pred workflowPredecessorState
+			if err := predRows.Scan(&pred.NodeKey, &pred.Status, &pred.Output, &pred.IsCompleted); err != nil {
+				predRows.Close()
+				return fmt.Errorf("scan predecessor state: %w", err)
+			}
+			predecessors = append(predecessors, pred)
+		}
+		if err := predRows.Err(); err != nil {
+			predRows.Close()
+			return fmt.Errorf("iterate predecessor states: %w", err)
+		}
+		predRows.Close()
+
+		input, err := buildSuccessorInput(completed, predecessors)
+		if err != nil {
+			return err
+		}
+
+		if _, err := tx.Exec(ctx,
+			`UPDATE dag_run_nodes
+			 SET input = $2
+			 WHERE run_id = $1 AND node_key = $3 AND status = 'ready'`,
+			completed.RunID, input, readyKey); err != nil {
+			return fmt.Errorf("update ready successor input: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit workflow advance tx: %w", err)
+	}
+	return nil
 }
 
 // DecrementDeps decrements unresolved_deps for the given node keys in a run,

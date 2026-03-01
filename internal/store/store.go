@@ -40,28 +40,28 @@ import (
 
 // FunctionUpdate contains optional fields for updating a function.
 type FunctionUpdate struct {
-	Handler             *string                 `json:"handler,omitempty"`
-	Code                *string                 `json:"code,omitempty"` // inline code update
-	MemoryMB            *int                    `json:"memory_mb,omitempty"`
-	TimeoutS            *int                    `json:"timeout_s,omitempty"`
-	MinReplicas         *int                    `json:"min_replicas,omitempty"`
-	MaxReplicas         *int                    `json:"max_replicas,omitempty"`
-	InstanceConcurrency *int                    `json:"instance_concurrency,omitempty"`
-	Mode                *domain.ExecutionMode   `json:"mode,omitempty"`
-	Backend             *domain.BackendType     `json:"backend,omitempty"`
-	Limits              *domain.ResourceLimits  `json:"limits,omitempty"`
-	NetworkPolicy       *domain.NetworkPolicy   `json:"network_policy,omitempty"`
-	RolloutPolicy       *domain.RolloutPolicy   `json:"rollout_policy,omitempty"`
-	AutoScalePolicy     *domain.AutoScalePolicy `json:"auto_scale_policy,omitempty"`
-	CapacityPolicy      *domain.CapacityPolicy  `json:"capacity_policy,omitempty"`
-	SLOPolicy           *domain.SLOPolicy       `json:"slo_policy,omitempty"`
-	EnvVars             map[string]string       `json:"env_vars,omitempty"`
-	MergeEnvVars        bool                    `json:"merge_env_vars,omitempty"`
-	Tags                map[string]string          `json:"tags,omitempty"`
-	LogRetentionDays    *int                       `json:"log_retention_days,omitempty"`
-	AsyncDestinations   *domain.AsyncDestinations  `json:"async_destinations,omitempty"`
-	Layers              []string                   `json:"layers,omitempty"` // layer IDs (max 6)
-	Mounts              []domain.VolumeMount       `json:"mounts,omitempty"` // persistent volume mounts
+	Handler             *string                   `json:"handler,omitempty"`
+	Code                *string                   `json:"code,omitempty"` // inline code update
+	MemoryMB            *int                      `json:"memory_mb,omitempty"`
+	TimeoutS            *int                      `json:"timeout_s,omitempty"`
+	MinReplicas         *int                      `json:"min_replicas,omitempty"`
+	MaxReplicas         *int                      `json:"max_replicas,omitempty"`
+	InstanceConcurrency *int                      `json:"instance_concurrency,omitempty"`
+	Mode                *domain.ExecutionMode     `json:"mode,omitempty"`
+	Backend             *domain.BackendType       `json:"backend,omitempty"`
+	Limits              *domain.ResourceLimits    `json:"limits,omitempty"`
+	NetworkPolicy       *domain.NetworkPolicy     `json:"network_policy,omitempty"`
+	RolloutPolicy       *domain.RolloutPolicy     `json:"rollout_policy,omitempty"`
+	AutoScalePolicy     *domain.AutoScalePolicy   `json:"auto_scale_policy,omitempty"`
+	CapacityPolicy      *domain.CapacityPolicy    `json:"capacity_policy,omitempty"`
+	SLOPolicy           *domain.SLOPolicy         `json:"slo_policy,omitempty"`
+	EnvVars             map[string]string         `json:"env_vars,omitempty"`
+	MergeEnvVars        bool                      `json:"merge_env_vars,omitempty"`
+	Tags                map[string]string         `json:"tags,omitempty"`
+	LogRetentionDays    *int                      `json:"log_retention_days,omitempty"`
+	AsyncDestinations   *domain.AsyncDestinations `json:"async_destinations,omitempty"`
+	Layers              []string                  `json:"layers,omitempty"` // layer IDs (max 6)
+	Mounts              []domain.VolumeMount      `json:"mounts,omitempty"` // persistent volume mounts
 }
 
 // MetadataStore is the durable metadata store (functions, versions, aliases).
@@ -409,6 +409,14 @@ type metadataStoreUnwrapper interface {
 	UnderlyingMetadataStore() MetadataStore
 }
 
+type workflowSuccessorAdvancer interface {
+	AdvanceReadySuccessors(ctx context.Context, completed *domain.RunNode) error
+}
+
+type metadataWritableChecker interface {
+	CheckWritable(ctx context.Context) error
+}
+
 func unwrapMetadataStore(meta MetadataStore) MetadataStore {
 	seen := map[MetadataStore]struct{}{}
 	current := meta
@@ -464,6 +472,34 @@ func (s *Store) PingPostgres(ctx context.Context) error {
 
 func (s *Store) Ping(ctx context.Context) error {
 	return s.PingPostgres(ctx)
+}
+
+// AdvanceReadySuccessors asks the underlying workflow store to perform an
+// atomic "decrement deps + populate successor input" step when it supports it.
+// It returns handled=false when the current workflow store does not implement
+// the optimized path, allowing callers to fall back to legacy behavior.
+func (s *Store) AdvanceReadySuccessors(ctx context.Context, completed *domain.RunNode) (handled bool, err error) {
+	if s == nil || s.WorkflowStore == nil || completed == nil {
+		return false, nil
+	}
+	advancer, ok := s.WorkflowStore.(workflowSuccessorAdvancer)
+	if !ok {
+		return false, nil
+	}
+	return true, advancer.AdvanceReadySuccessors(ctx, completed)
+}
+
+// CheckWritable verifies that the current metadata backend is writable.
+// Stores that do not support an explicit writable check are treated as writable.
+func (s *Store) CheckWritable(ctx context.Context) error {
+	if s == nil || s.MetadataStore == nil {
+		return fmt.Errorf("postgres not configured")
+	}
+	checker, ok := s.MetadataStore.(metadataWritableChecker)
+	if !ok {
+		return nil
+	}
+	return checker.CheckWritable(ctx)
 }
 
 func (s *Store) Close() error {

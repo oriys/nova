@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -72,6 +73,21 @@ func (s *PostgresStore) Ping(ctx context.Context) error {
 		return fmt.Errorf("postgres not initialized")
 	}
 	return s.pool.Ping(ctx)
+}
+
+func (s *PostgresStore) CheckWritable(ctx context.Context) error {
+	if s.pool == nil {
+		return fmt.Errorf("postgres not initialized")
+	}
+
+	var readOnly string
+	if err := s.pool.QueryRow(ctx, `SHOW transaction_read_only`).Scan(&readOnly); err != nil {
+		return fmt.Errorf("check postgres writable state: %w", err)
+	}
+	if strings.EqualFold(strings.TrimSpace(readOnly), "on") {
+		return fmt.Errorf("postgres is read-only")
+	}
+	return nil
 }
 
 func (s *PostgresStore) ensureSchema(ctx context.Context) error {

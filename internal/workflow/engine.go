@@ -391,6 +391,13 @@ func (e *Engine) retryNode(ctx context.Context, node *domain.RunNode, wfNode *do
 }
 
 func (e *Engine) advanceDAG(ctx context.Context, completed *domain.RunNode) {
+	if handled, err := e.store.AdvanceReadySuccessors(ctx, completed); err != nil {
+		logging.Op().Error("advance dag atomically", "run_id", completed.RunID, "node_key", completed.NodeKey, "error", err)
+		return
+	} else if handled {
+		return
+	}
+
 	// Get the workflow version's edges to find successors
 	wfNode, err := e.getWorkflowNode(ctx, completed.NodeID)
 	if err != nil {

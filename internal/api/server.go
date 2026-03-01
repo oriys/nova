@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/oriys/nova/internal/ai"
-	"github.com/oriys/nova/internal/pkg/httpjson"
 	"github.com/oriys/nova/internal/api/controlplane"
 	"github.com/oriys/nova/internal/api/dataplane"
 	sandboxapi "github.com/oriys/nova/internal/api/sandbox"
@@ -26,6 +25,7 @@ import (
 	"github.com/oriys/nova/internal/layer"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/observability"
+	"github.com/oriys/nova/internal/pkg/httpjson"
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/ratelimit"
 	"github.com/oriys/nova/internal/sandbox"
@@ -279,7 +279,7 @@ func normalizePlaneMode(mode PlaneMode) PlaneMode {
 }
 
 func registerControlPlaneHealthRoutes(mux *http.ServeMux, s *store.Store) {
-	healthHandler := func(w http.ResponseWriter, r *http.Request) {
+	writeHealth := func(w http.ResponseWriter, r *http.Request, checkWritable bool) {
 		components := map[string]string{
 			"http": "healthy",
 		}
@@ -293,6 +293,15 @@ func registerControlPlaneHealthRoutes(mux *http.ServeMux, s *store.Store) {
 				code = http.StatusServiceUnavailable
 			} else {
 				components["postgres"] = "healthy"
+				if checkWritable {
+					if err := s.CheckWritable(r.Context()); err != nil {
+						components["postgres_writable"] = "unhealthy: " + err.Error()
+						statusText = "degraded"
+						code = http.StatusServiceUnavailable
+					} else {
+						components["postgres_writable"] = "healthy"
+					}
+				}
 			}
 		}
 
@@ -304,6 +313,14 @@ func registerControlPlaneHealthRoutes(mux *http.ServeMux, s *store.Store) {
 		})
 	}
 
+	healthHandler := func(w http.ResponseWriter, r *http.Request) {
+		writeHealth(w, r, false)
+	}
+
+	readyHandler := func(w http.ResponseWriter, r *http.Request) {
+		writeHealth(w, r, true)
+	}
+
 	liveHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -311,7 +328,7 @@ func registerControlPlaneHealthRoutes(mux *http.ServeMux, s *store.Store) {
 	}
 
 	mux.HandleFunc("GET /health", healthHandler)
-	mux.HandleFunc("GET /health/ready", healthHandler)
+	mux.HandleFunc("GET /health/ready", readyHandler)
 	mux.HandleFunc("GET /health/live", liveHandler)
 	mux.HandleFunc("GET /health/startup", liveHandler)
 }
