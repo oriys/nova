@@ -31,6 +31,7 @@ import {
   type GatewayRateLimitTemplate,
   type GatewayRoute,
   type NovaFunction,
+  type RouteRetryPolicy,
   type UpdateGatewayRouteRequest,
 } from "@/lib/api"
 import { toUserErrorMessage } from "@/lib/error-map"
@@ -176,6 +177,24 @@ function parseRouteImportPayload(payload: unknown): {
       }
     }
 
+    const timeoutMs = Number(row.timeout_ms ?? row.timeoutMs)
+    if (Number.isFinite(timeoutMs) && timeoutMs >= 0) {
+      req.timeout_ms = Math.floor(timeoutMs)
+    }
+
+    const retryPolicyRaw = row.retry_policy ?? row.retryPolicy
+    if (isJsonObject(retryPolicyRaw)) {
+      const maxAttempts = Number(retryPolicyRaw.max_attempts ?? retryPolicyRaw.maxAttempts)
+      if (Number.isFinite(maxAttempts) && maxAttempts > 0) {
+        const retryPolicy: RouteRetryPolicy = { max_attempts: Math.floor(maxAttempts) }
+        const backoffMs = Number(retryPolicyRaw.backoff_ms ?? retryPolicyRaw.backoffMs)
+        if (Number.isFinite(backoffMs) && backoffMs >= 0) {
+          retryPolicy.backoff_ms = Math.floor(backoffMs)
+        }
+        req.retry_policy = retryPolicy
+      }
+    }
+
     items.push(req)
   })
 
@@ -232,6 +251,9 @@ export default function GatewayPage() {
   const [createEnabled, setCreateEnabled] = useState(true)
   const [createRps, setCreateRps] = useState("")
   const [createBurst, setCreateBurst] = useState("")
+  const [createTimeoutMs, setCreateTimeoutMs] = useState("")
+  const [createRetryAttempts, setCreateRetryAttempts] = useState("")
+  const [createRetryBackoffMs, setCreateRetryBackoffMs] = useState("")
   const [createParamMapping, setCreateParamMapping] = useState<ParamMapping[]>([])
 
   const [editDomain, setEditDomain] = useState("")
@@ -242,6 +264,9 @@ export default function GatewayPage() {
   const [editEnabled, setEditEnabled] = useState(true)
   const [editRps, setEditRps] = useState("")
   const [editBurst, setEditBurst] = useState("")
+  const [editTimeoutMs, setEditTimeoutMs] = useState("")
+  const [editRetryAttempts, setEditRetryAttempts] = useState("")
+  const [editRetryBackoffMs, setEditRetryBackoffMs] = useState("")
   const [editParamMapping, setEditParamMapping] = useState<ParamMapping[]>([])
 
   // Domain filtering is now handled server-side via the API call
@@ -321,6 +346,9 @@ export default function GatewayPage() {
     setCreateEnabled(true)
     setCreateRps("")
     setCreateBurst("")
+    setCreateTimeoutMs("")
+    setCreateRetryAttempts("")
+    setCreateRetryBackoffMs("")
     setCreateParamMapping([])
   }
 
@@ -334,6 +362,9 @@ export default function GatewayPage() {
     setEditEnabled(Boolean(route.enabled))
     setEditRps(route.rate_limit?.requests_per_second ? String(route.rate_limit.requests_per_second) : "")
     setEditBurst(route.rate_limit?.burst_size ? String(route.rate_limit.burst_size) : "")
+    setEditTimeoutMs(route.timeout_ms !== undefined ? String(route.timeout_ms) : "")
+    setEditRetryAttempts(route.retry_policy?.max_attempts ? String(route.retry_policy.max_attempts) : "")
+    setEditRetryBackoffMs(route.retry_policy?.backoff_ms !== undefined ? String(route.retry_policy.backoff_ms) : "")
     setEditParamMapping(route.param_mapping || [])
   }
 
@@ -343,6 +374,25 @@ export default function GatewayPage() {
     if (!Number.isFinite(rps) || rps <= 0) return undefined
     if (!Number.isFinite(burst) || burst <= 0) return undefined
     return { requests_per_second: rps, burst_size: Math.floor(burst) }
+  }
+
+  const buildTimeoutMs = (timeoutRaw: string) => {
+    const timeoutMs = Number(timeoutRaw)
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 0) return undefined
+    return Math.floor(timeoutMs)
+  }
+
+  const buildRetryPolicy = (attemptsRaw: string, backoffRaw: string): RouteRetryPolicy | undefined => {
+    const attempts = Number(attemptsRaw)
+    if (!Number.isFinite(attempts) || attempts <= 0) {
+      return undefined
+    }
+    const retryPolicy: RouteRetryPolicy = { max_attempts: Math.floor(attempts) }
+    const backoffMs = Number(backoffRaw)
+    if (Number.isFinite(backoffMs) && backoffMs >= 0) {
+      retryPolicy.backoff_ms = Math.floor(backoffMs)
+    }
+    return retryPolicy
   }
 
   const handleSaveTemplate = async () => {
@@ -401,6 +451,8 @@ export default function GatewayPage() {
       enabled: createEnabled,
       param_mapping: createParamMapping.length > 0 ? createParamMapping : undefined,
       rate_limit: buildRateLimit(createRps, createBurst),
+      timeout_ms: buildTimeoutMs(createTimeoutMs),
+      retry_policy: buildRetryPolicy(createRetryAttempts, createRetryBackoffMs),
     }
 
     try {
@@ -440,6 +492,8 @@ export default function GatewayPage() {
       enabled: editEnabled,
       param_mapping: editParamMapping,
       rate_limit: buildRateLimit(editRps, editBurst),
+      timeout_ms: buildTimeoutMs(editTimeoutMs),
+      retry_policy: buildRetryPolicy(editRetryAttempts, editRetryBackoffMs),
     }
 
     try {
@@ -609,6 +663,8 @@ export default function GatewayPage() {
       auth_config: route.auth_config,
       request_schema: route.request_schema,
       rate_limit: route.rate_limit,
+      timeout_ms: route.timeout_ms,
+      retry_policy: route.retry_policy,
       enabled: route.enabled,
     }))
     const ts = new Date().toISOString().replace(/[:.]/g, "-")
@@ -923,6 +979,39 @@ export default function GatewayPage() {
                       placeholder={g("placeholders.burstExample")}
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="create-timeout-ms">{g("fields.timeoutMsOptional")}</Label>
+                    <Input
+                      id="create-timeout-ms"
+                      type="number"
+                      min="0"
+                      value={createTimeoutMs}
+                      onChange={(e) => setCreateTimeoutMs(e.target.value)}
+                      placeholder={g("placeholders.timeoutMsExample")}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="create-retry-attempts">{g("fields.retryAttemptsOptional")}</Label>
+                    <Input
+                      id="create-retry-attempts"
+                      type="number"
+                      min="1"
+                      value={createRetryAttempts}
+                      onChange={(e) => setCreateRetryAttempts(e.target.value)}
+                      placeholder={g("placeholders.retryAttemptsExample")}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="create-retry-backoff-ms">{g("fields.retryBackoffMsOptional")}</Label>
+                    <Input
+                      id="create-retry-backoff-ms"
+                      type="number"
+                      min="0"
+                      value={createRetryBackoffMs}
+                      onChange={(e) => setCreateRetryBackoffMs(e.target.value)}
+                      placeholder={g("placeholders.retryBackoffMsExample")}
+                    />
+                  </div>
                 </div>
                 <ParamMappingEditor
                   value={createParamMapping}
@@ -1048,7 +1137,7 @@ export default function GatewayPage() {
           />
         ) : (
           <div className="overflow-x-auto rounded-xl border border-border bg-card">
-            <table className="w-full min-w-[980px]">
+            <table className="w-full min-w-[1140px]">
               <thead>
                 <tr className="border-b border-border">
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">
@@ -1067,6 +1156,7 @@ export default function GatewayPage() {
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.function")}</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.auth")}</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.rateLimit")}</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.resilience")}</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.status")}</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{g("table.updated")}</th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">{g("table.actions")}</th>
@@ -1076,7 +1166,7 @@ export default function GatewayPage() {
                 {loading ? (
                   Array.from({ length: 3 }).map((_, i) => (
                     <tr key={i} className="border-b border-border">
-                      <td className="px-4 py-3" colSpan={11}>
+                      <td className="px-4 py-3" colSpan={12}>
                         <div className="h-4 animate-pulse rounded bg-muted" />
                       </td>
                     </tr>
@@ -1117,6 +1207,17 @@ export default function GatewayPage() {
                           {g("labels.mappingCount", { count: route.param_mapping.length })}
                         </Badge>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      <div>{route.timeout_ms !== undefined ? g("labels.timeoutValue", { ms: route.timeout_ms }) : "-"}</div>
+                      <div>
+                        {route.retry_policy
+                          ? g("labels.retryValue", {
+                            attempts: route.retry_policy.max_attempts,
+                            backoff: route.retry_policy.backoff_ms ?? 0,
+                          })
+                          : "-"}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <Badge
@@ -1314,6 +1415,39 @@ export default function GatewayPage() {
                 value={editBurst}
                 onChange={(e) => setEditBurst(e.target.value)}
                 placeholder={g("placeholders.burstExample")}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-timeout-ms">{g("fields.timeoutMsOptional")}</Label>
+              <Input
+                id="edit-timeout-ms"
+                type="number"
+                min="0"
+                value={editTimeoutMs}
+                onChange={(e) => setEditTimeoutMs(e.target.value)}
+                placeholder={g("placeholders.timeoutMsExample")}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-retry-attempts">{g("fields.retryAttemptsOptional")}</Label>
+              <Input
+                id="edit-retry-attempts"
+                type="number"
+                min="1"
+                value={editRetryAttempts}
+                onChange={(e) => setEditRetryAttempts(e.target.value)}
+                placeholder={g("placeholders.retryAttemptsExample")}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-retry-backoff-ms">{g("fields.retryBackoffMsOptional")}</Label>
+              <Input
+                id="edit-retry-backoff-ms"
+                type="number"
+                min="0"
+                value={editRetryBackoffMs}
+                onChange={(e) => setEditRetryBackoffMs(e.target.value)}
+                placeholder={g("placeholders.retryBackoffMsExample")}
               />
             </div>
           </div>

@@ -475,6 +475,86 @@ func TestGateway_CreateRoute_WithExplicitEnabled(t *testing.T) {
 	expectStatus(t, w, http.StatusCreated)
 }
 
+func TestGateway_CreateRoute_InvalidExecutionPolicy(t *testing.T) {
+	baseStore := &mockMetadataStore{
+		getFunctionByNameFn: func(_ context.Context, name string) (*domain.Function, error) {
+			return &domain.Function{ID: "fn-1", Name: name}, nil
+		},
+		getConfigFn: func(_ context.Context) (map[string]string, error) {
+			return map[string]string{}, nil
+		},
+	}
+
+	t.Run("invalid_timeout", func(t *testing.T) {
+		ms := *baseStore
+		_, mux := setupGatewayTestHandler(t, &ms)
+		body := `{"path":"/api/hello","function_name":"hello","timeout_ms":-1}`
+		req := httptest.NewRequest("POST", "/gateway/routes", strings.NewReader(body))
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		expectStatus(t, w, http.StatusBadRequest)
+	})
+
+	t.Run("invalid_retry_attempts", func(t *testing.T) {
+		ms := *baseStore
+		_, mux := setupGatewayTestHandler(t, &ms)
+		body := `{"path":"/api/hello","function_name":"hello","retry_policy":{"max_attempts":0,"backoff_ms":50}}`
+		req := httptest.NewRequest("POST", "/gateway/routes", strings.NewReader(body))
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		expectStatus(t, w, http.StatusBadRequest)
+	})
+}
+
+func TestGateway_CreateRoute_WithExecutionPolicy(t *testing.T) {
+	var saved *domain.GatewayRoute
+	ms := &mockMetadataStore{
+		getFunctionByNameFn: func(_ context.Context, name string) (*domain.Function, error) {
+			return &domain.Function{ID: "fn-1", Name: name}, nil
+		},
+		saveGatewayRouteFn: func(_ context.Context, route *domain.GatewayRoute) error {
+			saved = route
+			return nil
+		},
+		getConfigFn: func(_ context.Context) (map[string]string, error) {
+			return map[string]string{}, nil
+		},
+	}
+	_, mux := setupGatewayTestHandler(t, ms)
+	body := `{"path":"/api/hello","function_name":"hello","timeout_ms":1500,"retry_policy":{"max_attempts":3,"backoff_ms":100}}`
+	req := httptest.NewRequest("POST", "/gateway/routes", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	expectStatus(t, w, http.StatusCreated)
+	if saved == nil {
+		t.Fatal("expected route to be saved")
+	}
+	if saved.TimeoutMs != 1500 {
+		t.Fatalf("TimeoutMs = %d, want 1500", saved.TimeoutMs)
+	}
+	if saved.RetryPolicy == nil || saved.RetryPolicy.MaxAttempts != 3 || saved.RetryPolicy.BackoffMs != 100 {
+		t.Fatalf("unexpected RetryPolicy: %+v", saved.RetryPolicy)
+	}
+}
+
+func TestGateway_UpdateRoute_InvalidExecutionPolicy(t *testing.T) {
+	ms := &mockMetadataStore{
+		getGatewayRouteFn: func(_ context.Context, id string) (*domain.GatewayRoute, error) {
+			return &domain.GatewayRoute{ID: id, Path: "/old", FunctionName: "hello"}, nil
+		},
+		updateGatewayRouteFn: func(_ context.Context, id string, route *domain.GatewayRoute) error {
+			t.Fatalf("update should not be called for invalid policy")
+			return nil
+		},
+	}
+	_, mux := setupGatewayTestHandler(t, ms)
+	body := `{"timeout_ms":200001}`
+	req := httptest.NewRequest("PATCH", "/gateway/routes/r1", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	expectStatus(t, w, http.StatusBadRequest)
+}
+
 func TestGateway_ListRoutes_NilResult(t *testing.T) {
 	ms := &mockMetadataStore{
 		listGatewayRoutesFn: func(_ context.Context, limit, offset int) ([]*domain.GatewayRoute, error) {

@@ -178,6 +178,11 @@ export interface RouteRateLimit {
   burst_size: number;
 }
 
+export interface RouteRetryPolicy {
+  max_attempts: number;
+  backoff_ms?: number;
+}
+
 export interface GatewayRateLimitTemplate {
   enabled: boolean;
   requests_per_second: number;
@@ -197,6 +202,8 @@ export interface GatewayRoute {
   param_mapping?: ParamMapping[];
   rate_limit?: RouteRateLimit;
   cors?: CORSConfig;
+  timeout_ms?: number;
+  retry_policy?: RouteRetryPolicy;
   enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -213,6 +220,8 @@ export interface CreateGatewayRouteRequest {
   request_schema?: unknown;
   param_mapping?: ParamMapping[];
   rate_limit?: RouteRateLimit;
+  timeout_ms?: number;
+  retry_policy?: RouteRetryPolicy;
   enabled?: boolean;
 }
 
@@ -227,6 +236,8 @@ export interface UpdateGatewayRouteRequest {
   request_schema?: unknown;
   param_mapping?: ParamMapping[];
   rate_limit?: RouteRateLimit;
+  timeout_ms?: number;
+  retry_policy?: RouteRetryPolicy;
   enabled?: boolean;
 }
 
@@ -1172,6 +1183,17 @@ export const functionsApi = {
 
   getVersion: (name: string, version: number) =>
     request<FunctionVersionEntry>(`/functions/${encodeURIComponent(name)}/versions/${version}`),
+
+  activateVersion: (name: string, version: number) =>
+    request<ActivateFunctionVersionResponse>(
+      `/functions/${encodeURIComponent(name)}/versions/${version}/activate`,
+      { method: "POST" }
+    ),
+
+  compareVersions: (name: string, v1: number, v2: number) =>
+    request<FunctionVersionDiffResponse>(
+      `/functions/${encodeURIComponent(name)}/versions/${v1}/diff/${v2}`
+    ),
 
   heatmap: (name: string, weeks: number = 52) =>
     request<HeatmapPoint[]>(`/functions/${encodeURIComponent(name)}/heatmap?weeks=${weeks}`),
@@ -2515,6 +2537,24 @@ export interface FunctionVersionEntry {
   env_vars?: Record<string, string>;
   description?: string;
   created_at: string;
+}
+
+export interface FunctionVersionDiffEntry {
+  field: string;
+  from: unknown;
+  to: unknown;
+}
+
+export interface FunctionVersionDiffResponse {
+  function: string;
+  v1: number;
+  v2: number;
+  changes: FunctionVersionDiffEntry[];
+}
+
+export interface ActivateFunctionVersionResponse {
+  status: string;
+  version: number;
 }
 
 // --- Schedules ---

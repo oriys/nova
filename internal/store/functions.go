@@ -512,14 +512,16 @@ func (s *PostgresStore) PublishVersion(ctx context.Context, funcID string, versi
 		return err
 	}
 
-	_, err = s.pool.Exec(ctx, `
+	ct, err := s.pool.Exec(ctx, `
 		INSERT INTO function_versions (function_id, version, data, created_at)
 		VALUES ($1, $2, $3::jsonb, $4)
-		ON CONFLICT (function_id, version) DO UPDATE SET
-			data = EXCLUDED.data
+		ON CONFLICT (function_id, version) DO NOTHING
 	`, funcID, version.Version, data, version.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("publish version: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("publish version: version already exists: %s v%d", funcID, version.Version)
 	}
 	return nil
 }

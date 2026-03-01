@@ -9,17 +9,19 @@ import (
 type GatewayRoute struct {
 	ID            string            `json:"id"`
 	TenantID      string            `json:"tenant_id"`
-	Domain        string            `json:"domain"`                    // "api.example.com"
-	Path          string            `json:"path"`                      // "/v1/process" or "/v1/users/{id}"
-	Methods       []string          `json:"methods,omitempty"`         // empty = all methods
+	Domain        string            `json:"domain"`            // "api.example.com"
+	Path          string            `json:"path"`              // "/v1/process" or "/v1/users/{id}"
+	Methods       []string          `json:"methods,omitempty"` // empty = all methods
 	FunctionName  string            `json:"function_name"`
 	WorkflowName  string            `json:"workflow_name,omitempty"`
-	AuthStrategy  string            `json:"auth_strategy"`             // "none", "inherit", "apikey", "jwt"
+	AuthStrategy  string            `json:"auth_strategy"` // "none", "inherit", "apikey", "jwt"
 	AuthConfig    map[string]string `json:"auth_config,omitempty"`
 	RequestSchema json.RawMessage   `json:"request_schema,omitempty"`
-	ParamMapping  []ParamMapping    `json:"param_mapping,omitempty"`   // parameter extraction & transformation rules
+	ParamMapping  []ParamMapping    `json:"param_mapping,omitempty"` // parameter extraction & transformation rules
 	RateLimit     *RouteRateLimit   `json:"rate_limit,omitempty"`
 	CORS          *CORSConfig       `json:"cors,omitempty"`
+	TimeoutMs     int               `json:"timeout_ms,omitempty"`   // per-route invoke timeout (0 = no extra timeout)
+	RetryPolicy   *RouteRetryPolicy `json:"retry_policy,omitempty"` // optional per-route invoke retry policy
 	Enabled       bool              `json:"enabled"`
 	CreatedAt     time.Time         `json:"created_at"`
 	UpdatedAt     time.Time         `json:"updated_at"`
@@ -33,12 +35,18 @@ type RouteRateLimit struct {
 
 // CORSConfig defines CORS settings for a gateway route
 type CORSConfig struct {
-	AllowOrigins     []string `json:"allow_origins"`               // e.g. ["https://example.com"] or ["*"]
-	AllowMethods     []string `json:"allow_methods,omitempty"`     // defaults to route Methods
-	AllowHeaders     []string `json:"allow_headers,omitempty"`     // e.g. ["Content-Type", "Authorization"]
+	AllowOrigins     []string `json:"allow_origins"`           // e.g. ["https://example.com"] or ["*"]
+	AllowMethods     []string `json:"allow_methods,omitempty"` // defaults to route Methods
+	AllowHeaders     []string `json:"allow_headers,omitempty"` // e.g. ["Content-Type", "Authorization"]
 	ExposeHeaders    []string `json:"expose_headers,omitempty"`
 	AllowCredentials bool     `json:"allow_credentials,omitempty"`
-	MaxAge           int      `json:"max_age,omitempty"`           // preflight cache duration in seconds
+	MaxAge           int      `json:"max_age,omitempty"` // preflight cache duration in seconds
+}
+
+// RouteRetryPolicy defines retry behavior for function invocation errors.
+type RouteRetryPolicy struct {
+	MaxAttempts int `json:"max_attempts"`         // total attempts including initial try
+	BackoffMs   int `json:"backoff_ms,omitempty"` // fixed delay between retry attempts
 }
 
 // ParamMapping defines how to extract a value from the HTTP request (query string,
@@ -54,12 +62,12 @@ type CORSConfig struct {
 //	{"source":"query",  "name":"active",    "target":"isActive", "type":"boolean"}
 type ParamMapping struct {
 	Source    ParamSource    `json:"source"`              // where to read the value
-	Name      string        `json:"name"`                // source field/key name
-	Target    string        `json:"target,omitempty"`    // destination key in payload (default = Name)
+	Name      string         `json:"name"`                // source field/key name
+	Target    string         `json:"target,omitempty"`    // destination key in payload (default = Name)
 	Transform ParamTransform `json:"transform,omitempty"` // string case transformation
-	Type      ParamType     `json:"type,omitempty"`      // type coercion (default = string)
-	Default   any           `json:"default,omitempty"`   // fallback when source value is absent
-	Required  bool          `json:"required,omitempty"`  // reject request if missing
+	Type      ParamType      `json:"type,omitempty"`      // type coercion (default = string)
+	Default   any            `json:"default,omitempty"`   // fallback when source value is absent
+	Required  bool           `json:"required,omitempty"`  // reject request if missing
 }
 
 // ParamSource identifies where to extract a parameter value.
@@ -95,4 +103,3 @@ const (
 	ParamTypeBoolean ParamType = "boolean" // "true" → true, "1" → true
 	ParamTypeJSON    ParamType = "json"    // parse as raw JSON value
 )
-

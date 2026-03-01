@@ -74,10 +74,14 @@ func (h *Handler) CreateFunction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Publish initial immutable snapshot (v1) for rollback/diff support.
+	h.publishVersion(r.Context(), fn, &req.Code)
+
 	// Build response
 	response := map[string]interface{}{
 		"id":                   fn.ID,
 		"name":                 fn.Name,
+		"version":              fn.Version,
 		"runtime":              fn.Runtime,
 		"backend":              fn.Backend,
 		"handler":              fn.Handler,
@@ -254,8 +258,13 @@ func (h *Handler) UpdateFunction(w http.ResponseWriter, r *http.Request) {
 // publishVersion snapshots the current function state as a new version.
 // This is called automatically after every successful function update.
 func (h *Handler) publishVersion(ctx context.Context, fn *domain.Function, code *string) {
-	fn.Version++
-	_ = h.Store.SaveFunction(ctx, fn)
+	if fn == nil || fn.ID == "" {
+		return
+	}
+	nextVersion := fn.Version + 1
+	if nextVersion < 1 {
+		nextVersion = 1
+	}
 
 	var codeStr string
 	if code != nil {
@@ -264,23 +273,35 @@ func (h *Handler) publishVersion(ctx context.Context, fn *domain.Function, code 
 		codeStr = fc.SourceCode
 	}
 
-	ver := &domain.FunctionVersion{
-		FunctionID: fn.ID,
-		Version:    fn.Version,
-		CodeHash:   fn.CodeHash,
-		Code:       codeStr,
-		Handler:    fn.Handler,
-		MemoryMB:   fn.MemoryMB,
-		TimeoutS:   fn.TimeoutS,
-		Mode:       fn.Mode,
-		Limits:     fn.Limits,
-		EnvVars:    fn.EnvVars,
+	for attempt := 0; attempt < 1024; attempt++ {
+		ver := &domain.FunctionVersion{
+			FunctionID: fn.ID,
+			Version:    nextVersion,
+			CodeHash:   fn.CodeHash,
+			Code:       codeStr,
+			Handler:    fn.Handler,
+			MemoryMB:   fn.MemoryMB,
+			TimeoutS:   fn.TimeoutS,
+			Mode:       fn.Mode,
+			Limits:     fn.Limits,
+			EnvVars:    fn.EnvVars,
+		}
+		if err := h.Store.PublishVersion(ctx, fn.ID, ver); err != nil {
+			if strings.Contains(err.Error(), "version already exists") {
+				nextVersion++
+				continue
+			}
+			logging.Op().Warn("failed to publish version", "function", fn.Name, "version", nextVersion, "error", err)
+			return
+		}
+		fn.Version = nextVersion
+		if err := h.Store.SaveFunction(ctx, fn); err != nil {
+			logging.Op().Warn("failed to persist function version", "function", fn.Name, "version", nextVersion, "error", err)
+		}
+		logging.Op().Info("published version", "function", fn.Name, "version", nextVersion)
+		return
 	}
-	if err := h.Store.PublishVersion(ctx, fn.ID, ver); err != nil {
-		logging.Op().Warn("failed to publish version", "function", fn.Name, "version", fn.Version, "error", err)
-	} else {
-		logging.Op().Info("published version", "function", fn.Name, "version", fn.Version)
-	}
+	logging.Op().Warn("failed to publish version", "function", fn.Name, "error", "version allocation attempts exhausted")
 }
 
 // DeleteFunction handles DELETE /functions/{name}

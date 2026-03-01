@@ -204,7 +204,10 @@ func (m *Manager) startVMKrun(ctx context.Context, fn *domain.Function, vmID str
 
 	logging.Op().Debug("creating libkrun VM", "vmID", vmID, "rootfs", rootfs, "port", port)
 
-	cmd := exec.CommandContext(ctx, "krun", args...)
+	// VM lifecycle is managed by the pool (StopVM/Shutdown), not by a single
+	// invocation context. Binding the process to request ctx would terminate
+	// warm VMs after the first invocation.
+	cmd := exec.Command("krun", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -231,7 +234,7 @@ func (m *Manager) startVMKrun(ctx context.Context, fn *domain.Function, vmID str
 	if agentTimeout == 0 {
 		agentTimeout = 10 * time.Second
 	}
-	if err := waitForAgent(agentAddr, agentTimeout); err != nil {
+	if err := waitForAgent(ctx, agentAddr, agentTimeout); err != nil {
 		m.stopVM(cmd, codeDir)
 		return nil, fmt.Errorf("agent not ready: %w", err)
 	}
@@ -248,9 +251,14 @@ func (m *Manager) startVMKrun(ctx context.Context, fn *domain.Function, vmID str
 }
 
 // waitForAgent polls the agent until it's ready.
-func waitForAgent(addr string, timeout time.Duration) error {
+func waitForAgent(ctx context.Context, addr string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
 		if err == nil {
 			conn.Close()
@@ -343,7 +351,8 @@ func (m *Manager) startVMKrunVM(ctx context.Context, fn *domain.Function, vmID s
 
 	logging.Op().Debug("krunvm start args", "args", startArgs)
 
-	startCmd := exec.CommandContext(ctx, "krunvm", startArgs...)
+	// Keep VM lifetime decoupled from request ctx; pool owns process lifetime.
+	startCmd := exec.Command("krunvm", startArgs...)
 	startCmd.Stdout = os.Stdout
 	startCmd.Stderr = os.Stderr
 	startCmd.Stdin = nil

@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,6 +23,9 @@ const (
 	gatewayDefaultRPSKey    = "gateway.default_rate_limit_rps"
 	gatewayDefaultBurstKey  = "gateway.default_rate_limit_burst"
 	gatewayDefaultEnableKey = "gateway.default_rate_limit_enabled"
+	gatewayMaxRouteTimeout  = 120000
+	gatewayMaxRetryAttempts = 5
+	gatewayMaxRetryBackoff  = 30000
 )
 
 type gatewayRateLimitTemplate struct {
@@ -42,16 +46,18 @@ func (h *GatewayHandler) RegisterRoutes(mux *http.ServeMux) {
 
 func (h *GatewayHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Domain        string                 `json:"domain"`
-		Path          string                 `json:"path"`
-		Methods       []string               `json:"methods,omitempty"`
-		FunctionName  string                 `json:"function_name"`
-		WorkflowName  string                 `json:"workflow_name"`
-		AuthStrategy  string                 `json:"auth_strategy"`
-		AuthConfig    map[string]string      `json:"auth_config,omitempty"`
-		RequestSchema json.RawMessage        `json:"request_schema,omitempty"`
-		RateLimit     *domain.RouteRateLimit `json:"rate_limit,omitempty"`
-		Enabled       *bool                  `json:"enabled"`
+		Domain        string                   `json:"domain"`
+		Path          string                   `json:"path"`
+		Methods       []string                 `json:"methods,omitempty"`
+		FunctionName  string                   `json:"function_name"`
+		WorkflowName  string                   `json:"workflow_name"`
+		AuthStrategy  string                   `json:"auth_strategy"`
+		AuthConfig    map[string]string        `json:"auth_config,omitempty"`
+		RequestSchema json.RawMessage          `json:"request_schema,omitempty"`
+		RateLimit     *domain.RouteRateLimit   `json:"rate_limit,omitempty"`
+		TimeoutMs     *int                     `json:"timeout_ms,omitempty"`
+		RetryPolicy   *domain.RouteRetryPolicy `json:"retry_policy,omitempty"`
+		Enabled       *bool                    `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -96,6 +102,14 @@ func (h *GatewayHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	timeoutMs := 0
+	if req.TimeoutMs != nil {
+		timeoutMs = *req.TimeoutMs
+	}
+	if err := validateRouteExecutionPolicy(timeoutMs, req.RetryPolicy); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	now := time.Now()
 	route := &domain.GatewayRoute{
@@ -109,6 +123,8 @@ func (h *GatewayHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 		AuthConfig:    req.AuthConfig,
 		RequestSchema: req.RequestSchema,
 		RateLimit:     req.RateLimit,
+		TimeoutMs:     timeoutMs,
+		RetryPolicy:   req.RetryPolicy,
 		Enabled:       enabled,
 		CreatedAt:     now,
 		UpdatedAt:     now,
@@ -168,16 +184,18 @@ func (h *GatewayHandler) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Domain        *string                `json:"domain"`
-		Path          *string                `json:"path"`
-		Methods       []string               `json:"methods"`
-		FunctionName  *string                `json:"function_name"`
-		WorkflowName  *string                `json:"workflow_name"`
-		AuthStrategy  *string                `json:"auth_strategy"`
-		AuthConfig    map[string]string      `json:"auth_config"`
-		RequestSchema json.RawMessage        `json:"request_schema"`
-		RateLimit     *domain.RouteRateLimit `json:"rate_limit"`
-		Enabled       *bool                  `json:"enabled"`
+		Domain        *string                  `json:"domain"`
+		Path          *string                  `json:"path"`
+		Methods       []string                 `json:"methods"`
+		FunctionName  *string                  `json:"function_name"`
+		WorkflowName  *string                  `json:"workflow_name"`
+		AuthStrategy  *string                  `json:"auth_strategy"`
+		AuthConfig    map[string]string        `json:"auth_config"`
+		RequestSchema json.RawMessage          `json:"request_schema"`
+		RateLimit     *domain.RouteRateLimit   `json:"rate_limit"`
+		TimeoutMs     *int                     `json:"timeout_ms"`
+		RetryPolicy   *domain.RouteRetryPolicy `json:"retry_policy"`
+		Enabled       *bool                    `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -222,8 +240,18 @@ func (h *GatewayHandler) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 	if req.RateLimit != nil {
 		existing.RateLimit = req.RateLimit
 	}
+	if req.TimeoutMs != nil {
+		existing.TimeoutMs = *req.TimeoutMs
+	}
+	if req.RetryPolicy != nil {
+		existing.RetryPolicy = req.RetryPolicy
+	}
 	if req.Enabled != nil {
 		existing.Enabled = *req.Enabled
+	}
+	if err := validateRouteExecutionPolicy(existing.TimeoutMs, existing.RetryPolicy); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	if err := h.Store.UpdateGatewayRoute(r.Context(), id, existing); err != nil {
@@ -343,4 +371,20 @@ func (h *GatewayHandler) loadRateLimitTemplate(ctx context.Context) (*gatewayRat
 	}
 
 	return tpl, nil
+}
+
+func validateRouteExecutionPolicy(timeoutMs int, retry *domain.RouteRetryPolicy) error {
+	if timeoutMs < 0 || timeoutMs > gatewayMaxRouteTimeout {
+		return fmt.Errorf("timeout_ms must be between 0 and %d", gatewayMaxRouteTimeout)
+	}
+	if retry == nil {
+		return nil
+	}
+	if retry.MaxAttempts < 1 || retry.MaxAttempts > gatewayMaxRetryAttempts {
+		return fmt.Errorf("retry_policy.max_attempts must be between 1 and %d", gatewayMaxRetryAttempts)
+	}
+	if retry.BackoffMs < 0 || retry.BackoffMs > gatewayMaxRetryBackoff {
+		return fmt.Errorf("retry_policy.backoff_ms must be between 0 and %d", gatewayMaxRetryBackoff)
+	}
+	return nil
 }

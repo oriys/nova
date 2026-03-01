@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,6 +35,8 @@ type Gateway struct {
 	schemas        sync.Map             // route ID -> *compiledSchema
 	paramRoutes    sync.Map             // "domain" -> []*paramRoute (routes with path parameters)
 }
+
+const maxGatewayInvokeAttempts = 10
 
 // compiledSchema holds a pre-parsed JSON Schema for fast validation
 type compiledSchema struct {
@@ -253,8 +256,21 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Execute function
-	resp, err := g.exec.Invoke(r.Context(), route.FunctionName, payload)
+	invokeCtx := r.Context()
+	var cancel context.CancelFunc
+	if route.TimeoutMs > 0 {
+		invokeCtx, cancel = context.WithTimeout(invokeCtx, time.Duration(route.TimeoutMs)*time.Millisecond)
+		defer cancel()
+	}
+	attempts, backoff := routeExecutionPolicy(route)
+	resp, err := invokeWithRetry(invokeCtx, attempts, backoff, func(ctx context.Context) (*domain.InvokeResponse, error) {
+		return g.exec.Invoke(ctx, route.FunctionName, payload)
+	})
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(invokeCtx.Err(), context.DeadlineExceeded) {
+			http.Error(w, `{"error":"invoke_timeout","message":"gateway route timed out"}`, http.StatusGatewayTimeout)
+			return
+		}
 		http.Error(w, `{"error":"invoke_failed","message":"`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
@@ -608,4 +624,60 @@ func originAllowed(allowed []string, origin string) bool {
 		}
 	}
 	return false
+}
+
+func routeExecutionPolicy(route *domain.GatewayRoute) (attempts int, backoff time.Duration) {
+	attempts = 1
+	if route == nil || route.RetryPolicy == nil {
+		return attempts, 0
+	}
+	attempts = route.RetryPolicy.MaxAttempts
+	if attempts < 1 {
+		attempts = 1
+	}
+	if attempts > maxGatewayInvokeAttempts {
+		attempts = maxGatewayInvokeAttempts
+	}
+	if route.RetryPolicy.BackoffMs > 0 {
+		backoff = time.Duration(route.RetryPolicy.BackoffMs) * time.Millisecond
+	}
+	return attempts, backoff
+}
+
+func invokeWithRetry(
+	ctx context.Context,
+	attempts int,
+	backoff time.Duration,
+	invoke func(context.Context) (*domain.InvokeResponse, error),
+) (*domain.InvokeResponse, error) {
+	if attempts < 1 {
+		attempts = 1
+	}
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		resp, err := invoke(ctx)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if attempt == attempts {
+			break
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if backoff <= 0 {
+			continue
+		}
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, lastErr
 }

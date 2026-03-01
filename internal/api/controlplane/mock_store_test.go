@@ -849,6 +849,10 @@ func (m *mockMetadataStore) ListEventSubscriptions(ctx context.Context, topicID 
 	return nil, nil
 }
 
+func (m *mockMetadataStore) ListSubscriptionsByFunction(ctx context.Context, functionName string, limit, offset int) ([]*store.EventSubscription, error) {
+	return nil, nil
+}
+
 func (m *mockMetadataStore) UpdateEventSubscription(ctx context.Context, id string, update *store.EventSubscriptionUpdate) (*store.EventSubscription, error) {
 	if m.updateEventSubscriptionFn != nil {
 		return m.updateEventSubscriptionFn(ctx, id, update)
@@ -1399,6 +1403,10 @@ func (m *mockMetadataStore) ListTriggers(ctx context.Context, limit, offset int)
 	return nil, nil
 }
 
+func (m *mockMetadataStore) ListTriggersByFunction(ctx context.Context, functionName string, limit, offset int) ([]*store.TriggerRecord, error) {
+	return nil, nil
+}
+
 func (m *mockMetadataStore) UpdateTrigger(ctx context.Context, id string, update *store.TriggerUpdate) (*store.TriggerRecord, error) {
 	if m.updateTriggerFn != nil {
 		return m.updateTriggerFn(ctx, id, update)
@@ -1925,6 +1933,42 @@ func (m *mockMetadataStore) GetAuditLog(ctx context.Context, id string) (*store.
 
 func (m *mockMetadataStore) CountAuditLogs(ctx context.Context, filter *store.AuditLogFilter) (int64, error) {
 	return 0, nil
+}
+
+func (m *mockMetadataStore) CreateDurableExecution(ctx context.Context, exec *domain.DurableExecution) error {
+	return nil
+}
+
+func (m *mockMetadataStore) GetDurableExecution(ctx context.Context, id string) (*domain.DurableExecution, error) {
+	return nil, nil
+}
+
+func (m *mockMetadataStore) UpdateDurableExecution(ctx context.Context, exec *domain.DurableExecution) error {
+	return nil
+}
+
+func (m *mockMetadataStore) ListDurableExecutions(ctx context.Context, functionID string, limit, offset int) ([]*domain.DurableExecution, error) {
+	return nil, nil
+}
+
+func (m *mockMetadataStore) CountDurableExecutions(ctx context.Context, functionID string) (int64, error) {
+	return 0, nil
+}
+
+func (m *mockMetadataStore) CreateDurableStep(ctx context.Context, step *domain.DurableStep) error {
+	return nil
+}
+
+func (m *mockMetadataStore) CompleteDurableStep(ctx context.Context, stepID string, output json.RawMessage, durationMs int64) error {
+	return nil
+}
+
+func (m *mockMetadataStore) FailDurableStep(ctx context.Context, stepID string, errMsg string, durationMs int64) error {
+	return nil
+}
+
+func (m *mockMetadataStore) ListDurableSteps(ctx context.Context, executionID string) ([]domain.DurableStep, error) {
+	return nil, nil
 }
 
 // --- Test helper ---

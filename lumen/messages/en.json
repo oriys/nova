@@ -1393,7 +1393,18 @@
       "colTimeout": "Timeout",
       "colMode": "Mode",
       "colCreated": "Created",
-      "empty": "No versions published yet"
+      "colActions": "Actions",
+      "empty": "No versions published yet",
+      "versionBadge": "v{version}",
+      "timeoutSeconds": "{seconds}s",
+      "current": "Current",
+      "activate": "Activate",
+      "activateSuccess": "Activated version v{version}",
+      "activateFailed": "Failed to activate version",
+      "diffWithCurrent": "Diff vs Current",
+      "diffFailed": "Failed to compare versions",
+      "diffTitle": "Diff v{from} -> v{to}",
+      "diffEmpty": "No field changes"
     },
     "schedules": {
       "createSchedule": "Create Schedule",
@@ -2292,7 +2303,10 @@
       "authStrategy": "Auth Strategy",
       "enabled": "Enabled",
       "rateLimitRpsOptional": "Rate Limit RPS (optional)",
-      "rateLimitBurstOptional": "Rate Limit Burst (optional)"
+      "rateLimitBurstOptional": "Rate Limit Burst (optional)",
+      "timeoutMsOptional": "超时毫秒（可选）",
+      "retryAttemptsOptional": "重试次数（可选）",
+      "retryBackoffMsOptional": "重试退避毫秒（可选）"
     },
     "placeholders": {
       "rps": "20",
@@ -2303,7 +2317,10 @@
       "methods": "GET,POST",
       "selectFunction": "Select function",
       "rpsExample": "e.g. 20",
-      "burstExample": "e.g. 40"
+      "burstExample": "e.g. 40",
+      "timeoutMsExample": "例如 1500",
+      "retryAttemptsExample": "例如 3",
+      "retryBackoffMsExample": "例如 100"
     },
     "buttons": {
       "dismiss": "Dismiss",
@@ -2339,7 +2356,9 @@
       "selectedCount": "Selected {count} route(s)",
       "rateLimitValue": "{rps}/s, burst {burst}",
       "importInvalidSuffix": ", skipped {count} invalid record(s)",
-      "mappingCount": "{count} mapping(s)"
+      "mappingCount": "{count} mapping(s)",
+      "timeoutValue": "超时 {ms}ms",
+      "retryValue": "重试 {attempts} 次，退避 {backoff}ms"
     },
     "authStrategies": {
       "none": "none",
@@ -2367,7 +2386,8 @@
       "rateLimit": "Rate Limit",
       "status": "Status",
       "updated": "Updated",
-      "actions": "Actions"
+      "actions": "Actions",
+      "resilience": "韧性策略"
     },
     "notices": {
       "templateSaved": "Gateway default rate-limit template saved",

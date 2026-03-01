@@ -35,6 +35,7 @@ export function FunctionsTable({
   const t = useTranslations("functionsTable")
   const tf = useTranslations("functionsPage")
   const tc = useTranslations("common")
+  const td = useTranslations("functionDetailPage")
   const allSelected = functions.length > 0 && functions.every((fn) => selectedNames?.has(fn.name))
 
   const formatDate = (dateString: string) => {
@@ -112,6 +113,9 @@ export function FunctionsTable({
                 {t("runtime")}
               </th>
               <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                {td("backendLabel")}
+              </th>
+              <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 {t("status")}
               </th>
               <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -170,6 +174,11 @@ export function FunctionsTable({
                     <span className="h-2 w-2 rounded-full bg-primary" />
                     {fn.runtime}
                   </span>
+                </td>
+                <td className="px-6 py-4">
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
+                    {fn.backend || "auto"}
+                  </Badge>
                 </td>
                 <td className="px-6 py-4">
                   <Badge

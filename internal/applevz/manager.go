@@ -248,7 +248,10 @@ func (m *Manager) startVM(ctx context.Context, fn *domain.Function, vmID string,
 		"snapshots", m.useNovaVZ && m.config.SnapshotDirVal != "",
 	)
 
-	cmd := exec.CommandContext(ctx, m.vmTool, args...)
+	// VM lifecycle is managed by the pool (StopVM/Shutdown), not by a single
+	// invocation context. Binding the VM process to request ctx would terminate
+	// warm VMs as soon as the first invocation completes.
+	cmd := exec.Command(m.vmTool, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -257,14 +260,14 @@ func (m *Manager) startVM(ctx context.Context, fn *domain.Function, vmID string,
 	}
 
 	vm := &backend.VM{
-		ID:         vmID,
-		Runtime:    fn.Runtime,
-		State:      backend.VMStateCreating,
-		VsockPath:  socketPath,
-		CodeDir:    codeDir,
-		Cmd:        cmd,
-		CreatedAt:  time.Now(),
-		LastUsed:   time.Now(),
+		ID:        vmID,
+		Runtime:   fn.Runtime,
+		State:     backend.VMStateCreating,
+		VsockPath: socketPath,
+		CodeDir:   codeDir,
+		Cmd:       cmd,
+		CreatedAt: time.Now(),
+		LastUsed:  time.Now(),
 	}
 
 	// Wait for the vsock UNIX socket to appear and agent to respond
@@ -272,7 +275,7 @@ func (m *Manager) startVM(ctx context.Context, fn *domain.Function, vmID string,
 	if agentTimeout == 0 {
 		agentTimeout = 15 * time.Second
 	}
-	if err := waitForVsockAgent(socketPath, agentTimeout); err != nil {
+	if err := waitForVsockAgent(ctx, socketPath, agentTimeout); err != nil {
 		m.stopProcess(cmd, codeDir, socketPath, controlSocketPath)
 		return nil, fmt.Errorf("agent not ready: %w", err)
 	}
@@ -336,9 +339,14 @@ func (m *Manager) buildVfkitArgs(cpus, memMB int, cmdline, rootfs, codeDir, sock
 }
 
 // waitForVsockAgent polls the vsock UNIX socket until the agent is reachable.
-func waitForVsockAgent(socketPath string, timeout time.Duration) error {
+func waitForVsockAgent(ctx context.Context, socketPath string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		// First check if the socket file exists
 		if _, err := os.Stat(socketPath); err != nil {
 			time.Sleep(200 * time.Millisecond)

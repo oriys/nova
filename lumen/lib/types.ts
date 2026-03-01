@@ -25,6 +25,7 @@ export interface FunctionData {
   maxReplicas?: number;
   mode?: string;
   backend?: string;
+  version?: number;
   envVars?: Record<string, string>;
   tags?: Record<string, string>;
   logRetentionDays?: number;
@@ -67,6 +68,8 @@ export interface GatewayRoute {
   param_mapping?: ParamMapping[];
   rate_limit?: RouteRateLimit;
   cors?: CORSConfig;
+  timeout_ms?: number;
+  retry_policy?: RouteRetryPolicy;
   enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -98,6 +101,11 @@ export interface CORSConfig {
 export interface RouteRateLimit {
   requests_per_second: number;
   burst_size: number;
+}
+
+export interface RouteRetryPolicy {
+  max_attempts: number;
+  backoff_ms?: number;
 }
 
 export interface LogEntry {
@@ -188,6 +196,7 @@ export function transformFunction(
     maxReplicas: fn.max_replicas,
     mode: fn.mode,
     backend: fn.backend,
+    version: fn.version,
     envVars: fn.env_vars,
     tags: fn.tags,
     logRetentionDays: fn.log_retention_days,

@@ -317,14 +317,11 @@ export default function FunctionDetailPage({
               </div>
               <p className="text-sm text-muted-foreground mt-0.5">
                 {func.runtime} · {func.region}
-                {func.backend && (
-                  <>
-                    {" · "}
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono align-middle">
-                      {func.backend}
-                    </Badge>
-                  </>
-                )}
+                {" · "}
+                {t("backendLabel")}{" "}
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono align-middle">
+                  {func.backend || "auto"}
+                </Badge>
               </p>
               {func.tags && Object.keys(func.tags).length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-1.5">
@@ -483,7 +480,12 @@ export default function FunctionDetailPage({
           <TabsContent value="config" className="mt-0 space-y-6">
             <FunctionConfig func={func} onUpdate={fetchData} />
             <FunctionSLOPanel functionName={func.name} />
-            <FunctionVersions versions={versions} />
+            <FunctionVersions
+              functionName={func.name}
+              versions={versions}
+              currentVersion={func.version}
+              onVersionActivated={fetchData}
+            />
           </TabsContent>
 
           {func.mode === "durable" && (

@@ -33,6 +33,9 @@ func setupFuncTestHandler(t *testing.T, ms *mockMetadataStore) (*Handler, *http.
 
 func TestCreateFunction(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
+		publishedVersion := 0
+		publishedFunctionID := ""
+		publishedCode := ""
 		ms := &mockMetadataStore{
 			getFunctionByNameFn: func(ctx context.Context, name string) (*domain.Function, error) {
 				return nil, fmt.Errorf("not found")
@@ -43,6 +46,12 @@ func TestCreateFunction(t *testing.T) {
 				return nil
 			},
 			saveFunctionCodeFn: func(ctx context.Context, funcID, sourceCode, sourceHash string) error {
+				return nil
+			},
+			publishVersionFn: func(ctx context.Context, funcID string, version *domain.FunctionVersion) error {
+				publishedFunctionID = funcID
+				publishedVersion = version.Version
+				publishedCode = version.Code
 				return nil
 			},
 		}
@@ -61,6 +70,15 @@ func TestCreateFunction(t *testing.T) {
 		}
 		if resp["name"] != "hello" {
 			t.Fatalf("unexpected name: %v", resp["name"])
+		}
+		if publishedVersion != 1 {
+			t.Fatalf("expected initial published version 1, got %d", publishedVersion)
+		}
+		if publishedFunctionID == "" {
+			t.Fatalf("expected publishVersion to receive function id")
+		}
+		if publishedCode != "print(1)" {
+			t.Fatalf("expected published code to match create payload")
 		}
 	})
 
@@ -336,6 +354,56 @@ func TestUpdateFunction(t *testing.T) {
 		mux.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
 			t.Fatalf("got %d, body: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("publish_version_conflict_retries", func(t *testing.T) {
+		publishAttempts := make([]int, 0, 2)
+		persistedVersion := 0
+		ms := &mockMetadataStore{
+			updateFunctionFn: func(ctx context.Context, name string, update *store.FunctionUpdate) (*domain.Function, error) {
+				return &domain.Function{
+					ID:       "fn-1",
+					Name:     name,
+					Runtime:  "python",
+					Handler:  "main.handler",
+					CodeHash: "hash-v1",
+					Version:  1,
+				}, nil
+			},
+			publishVersionFn: func(ctx context.Context, funcID string, version *domain.FunctionVersion) error {
+				publishAttempts = append(publishAttempts, version.Version)
+				if version.Version == 2 {
+					return fmt.Errorf("publish version: version already exists: %s v%d", funcID, version.Version)
+				}
+				return nil
+			},
+			saveFunctionFn: func(ctx context.Context, fn *domain.Function) error {
+				persistedVersion = fn.Version
+				return nil
+			},
+		}
+		_, mux := setupTestHandler(t, ms)
+		body := `{"memory_mb":256}`
+		req := httptest.NewRequest("PATCH", "/functions/hello", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("got %d, body: %s", w.Code, w.Body.String())
+		}
+		if len(publishAttempts) != 2 || publishAttempts[0] != 2 || publishAttempts[1] != 3 {
+			t.Fatalf("expected publish attempts [2 3], got %v", publishAttempts)
+		}
+		if persistedVersion != 3 {
+			t.Fatalf("expected persisted version 3, got %d", persistedVersion)
+		}
+		var resp map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if got, ok := resp["version"].(float64); !ok || int(got) != 3 {
+			t.Fatalf("expected response version 3, got %v", resp["version"])
 		}
 	})
 
