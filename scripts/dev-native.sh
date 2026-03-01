@@ -34,6 +34,36 @@ mkdir -p "$LOG_DIR" "$PID_DIR"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+spawn_detached() {
+    local log_file="$1"
+    shift
+
+    if command -v python3 >/dev/null 2>&1; then
+        python3 - "$log_file" "$@" <<'PY'
+import subprocess
+import sys
+
+log_path = sys.argv[1]
+cmd = sys.argv[2:]
+
+with open(log_path, "ab", buffering=0) as log:
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.DEVNULL,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+        close_fds=True,
+    )
+
+print(proc.pid)
+PY
+    else
+        nohup "$@" > "$log_file" 2>&1 < /dev/null &
+        echo "$!"
+    fi
+}
+
 start_service() {
     local name="$1"
     shift
@@ -46,8 +76,8 @@ start_service() {
     fi
 
     log "Starting $name..."
-    nohup "$@" > "$log_file" 2>&1 < /dev/null &
-    local pid=$!
+    local pid
+    pid="$(spawn_detached "$log_file" "$@")"
     echo "$pid" > "$pid_file"
     info "$name started (PID $pid, log: $log_file)"
 }
@@ -225,8 +255,8 @@ start_lumen() {
     fi
 
     log "Starting lumen..."
-    nohup env BACKEND_URL=http://localhost:9000 bash -lc "cd \"$ROOT_DIR/lumen\" && npx next dev --port 3000" > "$log_file" 2>&1 < /dev/null &
-    local pid=$!
+    local pid
+    pid="$(spawn_detached "$log_file" env BACKEND_URL=http://localhost:9000 bash -lc "cd \"$ROOT_DIR/lumen\" && npx next dev --port 3000")"
     echo "$pid" > "$pid_file"
     info "lumen started (PID $pid, log: $log_file)"
 }
