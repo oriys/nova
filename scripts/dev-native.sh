@@ -34,33 +34,52 @@ mkdir -p "$LOG_DIR" "$PID_DIR"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-spawn_detached() {
-    local log_file="$1"
-    shift
+service_label() {
+    local name="$1"
+    echo "com.oriys.nova.native.$name"
+}
 
-    if command -v python3 >/dev/null 2>&1; then
-        python3 - "$log_file" "$@" <<'PY'
-import subprocess
-import sys
+service_info() {
+    local name="$1"
+    launchctl list "$(service_label "$name")" 2>/dev/null || true
+}
 
-log_path = sys.argv[1]
-cmd = sys.argv[2:]
+service_pid() {
+    local name="$1"
+    service_info "$name" | awk -F' = ' '/"PID"/ {
+        gsub(/^[[:space:]]+/, "", $2)
+        gsub(/;$/, "", $2)
+        print $2
+        exit
+    }'
+}
 
-with open(log_path, "ab", buffering=0) as log:
-    proc = subprocess.Popen(
-        cmd,
-        stdin=subprocess.DEVNULL,
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-        close_fds=True,
-    )
+service_exists() {
+    local name="$1"
+    launchctl list "$(service_label "$name")" >/dev/null 2>&1
+}
 
-print(proc.pid)
-PY
+write_pid_file() {
+    local name="$1"
+    local pid_file="$PID_DIR/$name.pid"
+    local pid
+    pid="$(service_pid "$name")"
+    if [ -n "$pid" ]; then
+        echo "$pid" > "$pid_file"
     else
-        nohup "$@" > "$log_file" 2>&1 < /dev/null &
-        echo "$!"
+        rm -f "$pid_file"
+    fi
+}
+
+resolve_command_path() {
+    local cmd="$1"
+
+    if [[ "$cmd" == /* ]]; then
+        echo "$cmd"
+    elif [[ "$cmd" == */* ]]; then
+        echo "$ROOT_DIR/${cmd#./}"
+    else
+        command -v "$cmd"
     fi
 }
 
@@ -69,38 +88,98 @@ start_service() {
     shift
     local pid_file="$PID_DIR/$name.pid"
     local log_file="$LOG_DIR/$name.log"
+    local label
+    local cmd=("$@")
+    local launch_cmd=(/usr/bin/env "PATH=$PATH" "HOME=$HOME")
+    label="$(service_label "$name")"
 
-    if [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+    if service_exists "$name"; then
+        local current_pid
+        current_pid="$(service_pid "$name")"
+        if [ -n "$current_pid" ]; then
+            warn "$name already running (PID $current_pid); restarting to pick up the latest build"
+        else
+            warn "$name already registered with launchd; restarting to pick up the latest build"
+        fi
+        stop_service "$name"
+    elif [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
         warn "$name already running (PID $(cat "$pid_file")); restarting to pick up the latest build"
         stop_service "$name"
     fi
 
     log "Starting $name..."
-    local pid
-    pid="$(spawn_detached "$log_file" "$@")"
-    echo "$pid" > "$pid_file"
-    info "$name started (PID $pid, log: $log_file)"
+    cmd[0]="$(resolve_command_path "${cmd[0]}")"
+    if [ -n "${NOVA_AGENT_PATH:-}" ]; then
+        launch_cmd+=("NOVA_AGENT_PATH=$NOVA_AGENT_PATH")
+    fi
+    launch_cmd+=("${cmd[@]}")
+    launchctl submit -l "$label" -o "$log_file" -e "$log_file" -- "${launch_cmd[@]}"
+
+    local pid=""
+    for i in $(seq 1 20); do
+        pid="$(service_pid "$name")"
+        if [ -n "$pid" ]; then
+            break
+        fi
+        sleep 0.1
+    done
+
+    write_pid_file "$name"
+    if [ -n "$pid" ]; then
+        info "$name started (PID $pid, log: $log_file)"
+    else
+        info "$name submitted to launchd (label: $label, log: $log_file)"
+    fi
 }
 
 stop_service() {
     local name="$1"
     local pid_file="$PID_DIR/$name.pid"
+    local label
+    label="$(service_label "$name")"
 
-    if [ -f "$pid_file" ]; then
+    if service_exists "$name"; then
         local pid
+        pid="$(service_pid "$name")"
+        if [ -n "$pid" ]; then
+            log "Stopping $name (PID $pid)..."
+        else
+            log "Stopping $name..."
+        fi
+
+        launchctl remove "$label" >/dev/null 2>&1 || true
+
+        for i in $(seq 1 50); do
+            service_exists "$name" || break
+            sleep 0.1
+        done
+    elif [ -f "$pid_file" ]; then
+        local pid
+        local pgid
         pid=$(cat "$pid_file")
+        pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d '[:space:]')"
         if kill -0 "$pid" 2>/dev/null; then
             log "Stopping $name (PID $pid)..."
-            kill "$pid" 2>/dev/null || true
-            # Wait up to 5s for graceful shutdown
+            if [ -n "$pgid" ]; then
+                kill -TERM -- "-$pgid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+            else
+                kill "$pid" 2>/dev/null || true
+            fi
             for i in $(seq 1 50); do
                 kill -0 "$pid" 2>/dev/null || break
                 sleep 0.1
             done
-            kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
+            if kill -0 "$pid" 2>/dev/null; then
+                if [ -n "$pgid" ]; then
+                    kill -KILL -- "-$pgid" 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
+                else
+                    kill -9 "$pid" 2>/dev/null || true
+                fi
+            fi
         fi
-        rm -f "$pid_file"
     fi
+
+    rm -f "$pid_file"
 }
 
 wait_for_port() {
@@ -243,9 +322,20 @@ start_lumen() {
     local pid_file="$PID_DIR/lumen.pid"
     local log_file="$LOG_DIR/lumen.log"
 
-    if [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+    if service_exists "lumen"; then
+        local pid
+        pid="$(service_pid "lumen")"
+        if [ -n "$pid" ]; then
+            warn "lumen already running (PID $pid)"
+            write_pid_file "lumen"
+            return 0
+        fi
+        stop_service "lumen"
+    elif [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
         warn "lumen already running (PID $(cat "$pid_file"))"
         return 0
+    else
+        rm -f "$pid_file"
     fi
 
     # Install dependencies if needed
@@ -254,11 +344,7 @@ start_lumen() {
         (cd "$ROOT_DIR/lumen" && npm install --silent) >> "$log_file" 2>&1
     fi
 
-    log "Starting lumen..."
-    local pid
-    pid="$(spawn_detached "$log_file" env BACKEND_URL=http://localhost:9000 bash -lc "cd \"$ROOT_DIR/lumen\" && npx next dev --port 3000")"
-    echo "$pid" > "$pid_file"
-    info "lumen started (PID $pid, log: $log_file)"
+    start_service lumen env BACKEND_URL=http://localhost:9000 bash -lc "cd \"$ROOT_DIR/lumen\" && npx next dev --port 3000"
 }
 
 do_stop() {
@@ -279,10 +365,18 @@ do_status() {
         svc="${svc_port%%:*}"
         port="${svc_port##*:}"
         pid_file="$PID_DIR/$svc.pid"
-        if [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
-            status="${GREEN}running${NC}"
-            pid=$(cat "$pid_file")
+
+        if service_exists "$svc"; then
+            pid="$(service_pid "$svc")"
         else
+            pid=""
+        fi
+
+        if [ -n "$pid" ]; then
+            echo "$pid" > "$pid_file"
+            status="${GREEN}running${NC}"
+        else
+            rm -f "$pid_file"
             status="${RED}stopped${NC}"
             pid="-"
         fi
