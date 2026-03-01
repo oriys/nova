@@ -11,6 +11,7 @@ import (
 	"github.com/oriys/nova/internal/pkg/httpjson"
 	"github.com/oriys/nova/internal/api/controlplane"
 	"github.com/oriys/nova/internal/api/dataplane"
+	sandboxapi "github.com/oriys/nova/internal/api/sandbox"
 	"github.com/oriys/nova/internal/audit"
 	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/authz"
@@ -27,6 +28,7 @@ import (
 	"github.com/oriys/nova/internal/observability"
 	"github.com/oriys/nova/internal/pool"
 	"github.com/oriys/nova/internal/ratelimit"
+	"github.com/oriys/nova/internal/sandbox"
 	"github.com/oriys/nova/internal/scheduler"
 	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/service"
@@ -64,6 +66,7 @@ type ServerConfig struct {
 	VolumeManager         *volume.Manager
 	AIService             *ai.Service
 	TriggerManager        *triggers.Manager
+	SandboxManager        *sandbox.Manager // Optional: for sandbox lifecycle management
 	PlaneMode             PlaneMode
 	LocalNodeID           string
 	ClusterForwardTimeout time.Duration
@@ -133,6 +136,14 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 		dpHandler.RegisterRoutes(mux)
 	} else {
 		registerControlPlaneHealthRoutes(mux, cfg.Store)
+	}
+
+	// Sandbox routes (available when backend is configured)
+	if cfg.SandboxManager != nil {
+		sbHandler := &sandboxapi.Handler{
+			Manager: cfg.SandboxManager,
+		}
+		sbHandler.RegisterRoutes(mux)
 	}
 
 	// Wrap with tracing middleware

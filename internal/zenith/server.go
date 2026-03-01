@@ -161,6 +161,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Sandbox API and all other control-plane paths: proxy to Nova
 	s.novaProxy.ServeHTTP(w, r)
 }
 

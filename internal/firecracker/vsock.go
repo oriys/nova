@@ -39,6 +39,20 @@ const (
 	// Durable execution step operations
 	MsgTypeDurableStep     = 13 // Register/complete a durable step
 	MsgTypeDurableStepResp = 14 // Durable step response
+
+	// Sandbox operations
+	MsgTypeShellExec    = 20 // Execute shell command (single shot)
+	MsgTypeShellStream  = 21 // Open interactive shell session
+	MsgTypeShellInput   = 22 // Write stdin to shell session
+	MsgTypeShellResize  = 23 // Terminal window resize
+	MsgTypeFileRead     = 30 // Read file
+	MsgTypeFileWrite    = 31 // Write file
+	MsgTypeFileList     = 32 // List directory
+	MsgTypeFileDelete   = 33 // Delete file
+	MsgTypeFileResp     = 34 // File operation response
+	MsgTypeProcessList  = 40 // List processes
+	MsgTypeProcessKill  = 41 // Kill process
+	MsgTypeProcessResp  = 42 // Process operation response
 )
 
 type VsockMessage struct {
@@ -70,6 +84,86 @@ type StreamChunkPayload struct {
 	Data      []byte `json:"data"`            // Chunk of data
 	IsLast    bool   `json:"is_last"`         // True if this is the final chunk
 	Error     string `json:"error,omitempty"` // Error message if execution failed
+}
+
+// ─── Sandbox payload types ──────────────────────────────
+
+// ShellExecPayload is sent to execute a shell command inside a sandbox.
+type ShellExecPayload struct {
+	Command  string `json:"command"`
+	TimeoutS int    `json:"timeout_s,omitempty"`
+	WorkDir  string `json:"workdir,omitempty"`
+}
+
+// ShellExecRespPayload is the response from a shell command execution.
+type ShellExecRespPayload struct {
+	ExitCode int    `json:"exit_code"`
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
+	Error    string `json:"error,omitempty"`
+}
+
+// FileReadPayload requests reading a file.
+type FileReadPayload struct {
+	Path string `json:"path"`
+}
+
+// FileWritePayload requests writing a file.
+type FileWritePayload struct {
+	Path    string `json:"path"`
+	Content string `json:"content"` // base64-encoded
+	Perm    int    `json:"perm,omitempty"`
+}
+
+// FileListPayload requests listing a directory.
+type FileListPayload struct {
+	Path string `json:"path"`
+}
+
+// FileDeletePayload requests deleting a file or directory.
+type FileDeletePayload struct {
+	Path string `json:"path"`
+}
+
+// FileRespPayload is the generic response for file operations.
+type FileRespPayload struct {
+	Content string          `json:"content,omitempty"` // base64-encoded for reads
+	Entries []FileEntryInfo `json:"entries,omitempty"` // for directory listing
+	Error   string          `json:"error,omitempty"`
+}
+
+// FileEntryInfo represents a file/directory in a listing.
+type FileEntryInfo struct {
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	IsDir   bool   `json:"is_dir"`
+	Size    int64  `json:"size"`
+	ModTime string `json:"mod_time,omitempty"`
+}
+
+// ProcessListRespPayload is the response for listing processes.
+type ProcessListRespPayload struct {
+	Processes []ProcessEntryInfo `json:"processes"`
+	Error     string             `json:"error,omitempty"`
+}
+
+// ProcessEntryInfo represents a running process.
+type ProcessEntryInfo struct {
+	PID     int    `json:"pid"`
+	Command string `json:"command"`
+	CPU     string `json:"cpu,omitempty"`
+	Memory  string `json:"memory,omitempty"`
+}
+
+// ProcessKillPayload requests killing a process.
+type ProcessKillPayload struct {
+	PID    int `json:"pid"`
+	Signal int `json:"signal,omitempty"` // default SIGTERM
+}
+
+// ProcessKillRespPayload is the response for killing a process.
+type ProcessKillRespPayload struct {
+	Error string `json:"error,omitempty"`
 }
 
 type VsockClient struct {
@@ -145,6 +239,26 @@ func (c *VsockClient) redialAndInitLocked(timeout time.Duration) error {
 		}
 	}
 	return nil
+}
+
+// Connect establishes a vsock connection without sending an Init message.
+// Used for sandbox mode where the agent is already running and doesn't
+// require function initialization.
+func (c *VsockClient) Connect(timeout time.Duration) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_ = c.closeLocked()
+	return c.dialLocked(timeout)
+}
+
+// ConnectIfNeeded establishes a vsock connection only if not already connected.
+func (c *VsockClient) ConnectIfNeeded(timeout time.Duration) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.conn != nil {
+		return nil
+	}
+	return c.dialLocked(timeout)
 }
 
 func (c *VsockClient) Send(msg *VsockMessage) error {

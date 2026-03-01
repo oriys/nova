@@ -174,3 +174,8 @@ func (c *VsockClientAdapter) Reload(files map[string][]byte) error {
 func (c *VsockClientAdapter) Close() error {
 	return c.client.Close()
 }
+
+// InnerVsockClient returns the underlying VsockClient for sandbox operations.
+func (c *VsockClientAdapter) InnerVsockClient() *VsockClient {
+	return c.client
+}

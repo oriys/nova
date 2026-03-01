@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -46,6 +47,20 @@ const (
 	// Durable execution step operations
 	MsgTypeDurableStep     = 13 // Register/complete a durable step
 	MsgTypeDurableStepResp = 14 // Durable step response
+
+	// Sandbox operations
+	MsgTypeShellExec   = 20 // Execute shell command (single shot)
+	MsgTypeShellStream = 21 // Open interactive shell session
+	MsgTypeShellInput  = 22 // Write stdin to shell session
+	MsgTypeShellResize = 23 // Terminal window resize
+	MsgTypeFileRead    = 30 // Read file
+	MsgTypeFileWrite   = 31 // Write file
+	MsgTypeFileList    = 32 // List directory
+	MsgTypeFileDelete  = 33 // Delete file
+	MsgTypeFileResp    = 34 // File operation response
+	MsgTypeProcessList = 40 // List processes
+	MsgTypeProcessKill = 41 // Kill process
+	MsgTypeProcessResp = 42 // Process operation response
 
 	VsockPort = 9999
 
@@ -380,6 +395,21 @@ func (a *Agent) handleMessage(conn net.Conn, msg *Message) (*Message, error) {
 		return &Message{Type: MsgTypeResp, Payload: json.RawMessage(`{"status":"ok"}`)}, nil
 	case MsgTypeReload:
 		return a.handleReload(msg.Payload)
+	// Sandbox operations
+	case MsgTypeShellExec:
+		return a.handleShellExec(msg.Payload)
+	case MsgTypeFileRead:
+		return a.handleFileRead(msg.Payload)
+	case MsgTypeFileWrite:
+		return a.handleFileWrite(msg.Payload)
+	case MsgTypeFileList:
+		return a.handleFileList(msg.Payload)
+	case MsgTypeFileDelete:
+		return a.handleFileDelete(msg.Payload)
+	case MsgTypeProcessList:
+		return a.handleProcessList()
+	case MsgTypeProcessKill:
+		return a.handleProcessKill(msg.Payload)
 	default:
 		return nil, fmt.Errorf("unknown message type: %d", msg.Type)
 	}
@@ -1627,4 +1657,335 @@ func (a *Agent) handleStateList(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// ─── Sandbox handlers ───────────────────────────────────
+
+type shellExecPayload struct {
+	Command  string `json:"command"`
+	TimeoutS int    `json:"timeout_s,omitempty"`
+	WorkDir  string `json:"workdir,omitempty"`
+}
+
+type shellExecRespPayload struct {
+	ExitCode int    `json:"exit_code"`
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
+	Error    string `json:"error,omitempty"`
+}
+
+func (a *Agent) handleShellExec(payload json.RawMessage) (*Message, error) {
+	var req shellExecPayload
+	if err := json.Unmarshal(payload, &req); err != nil {
+		return nil, err
+	}
+
+	timeout := time.Duration(req.TimeoutS) * time.Second
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "bash", "-c", req.Command)
+	if req.WorkDir != "" {
+		cmd.Dir = req.WorkDir
+	} else {
+		cmd.Dir = "/home/sandbox"
+	}
+	cmd.Env = os.Environ()
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	exitCode := 0
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		} else {
+			resp := &shellExecRespPayload{
+				ExitCode: -1,
+				Error:    err.Error(),
+				Stdout:   stdout.String(),
+				Stderr:   stderr.String(),
+			}
+			data, _ := json.Marshal(resp)
+			return &Message{Type: MsgTypeResp, Payload: data}, nil
+		}
+	}
+
+	resp := &shellExecRespPayload{
+		ExitCode: exitCode,
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
+	}
+	data, _ := json.Marshal(resp)
+	return &Message{Type: MsgTypeResp, Payload: data}, nil
+}
+
+type fileReadPayload struct {
+	Path string `json:"path"`
+}
+
+// sandboxSafeDirs are the directories that sandbox file operations are allowed to access.
+var sandboxSafeDirs = []string{"/home/sandbox", "/tmp", "/code", "/var/tmp"}
+
+// validateSandboxPath ensures the path is within allowed sandbox directories.
+func validateSandboxPath(path string) error {
+	cleaned := filepath.Clean(path)
+	if !filepath.IsAbs(cleaned) {
+		cleaned = filepath.Join("/home/sandbox", cleaned)
+	}
+	for _, safe := range sandboxSafeDirs {
+		if cleaned == safe || strings.HasPrefix(cleaned, safe+"/") {
+			return nil
+		}
+	}
+	return fmt.Errorf("path %q is outside sandbox-allowed directories", path)
+}
+
+type fileRespPayload struct {
+	Content string          `json:"content,omitempty"`
+	Entries []fileEntryInfo `json:"entries,omitempty"`
+	Error   string          `json:"error,omitempty"`
+}
+
+type fileEntryInfo struct {
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	IsDir   bool   `json:"is_dir"`
+	Size    int64  `json:"size"`
+	ModTime string `json:"mod_time,omitempty"`
+}
+
+func (a *Agent) handleFileRead(payload json.RawMessage) (*Message, error) {
+	var req fileReadPayload
+	if err := json.Unmarshal(payload, &req); err != nil {
+		return nil, err
+	}
+
+	if err := validateSandboxPath(req.Path); err != nil {
+		resp := &fileRespPayload{Error: err.Error()}
+		data, _ := json.Marshal(resp)
+		return &Message{Type: MsgTypeFileResp, Payload: data}, nil
+	}
+
+	content, err := os.ReadFile(req.Path)
+	if err != nil {
+		resp := &fileRespPayload{Error: err.Error()}
+		data, _ := json.Marshal(resp)
+		return &Message{Type: MsgTypeFileResp, Payload: data}, nil
+	}
+
+	resp := &fileRespPayload{Content: base64.StdEncoding.EncodeToString(content)}
+	data, _ := json.Marshal(resp)
+	return &Message{Type: MsgTypeFileResp, Payload: data}, nil
+}
+
+type fileWritePayload struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+	Perm    int    `json:"perm,omitempty"`
+}
+
+func (a *Agent) handleFileWrite(payload json.RawMessage) (*Message, error) {
+	var req fileWritePayload
+	if err := json.Unmarshal(payload, &req); err != nil {
+		return nil, err
+	}
+
+	if err := validateSandboxPath(req.Path); err != nil {
+		resp := &fileRespPayload{Error: err.Error()}
+		data, _ := json.Marshal(resp)
+		return &Message{Type: MsgTypeFileResp, Payload: data}, nil
+	}
+
+	content, err := base64.StdEncoding.DecodeString(req.Content)
+	if err != nil {
+		resp := &fileRespPayload{Error: "invalid base64 content: " + err.Error()}
+		data, _ := json.Marshal(resp)
+		return &Message{Type: MsgTypeFileResp, Payload: data}, nil
+	}
+
+	perm := os.FileMode(0644)
+	if req.Perm > 0 {
+		perm = os.FileMode(req.Perm)
+	}
+
+	dir := filepath.Dir(req.Path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		resp := &fileRespPayload{Error: err.Error()}
+		data, _ := json.Marshal(resp)
+		return &Message{Type: MsgTypeFileResp, Payload: data}, nil
+	}
+
+	if err := os.WriteFile(req.Path, content, perm); err != nil {
+		resp := &fileRespPayload{Error: err.Error()}
+		data, _ := json.Marshal(resp)
+		return &Message{Type: MsgTypeFileResp, Payload: data}, nil
+	}
+
+	resp := &fileRespPayload{}
+	data, _ := json.Marshal(resp)
+	return &Message{Type: MsgTypeFileResp, Payload: data}, nil
+}
+
+type fileListPayload struct {
+	Path string `json:"path"`
+}
+
+func (a *Agent) handleFileList(payload json.RawMessage) (*Message, error) {
+	var req fileListPayload
+	if err := json.Unmarshal(payload, &req); err != nil {
+		return nil, err
+	}
+
+	if err := validateSandboxPath(req.Path); err != nil {
+		resp := &fileRespPayload{Error: err.Error()}
+		data, _ := json.Marshal(resp)
+		return &Message{Type: MsgTypeFileResp, Payload: data}, nil
+	}
+
+	entries, err := os.ReadDir(req.Path)
+	if err != nil {
+		resp := &fileRespPayload{Error: err.Error()}
+		data, _ := json.Marshal(resp)
+		return &Message{Type: MsgTypeFileResp, Payload: data}, nil
+	}
+
+	var infos []fileEntryInfo
+	for _, e := range entries {
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		infos = append(infos, fileEntryInfo{
+			Name:    e.Name(),
+			Path:    filepath.Join(req.Path, e.Name()),
+			IsDir:   e.IsDir(),
+			Size:    info.Size(),
+			ModTime: info.ModTime().Format(time.RFC3339),
+		})
+	}
+
+	resp := &fileRespPayload{Entries: infos}
+	data, _ := json.Marshal(resp)
+	return &Message{Type: MsgTypeFileResp, Payload: data}, nil
+}
+
+type fileDeletePayload struct {
+	Path string `json:"path"`
+}
+
+func (a *Agent) handleFileDelete(payload json.RawMessage) (*Message, error) {
+	var req fileDeletePayload
+	if err := json.Unmarshal(payload, &req); err != nil {
+		return nil, err
+	}
+
+	if err := validateSandboxPath(req.Path); err != nil {
+		resp := &fileRespPayload{Error: err.Error()}
+		data, _ := json.Marshal(resp)
+		return &Message{Type: MsgTypeFileResp, Payload: data}, nil
+	}
+
+	err := os.RemoveAll(req.Path)
+	if err != nil {
+		resp := &fileRespPayload{Error: err.Error()}
+		data, _ := json.Marshal(resp)
+		return &Message{Type: MsgTypeFileResp, Payload: data}, nil
+	}
+
+	resp := &fileRespPayload{}
+	data, _ := json.Marshal(resp)
+	return &Message{Type: MsgTypeFileResp, Payload: data}, nil
+}
+
+type processEntryInfo struct {
+	PID     int    `json:"pid"`
+	Command string `json:"command"`
+	CPU     string `json:"cpu,omitempty"`
+	Memory  string `json:"memory,omitempty"`
+}
+
+type processListRespPayload struct {
+	Processes []processEntryInfo `json:"processes"`
+	Error     string             `json:"error,omitempty"`
+}
+
+func (a *Agent) handleProcessList() (*Message, error) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		resp := &processListRespPayload{Error: err.Error()}
+		data, _ := json.Marshal(resp)
+		return &Message{Type: MsgTypeProcessResp, Payload: data}, nil
+	}
+
+	var procs []processEntryInfo
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		cmdline, err := os.ReadFile(filepath.Join("/proc", e.Name(), "cmdline"))
+		if err != nil {
+			continue
+		}
+		cmd := strings.ReplaceAll(string(cmdline), "\x00", " ")
+		cmd = strings.TrimSpace(cmd)
+		if cmd == "" {
+			continue
+		}
+		procs = append(procs, processEntryInfo{
+			PID:     pid,
+			Command: cmd,
+		})
+	}
+
+	resp := &processListRespPayload{Processes: procs}
+	data, _ := json.Marshal(resp)
+	return &Message{Type: MsgTypeProcessResp, Payload: data}, nil
+}
+
+type processKillPayload struct {
+	PID    int `json:"pid"`
+	Signal int `json:"signal,omitempty"`
+}
+
+type processKillRespPayload struct {
+	Error string `json:"error,omitempty"`
+}
+
+func (a *Agent) handleProcessKill(payload json.RawMessage) (*Message, error) {
+	var req processKillPayload
+	if err := json.Unmarshal(payload, &req); err != nil {
+		return nil, err
+	}
+
+	// Protect critical system processes
+	if req.PID <= 2 {
+		resp := &processKillRespPayload{Error: "cannot kill system process (PID <= 2)"}
+		data, _ := json.Marshal(resp)
+		return &Message{Type: MsgTypeProcessResp, Payload: data}, nil
+	}
+
+	sig := syscall.SIGTERM
+	if req.Signal > 0 {
+		sig = syscall.Signal(req.Signal)
+	}
+
+	err := syscall.Kill(req.PID, sig)
+	resp := &processKillRespPayload{}
+	if err != nil {
+		resp.Error = err.Error()
+	}
+	data, _ := json.Marshal(resp)
+	return &Message{Type: MsgTypeProcessResp, Payload: data}, nil
 }
