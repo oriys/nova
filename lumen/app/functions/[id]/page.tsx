@@ -63,6 +63,7 @@ export default function FunctionDetailPage({
       "config",
       "state",
       "triggers",
+      "gateway",
       "tests",
       "docs",
     ])
@@ -72,7 +73,6 @@ export default function FunctionDetailPage({
       versions: "config",
       dependencies: "code",
       schedules: "triggers",
-      gateway: "triggers",
     }
     if (validTabs.has(requestedTab)) {
       return requestedTab
@@ -397,6 +397,12 @@ export default function FunctionDetailPage({
               {t("tabs.triggers")}
             </TabsTrigger>
             <TabsTrigger
+              value="gateway"
+              className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
+            >
+              {t("tabs.gateway")}
+            </TabsTrigger>
+            <TabsTrigger
               value="tests"
               className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
             >
@@ -500,10 +506,13 @@ export default function FunctionDetailPage({
               schedules={schedules}
               onSchedulesChange={setSchedules}
             />
-            <FunctionGateway functionName={func.name} />
             <FunctionTriggers functionName={func.name} />
             <FunctionSubscriptions functionName={func.name} />
             <FunctionWorkflows functionName={func.name} />
+          </TabsContent>
+
+          <TabsContent value="gateway" className="mt-0 space-y-6">
+            <FunctionGateway functionName={func.name} />
           </TabsContent>
 
           <TabsContent value="tests" className="mt-0">

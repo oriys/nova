@@ -200,6 +200,7 @@ export interface GatewayRoute {
   auth_config?: Record<string, string>;
   request_schema?: unknown;
   param_mapping?: ParamMapping[];
+  response_mapping?: ParamMapping[];
   rate_limit?: RouteRateLimit;
   cors?: CORSConfig;
   timeout_ms?: number;
@@ -236,6 +237,7 @@ export interface CreateGatewayRouteRequest {
   auth_config?: Record<string, string>;
   request_schema?: unknown;
   param_mapping?: ParamMapping[];
+  response_mapping?: ParamMapping[];
   rate_limit?: RouteRateLimit;
   timeout_ms?: number;
   retry_policy?: RouteRetryPolicy;
@@ -258,6 +260,7 @@ export interface UpdateGatewayRouteRequest {
   auth_config?: Record<string, string>;
   request_schema?: unknown;
   param_mapping?: ParamMapping[];
+  response_mapping?: ParamMapping[];
   rate_limit?: RouteRateLimit;
   timeout_ms?: number;
   retry_policy?: RouteRetryPolicy;

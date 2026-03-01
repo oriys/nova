@@ -53,6 +53,8 @@ func (h *GatewayHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 		AuthStrategy    string                       `json:"auth_strategy"`
 		AuthConfig      map[string]string            `json:"auth_config,omitempty"`
 		RequestSchema   json.RawMessage              `json:"request_schema,omitempty"`
+		ParamMapping    []domain.ParamMapping        `json:"param_mapping,omitempty"`
+		ResponseMapping []domain.ParamMapping        `json:"response_mapping,omitempty"`
 		RateLimit       *domain.RouteRateLimit       `json:"rate_limit,omitempty"`
 		TimeoutMs       *int                         `json:"timeout_ms,omitempty"`
 		RetryPolicy     *domain.RouteRetryPolicy     `json:"retry_policy,omitempty"`
@@ -136,6 +138,8 @@ func (h *GatewayHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 		AuthStrategy:    req.AuthStrategy,
 		AuthConfig:      req.AuthConfig,
 		RequestSchema:   req.RequestSchema,
+		ParamMapping:    req.ParamMapping,
+		ResponseMapping: req.ResponseMapping,
 		RateLimit:       req.RateLimit,
 		TimeoutMs:       timeoutMs,
 		RetryPolicy:     req.RetryPolicy,
@@ -212,6 +216,8 @@ func (h *GatewayHandler) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 		AuthStrategy    *string                      `json:"auth_strategy"`
 		AuthConfig      map[string]string            `json:"auth_config"`
 		RequestSchema   json.RawMessage              `json:"request_schema"`
+		ParamMapping    []domain.ParamMapping        `json:"param_mapping"`
+		ResponseMapping []domain.ParamMapping        `json:"response_mapping"`
 		RateLimit       *domain.RouteRateLimit       `json:"rate_limit"`
 		TimeoutMs       *int                         `json:"timeout_ms"`
 		RetryPolicy     *domain.RouteRetryPolicy     `json:"retry_policy"`
@@ -262,6 +268,12 @@ func (h *GatewayHandler) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.RequestSchema != nil {
 		existing.RequestSchema = req.RequestSchema
+	}
+	if req.ParamMapping != nil {
+		existing.ParamMapping = req.ParamMapping
+	}
+	if req.ResponseMapping != nil {
+		existing.ResponseMapping = req.ResponseMapping
 	}
 	if req.RateLimit != nil {
 		existing.RateLimit = req.RateLimit

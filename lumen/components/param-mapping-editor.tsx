@@ -13,6 +13,7 @@ interface ParamMappingEditorProps {
   value: ParamMapping[]
   onChange: (mappings: ParamMapping[]) => void
   disabled?: boolean
+  allowedSources?: ParamSource[]
 }
 
 const SOURCES: ParamSource[] = ["query", "path", "body", "header"]
@@ -23,8 +24,8 @@ const VALID_SOURCES = new Set<string>(SOURCES)
 const VALID_TRANSFORMS = new Set<string>(TRANSFORMS)
 const VALID_TYPES = new Set<string>(TYPES)
 
-function emptyMapping(): ParamMapping {
-  return { source: "query", name: "" }
+function emptyMapping(source: ParamSource): ParamMapping {
+  return { source, name: "" }
 }
 
 // ── DSL serializer ──────────────────────────────────────────
@@ -161,12 +162,42 @@ function parseDslLine(line: string): { mapping?: ParamMapping; error?: string } 
 
 // ── Component ───────────────────────────────────────────────
 
-export function ParamMappingEditor({ value, onChange, disabled }: ParamMappingEditorProps) {
+export function ParamMappingEditor({
+  value,
+  onChange,
+  disabled,
+  allowedSources,
+}: ParamMappingEditorProps) {
   const t = useTranslations("paramMapping")
+  const availableSources = allowedSources && allowedSources.length > 0 ? allowedSources : SOURCES
+  const fixedSource = availableSources.length === 1 ? availableSources[0] : undefined
   const [mode, setMode] = useState<"visual" | "dsl">("visual")
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
   const [dslText, setDslText] = useState(() => mappingsToDsl(value))
   const [dslErrors, setDslErrors] = useState<{ line: number; message: string }[]>([])
+
+  const normalizeMappings = useCallback((mappings: ParamMapping[]) => {
+    return mappings.map((mapping) => {
+      if (fixedSource) {
+        if (mapping.source === fixedSource) {
+          return mapping
+        }
+        return { ...mapping, source: fixedSource }
+      }
+      if (availableSources.includes(mapping.source)) {
+        return mapping
+      }
+      return { ...mapping, source: availableSources[0] }
+    })
+  }, [availableSources, fixedSource])
+
+  useEffect(() => {
+    const normalized = normalizeMappings(value)
+    const changed = normalized.some((mapping, idx) => mapping.source !== value[idx]?.source)
+    if (changed) {
+      onChange(normalized)
+    }
+  }, [normalizeMappings, onChange, value])
 
   // Sync DSL text when switching to DSL mode or when value changes externally in visual mode
   const syncDslFromValue = useCallback(() => {
@@ -182,7 +213,7 @@ export function ParamMappingEditor({ value, onChange, disabled }: ParamMappingEd
       // Switching to visual — apply DSL first
       const result = parseDsl(dslText)
       if (result.errors.length === 0) {
-        onChange(result.mappings)
+        onChange(normalizeMappings(result.mappings))
         setDslErrors([])
       }
     }
@@ -194,7 +225,7 @@ export function ParamMappingEditor({ value, onChange, disabled }: ParamMappingEd
     const result = parseDsl(text)
     setDslErrors(result.errors)
     if (result.errors.length === 0) {
-      onChange(result.mappings)
+      onChange(normalizeMappings(result.mappings))
     }
   }
 
@@ -210,8 +241,7 @@ export function ParamMappingEditor({ value, onChange, disabled }: ParamMappingEd
         setDslText(serialized)
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value])
+  }, [dslText, mode, value])
 
   // ── Visual mode helpers ─────────────────────────────────
 
@@ -225,7 +255,7 @@ export function ParamMappingEditor({ value, onChange, disabled }: ParamMappingEd
   }
 
   const addMapping = () => {
-    const next = [...value, emptyMapping()]
+    const next = [...value, emptyMapping(availableSources[0])]
     onChange(next)
     setExpandedRows((prev) => new Set(prev).add(next.length - 1))
   }
@@ -384,22 +414,28 @@ export function ParamMappingEditor({ value, onChange, disabled }: ParamMappingEd
                         {/* Source */}
                         <div className="space-y-1">
                           <Label className="text-xs">{t("fields.source")}</Label>
-                          <Select
-                            value={mapping.source}
-                            onValueChange={(v: ParamSource) => updateMapping(idx, { source: v })}
-                            disabled={disabled}
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {SOURCES.map((s) => (
-                                <SelectItem key={s} value={s}>
-                                  {sourceLabel(s)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          {fixedSource ? (
+                            <div className="flex h-8 items-center rounded-md border border-border bg-muted/20 px-3 text-xs text-muted-foreground">
+                              {sourceLabel(fixedSource)}
+                            </div>
+                          ) : (
+                            <Select
+                              value={mapping.source}
+                              onValueChange={(v: ParamSource) => updateMapping(idx, { source: v })}
+                              disabled={disabled}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {availableSources.map((s) => (
+                                  <SelectItem key={s} value={s}>
+                                    {sourceLabel(s)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                         </div>
 
                         {/* Name */}

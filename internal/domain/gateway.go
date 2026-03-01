@@ -7,27 +7,28 @@ import (
 
 // GatewayRoute maps a domain+path to a function with optional auth and validation
 type GatewayRoute struct {
-	ID            string            `json:"id"`
-	TenantID      string            `json:"tenant_id"`
-	Domain        string            `json:"domain"`            // "api.example.com"
-	Path          string            `json:"path"`              // "/v1/process" or "/v1/users/{id}"
-	Methods       []string          `json:"methods,omitempty"` // empty = all methods
-	FunctionName  string            `json:"function_name"`
-	WorkflowName  string            `json:"workflow_name,omitempty"`
-	AuthStrategy  string            `json:"auth_strategy"` // "none", "inherit", "apikey", "jwt"
-	AuthConfig    map[string]string `json:"auth_config,omitempty"`
-	RequestSchema json.RawMessage   `json:"request_schema,omitempty"`
-	ParamMapping  []ParamMapping    `json:"param_mapping,omitempty"` // parameter extraction & transformation rules
-	RateLimit     *RouteRateLimit   `json:"rate_limit,omitempty"`
-	CORS          *CORSConfig       `json:"cors,omitempty"`
+	ID              string                `json:"id"`
+	TenantID        string                `json:"tenant_id"`
+	Domain          string                `json:"domain"`            // "api.example.com"
+	Path            string                `json:"path"`              // "/v1/process" or "/v1/users/{id}"
+	Methods         []string              `json:"methods,omitempty"` // empty = all methods
+	FunctionName    string                `json:"function_name"`
+	WorkflowName    string                `json:"workflow_name,omitempty"`
+	AuthStrategy    string                `json:"auth_strategy"` // "none", "inherit", "apikey", "jwt"
+	AuthConfig      map[string]string     `json:"auth_config,omitempty"`
+	RequestSchema   json.RawMessage       `json:"request_schema,omitempty"`
+	ParamMapping    []ParamMapping        `json:"param_mapping,omitempty"`    // parameter extraction & transformation rules
+	ResponseMapping []ParamMapping        `json:"response_mapping,omitempty"` // response field remapping rules
+	RateLimit       *RouteRateLimit       `json:"rate_limit,omitempty"`
+	CORS            *CORSConfig           `json:"cors,omitempty"`
 	TimeoutMs       int                   `json:"timeout_ms,omitempty"`       // per-route invoke timeout (0 = no extra timeout)
 	RetryPolicy     *RouteRetryPolicy     `json:"retry_policy,omitempty"`     // optional per-route invoke retry policy
 	IPWhitelist     []string              `json:"ip_whitelist,omitempty"`     // allowed IPs/CIDRs (empty = allow all)
 	IPBlacklist     []string              `json:"ip_blacklist,omitempty"`     // denied IPs/CIDRs (checked before whitelist)
-	MockResponse    *MockResponseConfig   `json:"mock_response,omitempty"`   // return fixed response without calling backend
+	MockResponse    *MockResponseConfig   `json:"mock_response,omitempty"`    // return fixed response without calling backend
 	ResponseHeaders map[string]string     `json:"response_headers,omitempty"` // custom headers injected into every response
-	MaxBodyBytes    int64                 `json:"max_body_bytes,omitempty"`  // per-route request body size limit (0 = default 10MB)
-	CircuitBreaker  *CircuitBreakerConfig `json:"circuit_breaker,omitempty"` // circuit breaker settings
+	MaxBodyBytes    int64                 `json:"max_body_bytes,omitempty"`   // per-route request body size limit (0 = default 10MB)
+	CircuitBreaker  *CircuitBreakerConfig `json:"circuit_breaker,omitempty"`  // circuit breaker settings
 	Enabled         bool                  `json:"enabled"`
 	CreatedAt       time.Time             `json:"created_at"`
 	UpdatedAt       time.Time             `json:"updated_at"`
@@ -35,9 +36,9 @@ type GatewayRoute struct {
 
 // MockResponseConfig defines a fixed response returned by the gateway without calling the backend.
 type MockResponseConfig struct {
-	StatusCode int               `json:"status_code"`          // HTTP status code (default 200)
-	Headers    map[string]string `json:"headers,omitempty"`    // response headers
-	Body       json.RawMessage   `json:"body"`                 // response body (raw JSON)
+	StatusCode int               `json:"status_code"`       // HTTP status code (default 200)
+	Headers    map[string]string `json:"headers,omitempty"` // response headers
+	Body       json.RawMessage   `json:"body"`              // response body (raw JSON)
 }
 
 // CircuitBreakerConfig defines when to open the circuit after consecutive failures.

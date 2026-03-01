@@ -5,6 +5,8 @@ import { useTranslations } from "next-intl"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
+import { SectionHeader } from "@/components/section-header"
+import { SectionTableFrame } from "@/components/section-table-frame"
 import { functionsApi, type FunctionVersionEntry, type FunctionVersionDiffResponse } from "@/lib/api"
 
 interface FunctionVersionsProps {
@@ -88,8 +90,8 @@ export function FunctionVersions({
   }
 
   return (
-    <div className="space-y-3">
-      <h3 className="text-sm font-medium text-muted-foreground mb-3">{t("tabs.versions")}</h3>
+    <div className="space-y-4">
+      <SectionHeader title={t("tabs.versions")} />
       {notice && (
         <div
           className={`rounded-lg border px-3 py-2 text-sm ${
@@ -127,18 +129,18 @@ export function FunctionVersions({
           )}
         </div>
       )}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <table className="w-full">
+      <SectionTableFrame>
+        <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border">
-              <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colVersion")}</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colCodeHash")}</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colHandler")}</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colMemory")}</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colTimeout")}</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colMode")}</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("versions.colCreated")}</th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">{t("versions.colActions")}</th>
+            <tr className="border-b border-border bg-muted/50">
+              <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("versions.colVersion")}</th>
+              <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("versions.colCodeHash")}</th>
+              <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("versions.colHandler")}</th>
+              <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("versions.colMemory")}</th>
+              <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("versions.colTimeout")}</th>
+              <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("versions.colMode")}</th>
+              <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("versions.colCreated")}</th>
+              <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">{t("versions.colActions")}</th>
             </tr>
           </thead>
           <tbody>
@@ -152,32 +154,32 @@ export function FunctionVersions({
               sortedVersions.map((v) => {
                 const isCurrent = typeof currentVersion === "number" && currentVersion === v.version
                 return (
-                <tr key={v.version} className="border-b border-border hover:bg-muted/50">
-                  <td className="px-4 py-3">
+                <tr key={v.version} className="border-b border-border last:border-0 hover:bg-muted/30">
+                  <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
-                      <Badge variant={isCurrent ? "default" : "secondary"} className="text-xs">
+                      <Badge variant={isCurrent ? "default" : "secondary"} className="text-[10px]">
                         {t("versions.versionBadge", { version: v.version })}
                       </Badge>
                       {isCurrent && <Badge variant="outline" className="text-[10px]">{t("versions.current")}</Badge>}
                     </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2.5">
                     <code className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
                       {v.code_hash ? v.code_hash.slice(0, 12) + "..." : "-"}
                     </code>
                   </td>
-                  <td className="px-4 py-3 text-sm">{v.handler || "-"}</td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">{v.memory_mb} MB</td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">
+                  <td className="px-4 py-2.5">{v.handler || "-"}</td>
+                  <td className="px-4 py-2.5 text-xs text-muted-foreground">{v.memory_mb} MB</td>
+                  <td className="px-4 py-2.5 text-xs text-muted-foreground">
                     {t("versions.timeoutSeconds", { seconds: v.timeout_s })}
                   </td>
-                  <td className="px-4 py-3">
-                    <Badge variant="secondary" className="text-xs">{v.mode || t("modeProcess")}</Badge>
+                  <td className="px-4 py-2.5">
+                    <Badge variant="secondary" className="text-[10px]">{v.mode || t("modeProcess")}</Badge>
                   </td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">
+                  <td className="px-4 py-2.5 text-xs text-muted-foreground">
                     {new Date(v.created_at).toLocaleString()}
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-2.5 text-right">
                     <div className="flex justify-end gap-2">
                       <Button
                         variant="outline"
@@ -209,7 +211,7 @@ export function FunctionVersions({
             )}
           </tbody>
         </table>
-      </div>
+      </SectionTableFrame>
     </div>
   )
 }

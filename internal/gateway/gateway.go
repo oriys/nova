@@ -35,15 +35,15 @@ type WorkflowInvoker interface {
 
 // Gateway handles domain-based routing to functions
 type Gateway struct {
-	store          GatewayStore
-	exec           *executor.Executor
-	workflowSvc    WorkflowInvoker      // optional: for workflow routes
-	authenticators []auth.Authenticator  // global authenticators for "inherit" strategy
-	routes         sync.Map              // "domain:path" -> *domain.GatewayRoute
-	rateLimiters   sync.Map              // route ID -> *rateLimiter
+	store           GatewayStore
+	exec            *executor.Executor
+	workflowSvc     WorkflowInvoker      // optional: for workflow routes
+	authenticators  []auth.Authenticator // global authenticators for "inherit" strategy
+	routes          sync.Map             // "domain:path" -> *domain.GatewayRoute
+	rateLimiters    sync.Map             // route ID -> *rateLimiter
 	circuitBreakers sync.Map             // route ID -> *circuitState
-	schemas        sync.Map              // route ID -> *compiledSchema
-	paramRoutes    sync.Map              // "domain" -> []*paramRoute (routes with path parameters)
+	schemas         sync.Map             // route ID -> *compiledSchema
+	paramRoutes     sync.Map             // "domain" -> []*paramRoute (routes with path parameters)
 }
 
 // compiledSchema holds a pre-parsed JSON Schema for fast validation
@@ -266,7 +266,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// ── Mock response — return fixed response without calling backend ────
 	if route.MockResponse != nil {
-		g.writeMockResponse(w, route)
+		if err := g.writeMockResponse(w, route); err != nil {
+			g.writeResponseMappingError(w, err)
+		}
 		return
 	}
 
@@ -372,9 +374,18 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		g.recordCircuitResult(route, true)
+		body, err := json.Marshal(run)
+		if err != nil {
+			http.Error(w, `{"error":"response_encode_failed","message":"failed to encode workflow response"}`, http.StatusInternalServerError)
+			return
+		}
+		body, err = g.mapRouteResponsePayload(route, body)
+		if err != nil {
+			g.writeResponseMappingError(w, err)
+			return
+		}
 		setResponseHeaders(w, route)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(run)
+		writeJSONPayload(w, http.StatusOK, body)
 		return
 	}
 
@@ -394,9 +405,23 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	g.recordCircuitResult(route, true)
 
+	if len(route.ResponseMapping) > 0 {
+		mappedOutput, err := g.mapRouteResponsePayload(route, resp.Output)
+		if err != nil {
+			g.writeResponseMappingError(w, err)
+			return
+		}
+		resp.Output = mappedOutput
+	}
+
+	body, err := json.Marshal(resp)
+	if err != nil {
+		http.Error(w, `{"error":"response_encode_failed","message":"failed to encode function response"}`, http.StatusInternalServerError)
+		return
+	}
+
 	setResponseHeaders(w, route)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSONPayload(w, http.StatusOK, body)
 }
 
 // matchRouteWithParams finds a route and extracts path parameters.
@@ -483,10 +508,11 @@ func (g *Gateway) authenticateRequest(route *domain.GatewayRoute, w http.Respons
 			return errUnauthorized
 		}
 		// Delegate to existing API key authenticators
+		requireExplicitScope := routeRequiresExplicitAPIKeyScope(route)
 		for _, authenticator := range g.authenticators {
 			if id := authenticator.Authenticate(r); id != nil {
 				// Check that the API key's policy allows access to the route target
-				if !policyAllowsRouteTarget(id.Policies, route.FunctionName, route.WorkflowName) {
+				if !policyAllowsRouteTarget(id.Policies, route.FunctionName, route.WorkflowName, requireExplicitScope) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusForbidden)
 					w.Write([]byte(`{"error":"forbidden","message":"API key does not have permission for this resource"}`))
@@ -813,9 +839,9 @@ func invokeWithRetry(
 // access to the given function and/or workflow. If no policies exist (empty slice),
 // the key is unrestricted and access is allowed. If policies exist, at least one
 // "allow" binding must cover the target, and no "deny" binding must block it.
-func policyAllowsRouteTarget(policies []domain.PolicyBinding, functionName, workflowName string) bool {
+func policyAllowsRouteTarget(policies []domain.PolicyBinding, functionName, workflowName string, requireExplicitScope bool) bool {
 	if len(policies) == 0 {
-		return true // no restrictions
+		return !requireExplicitScope
 	}
 
 	for _, p := range policies {
@@ -841,6 +867,24 @@ func policyAllowsRouteTarget(policies []domain.PolicyBinding, functionName, work
 		}
 	}
 	return false
+}
+
+func routeRequiresExplicitAPIKeyScope(route *domain.GatewayRoute) bool {
+	if route == nil || len(route.AuthConfig) == 0 {
+		return false
+	}
+
+	raw, ok := route.AuthConfig["require_explicit_scope"]
+	if !ok {
+		return false
+	}
+
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "t", "true", "y", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // matchesAny checks if name matches any pattern in the list (supports glob via filepath.Match).
@@ -895,23 +939,22 @@ func ipMatchesAny(ip net.IP, entries []string) bool {
 
 // ── Mock response ────────────────────────────────────────────────────────────
 
-func (g *Gateway) writeMockResponse(w http.ResponseWriter, route *domain.GatewayRoute) {
-	setResponseHeaders(w, route)
+func (g *Gateway) writeMockResponse(w http.ResponseWriter, route *domain.GatewayRoute) error {
 	mock := route.MockResponse
+	body, err := g.mapRouteResponsePayload(route, mock.Body)
+	if err != nil {
+		return err
+	}
+	setResponseHeaders(w, route)
 	for k, v := range mock.Headers {
 		w.Header().Set(k, v)
-	}
-	if w.Header().Get("Content-Type") == "" {
-		w.Header().Set("Content-Type", "application/json")
 	}
 	statusCode := mock.StatusCode
 	if statusCode == 0 {
 		statusCode = http.StatusOK
 	}
-	w.WriteHeader(statusCode)
-	if len(mock.Body) > 0 {
-		w.Write(mock.Body)
-	}
+	writeJSONPayload(w, statusCode, body)
+	return nil
 }
 
 // ── Circuit breaker helpers ──────────────────────────────────────────────────
@@ -945,10 +988,38 @@ func setResponseHeaders(w http.ResponseWriter, route *domain.GatewayRoute) {
 	}
 }
 
+func (g *Gateway) mapRouteResponsePayload(route *domain.GatewayRoute, payload json.RawMessage) (json.RawMessage, error) {
+	if len(route.ResponseMapping) == 0 {
+		return payload, nil
+	}
+	return applyResponseMappings(payload, route.ResponseMapping)
+}
+
+func (g *Gateway) writeResponseMappingError(w http.ResponseWriter, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusInternalServerError)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error":   "response_mapping_failed",
+		"message": err.Error(),
+	})
+}
+
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
 func writeJSON(w http.ResponseWriter, status int, body string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write([]byte(body))
+}
+
+func writeJSONPayload(w http.ResponseWriter, status int, payload json.RawMessage) {
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json")
+	}
+	w.WriteHeader(status)
+	if len(payload) == 0 {
+		w.Write([]byte("null"))
+		return
+	}
+	w.Write(payload)
 }

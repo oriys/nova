@@ -147,6 +147,32 @@ func TestApplyParamMappings_Body(t *testing.T) {
 	}
 }
 
+func TestApplyParamMappings_NestedBodySourceAndTarget(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{"user":{"profile":{"name":"ALICE","active":"true"}}}`))
+	r.Header.Set("Content-Type", "application/json")
+	payload := json.RawMessage(`{"user":{"profile":{"name":"ALICE","active":"true"}}}`)
+
+	mappings := []domain.ParamMapping{
+		{Source: domain.ParamSourceBody, Name: "user.profile.name", Target: "request.user.name", Transform: domain.ParamTransformLowerCase},
+		{Source: domain.ParamSourceBody, Name: "user.profile.active", Target: "request.flags.isActive", Type: domain.ParamTypeBoolean},
+	}
+
+	result, err := applyParamMappings(payload, r, nil, mappings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var obj map[string]any
+	json.Unmarshal(result, &obj)
+
+	if got := nestedMapValue(t, obj, "request", "user", "name"); got != "alice" {
+		t.Errorf("request.user.name = %v, want alice", got)
+	}
+	if got := nestedMapValue(t, obj, "request", "flags", "isActive"); got != true {
+		t.Errorf("request.flags.isActive = %v, want true", got)
+	}
+}
+
 func TestApplyParamMappings_Header(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/test", nil)
 	r.Header.Set("X-Request-ID", "req-abc-123")
@@ -226,4 +252,45 @@ func TestApplyParamMappings_TargetDefaultsToName(t *testing.T) {
 	if obj["color"] != "blue" {
 		t.Errorf("color = %v, want blue", obj["color"])
 	}
+}
+
+func TestApplyResponseMappings_Nested(t *testing.T) {
+	payload := json.RawMessage(`{"user":{"profile":{"name":"ALICE"},"roles":[{"id":"7"}]}}`)
+	mappings := []domain.ParamMapping{
+		{Name: "user.profile.name", Target: "result.display_name", Transform: domain.ParamTransformLowerCase},
+		{Name: "user.roles.0.id", Target: "result.primary_role_id", Type: domain.ParamTypeInteger},
+		{Name: "user.profile.email", Target: "result.email", Default: "n/a"},
+	}
+
+	result, err := applyResponseMappings(payload, mappings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var obj map[string]any
+	json.Unmarshal(result, &obj)
+
+	if got := nestedMapValue(t, obj, "result", "display_name"); got != "alice" {
+		t.Errorf("result.display_name = %v, want alice", got)
+	}
+	if got := nestedMapValue(t, obj, "result", "primary_role_id"); got != float64(7) {
+		t.Errorf("result.primary_role_id = %v, want 7", got)
+	}
+	if got := nestedMapValue(t, obj, "result", "email"); got != "n/a" {
+		t.Errorf("result.email = %v, want n/a", got)
+	}
+}
+
+func nestedMapValue(t *testing.T, obj map[string]any, path ...string) any {
+	t.Helper()
+
+	var current any = obj
+	for _, segment := range path {
+		next, ok := current.(map[string]any)
+		if !ok {
+			t.Fatalf("segment %q is not an object in path %v", segment, path)
+		}
+		current = next[segment]
+	}
+	return current
 }

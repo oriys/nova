@@ -20,6 +20,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { SectionHeader } from "@/components/section-header"
+import { SectionTableFrame } from "@/components/section-table-frame"
 import { ParamMappingEditor } from "@/components/param-mapping-editor"
 import { gatewayApi, type GatewayRoute } from "@/lib/api"
 import type { ParamMapping } from "@/lib/types"
@@ -33,7 +35,6 @@ interface RouteFormState {
   domain: string
   path: string
   methods: string
-  authStrategy: string
   rps: string
   burst: string
   enabled: boolean
@@ -43,10 +44,9 @@ const emptyForm: RouteFormState = {
   domain: "",
   path: "",
   methods: "",
-  authStrategy: "none",
   rps: "",
   burst: "",
-  enabled: true,
+  enabled: false,
 }
 
 function formFromRoute(r: GatewayRoute): RouteFormState {
@@ -54,10 +54,36 @@ function formFromRoute(r: GatewayRoute): RouteFormState {
     domain: r.domain || "",
     path: r.path,
     methods: r.methods?.join(", ") || "",
-    authStrategy: r.auth_strategy || "none",
     rps: r.rate_limit ? String(r.rate_limit.requests_per_second) : "",
     burst: r.rate_limit ? String(r.rate_limit.burst_size) : "",
     enabled: r.enabled,
+  }
+}
+
+function buildExplicitAPIKeyAuthConfig(route?: GatewayRoute) {
+  return {
+    ...(route?.auth_config || {}),
+    require_explicit_scope: "true",
+  }
+}
+
+function routeUsesExplicitAPIKey(route: GatewayRoute) {
+  return route.auth_strategy === "apikey" && route.auth_config?.require_explicit_scope === "true"
+}
+
+function routeAuthLabel(route: GatewayRoute, t: (key: string) => string) {
+  if (routeUsesExplicitAPIKey(route)) {
+    return t("authScopedApikey")
+  }
+  switch (route.auth_strategy) {
+    case "inherit":
+      return t("authInherit")
+    case "apikey":
+      return t("authApikey")
+    case "jwt":
+      return t("authJwt")
+    default:
+      return t("authNone")
   }
 }
 
@@ -72,6 +98,7 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
   const [editingRoute, setEditingRoute] = useState<GatewayRoute | null>(null)
   const [form, setForm] = useState<RouteFormState>(emptyForm)
   const [paramMapping, setParamMapping] = useState<ParamMapping[]>([])
+  const [responseMapping, setResponseMapping] = useState<ParamMapping[]>([])
 
   // Delete confirmation
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -96,6 +123,7 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
     setEditingRoute(null)
     setForm(emptyForm)
     setParamMapping([])
+    setResponseMapping([])
     setDialogOpen(true)
   }
 
@@ -103,6 +131,7 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
     setEditingRoute(route)
     setForm(formFromRoute(route))
     setParamMapping(route.param_mapping || [])
+    setResponseMapping(route.response_mapping || [])
     setDialogOpen(true)
   }
 
@@ -127,9 +156,11 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
           domain: form.domain || undefined,
           path: form.path,
           methods: methods.length > 0 ? methods : undefined,
-          auth_strategy: form.authStrategy,
+          auth_strategy: "apikey",
+          auth_config: buildExplicitAPIKeyAuthConfig(editingRoute),
           rate_limit: rateLimit,
           param_mapping: paramMapping.length > 0 ? paramMapping : undefined,
+          response_mapping: responseMapping.length > 0 ? responseMapping : undefined,
           enabled: form.enabled,
         })
       } else {
@@ -138,9 +169,11 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
           path: form.path,
           methods: methods.length > 0 ? methods : undefined,
           function_name: functionName,
-          auth_strategy: form.authStrategy,
+          auth_strategy: "apikey",
+          auth_config: buildExplicitAPIKeyAuthConfig(),
           rate_limit: rateLimit,
           param_mapping: paramMapping.length > 0 ? paramMapping : undefined,
+          response_mapping: responseMapping.length > 0 ? responseMapping : undefined,
           enabled: form.enabled,
         })
       }
@@ -169,7 +202,11 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
 
   const handleToggle = async (route: GatewayRoute) => {
     try {
-      await gatewayApi.updateRoute(route.id, { enabled: !route.enabled })
+      await gatewayApi.updateRoute(route.id, {
+        enabled: !route.enabled,
+        auth_strategy: "apikey",
+        auth_config: buildExplicitAPIKeyAuthConfig(route),
+      })
       fetchRoutes()
     } catch {
       // ignore
@@ -186,15 +223,19 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-medium text-foreground">{t("title")}</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">{t("description")}</p>
-        </div>
-        <Button size="sm" onClick={openCreate}>
-          <Plus className="mr-2 h-3.5 w-3.5" />
-          {t("addRoute")}
-        </Button>
+      <SectionHeader
+        title={t("title")}
+        description={t("description")}
+        action={
+          <Button size="sm" onClick={openCreate}>
+            <Plus className="mr-2 h-3.5 w-3.5" />
+            {t("addRoute")}
+          </Button>
+        }
+      />
+
+      <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
+        <p className="text-sm text-muted-foreground">{t("scopeHint")}</p>
       </div>
 
       {routes.length === 0 ? (
@@ -208,7 +249,7 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
           </Button>
         </div>
       ) : (
-        <div className="rounded-lg border border-border overflow-hidden">
+        <SectionTableFrame>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/50">
@@ -218,6 +259,7 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
                 <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("auth")}</th>
                 <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("rateLimit")}</th>
                 <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("paramMapping")}</th>
+                <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("responseMapping")}</th>
                 <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("status")}</th>
                 <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">{t("actions")}</th>
               </tr>
@@ -242,7 +284,7 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
                   </td>
                   <td className="px-4 py-2.5">
                     <Badge variant="secondary" className="text-[10px]">
-                      {route.auth_strategy || "none"}
+                      {routeAuthLabel(route, t)}
                     </Badge>
                   </td>
                   <td className="px-4 py-2.5 text-xs text-muted-foreground">
@@ -254,6 +296,15 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
                     {route.param_mapping && route.param_mapping.length > 0 ? (
                       <Badge variant="outline" className="text-[10px]">
                         {route.param_mapping.length}
+                      </Badge>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-muted-foreground">
+                    {route.response_mapping && route.response_mapping.length > 0 ? (
+                      <Badge variant="outline" className="text-[10px]">
+                        {route.response_mapping.length}
                       </Badge>
                     ) : (
                       "—"
@@ -293,7 +344,7 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
               ))}
             </tbody>
           </table>
-        </div>
+        </SectionTableFrame>
       )}
 
       {/* Create / Edit Dialog */}
@@ -330,17 +381,10 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
             </div>
             <div className="space-y-2">
               <Label>{t("authStrategy")}</Label>
-              <Select value={form.authStrategy} onValueChange={(v) => setForm({ ...form, authStrategy: v })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">{t("authNone")}</SelectItem>
-                  <SelectItem value="inherit">{t("authInherit")}</SelectItem>
-                  <SelectItem value="apikey">{t("authApikey")}</SelectItem>
-                  <SelectItem value="jwt">{t("authJwt")}</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="rounded-md border border-border bg-muted/30 px-3 py-2.5">
+                <p className="text-sm font-medium text-foreground">{t("authScopedApikey")}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t("scopeHint")}</p>
+              </div>
             </div>
             <div className="space-y-2">
               <Label>{t("requestsPerSecond")}</Label>
@@ -376,6 +420,14 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
           <div className="space-y-2 py-2">
             <Label>{t("paramMapping")}</Label>
             <ParamMappingEditor value={paramMapping} onChange={setParamMapping} />
+          </div>
+          <div className="space-y-2 py-2">
+            <Label>{t("responseMapping")}</Label>
+            <ParamMappingEditor
+              value={responseMapping}
+              onChange={setResponseMapping}
+              allowedSources={["body"]}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>{t("cancel")}</Button>

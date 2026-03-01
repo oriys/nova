@@ -5,6 +5,9 @@ import Link from "next/link"
 import { useTranslations } from "next-intl"
 import { Badge } from "@/components/ui/badge"
 import { Pagination } from "@/components/pagination"
+import { SectionEmptyHint } from "@/components/section-empty-hint"
+import { SectionHeader } from "@/components/section-header"
+import { SectionTableFrame } from "@/components/section-table-frame"
 import { cn } from "@/lib/utils"
 import { functionsApi, type TriggerEntry } from "@/lib/api"
 
@@ -39,53 +42,53 @@ export function FunctionTriggers({ functionName }: FunctionTriggersProps) {
   if (loading) return null
   if (total === 0 && triggers.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-card p-6">
-        <h3 className="text-sm font-semibold mb-2">{t("triggers_section.title")}</h3>
-        <p className="text-sm text-muted-foreground">{t("triggers_section.empty")}</p>
+      <div className="space-y-4">
+        <SectionHeader title={t("triggers_section.title")} />
+        <SectionEmptyHint>{t("triggers_section.empty")}</SectionEmptyHint>
       </div>
     )
   }
 
   return (
-    <div className="space-y-2">
-      <h3 className="text-sm font-semibold">{t("triggers_section.title")}</h3>
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <table className="w-full">
+    <div className="space-y-4">
+      <SectionHeader title={t("triggers_section.title")} />
+      <SectionTableFrame>
+        <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border">
-              <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("triggers_section.colName")}</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("triggers_section.colType")}</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("triggers_section.colEnabled")}</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">{t("triggers_section.colCreated")}</th>
+            <tr className="border-b border-border bg-muted/50">
+              <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("triggers_section.colName")}</th>
+              <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("triggers_section.colType")}</th>
+              <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("triggers_section.colEnabled")}</th>
+              <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">{t("triggers_section.colCreated")}</th>
             </tr>
           </thead>
           <tbody>
             {triggers.map((trigger) => (
-              <tr key={trigger.id} className="border-b border-border hover:bg-muted/50">
-                <td className="px-4 py-3">
+              <tr key={trigger.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                <td className="px-4 py-2.5">
                   <Link href="/triggers" className="text-sm font-medium hover:underline">
                     {trigger.name}
                   </Link>
                 </td>
-                <td className="px-4 py-3">
-                  <Badge variant="outline" className="text-xs font-mono">
+                <td className="px-4 py-2.5">
+                  <Badge variant="outline" className="text-[10px] font-mono">
                     {trigger.type}
                   </Badge>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-2.5">
                   <Badge
                     variant="secondary"
                     className={cn(
-                      "text-xs",
+                      "text-[10px]",
                       trigger.enabled
                         ? "bg-success/10 text-success border-0"
                         : "bg-muted text-muted-foreground border-0"
                     )}
                   >
-                    {trigger.enabled ? "Active" : "Disabled"}
+                    {trigger.enabled ? t("schedules.statusActive") : t("schedules.statusDisabled")}
                   </Badge>
                 </td>
-                <td className="px-4 py-3 text-sm text-muted-foreground">
+                <td className="px-4 py-2.5 text-xs text-muted-foreground">
                   {new Date(trigger.created_at).toLocaleString()}
                 </td>
               </tr>
@@ -104,7 +107,7 @@ export function FunctionTriggers({ functionName }: FunctionTriggersProps) {
             />
           </div>
         )}
-      </div>
+      </SectionTableFrame>
     </div>
   )
 }

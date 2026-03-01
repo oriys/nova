@@ -67,6 +67,7 @@ export interface GatewayRoute {
   auth_config?: Record<string, string>;
   request_schema?: unknown;
   param_mapping?: ParamMapping[];
+  response_mapping?: ParamMapping[];
   rate_limit?: RouteRateLimit;
   cors?: CORSConfig;
   timeout_ms?: number;

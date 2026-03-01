@@ -16,3 +16,11 @@ func applyParamMappings(
 ) (json.RawMessage, error) {
 	return domain.ApplyParamMappings(payload, r, pathParams, mappings)
 }
+
+// applyResponseMappings delegates to the shared domain implementation.
+func applyResponseMappings(
+	payload json.RawMessage,
+	mappings []domain.ParamMapping,
+) (json.RawMessage, error) {
+	return domain.ApplyResponseMappings(payload, mappings)
+}

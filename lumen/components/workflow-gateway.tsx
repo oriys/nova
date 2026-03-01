@@ -20,6 +20,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { SectionHeader } from "@/components/section-header"
+import { SectionTableFrame } from "@/components/section-table-frame"
 import { ParamMappingEditor } from "@/components/param-mapping-editor"
 import { gatewayApi, type GatewayRoute } from "@/lib/api"
 import type { ParamMapping } from "@/lib/types"
@@ -184,16 +186,16 @@ export function WorkflowGateway({ workflowName }: WorkflowGatewayProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-medium text-foreground">{t("title")}</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">{t("description")}</p>
-        </div>
-        <Button size="sm" onClick={openCreate}>
-          <Plus className="mr-2 h-3.5 w-3.5" />
-          {t("addRoute")}
-        </Button>
-      </div>
+      <SectionHeader
+        title={t("title")}
+        description={t("description")}
+        action={
+          <Button size="sm" onClick={openCreate}>
+            <Plus className="mr-2 h-3.5 w-3.5" />
+            {t("addRoute")}
+          </Button>
+        }
+      />
 
       {routes.length === 0 ? (
         <div className="rounded-lg border border-border bg-card p-8 text-center">
@@ -206,7 +208,7 @@ export function WorkflowGateway({ workflowName }: WorkflowGatewayProps) {
           </Button>
         </div>
       ) : (
-        <div className="rounded-lg border border-border overflow-hidden">
+        <SectionTableFrame>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/50">
@@ -240,7 +242,7 @@ export function WorkflowGateway({ workflowName }: WorkflowGatewayProps) {
                   </td>
                   <td className="px-4 py-2.5">
                     <Badge variant="secondary" className="text-[10px]">
-                      {route.auth_strategy || "none"}
+                      {route.auth_strategy || t("authNone")}
                     </Badge>
                   </td>
                   <td className="px-4 py-2.5 text-xs text-muted-foreground">
@@ -291,7 +293,7 @@ export function WorkflowGateway({ workflowName }: WorkflowGatewayProps) {
               ))}
             </tbody>
           </table>
-        </div>
+        </SectionTableFrame>
       )}
 
       {/* Create / Edit Dialog */}

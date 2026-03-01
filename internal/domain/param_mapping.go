@@ -23,12 +23,9 @@ func ApplyParamMappings(
 		return payload, nil
 	}
 
-	var obj map[string]any
-	if err := json.Unmarshal(payload, &obj); err != nil {
-		obj = make(map[string]any)
-	}
+	obj := unmarshalMappingObject(payload)
 
-	var bodyObj map[string]any
+	var bodyValue any
 	var bodyParsed bool
 
 	for _, m := range mappings {
@@ -62,17 +59,15 @@ func ApplyParamMappings(
 		case ParamSourceBody:
 			if !bodyParsed {
 				bodyParsed = true
-				_ = json.Unmarshal(payload, &bodyObj)
+				_ = json.Unmarshal(payload, &bodyValue)
 			}
-			if bodyObj != nil {
-				if v, ok := bodyObj[m.Name]; ok {
-					converted, err := CoerceBodyValue(v, m.Type, m.Transform)
-					if err != nil {
-						return nil, fmt.Errorf("param %q: %w", m.Name, err)
-					}
-					obj[target] = converted
-					continue
+			if v, ok := lookupMappedValue(bodyValue, m.Name); ok {
+				converted, err := CoerceBodyValue(v, m.Type, m.Transform)
+				if err != nil {
+					return nil, fmt.Errorf("param %q: %w", m.Name, err)
 				}
+				setMappedValue(obj, target, converted)
+				continue
 			}
 		}
 
@@ -81,7 +76,7 @@ func ApplyParamMappings(
 				return nil, fmt.Errorf("required parameter %q missing from %s", m.Name, m.Source)
 			}
 			if m.Default != nil {
-				obj[target] = m.Default
+				setMappedValue(obj, target, m.Default)
 			}
 			continue
 		}
@@ -92,7 +87,7 @@ func ApplyParamMappings(
 		if err != nil {
 			return nil, fmt.Errorf("param %q type coercion (%s): %w", m.Name, m.Type, err)
 		}
-		obj[target] = val
+		setMappedValue(obj, target, val)
 	}
 
 	out, err := json.Marshal(obj)
@@ -100,6 +95,129 @@ func ApplyParamMappings(
 		return payload, nil
 	}
 	return out, nil
+}
+
+// ApplyResponseMappings remaps a JSON payload into a new JSON object using the
+// provided mapping rules. Nested object/array source paths use dot notation.
+func ApplyResponseMappings(payload json.RawMessage, mappings []ParamMapping) (json.RawMessage, error) {
+	if len(mappings) == 0 {
+		return payload, nil
+	}
+
+	var source any
+	if len(payload) > 0 {
+		if err := json.Unmarshal(payload, &source); err != nil {
+			return nil, fmt.Errorf("parse response payload: %w", err)
+		}
+	}
+
+	obj := make(map[string]any)
+	for _, m := range mappings {
+		target := m.Target
+		if target == "" {
+			target = m.Name
+		}
+
+		v, found := lookupMappedValue(source, m.Name)
+		if !found {
+			if m.Required {
+				return nil, fmt.Errorf("required response field %q missing", m.Name)
+			}
+			if m.Default != nil {
+				setMappedValue(obj, target, m.Default)
+			}
+			continue
+		}
+
+		converted, err := CoerceBodyValue(v, m.Type, m.Transform)
+		if err != nil {
+			return nil, fmt.Errorf("response field %q: %w", m.Name, err)
+		}
+		setMappedValue(obj, target, converted)
+	}
+
+	out, err := json.Marshal(obj)
+	if err != nil {
+		return payload, nil
+	}
+	return out, nil
+}
+
+func unmarshalMappingObject(payload json.RawMessage) map[string]any {
+	var obj map[string]any
+	if err := json.Unmarshal(payload, &obj); err != nil || obj == nil {
+		return make(map[string]any)
+	}
+	return obj
+}
+
+func lookupMappedValue(root any, path string) (any, bool) {
+	segments, ok := splitMappingPath(path)
+	if !ok {
+		return nil, false
+	}
+
+	current := root
+	for _, segment := range segments {
+		switch node := current.(type) {
+		case map[string]any:
+			next, exists := node[segment]
+			if !exists {
+				return nil, false
+			}
+			current = next
+		case []any:
+			idx, err := strconv.Atoi(segment)
+			if err != nil || idx < 0 || idx >= len(node) {
+				return nil, false
+			}
+			current = node[idx]
+		default:
+			return nil, false
+		}
+	}
+	return current, true
+}
+
+func setMappedValue(obj map[string]any, path string, value any) {
+	segments, ok := splitMappingPath(path)
+	if !ok {
+		return
+	}
+
+	current := obj
+	for i := 0; i < len(segments)-1; i++ {
+		segment := segments[i]
+		next, exists := current[segment]
+		if !exists {
+			child := make(map[string]any)
+			current[segment] = child
+			current = child
+			continue
+		}
+
+		child, ok := next.(map[string]any)
+		if !ok {
+			child = make(map[string]any)
+			current[segment] = child
+		}
+		current = child
+	}
+
+	current[segments[len(segments)-1]] = value
+}
+
+func splitMappingPath(path string) ([]string, bool) {
+	if path == "" {
+		return nil, false
+	}
+	segments := strings.Split(path, ".")
+	for _, segment := range segments {
+		if segment == "" {
+			return nil, false
+		}
+	}
+	return segments, true
 }
 
 // CoerceString converts a string value to the target type.
