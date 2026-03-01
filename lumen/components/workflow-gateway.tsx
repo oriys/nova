@@ -21,11 +21,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { SectionHeader } from "@/components/section-header"
+import { SectionEmptyHint } from "@/components/section-empty-hint"
 import { SectionTableFrame } from "@/components/section-table-frame"
 import { ParamMappingEditor } from "@/components/param-mapping-editor"
 import { gatewayApi, type GatewayRoute } from "@/lib/api"
 import type { ParamMapping } from "@/lib/types"
-import { Plus, Pencil, Trash2, Loader2, Globe } from "lucide-react"
+import { Plus, Pencil, Trash2, Loader2 } from "lucide-react"
 
 interface WorkflowGatewayProps {
   workflowName: string
@@ -198,15 +199,9 @@ export function WorkflowGateway({ workflowName }: WorkflowGatewayProps) {
       />
 
       {routes.length === 0 ? (
-        <div className="rounded-lg border border-border bg-card p-8 text-center">
-          <Globe className="mx-auto h-10 w-10 text-muted-foreground/50 mb-3" />
-          <p className="text-sm font-medium text-foreground mb-1">{t("empty")}</p>
-          <p className="text-xs text-muted-foreground mb-4">{t("emptyHint")}</p>
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="mr-2 h-3.5 w-3.5" />
-            {t("addRoute")}
-          </Button>
-        </div>
+        <SectionEmptyHint className="px-6 py-8 text-center">
+          {t("empty")} {t("emptyHint")}
+        </SectionEmptyHint>
       ) : (
         <SectionTableFrame>
           <table className="w-full text-sm">

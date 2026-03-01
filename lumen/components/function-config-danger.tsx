@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { SectionHeader } from "@/components/section-header"
 import {
   Dialog,
   DialogContent,
@@ -41,22 +42,24 @@ export function FunctionConfigDanger({ func }: FunctionConfigDangerProps) {
   return (
     <>
       <div className="rounded-xl border border-destructive/50 bg-card p-6">
-        <h3 className="text-lg font-semibold text-destructive mb-2">
-          Danger Zone
-        </h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          These actions are irreversible. Please proceed with caution.
-        </p>
-        <div className="flex gap-3">
-          <Button
-            variant="outline"
-            className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground bg-transparent"
-            onClick={() => setShowDeleteDialog(true)}
-          >
-            <Trash2 className="mr-2 h-4 w-4" />
-            Delete Function
-          </Button>
-        </div>
+        <SectionHeader
+          title="Danger Zone"
+          description="These actions are irreversible. Please proceed with caution."
+          className="mb-4"
+          titleClassName="text-lg font-semibold text-destructive"
+          descriptionClassName="text-sm"
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground bg-transparent"
+              onClick={() => setShowDeleteDialog(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete Function
+            </Button>
+          }
+        />
       </div>
 
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

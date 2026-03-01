@@ -21,11 +21,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { SectionHeader } from "@/components/section-header"
+import { SectionEmptyHint } from "@/components/section-empty-hint"
 import { SectionTableFrame } from "@/components/section-table-frame"
 import { ParamMappingEditor } from "@/components/param-mapping-editor"
-import { gatewayApi, type GatewayRoute } from "@/lib/api"
+import { gatewayApi, functionsApi, type GatewayRoute } from "@/lib/api"
 import type { ParamMapping } from "@/lib/types"
-import { Plus, Pencil, Trash2, Loader2, Globe } from "lucide-react"
+import { Plus, Pencil, Trash2, Loader2 } from "lucide-react"
 
 interface FunctionGatewayProps {
   functionName: string
@@ -99,6 +100,9 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
   const [form, setForm] = useState<RouteFormState>(emptyForm)
   const [paramMapping, setParamMapping] = useState<ParamMapping[]>([])
   const [responseMapping, setResponseMapping] = useState<ParamMapping[]>([])
+  const [functionCode, setFunctionCode] = useState("")
+  const [loadingCode, setLoadingCode] = useState(false)
+  const [codeLoadError, setCodeLoadError] = useState<string | null>(null)
 
   // Delete confirmation
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -118,6 +122,25 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
   useEffect(() => {
     fetchRoutes()
   }, [fetchRoutes])
+
+  const fetchFunctionCode = useCallback(async () => {
+    try {
+      setLoadingCode(true)
+      setCodeLoadError(null)
+      const response = await functionsApi.getCode(functionName)
+      setFunctionCode(response.source_code || "")
+    } catch {
+      setFunctionCode("")
+      setCodeLoadError(t("codeUnavailable"))
+    } finally {
+      setLoadingCode(false)
+    }
+  }, [functionName, t])
+
+  useEffect(() => {
+    if (!dialogOpen) return
+    fetchFunctionCode()
+  }, [dialogOpen, fetchFunctionCode])
 
   const openCreate = () => {
     setEditingRoute(null)
@@ -239,15 +262,9 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
       </div>
 
       {routes.length === 0 ? (
-        <div className="rounded-lg border border-border bg-card p-8 text-center">
-          <Globe className="mx-auto h-10 w-10 text-muted-foreground/50 mb-3" />
-          <p className="text-sm font-medium text-foreground mb-1">{t("empty")}</p>
-          <p className="text-xs text-muted-foreground mb-4">{t("emptyHint")}</p>
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="mr-2 h-3.5 w-3.5" />
-            {t("addRoute")}
-          </Button>
-        </div>
+        <SectionEmptyHint className="px-6 py-8 text-center">
+          {t("empty")} {t("emptyHint")}
+        </SectionEmptyHint>
       ) : (
         <SectionTableFrame>
           <table className="w-full text-sm">
@@ -353,6 +370,36 @@ export function FunctionGateway({ functionName }: FunctionGatewayProps) {
           <DialogHeader>
             <DialogTitle>{editingRoute ? t("editRoute") : t("createRoute")}</DialogTitle>
           </DialogHeader>
+          <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>{t("functionLabel")}</Label>
+                <div className="rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground">
+                  {functionName}
+                </div>
+                <p className="text-xs text-muted-foreground">{t("mappingTargetHint")}</p>
+              </div>
+              <div className="space-y-2">
+                <Label>{t("functionCode")}</Label>
+                <div className="rounded-md border border-border bg-background">
+                  {loadingCode ? (
+                    <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>{t("loadingCode")}</span>
+                    </div>
+                  ) : functionCode ? (
+                    <pre className="max-h-64 overflow-auto px-3 py-2 font-mono text-xs leading-5 text-foreground whitespace-pre-wrap">
+                      {functionCode}
+                    </pre>
+                  ) : (
+                    <div className="px-3 py-2 text-sm text-muted-foreground">
+                      {codeLoadError || t("codeUnavailable")}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-4 py-4">
             <div className="space-y-2">
               <Label>{t("domain")}</Label>

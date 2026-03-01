@@ -18,6 +18,7 @@ import {
   type CapacityPolicy,
   type ScaleThresholds,
 } from "@/lib/api"
+import { SectionHeader } from "@/components/section-header"
 import { Save, Loader2 } from "lucide-react"
 
 interface FunctionConfigScalingProps {
@@ -199,16 +200,37 @@ export function FunctionConfigScaling({ func, onUpdate }: FunctionConfigScalingP
     <>
       {/* Auto Scaling Policy */}
       <div className="rounded-xl border border-border bg-card p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-card-foreground">
-              Auto Scaling Policy
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Configure replica scaling behavior based on load and queue pressure.
-            </p>
-          </div>
-        </div>
+        <SectionHeader
+          className="mb-4"
+          title="Auto Scaling Policy"
+          description="Configure replica scaling behavior based on load and queue pressure."
+          titleClassName="text-lg font-semibold text-card-foreground"
+          descriptionClassName="text-sm"
+          action={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                size="sm"
+                onClick={handleSaveAutoScale}
+                disabled={policyLoading || savingAutoScale}
+              >
+                {savingAutoScale ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                Save
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDisableAutoScale}
+                disabled={policyLoading || savingAutoScale || !autoScalePolicy.enabled}
+              >
+                Disable
+              </Button>
+            </div>
+          }
+        />
 
         {policyLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -389,15 +411,6 @@ export function FunctionConfigScaling({ func, onUpdate }: FunctionConfigScalingP
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Button onClick={handleSaveAutoScale} disabled={savingAutoScale}>
-                {savingAutoScale ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                Save Auto Scaling
-              </Button>
-              <Button variant="outline" onClick={handleDisableAutoScale} disabled={savingAutoScale}>
-                Disable
-              </Button>
-            </div>
             {autoScaleMessage && (
               <div className={`text-sm p-3 rounded-lg ${autoScaleMessage.type === "success" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
                 {autoScaleMessage.text}
@@ -409,16 +422,37 @@ export function FunctionConfigScaling({ func, onUpdate }: FunctionConfigScalingP
 
       {/* Capacity Policy */}
       <div className="rounded-xl border border-border bg-card p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-card-foreground">
-              Capacity Protection Policy
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Protect the function from overload with in-flight, queue, and shed controls.
-            </p>
-          </div>
-        </div>
+        <SectionHeader
+          className="mb-4"
+          title="Capacity Protection Policy"
+          description="Protect the function from overload with in-flight, queue, and shed controls."
+          titleClassName="text-lg font-semibold text-card-foreground"
+          descriptionClassName="text-sm"
+          action={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                size="sm"
+                onClick={handleSaveCapacity}
+                disabled={policyLoading || savingCapacity}
+              >
+                {savingCapacity ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                Save
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDisableCapacity}
+                disabled={policyLoading || savingCapacity || !capacityPolicy.enabled}
+              >
+                Disable
+              </Button>
+            </div>
+          }
+        />
 
         {policyLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -536,15 +570,6 @@ export function FunctionConfigScaling({ func, onUpdate }: FunctionConfigScalingP
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Button onClick={handleSaveCapacity} disabled={savingCapacity}>
-                {savingCapacity ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                Save Capacity Policy
-              </Button>
-              <Button variant="outline" onClick={handleDisableCapacity} disabled={savingCapacity}>
-                Disable
-              </Button>
-            </div>
             {capacityMessage && (
               <div className={`text-sm p-3 rounded-lg ${capacityMessage.type === "success" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
                 {capacityMessage.text}

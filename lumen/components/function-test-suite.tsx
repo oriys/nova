@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { SectionEmptyHint } from "@/components/section-empty-hint"
 import { cn } from "@/lib/utils"
 import { functionsApi, aiApi, type InvokeResponse, type TestSuiteCase } from "@/lib/api"
 import { Plus, Play, Trash2, Loader2, CheckCircle2, XCircle, Clock, Save, Sparkles } from "lucide-react"
@@ -320,30 +321,9 @@ export function FunctionTestSuite({ functionName, runtime }: FunctionTestSuitePr
 
       {/* Test Cases */}
       {testCases.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card py-12 text-muted-foreground">
-          <p className="text-sm mb-3">{t("emptyDescription")}</p>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={addTestCase}>
-              <Plus className="mr-2 h-4 w-4" />
-              {t("addFirstTestCase")}
-            </Button>
-            {runtime && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={generateWithAI}
-                disabled={generating}
-              >
-                {generating ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="mr-2 h-4 w-4" />
-                )}
-                {t("aiGenerate")}
-              </Button>
-            )}
-          </div>
-        </div>
+        <SectionEmptyHint className="px-6 py-8 text-center">
+          {t("emptyDescription")}
+        </SectionEmptyHint>
       ) : (
         <div className="space-y-3">
           {testCases.map((tc, index) => (

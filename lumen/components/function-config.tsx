@@ -25,6 +25,7 @@ import { FunctionConfigEnv } from "@/components/function-config-env"
 import { FunctionConfigSnapshots } from "@/components/function-config-snapshots"
 import { FunctionConfigScaling } from "@/components/function-config-scaling"
 import { FunctionConfigDanger } from "@/components/function-config-danger"
+import { SectionHeader } from "@/components/section-header"
 
 interface FunctionConfigProps {
   func: FunctionData
@@ -240,11 +241,20 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
 
   return (
     <div className="space-y-6">
+      <div className="flex justify-end">
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="mr-2 h-4 w-4" />
+          )}
+          Save Changes
+        </Button>
+      </div>
+
       {/* General Settings */}
       <div className="rounded-xl border border-border bg-card p-6">
-        <h3 className="text-lg font-semibold text-card-foreground mb-4">
-          General Settings
-        </h3>
+        <SectionHeader title="General Settings" className="mb-4" />
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <div className="space-y-2">
             <Label htmlFor="handler">Handler</Label>
@@ -324,12 +334,11 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
 
       {/* Resource Limits */}
       <div className="rounded-xl border border-border bg-card p-6">
-        <h3 className="text-lg font-semibold text-card-foreground mb-1">
-          Resource Limits
-        </h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          Configure CPU, disk I/O, and network bandwidth for the VM. Set to 0 for unlimited.
-        </p>
+        <SectionHeader
+          title="Resource Limits"
+          description="Configure CPU, disk I/O, and network bandwidth for the VM. Set to 0 for unlimited."
+          className="mb-4"
+        />
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <div className="space-y-2">
             <Label htmlFor="memory">Memory</Label>
@@ -431,12 +440,11 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
 
       {/* Network Policy */}
       <div className="rounded-xl border border-border bg-card p-6">
-        <h3 className="text-lg font-semibold text-card-foreground mb-1">
-          Network Policy
-        </h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          Configure ingress and egress controls.
-        </p>
+        <SectionHeader
+          title="Network Policy"
+          description="Configure ingress and egress controls."
+          className="mb-4"
+        />
 
         <div className="grid gap-6 sm:grid-cols-2">
           <div className="space-y-2">
@@ -602,12 +610,11 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
 
       {/* Canary Rollout */}
       <div className="rounded-xl border border-border bg-card p-6">
-        <h3 className="text-lg font-semibold text-card-foreground mb-1">
-          Canary Rollout
-        </h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          Split invocation traffic from this function to a canary function.
-        </p>
+        <SectionHeader
+          title="Canary Rollout"
+          description="Split invocation traffic from this function to a canary function."
+          className="mb-4"
+        />
 
         <div className="grid gap-6 sm:grid-cols-3">
           <div className="space-y-2">
@@ -671,12 +678,11 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
 
       {/* Async Destinations */}
       <div className="rounded-xl border border-border bg-card p-6">
-        <h3 className="text-lg font-semibold text-card-foreground mb-1">
-          Async Destinations
-        </h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          Automatically invoke a function or publish to a topic after async invocation completes.
-        </p>
+        <SectionHeader
+          title="Async Destinations"
+          description="Automatically invoke a function or publish to a topic after async invocation completes."
+          className="mb-4"
+        />
 
         <div className="grid gap-6 sm:grid-cols-2">
           <div className="space-y-3">
@@ -751,12 +757,11 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
 
       {/* Tags */}
       <div className="rounded-xl border border-border bg-card p-6">
-        <h3 className="text-lg font-semibold text-card-foreground mb-1">
-          Tags
-        </h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          Key-value labels for grouping and filtering functions.
-        </p>
+        <SectionHeader
+          title="Tags"
+          description="Key-value labels for grouping and filtering functions."
+          className="mb-4"
+        />
 
         {Object.keys(tags).length > 0 && (
           <div className="flex flex-wrap gap-2 mb-4">
@@ -804,18 +809,6 @@ export function FunctionConfig({ func, onUpdate }: FunctionConfigProps) {
             <Plus className="h-4 w-4" />
           </Button>
         </div>
-      </div>
-
-      {/* Save button for General + Resource settings */}
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="mr-2 h-4 w-4" />
-          )}
-          Save Changes
-        </Button>
       </div>
 
       <FunctionConfigEnv func={func} onUpdate={onUpdate} />

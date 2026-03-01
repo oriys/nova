@@ -24,6 +24,7 @@ import {
   RotateCcw,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { SectionHeader as PageSectionHeader } from "@/components/section-header"
 
 // Defines all doc sections that can be toggled/deleted
 type DocSection =
@@ -256,32 +257,34 @@ export function WorkflowDocs({ workflow, currentVersion }: WorkflowDocsProps) {
   if (!docs) {
     return (
       <div className="rounded-xl border border-border bg-card p-8">
-        <div className="flex flex-col items-center justify-center text-center space-y-4">
+        <PageSectionHeader
+          title="Documentation"
+          description="Generate AI-powered documentation for this workflow"
+          className="mb-6"
+          action={(
+            <Button onClick={handleGenerate} disabled={generating} size="sm">
+              {generating ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="mr-2 h-4 w-4" />
+              )}
+              {generating ? "Generating..." : "Generate Documentation"}
+            </Button>
+          )}
+        />
+        {error && (
+          <div className="mb-6 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/70 bg-muted/20 px-6 py-12 text-center space-y-4">
           <FileText className="h-12 w-12 text-muted-foreground/50" />
           <div>
             <h3 className="text-lg font-semibold">No Documentation Yet</h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              Generate AI-powered documentation for this workflow
+            <p className="mt-1 text-sm text-muted-foreground">
+              Generate workflow docs to create a baseline you can refine inline.
             </p>
           </div>
-          {error && (
-            <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-destructive text-sm w-full max-w-md">
-              {error}
-            </div>
-          )}
-          <Button onClick={handleGenerate} disabled={generating} size="lg">
-            {generating ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Generating...
-              </>
-            ) : (
-              <>
-                <Sparkles className="mr-2 h-4 w-4" />
-                Generate Documentation
-              </>
-            )}
-          </Button>
         </div>
       </div>
     )
@@ -344,57 +347,61 @@ export function WorkflowDocs({ workflow, currentVersion }: WorkflowDocsProps) {
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <FileText className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">{docs.name}</h2>
-          {docs.stability && <Badge variant="secondary">{docs.stability}</Badge>}
-          {docs.version && <Badge variant="outline">{docs.version}</Badge>}
-        </div>
-        <div className="flex items-center gap-2">
-          {hasChanges && (
-            <Button variant="ghost" size="sm" onClick={handleRevert} title="Revert changes">
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Revert
+      <PageSectionHeader
+        title={(
+          <>
+            <FileText className="h-5 w-5 text-primary" />
+            <span>{docs.name}</span>
+            {docs.stability && <Badge variant="secondary">{docs.stability}</Badge>}
+            {docs.version && <Badge variant="outline">{docs.version}</Badge>}
+          </>
+        )}
+        titleClassName="flex flex-wrap items-center gap-2"
+        action={(
+          <div className="flex items-center gap-2">
+            {hasChanges && (
+              <Button variant="ghost" size="sm" onClick={handleRevert} title="Revert changes">
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Revert
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleGenerate}
+              disabled={generating}
+              title="Regenerate documentation"
+            >
+              {generating ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="mr-2 h-4 w-4" />
+              )}
+              Regenerate
             </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleGenerate}
-            disabled={generating}
-            title="Regenerate documentation"
-          >
-            {generating ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Sparkles className="mr-2 h-4 w-4" />
-            )}
-            Regenerate
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleSave}
-            disabled={saving || !hasChanges}
-          >
-            {saving ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="mr-2 h-4 w-4" />
-            )}
-            Save
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={handleDeleteAll}
-            title="Delete all documentation"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+            <Button
+              size="sm"
+              onClick={handleSave}
+              disabled={saving || !hasChanges}
+            >
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
+              Save
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDeleteAll}
+              title="Delete all documentation"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+      />
 
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-destructive text-sm">

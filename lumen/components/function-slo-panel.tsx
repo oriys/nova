@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { SectionHeader } from "@/components/section-header"
 import {
   functionsApi,
   type FunctionSLOStatus,
@@ -176,39 +177,44 @@ export function FunctionSLOPanel({ functionName }: FunctionSLOPanelProps) {
   const hasBreaches = (status?.breaches?.length || 0) > 0
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold text-card-foreground">SLO Policy</h3>
-          {!policy.enabled ? (
-            <Badge variant="secondary" className="text-[10px] bg-muted text-muted-foreground border-0">
-              disabled
-            </Badge>
-          ) : hasBreaches ? (
-            <Badge variant="secondary" className="text-[10px] bg-warning/10 text-warning border-0">
-              breached
-            </Badge>
-          ) : (
-            <Badge variant="secondary" className="text-[10px] bg-success/10 text-success border-0">
-              healthy
-            </Badge>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant={policy.enabled ? "secondary" : "outline"} size="sm" onClick={toggleEnabled}>
-            {policy.enabled ? "Enabled" : "Enable"}
-          </Button>
-          <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-            Refresh
-          </Button>
-          <Button size="sm" onClick={savePolicy} disabled={saving}>
-            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Save
-          </Button>
-        </div>
-      </div>
+    <div className="rounded-xl border border-border bg-card p-6">
+      <SectionHeader
+        title={
+          <span className="inline-flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+            <span>SLO Policy</span>
+            {!policy.enabled ? (
+              <Badge variant="secondary" className="text-[10px] bg-muted text-muted-foreground border-0">
+                disabled
+              </Badge>
+            ) : hasBreaches ? (
+              <Badge variant="secondary" className="text-[10px] bg-warning/10 text-warning border-0">
+                breached
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="text-[10px] bg-success/10 text-success border-0">
+                healthy
+              </Badge>
+            )}
+          </span>
+        }
+        titleClassName="text-lg font-semibold text-card-foreground"
+        action={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant={policy.enabled ? "secondary" : "outline"} size="sm" onClick={toggleEnabled}>
+              {policy.enabled ? "Enabled" : "Enable"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Refresh
+            </Button>
+            <Button size="sm" onClick={savePolicy} disabled={saving}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save
+            </Button>
+          </div>
+        }
+      />
 
       <div className="mt-3 flex flex-wrap gap-1.5">
         {PRESETS.map((preset) => (

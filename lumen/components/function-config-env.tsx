@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
+import { SectionHeader } from "@/components/section-header"
 import { FunctionData } from "@/lib/types"
 import { functionsApi } from "@/lib/api"
 import { Plus, Trash2, Eye, EyeOff, Key, Loader2 } from "lucide-react"
@@ -75,20 +76,19 @@ export function FunctionConfigEnv({ func, onUpdate }: FunctionConfigEnvProps) {
   return (
     <>
       <div className="rounded-xl border border-border bg-card p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-card-foreground">
-              Environment Variables
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Manage secrets and configuration values
-            </p>
-          </div>
-          <Button variant="outline" size="sm" onClick={() => setShowAddEnvDialog(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Variable
-          </Button>
-        </div>
+        <SectionHeader
+          className="mb-4"
+          title="Environment Variables"
+          description="Manage secrets and configuration values"
+          titleClassName="text-lg font-semibold text-card-foreground"
+          descriptionClassName="text-sm"
+          action={
+            <Button variant="outline" size="sm" onClick={() => setShowAddEnvDialog(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Variable
+            </Button>
+          }
+        />
 
         <div className="space-y-3">
           {envVars.length === 0 ? (

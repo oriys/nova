@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { SectionHeader } from "@/components/section-header"
 import { snapshotsApi } from "@/lib/api"
 import { Camera, Loader2 } from "lucide-react"
 
@@ -29,29 +30,28 @@ export function FunctionConfigSnapshots({ functionName }: FunctionConfigSnapshot
 
   return (
     <div className="rounded-xl border border-border bg-card p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="text-lg font-semibold text-card-foreground">
-            VM Snapshot
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            Create a snapshot for faster cold starts
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleCreate}
-          disabled={creating}
-        >
-          {creating ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Camera className="mr-2 h-4 w-4" />
-          )}
-          Create Snapshot
-        </Button>
-      </div>
+      <SectionHeader
+        className="mb-4"
+        title="VM Snapshot"
+        description="Create a snapshot for faster cold starts"
+        titleClassName="text-lg font-semibold text-card-foreground"
+        descriptionClassName="text-sm"
+        action={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCreate}
+            disabled={creating}
+          >
+            {creating ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Camera className="mr-2 h-4 w-4" />
+            )}
+            Create Snapshot
+          </Button>
+        }
+      />
       {message && (
         <div className={`text-sm p-3 rounded-lg ${
           message.type === 'success'
