@@ -34,6 +34,7 @@ import (
 	"github.com/oriys/nova/internal/metrics"
 	"github.com/oriys/nova/internal/observability"
 	"github.com/oriys/nova/internal/pool"
+	"github.com/oriys/nova/internal/sandbox"
 	"github.com/oriys/nova/internal/scheduler"
 	"github.com/oriys/nova/internal/secrets"
 	"github.com/oriys/nova/internal/service"
@@ -340,6 +341,9 @@ func daemonCmd() *cobra.Command {
 			}
 
 			var httpServer *http.Server
+			sandboxMgr := sandbox.NewManager(be)
+			defer sandboxMgr.Shutdown()
+
 			if cfg.Daemon.HTTPAddr != "" {
 				httpServer = api.StartHTTPServer(cfg.Daemon.HTTPAddr, api.ServerConfig{
 					Store:                 s,
@@ -358,6 +362,7 @@ func daemonCmd() *cobra.Command {
 					LayerManager:          layerManager,
 					VolumeManager:         volumeManager,
 					AIService:             aiService,
+					SandboxManager:        sandboxMgr,
 					PlaneMode:             api.PlaneModeControlPlane,
 					LocalNodeID:           strings.TrimSpace(os.Getenv("NOVA_CLUSTER_NODE_ID")),
 					ClusterForwardTimeout: 3 * time.Second,
