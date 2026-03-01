@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +11,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/oriys/nova/internal/domain"
 )
+
+// ErrVersionConflict is returned when a version already exists for a function.
+var ErrVersionConflict = errors.New("version already exists")
 
 // SaveFunction persists fn to the functions table using an upsert (INSERT …
 // ON CONFLICT DO UPDATE) keyed on the function ID.
@@ -521,7 +525,7 @@ func (s *PostgresStore) PublishVersion(ctx context.Context, funcID string, versi
 		return fmt.Errorf("publish version: %w", err)
 	}
 	if ct.RowsAffected() == 0 {
-		return fmt.Errorf("publish version: version already exists: %s v%d", funcID, version.Version)
+		return fmt.Errorf("publish version: %w: %s v%d", ErrVersionConflict, funcID, version.Version)
 	}
 	return nil
 }

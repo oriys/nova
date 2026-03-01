@@ -36,8 +36,6 @@ type Gateway struct {
 	paramRoutes    sync.Map             // "domain" -> []*paramRoute (routes with path parameters)
 }
 
-const maxGatewayInvokeAttempts = 10
-
 // compiledSchema holds a pre-parsed JSON Schema for fast validation
 type compiledSchema struct {
 	schema map[string]any
@@ -635,8 +633,8 @@ func routeExecutionPolicy(route *domain.GatewayRoute) (attempts int, backoff tim
 	if attempts < 1 {
 		attempts = 1
 	}
-	if attempts > maxGatewayInvokeAttempts {
-		attempts = maxGatewayInvokeAttempts
+	if attempts > domain.MaxRouteRetryAttempts {
+		attempts = domain.MaxRouteRetryAttempts
 	}
 	if route.RetryPolicy.BackoffMs > 0 {
 		backoff = time.Duration(route.RetryPolicy.BackoffMs) * time.Millisecond

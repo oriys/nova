@@ -24,7 +24,6 @@ const (
 	gatewayDefaultBurstKey  = "gateway.default_rate_limit_burst"
 	gatewayDefaultEnableKey = "gateway.default_rate_limit_enabled"
 	gatewayMaxRouteTimeout  = 120000
-	gatewayMaxRetryAttempts = 5
 	gatewayMaxRetryBackoff  = 30000
 )
 
@@ -380,8 +379,8 @@ func validateRouteExecutionPolicy(timeoutMs int, retry *domain.RouteRetryPolicy)
 	if retry == nil {
 		return nil
 	}
-	if retry.MaxAttempts < 1 || retry.MaxAttempts > gatewayMaxRetryAttempts {
-		return fmt.Errorf("retry_policy.max_attempts must be between 1 and %d", gatewayMaxRetryAttempts)
+	if retry.MaxAttempts < 1 || retry.MaxAttempts > domain.MaxRouteRetryAttempts {
+		return fmt.Errorf("retry_policy.max_attempts must be between 1 and %d", domain.MaxRouteRetryAttempts)
 	}
 	if retry.BackoffMs < 0 || retry.BackoffMs > gatewayMaxRetryBackoff {
 		return fmt.Errorf("retry_policy.backoff_ms must be between 0 and %d", gatewayMaxRetryBackoff)

@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -273,21 +274,22 @@ func (h *Handler) publishVersion(ctx context.Context, fn *domain.Function, code 
 		codeStr = fc.SourceCode
 	}
 
-	for attempt := 0; attempt < 1024; attempt++ {
-		ver := &domain.FunctionVersion{
-			FunctionID: fn.ID,
-			Version:    nextVersion,
-			CodeHash:   fn.CodeHash,
-			Code:       codeStr,
-			Handler:    fn.Handler,
-			MemoryMB:   fn.MemoryMB,
-			TimeoutS:   fn.TimeoutS,
-			Mode:       fn.Mode,
-			Limits:     fn.Limits,
-			EnvVars:    fn.EnvVars,
-		}
+	ver := &domain.FunctionVersion{
+		FunctionID: fn.ID,
+		Version:    nextVersion,
+		CodeHash:   fn.CodeHash,
+		Code:       codeStr,
+		Handler:    fn.Handler,
+		MemoryMB:   fn.MemoryMB,
+		TimeoutS:   fn.TimeoutS,
+		Mode:       fn.Mode,
+		Limits:     fn.Limits,
+		EnvVars:    fn.EnvVars,
+	}
+	for attempt := 0; attempt < 10; attempt++ {
+		ver.Version = nextVersion
 		if err := h.Store.PublishVersion(ctx, fn.ID, ver); err != nil {
-			if strings.Contains(err.Error(), "version already exists") {
+			if errors.Is(err, store.ErrVersionConflict) {
 				nextVersion++
 				continue
 			}

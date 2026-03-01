@@ -347,12 +347,6 @@ func waitForVsockAgent(ctx context.Context, socketPath string, timeout time.Dura
 			return ctx.Err()
 		default:
 		}
-		// First check if the socket file exists
-		if _, err := os.Stat(socketPath); err != nil {
-			time.Sleep(200 * time.Millisecond)
-			continue
-		}
-		// Try connecting
 		conn, err := net.DialTimeout("unix", socketPath, 500*time.Millisecond)
 		if err == nil {
 			conn.Close()

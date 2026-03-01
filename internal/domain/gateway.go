@@ -49,6 +49,9 @@ type RouteRetryPolicy struct {
 	BackoffMs   int `json:"backoff_ms,omitempty"` // fixed delay between retry attempts
 }
 
+// MaxRouteRetryAttempts is the maximum allowed retry attempts for a gateway route.
+const MaxRouteRetryAttempts = 5
+
 // ParamMapping defines how to extract a value from the HTTP request (query string,
 // path parameter, request body, or header) and place it into the function payload
 // with optional name remapping, case transformation, and type coercion.

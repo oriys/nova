@@ -2304,9 +2304,9 @@
       "enabled": "启用",
       "rateLimitRpsOptional": "限流 RPS（可选）",
       "rateLimitBurstOptional": "限流突发（可选）",
-      "timeoutMsOptional": "Timeout ms (optional)",
-      "retryAttemptsOptional": "Retry attempts (optional)",
-      "retryBackoffMsOptional": "Retry backoff ms (optional)"
+      "timeoutMsOptional": "超时毫秒（可选）",
+      "retryAttemptsOptional": "重试次数（可选）",
+      "retryBackoffMsOptional": "重试退避毫秒（可选）"
     },
     "placeholders": {
       "rps": "20",
@@ -2318,9 +2318,9 @@
       "selectFunction": "选择函数",
       "rpsExample": "例如 20",
       "burstExample": "例如 40",
-      "timeoutMsExample": "e.g. 1500",
-      "retryAttemptsExample": "e.g. 3",
-      "retryBackoffMsExample": "e.g. 100"
+      "timeoutMsExample": "例如 1500",
+      "retryAttemptsExample": "例如 3",
+      "retryBackoffMsExample": "例如 100"
     },
     "buttons": {
       "dismiss": "关闭",
@@ -2357,8 +2357,8 @@
       "rateLimitValue": "{rps}/s, burst {burst}",
       "importInvalidSuffix": "，已跳过 {count} 条无效记录",
       "mappingCount": "{count} 个映射",
-      "timeoutValue": "timeout {ms}ms",
-      "retryValue": "retry {attempts}x, backoff {backoff}ms"
+      "timeoutValue": "超时 {ms}ms",
+      "retryValue": "重试 {attempts} 次，退避 {backoff}ms"
     },
     "authStrategies": {
       "none": "none",
@@ -2387,7 +2387,7 @@
       "status": "状态",
       "updated": "更新时间",
       "actions": "操作",
-      "resilience": "Resilience"
+      "resilience": "韧性策略"
     },
     "notices": {
       "templateSaved": "网关默认限流模板已保存",
