@@ -41,12 +41,12 @@ start_service() {
     local log_file="$LOG_DIR/$name.log"
 
     if [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
-        warn "$name already running (PID $(cat "$pid_file"))"
-        return 0
+        warn "$name already running (PID $(cat "$pid_file")); restarting to pick up the latest build"
+        stop_service "$name"
     fi
 
     log "Starting $name..."
-    "$@" > "$log_file" 2>&1 &
+    nohup "$@" > "$log_file" 2>&1 < /dev/null &
     local pid=$!
     echo "$pid" > "$pid_file"
     info "$name started (PID $pid, log: $log_file)"
@@ -225,7 +225,7 @@ start_lumen() {
     fi
 
     log "Starting lumen..."
-    (cd "$ROOT_DIR/lumen" && BACKEND_URL=http://localhost:9000 npx next dev --port 3000) > "$log_file" 2>&1 &
+    nohup env BACKEND_URL=http://localhost:9000 bash -lc "cd \"$ROOT_DIR/lumen\" && npx next dev --port 3000" > "$log_file" 2>&1 < /dev/null &
     local pid=$!
     echo "$pid" > "$pid_file"
     info "lumen started (PID $pid, log: $log_file)"

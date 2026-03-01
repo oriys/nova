@@ -62,11 +62,11 @@ else
 	@echo "nova-vz requires macOS (skipped on $$(uname -s))"
 endif
 
-$(NOVA_BIN): cmd/nova/main.go internal/**/*.go
+$(NOVA_BIN): cmd/nova/main.go cmd/nova/daemon.go internal/**/*.go
 	@mkdir -p $(BINARY_DIR)
 	CGO_ENABLED=0 go build -o $@ ./cmd/nova
 
-$(NOVA_LINUX): cmd/nova/main.go internal/**/*.go
+$(NOVA_LINUX): cmd/nova/main.go cmd/nova/daemon.go internal/**/*.go
 	@mkdir -p $(BINARY_DIR)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $@ ./cmd/nova
 
