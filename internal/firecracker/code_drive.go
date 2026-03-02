@@ -121,9 +121,11 @@ func (m *Manager) calcDriveSizeMB(contentMB float64, metadataBufferMB int) int {
 
 // mke2fsFromDir builds an ext4 image from a host directory using mke2fs -d.
 // Preserves file permissions; no root or mount required.
+// Uses -m 0 (no reserved blocks) and -O ^has_journal (no journal) because
+// code drives are ephemeral and read-only inside the guest VM.
 func mke2fsFromDir(srcDir, drivePath string, sizeMB int) error {
 	sizeArg := fmt.Sprintf("%dM", sizeMB)
-	cmd := exec.Command("mke2fs", "-d", srcDir, "-t", "ext4", "-q", drivePath, sizeArg)
+	cmd := exec.Command("mke2fs", "-d", srcDir, "-t", "ext4", "-m", "0", "-O", "^has_journal", "-q", drivePath, sizeArg)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		os.Remove(drivePath)
 		return fmt.Errorf("mke2fs -d (size=%s, src=%s): %s: %w", sizeArg, srcDir, out, err)
