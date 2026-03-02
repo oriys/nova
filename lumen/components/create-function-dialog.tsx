@@ -110,10 +110,44 @@ function handler($event, $context) {
 
 module.exports = { handler };
 `,
+  kotlin: `object Handler {
+    @JvmStatic
+    fun handler(event: String, context: Map<String, Any>): Any {
+        val name = if (event.contains("name")) "User" else "World"
+        return """{"message": "Hello, ${"$"}name!"}"""
+    }
+}
+`,
+  scala: `object Handler {
+  def handler(event: String, context: Map[String, Any]): Any = {
+    val name = if (event.contains("name")) "User" else "World"
+    s"""{"message": "Hello, ${"$"}name!"}"""
+  }
+}
+`,
+  c: `#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+const char* handler(const char* event, const char* context) {
+    static char result[256];
+    const char* name = strstr(event, "name") ? "User" : "World";
+    snprintf(result, sizeof(result),
+        "{\\"message\\": \\"Hello, %s!\\"}", name);
+    return result;
+}
+`,
+  cpp: `#include <string>
+
+std::string handler(const std::string& event, const std::string& context) {
+    std::string name = (event.find("name") != std::string::npos) ? "User" : "World";
+    return R"({"message": "Hello, )" + name + R"(!"})";
+}
+`,
 }
 
 // Runtimes that require compilation
-const COMPILED_RUNTIMES = ['go', 'rust', 'java', 'kotlin', 'swift', 'zig', 'scala', 'graalvm']
+const COMPILED_RUNTIMES = ['go', 'rust', 'java', 'kotlin', 'swift', 'zig', 'scala', 'graalvm', 'c', 'cpp']
 
 const AWS_FUNCTION_NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
 const AWS_MODULE_HANDLER_PATTERN = /^[A-Za-z0-9_./-]+\.[A-Za-z0-9_$][A-Za-z0-9_$.]*$/
@@ -122,7 +156,7 @@ const AWS_EXECUTABLE_HANDLER_PATTERN = /^[A-Za-z0-9_/-]{1,128}$/
 
 // Get base runtime from versioned ID (e.g., "python3.11" -> "python")
 function getBaseRuntime(runtimeId: string): string {
-  const prefixes = ['python', 'node', 'go', 'rust', 'graalvm', 'java', 'ruby', 'php', 'deno', 'bun']
+  const prefixes = ['python', 'node', 'go', 'rust', 'graalvm', 'java', 'ruby', 'php', 'deno', 'bun', 'kotlin', 'scala', 'cpp', 'c']
   for (const prefix of prefixes) {
     if (runtimeId.startsWith(prefix)) return prefix
   }
