@@ -265,7 +265,7 @@ func insertAsyncInvocation(ctx context.Context, exec interface {
 			$17, $18, $19, $20, $21, $22,
 			$23, $24, $25
 		)
-	`, inv.ID, inv.TenantID, inv.Namespace, inv.FunctionID, inv.FunctionName, nullIfEmpty(inv.WorkflowID), nullIfEmpty(inv.WorkflowName), inv.Payload, string(inv.Status), inv.Attempt, inv.MaxAttempts,
+	`, inv.ID, inv.TenantID, inv.Namespace, inv.FunctionID, inv.FunctionName, inv.WorkflowID, inv.WorkflowName, inv.Payload, string(inv.Status), inv.Attempt, inv.MaxAttempts,
 		inv.BackoffBaseMS, inv.BackoffMaxMS, inv.NextRunAt, nullIfEmpty(inv.LockedBy), inv.LockedUntil,
 		nullIfEmpty(inv.RequestID), inv.Output, inv.DurationMS, inv.ColdStart, nullIfEmpty(inv.LastError), inv.StartedAt,
 		inv.CompletedAt, inv.CreatedAt, inv.UpdatedAt)

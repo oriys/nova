@@ -173,7 +173,16 @@ function getDefaultHandler(runtimeId: string): string {
   if (base === "java" || base === "kotlin" || base === "scala") {
     return "Handler::handler"
   }
-  if (base === "go" || base === "rust" || base === "swift" || base === "zig" || base === "wasm" || base === "graalvm") {
+  if (
+    base === "go" ||
+    base === "rust" ||
+    base === "swift" ||
+    base === "zig" ||
+    base === "wasm" ||
+    base === "graalvm" ||
+    base === "c" ||
+    base === "cpp"
+  ) {
     return "handler"
   }
   return "main.handler"
@@ -277,7 +286,16 @@ function validateAwsCreateInput(params: {
     }
     return null
   }
-  if (base === "go" || base === "rust" || base === "swift" || base === "zig" || base === "wasm" || base === "graalvm") {
+  if (
+    base === "go" ||
+    base === "rust" ||
+    base === "swift" ||
+    base === "zig" ||
+    base === "wasm" ||
+    base === "graalvm" ||
+    base === "c" ||
+    base === "cpp"
+  ) {
     if (!AWS_EXECUTABLE_HANDLER_PATTERN.test(handler)) {
       return "validationCompiledHandler"
     }
