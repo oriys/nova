@@ -1474,7 +1474,12 @@ const kotlinWrapperMain = `fun main(args: Array<String>) {
 `
 
 // Swift: user writes func handler(event: String, context: [String: Any]) -> Any
-const swiftWrapperMain = `import Foundation
+const swiftWrapperMain = `// Avoid Foundation to keep binary truly static
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#endif
 
 struct NovaContext {
     let requestId: String
@@ -1485,27 +1490,38 @@ struct NovaContext {
     let runtime: String
 }
 
+func getEnv(_ name: String) -> String {
+    if let p = getenv(name) { return String(cString: p) }
+    return ""
+}
+
 func buildContext() -> NovaContext {
     return NovaContext(
-        requestId: ProcessInfo.processInfo.environment["NOVA_REQUEST_ID"] ?? "",
-        functionName: ProcessInfo.processInfo.environment["NOVA_FUNCTION_NAME"] ?? "",
-        functionVersion: ProcessInfo.processInfo.environment["NOVA_FUNCTION_VERSION"] ?? "",
-        memoryLimitMB: Int(ProcessInfo.processInfo.environment["NOVA_MEMORY_LIMIT_MB"] ?? "0") ?? 0,
-        timeoutS: Int(ProcessInfo.processInfo.environment["NOVA_TIMEOUT_S"] ?? "0") ?? 0,
-        runtime: ProcessInfo.processInfo.environment["NOVA_RUNTIME"] ?? ""
+        requestId: getEnv("NOVA_REQUEST_ID"),
+        functionName: getEnv("NOVA_FUNCTION_NAME"),
+        functionVersion: getEnv("NOVA_FUNCTION_VERSION"),
+        memoryLimitMB: Int(getEnv("NOVA_MEMORY_LIMIT_MB")) ?? 0,
+        timeoutS: Int(getEnv("NOVA_TIMEOUT_S")) ?? 0,
+        runtime: getEnv("NOVA_RUNTIME")
     )
 }
 
+func readFile(_ path: String) -> String {
+    guard let fp = fopen(path, "r") else { return "" }
+    defer { fclose(fp) }
+    var buf = [CChar](repeating: 0, count: 1024 * 1024)
+    var result = ""
+    while fgets(&buf, Int32(buf.count), fp) != nil {
+        result += String(cString: buf)
+    }
+    return result
+}
+
 let inputPath = CommandLine.arguments[1]
-let data = try! String(contentsOfFile: inputPath, encoding: .utf8)
+let data = readFile(inputPath)
 let ctx = buildContext()
 let result = handler(event: data, context: ctx)
-if let jsonData = try? JSONSerialization.data(withJSONObject: result, options: []),
-   let jsonString = String(data: jsonData, encoding: .utf8) {
-    print(jsonString)
-} else {
-    print(result)
-}
+print(result)
 `
 
 // Zig: user writes pub fn handler(event: []const u8, ctx: Context) ![]const u8

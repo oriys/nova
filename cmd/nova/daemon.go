@@ -193,7 +193,7 @@ func daemonCmd() *cobra.Command {
 				},
 			}
 			switch defaultBackend {
-			case domain.BackendDocker, domain.BackendWasm, domain.BackendKubernetes, domain.BackendLibKrun, domain.BackendFirecracker:
+			case domain.BackendDocker, domain.BackendWasm, domain.BackendKubernetes, domain.BackendLibKrun, domain.BackendFirecracker, domain.BackendAppleVZ:
 			default:
 				return fmt.Errorf("unsupported default backend for nova: %s", defaultBackend)
 			}

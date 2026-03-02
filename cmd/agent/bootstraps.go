@@ -375,6 +375,356 @@ else
 end
 `
 
+const bootstrapElixir = `code_dir = System.get_env("NOVA_CODE_DIR", "/code")
+Code.require_file(Path.join(code_dir, "handler"))
+
+build_context = fn ->
+  timeout_s = String.to_integer(System.get_env("NOVA_TIMEOUT_S", "0"))
+  start_ms = System.monotonic_time(:millisecond)
+  %{
+    function_name: System.get_env("NOVA_FUNCTION_NAME", ""),
+    function_version: System.get_env("NOVA_FUNCTION_VERSION", "$LATEST"),
+    invoked_function_arn: "",
+    memory_limit_in_mb: String.to_integer(System.get_env("NOVA_MEMORY_LIMIT_MB", "128")),
+    request_id: System.get_env("NOVA_REQUEST_ID", ""),
+    log_group_name: "",
+    log_stream_name: "",
+    get_remaining_time_in_millis: fn ->
+      if timeout_s <= 0, do: 300_000,
+      else: max(0, timeout_s * 1000 - (System.monotonic_time(:millisecond) - start_ms))
+    end
+  }
+end
+
+persistent = "--persistent" in System.argv()
+
+if persistent do
+  Enum.each(IO.stream(:stdio, :line), fn line ->
+    line = String.trim(line)
+    if line != "" do
+      req = :json.decode(line)
+      ctx = build_context.()
+      ctx = case req do
+        %{"context" => %{"request_id" => rid}} -> %{ctx | request_id: rid}
+        _ -> ctx
+      end
+      try do
+        input = Map.get(req, "input", %{})
+        result = Handler.handler(input, ctx)
+        IO.puts(:json.encode(result) |> then(fn encoded -> "{\"output\":#{encoded}}" end))
+      rescue
+        e -> IO.puts(:json.encode(%{"error" => Exception.message(e)}))
+      end
+    end
+  end)
+else
+  [json_path | _] = System.argv()
+  event = File.read!(json_path) |> :json.decode()
+  ctx = build_context.()
+  result = Handler.handler(event, ctx)
+  IO.puts(:json.encode(result))
+end
+`
+
+const bootstrapPerl = `#!/usr/bin/env perl
+use strict;
+use warnings;
+use JSON::PP;
+
+my $code_dir = $ENV{NOVA_CODE_DIR} // "/code";
+
+sub build_context {
+    my $timeout_s = int($ENV{NOVA_TIMEOUT_S} // 0);
+    my $start_ms = time() * 1000;
+    return {
+        function_name => $ENV{NOVA_FUNCTION_NAME} // "",
+        function_version => $ENV{NOVA_FUNCTION_VERSION} // '$LATEST',
+        invoked_function_arn => "",
+        memory_limit_in_mb => int($ENV{NOVA_MEMORY_LIMIT_MB} // 128),
+        request_id => $ENV{NOVA_REQUEST_ID} // "",
+        log_group_name => "",
+        log_stream_name => "",
+        get_remaining_time_in_millis => sub {
+            return 300000 if $timeout_s <= 0;
+            my $elapsed = time() * 1000 - $start_ms;
+            my $remaining = $timeout_s * 1000 - $elapsed;
+            return $remaining > 0 ? int($remaining) : 0;
+        },
+    };
+}
+
+do "$code_dir/handler" or die "Cannot load handler: $@$!";
+
+my $persistent = grep { $_ eq "--persistent" } @ARGV;
+
+if ($persistent) {
+    while (my $line = <STDIN>) {
+        chomp $line;
+        next if $line eq "";
+        my $req = decode_json($line);
+        my $ctx = build_context();
+        if ($req->{context} && $req->{context}{request_id}) {
+            $ctx->{request_id} = $req->{context}{request_id};
+        }
+        eval {
+            my $result = handler($req->{input} // {}, $ctx);
+            print encode_json({output => $result}) . "\n";
+        };
+        if ($@) {
+            print encode_json({error => "$@"}) . "\n";
+        }
+        STDOUT->flush();
+    }
+} else {
+    open my $fh, "<", $ARGV[0] or die "Cannot open $ARGV[0]: $!";
+    my $json = do { local $/; <$fh> };
+    close $fh;
+    my $event = decode_json($json);
+    my $ctx = build_context();
+    my $result = handler($event, $ctx);
+    print encode_json($result) . "\n";
+}
+`
+
+const bootstrapR = `args <- commandArgs(trailingOnly = TRUE)
+persistent <- "--persistent" %in% args
+
+build_context <- function() {
+  timeout_s <- as.integer(Sys.getenv("NOVA_TIMEOUT_S", "0"))
+  start_ms <- as.numeric(proc.time()["elapsed"]) * 1000
+  list(
+    function_name = Sys.getenv("NOVA_FUNCTION_NAME", ""),
+    function_version = Sys.getenv("NOVA_FUNCTION_VERSION", "$LATEST"),
+    invoked_function_arn = "",
+    memory_limit_in_mb = as.integer(Sys.getenv("NOVA_MEMORY_LIMIT_MB", "128")),
+    request_id = Sys.getenv("NOVA_REQUEST_ID", ""),
+    log_group_name = "",
+    log_stream_name = "",
+    get_remaining_time_in_millis = function() {
+      if (timeout_s <= 0) return(300000)
+      elapsed <- as.numeric(proc.time()["elapsed"]) * 1000 - start_ms
+      return(max(0, as.integer(timeout_s * 1000 - elapsed)))
+    }
+  )
+}
+
+code_dir <- Sys.getenv("NOVA_CODE_DIR", "/code")
+source(file.path(code_dir, "handler"))
+
+if (persistent) {
+  con <- file("stdin", "r")
+  while (TRUE) {
+    line <- readLines(con, n = 1)
+    if (length(line) == 0) break
+    if (nchar(trimws(line)) == 0) next
+    req <- jsonlite::fromJSON(line, simplifyVector = FALSE)
+    ctx <- build_context()
+    if (!is.null(req$context$request_id)) ctx$request_id <- req$context$request_id
+    tryCatch({
+      result <- handler(if (is.null(req$input)) list() else req$input, ctx)
+      cat(jsonlite::toJSON(list(output = result), auto_unbox = TRUE), "\n", sep = "")
+      flush(stdout())
+    }, error = function(e) {
+      cat(jsonlite::toJSON(list(error = conditionMessage(e)), auto_unbox = TRUE), "\n", sep = "")
+      flush(stdout())
+    })
+  }
+  close(con)
+} else {
+  json_path <- args[!args %in% "--persistent"][1]
+  event <- jsonlite::fromJSON(json_path, simplifyVector = FALSE)
+  ctx <- build_context()
+  result <- handler(event, ctx)
+  cat(jsonlite::toJSON(result, auto_unbox = TRUE), "\n", sep = "")
+}
+`
+
+const bootstrapJulia = `# Minimal JSON parser/serializer (no external packages required)
+module MiniJSON
+    function parse_value(s, i)
+        i = skip_ws(s, i)
+        c = s[i]
+        if c == '"'
+            return parse_string(s, i)
+        elseif c == '{'
+            return parse_object(s, i)
+        elseif c == '['
+            return parse_array(s, i)
+        elseif c == 't' && SubString(s, i, i+3) == "true"
+            return true, i+4
+        elseif c == 'f' && SubString(s, i, i+4) == "false"
+            return false, i+5
+        elseif c == 'n' && SubString(s, i, i+3) == "null"
+            return nothing, i+4
+        else
+            return parse_number(s, i)
+        end
+    end
+    function skip_ws(s, i)
+        while i <= lastindex(s) && s[i] in (' ', '\t', '\n', '\r'); i = nextind(s, i); end
+        return i
+    end
+    function parse_string(s, i)
+        i = nextind(s, i)  # skip opening "
+        buf = IOBuffer()
+        while i <= lastindex(s) && s[i] != '"'
+            if s[i] == '\\'
+                i = nextind(s, i)
+                c = s[i]
+                if c == 'n'; write(buf, '\n')
+                elseif c == 't'; write(buf, '\t')
+                elseif c == 'r'; write(buf, '\r')
+                elseif c == '"'; write(buf, '"')
+                elseif c == '\\'; write(buf, '\\')
+                elseif c == '/'; write(buf, '/')
+                elseif c == 'u'
+                    hex = SubString(s, nextind(s, i), nextind(s, i, 4))
+                    write(buf, Char(Base.parse(UInt16, hex; base=16)))
+                    i = nextind(s, i, 4)
+                end
+            else
+                write(buf, s[i])
+            end
+            i = nextind(s, i)
+        end
+        return String(take!(buf)), nextind(s, i)  # skip closing "
+    end
+    function parse_number(s, i)
+        j = i
+        while j <= lastindex(s) && s[j] in ('-', '+', '.', 'e', 'E', '0':'9'...); j = nextind(s, j); end
+        ns = SubString(s, i, prevind(s, j))
+        val = occursin('.', ns) || occursin('e', ns) || occursin('E', ns) ? Base.parse(Float64, ns) : Base.parse(Int64, ns)
+        return val, j
+    end
+    function parse_object(s, i)
+        d = Dict{String,Any}()
+        i = skip_ws(s, nextind(s, i))
+        s[i] == '}' && return d, nextind(s, i)
+        while true
+            i = skip_ws(s, i)
+            key, i = parse_string(s, i)
+            i = skip_ws(s, i)
+            i = nextind(s, i)  # skip :
+            val, i = parse_value(s, i)
+            d[key] = val
+            i = skip_ws(s, i)
+            s[i] == '}' && return d, nextind(s, i)
+            i = nextind(s, i)  # skip ,
+        end
+    end
+    function parse_array(s, i)
+        a = Any[]
+        i = skip_ws(s, nextind(s, i))
+        s[i] == ']' && return a, nextind(s, i)
+        while true
+            val, i = parse_value(s, i)
+            push!(a, val)
+            i = skip_ws(s, i)
+            s[i] == ']' && return a, nextind(s, i)
+            i = nextind(s, i)  # skip ,
+        end
+    end
+    function parse(s::AbstractString)
+        val, _ = parse_value(s, firstindex(s))
+        return val
+    end
+    parsefile(path) = parse(read(path, String))
+    function json(x)
+        buf = IOBuffer()
+        _write(buf, x)
+        return String(take!(buf))
+    end
+    _write(io, ::Nothing) = print(io, "null")
+    _write(io, x::Bool) = print(io, x ? "true" : "false")
+    _write(io, x::Integer) = print(io, x)
+    _write(io, x::AbstractFloat) = isinteger(x) && isfinite(x) ? print(io, Int(x)) : print(io, x)
+    function _write(io, s::AbstractString)
+        print(io, '"')
+        for c in s
+            if c == '"'; print(io, "\\\"")
+            elseif c == '\\'; print(io, "\\\\")
+            elseif c == '\n'; print(io, "\\n")
+            elseif c == '\r'; print(io, "\\r")
+            elseif c == '\t'; print(io, "\\t")
+            else print(io, c)
+            end
+        end
+        print(io, '"')
+    end
+    function _write(io, d::AbstractDict)
+        print(io, '{')
+        first = true
+        for (k, v) in d
+            first || print(io, ',')
+            _write(io, string(k))
+            print(io, ':')
+            _write(io, v)
+            first = false
+        end
+        print(io, '}')
+    end
+    function _write(io, a::AbstractVector)
+        print(io, '[')
+        for (i, v) in enumerate(a)
+            i > 1 && print(io, ',')
+            _write(io, v)
+        end
+        print(io, ']')
+    end
+    _write(io, x) = _write(io, string(x))
+end
+
+function build_context()
+    timeout_s = Base.parse(Int, get(ENV, "NOVA_TIMEOUT_S", "0"))
+    start_ms = time() * 1000
+    return Dict{String,Any}(
+        "function_name" => get(ENV, "NOVA_FUNCTION_NAME", ""),
+        "function_version" => get(ENV, "NOVA_FUNCTION_VERSION", "\$LATEST"),
+        "invoked_function_arn" => "",
+        "memory_limit_in_mb" => Base.parse(Int, get(ENV, "NOVA_MEMORY_LIMIT_MB", "128")),
+        "request_id" => get(ENV, "NOVA_REQUEST_ID", ""),
+        "log_group_name" => "",
+        "log_stream_name" => "",
+        "get_remaining_time_in_millis" => () -> begin
+            timeout_s <= 0 && return 300000
+            return max(0, round(Int, timeout_s * 1000 - (time() * 1000 - start_ms)))
+        end,
+    )
+end
+
+code_dir = get(ENV, "NOVA_CODE_DIR", "/code")
+include(joinpath(code_dir, "handler"))
+
+persistent = "--persistent" in ARGS
+
+if persistent
+    for line in eachline(stdin)
+        line = strip(line)
+        isempty(line) && continue
+        req = MiniJSON.parse(line)
+        ctx = build_context()
+        if haskey(req, "context") && haskey(req["context"], "request_id")
+            ctx["request_id"] = req["context"]["request_id"]
+        end
+        try
+            input = get(req, "input", Dict{String,Any}())
+            result = handler(input, ctx)
+            println(MiniJSON.json(Dict{String,Any}("output" => result)))
+            flush(stdout)
+        catch e
+            println(MiniJSON.json(Dict{String,Any}("error" => string(e))))
+            flush(stdout)
+        end
+    end
+else
+    json_path = ARGS[findfirst(a -> a != "--persistent", ARGS)]
+    event = MiniJSON.parsefile(json_path)
+    ctx = build_context()
+    result = handler(event, ctx)
+    println(MiniJSON.json(result))
+end
+`
+
 // bootstrapExtension returns the file extension for a given runtime's bootstrap.
 func bootstrapExtension(runtime string) string {
 	switch runtime {
@@ -390,6 +740,14 @@ func bootstrapExtension(runtime string) string {
 		return ".ts"
 	case "lua":
 		return ".lua"
+	case "elixir":
+		return ".exs"
+	case "perl":
+		return ".pl"
+	case "r":
+		return ".R"
+	case "julia":
+		return ".jl"
 	default:
 		return ""
 	}
@@ -410,6 +768,14 @@ func bootstrapContent(runtime string) string {
 		return bootstrapDeno
 	case "lua":
 		return bootstrapLua
+	case "elixir":
+		return bootstrapElixir
+	case "perl":
+		return bootstrapPerl
+	case "r":
+		return bootstrapR
+	case "julia":
+		return bootstrapJulia
 	default:
 		return ""
 	}

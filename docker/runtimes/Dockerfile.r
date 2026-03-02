@@ -4,6 +4,9 @@ FROM r-base:4.4.3
 # Install nova-agent
 COPY bin/nova-agent /usr/local/bin/nova-agent
 
+# Install jsonlite for JSON parsing in bootstrap
+RUN R -e 'install.packages("jsonlite", repos="https://cloud.r-project.org")'
+
 # Create directories
 RUN mkdir -p /code /tmp && chmod 1777 /tmp
 

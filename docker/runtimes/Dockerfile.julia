@@ -10,7 +10,7 @@ RUN mkdir -p /code /tmp && chmod 1777 /tmp
 # Set environment for Docker mode
 ENV NOVA_AGENT_MODE=tcp
 ENV NOVA_SKIP_MOUNT=true
-ENV PATH="/usr/local/bin:/usr/bin:/bin"
+ENV PATH="/usr/local/julia/bin:/usr/local/bin:/usr/bin:/bin"
 
 EXPOSE 9999
 

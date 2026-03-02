@@ -535,11 +535,7 @@ func ensureDockerImages(ctx context.Context, images []string, inspect imageInspe
 		if exists {
 			continue
 		}
-		logging.Op().Info("docker runtime image missing, pulling", "image", image)
-		if err := pull(ctx, image); err != nil {
-			return err
-		}
-		logging.Op().Info("docker runtime image ready", "image", image)
+		logging.Op().Warn("docker runtime image not found locally, skipping", "image", image)
 	}
 	return nil
 }

@@ -83,6 +83,10 @@ const (
 	luaPath      = "/usr/bin/lua"
 	denoPath     = "/usr/local/bin/deno"
 	bunPath      = "/usr/local/bin/bun"
+	elixirPath   = "/usr/local/bin/elixir"
+	perlPath     = "/usr/local/bin/perl"
+	rscriptPath  = "/usr/bin/Rscript"
+	juliaPath    = "/usr/local/bin/julia"
 
 	maxPersistentResponseBytes = 4 * 1024 * 1024 // 4MB
 )
@@ -507,7 +511,15 @@ func (a *Agent) startPersistentProcess() error {
 		cmd = exec.Command(resolveBinary(bunPath, "bun"), "run", "/tmp/_bootstrap.js", "--persistent")
 	case "lua":
 		cmd = exec.Command(resolveBinary(luaPath, "lua"), "/tmp/_bootstrap.lua", "--persistent")
-	case "go", "rust", "c", "cpp":
+	case "elixir":
+		cmd = exec.Command(resolveBinary(elixirPath, "elixir"), "/tmp/_bootstrap.exs", "--persistent")
+	case "perl":
+		cmd = exec.Command(resolveBinary(perlPath, "perl"), "/tmp/_bootstrap.pl", "--persistent")
+	case "r":
+		cmd = exec.Command(resolveBinary(rscriptPath, "Rscript"), "/tmp/_bootstrap.R", "--persistent")
+	case "julia":
+		cmd = exec.Command(resolveBinary(juliaPath, "julia"), "/tmp/_bootstrap.jl", "--persistent")
+	case "go", "rust", "zig", "swift", "c", "cpp", "graalvm":
 		cmd = exec.Command(CodePath, "--persistent")
 	case "wasm":
 		cmd = exec.Command(resolveBinary(wasmtimePath, "wasmtime"), CodePath, "--", "--persistent")
@@ -527,6 +539,9 @@ func (a *Agent) startPersistentProcess() error {
 	)
 	if a.function.StateEnabled {
 		cmd.Env = append(cmd.Env, "NOVA_STATE_URL=http://127.0.0.1:8399")
+	}
+	if a.function.Runtime == "swift" {
+		cmd.Env = append(cmd.Env, "SWIFT_ROOT=/usr")
 	}
 	// Add dependency paths based on runtime
 	cmd.Env = appendDependencyEnv(cmd.Env, a.function.Runtime)
@@ -725,7 +740,7 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID s
 			"php": true, "deno": true, "bun": true, "lua": true,
 			"java": true, "wasmtime": true, "dotnet": true, "swift": true,
 			"perl": true, "r": true, "Rscript": true, "julia": true,
-			"handler": true, "bootstrap": true,
+			"elixir": true, "handler": true, "bootstrap": true,
 		}
 
 		isAllowedBinary := allowed[exe]
@@ -760,6 +775,14 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID s
 			cmd = exec.CommandContext(ctx, resolveBinary(bunPath, "bun"), "run", "/tmp/_bootstrap.js", "/tmp/input.json")
 		case "lua":
 			cmd = exec.CommandContext(ctx, resolveBinary(luaPath, "lua"), "/tmp/_bootstrap.lua", "/tmp/input.json")
+		case "elixir":
+			cmd = exec.CommandContext(ctx, resolveBinary(elixirPath, "elixir"), "/tmp/_bootstrap.exs", "/tmp/input.json")
+		case "perl":
+			cmd = exec.CommandContext(ctx, resolveBinary(perlPath, "perl"), "/tmp/_bootstrap.pl", "/tmp/input.json")
+		case "r":
+			cmd = exec.CommandContext(ctx, resolveBinary(rscriptPath, "Rscript"), "/tmp/_bootstrap.R", "/tmp/input.json")
+		case "julia":
+			cmd = exec.CommandContext(ctx, resolveBinary(juliaPath, "julia"), "/tmp/_bootstrap.jl", "/tmp/input.json")
 		case "go", "rust", "zig", "swift", "c", "cpp", "graalvm":
 			cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
 		case "wasm":
@@ -787,6 +810,9 @@ func (a *Agent) executeFunction(input json.RawMessage, timeoutS int, requestID s
 	)
 	if a.function.StateEnabled {
 		cmd.Env = append(cmd.Env, "NOVA_STATE_URL=http://127.0.0.1:8399")
+	}
+	if a.function.Runtime == "swift" {
+		cmd.Env = append(cmd.Env, "SWIFT_ROOT=/usr")
 	}
 	// Inject W3C trace context for automatic propagation (Feature 5)
 	if traceParent != "" {
@@ -887,8 +913,28 @@ func (a *Agent) handleStreamingExec(conn net.Conn, req *ExecPayload) (*Message, 
 			cmd = exec.CommandContext(ctx, resolveBinary(nodePath, "node"), "/tmp/_bootstrap.js", "/tmp/input.json")
 		case "ruby":
 			cmd = exec.CommandContext(ctx, resolveBinary(rubyPath, "ruby"), "/tmp/_bootstrap.rb", "/tmp/input.json")
+		case "php":
+			cmd = exec.CommandContext(ctx, resolveBinary(phpPath, "php"), "/tmp/_bootstrap.php", "/tmp/input.json")
+		case "deno":
+			cmd = exec.CommandContext(ctx, resolveBinary(denoPath, "deno"), "run", "--allow-read", "--allow-env", "/tmp/_bootstrap.ts", "/tmp/input.json")
+		case "bun":
+			cmd = exec.CommandContext(ctx, resolveBinary(bunPath, "bun"), "run", "/tmp/_bootstrap.js", "/tmp/input.json")
+		case "lua":
+			cmd = exec.CommandContext(ctx, resolveBinary(luaPath, "lua"), "/tmp/_bootstrap.lua", "/tmp/input.json")
+		case "elixir":
+			cmd = exec.CommandContext(ctx, resolveBinary(elixirPath, "elixir"), "/tmp/_bootstrap.exs", "/tmp/input.json")
+		case "perl":
+			cmd = exec.CommandContext(ctx, resolveBinary(perlPath, "perl"), "/tmp/_bootstrap.pl", "/tmp/input.json")
+		case "r":
+			cmd = exec.CommandContext(ctx, resolveBinary(rscriptPath, "Rscript"), "/tmp/_bootstrap.R", "/tmp/input.json")
+		case "julia":
+			cmd = exec.CommandContext(ctx, resolveBinary(juliaPath, "julia"), "/tmp/_bootstrap.jl", "/tmp/input.json")
 		case "go", "rust", "zig", "swift", "c", "cpp", "graalvm":
 			cmd = exec.CommandContext(ctx, CodePath, "/tmp/input.json")
+		case "wasm":
+			cmd = exec.CommandContext(ctx, resolveBinary(wasmtimePath, "wasmtime"), CodePath, "--", "/tmp/input.json")
+		case "java", "kotlin", "scala":
+			cmd = exec.CommandContext(ctx, resolveBinary(javaPath, "java"), "-jar", CodePath, "/tmp/input.json")
 		default:
 			errMsg := fmt.Sprintf("streaming not supported for runtime: %s", a.function.Runtime)
 			sendChunk(nil, true, errMsg)
@@ -909,6 +955,9 @@ func (a *Agent) handleStreamingExec(conn net.Conn, req *ExecPayload) (*Message, 
 	)
 	if a.function.StateEnabled {
 		cmd.Env = append(cmd.Env, "NOVA_STATE_URL=http://127.0.0.1:8399")
+	}
+	if a.function.Runtime == "swift" {
+		cmd.Env = append(cmd.Env, "SWIFT_ROOT=/usr")
 	}
 	// Inject W3C trace context for automatic propagation
 	if req.TraceParent != "" {
@@ -1274,6 +1323,14 @@ func normalizeRuntime(rt string) string {
 		return "zig"
 	case strings.HasPrefix(rt, "graalvm"):
 		return "graalvm"
+	case strings.HasPrefix(rt, "elixir"):
+		return "elixir"
+	case strings.HasPrefix(rt, "perl"):
+		return "perl"
+	case strings.HasPrefix(rt, "julia"):
+		return "julia"
+	case rt == "r":
+		return "r"
 	default:
 		return rt
 	}

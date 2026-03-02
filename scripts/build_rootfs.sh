@@ -35,6 +35,7 @@ GRAALVM_VERSION="${GRAALVM_VERSION:-21.0.2}"
 ROOTFS_SIZE_MB="${ROOTFS_SIZE_MB:-256}"
 ROOTFS_SIZE_JAVA_MB="${ROOTFS_SIZE_JAVA_MB:-512}"
 ROOTFS_SIZE_GRAALVM_MB="${ROOTFS_SIZE_GRAALVM_MB:-512}"
+ROOTFS_SIZE_JULIA_MB="${ROOTFS_SIZE_JULIA_MB:-1024}"
 BASE_ROOTFS_SIZE_MB="${BASE_ROOTFS_SIZE_MB:-32}"
 
 OUT_DIR="${OUT_DIR:-/opt/nova/rootfs}"
@@ -45,6 +46,7 @@ TARGET_ARCH="${TARGET_ARCH:-x86_64}"
 
 if [[ "${TARGET_ARCH}" == "aarch64" ]]; then
   ALPINE_URL="${ALPINE_URL:-https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/aarch64/alpine-minirootfs-3.23.3-aarch64.tar.gz}"
+  DEBIAN_ARCH="arm64"
   ARCH_SUFFIX="-arm64"
   WASMTIME_ARCH="aarch64"
   DENO_ARCH="aarch64"
@@ -55,6 +57,7 @@ if [[ "${TARGET_ARCH}" == "aarch64" ]]; then
   GRAALVM_ARCH="aarch64"
 else
   ALPINE_URL="${ALPINE_URL:-https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.3-x86_64.tar.gz}"
+  DEBIAN_ARCH="amd64"
   ARCH_SUFFIX=""
   WASMTIME_ARCH="x86_64"
   DENO_ARCH="x86_64"
@@ -208,6 +211,20 @@ stage_alpine_root() {
   # Fetch to a temporary file then untar
   local tmp_tar="${root}/alpine.tar.gz"
   fetch_asset "${ALPINE_URL}" "alpine-minirootfs${ARCH_SUFFIX}.tar.gz" "${tmp_tar}"
+  tar -xzf "${tmp_tar}" -C "${root}"
+  rm "${tmp_tar}"
+
+  mkdir -p "${root}"/{code,tmp,usr/local/bin,proc,sys}
+  make_dev_nodes "${root}"
+  echo "nameserver 8.8.8.8" > "${root}/etc/resolv.conf"
+}
+
+stage_debian_root() {
+  local root="$1"
+  local tmp_tar="${root}/debian.tar.gz"
+  # Debian rootfs must be pre-extracted from docker image and placed in
+  # assets/downloads/ (e.g. via: docker export $(docker create debian:bookworm-slim) | gzip > debian-bookworm-slim-arm64.tar.gz)
+  fetch_asset "" "debian-bookworm-slim${ARCH_SUFFIX:-"-amd64"}.tar.gz" "${tmp_tar}"
   tar -xzf "${tmp_tar}" -C "${root}"
   rm "${tmp_tar}"
 
@@ -430,11 +447,14 @@ build_perl_rootfs() {
 }
 
 build_r_rootfs() {
-  log "Building R rootfs (Alpine + R)..."
+  log "Building R rootfs (Alpine + R + jsonlite)..."
   local tmp
   tmp="$(mktemp -d)"
   stage_alpine_root "${tmp}"
-  apk_add "${tmp}" R
+  apk_add "${tmp}" R R-dev gcc musl-dev
+  chroot "${tmp}" /bin/sh -c 'Rscript -e "install.packages(\"jsonlite\", repos=\"https://cloud.r-project.org\", quiet=TRUE)"' >/dev/null 2>&1
+  # Remove build-only deps to save space
+  chroot "${tmp}" /bin/sh -c "apk del --no-cache R-dev gcc musl-dev 2>/dev/null" >/dev/null 2>&1 || true
   inject_agent_init "${tmp}"
   build_image_from_dir "${OUT_DIR}/r${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
   rm -rf "${tmp}"
@@ -442,13 +462,12 @@ build_r_rootfs() {
 }
 
 build_julia_rootfs() {
-  log "Building julia rootfs (Alpine + julia binary)..."
+  log "Building julia rootfs (Debian slim + julia binary)..."
   local tmp
   tmp="$(mktemp -d)"
-  stage_alpine_root "${tmp}"
-
-  # julia is glibc-linked; add compatibility layer.
-  apk_add "${tmp}" gcompat libstdc++ libgcc
+  # Julia uses GNU IFUNC for CPU dispatch (jl_crc32c). musl doesn't support
+  # IFUNC, so we need a glibc-based rootfs instead of Alpine.
+  stage_debian_root "${tmp}"
 
   local julia_tmp
   julia_tmp="$(mktemp -d)"
@@ -463,14 +482,24 @@ build_julia_rootfs() {
 
   tar -xzf "${julia_tmp}/julia.tar.gz" -C "${julia_tmp}"
   cp -a "${julia_tmp}"/julia-*/bin/julia "${tmp}/usr/local/bin/julia"
-  cp -a "${julia_tmp}"/julia-*/lib/* "${tmp}/usr/local/lib/" 2>/dev/null || true
-  # Julia also needs its share directory for stdlib
+  # Copy only essential libs, skip compiled package cache (.ji and .so in compiled/)
+  mkdir -p "${tmp}/usr/local/lib"
+  cp -a "${julia_tmp}"/julia-*/lib/libjulia* "${tmp}/usr/local/lib/" 2>/dev/null || true
+  cp -a "${julia_tmp}"/julia-*/lib/julia "${tmp}/usr/local/lib/" 2>/dev/null || true
+  # Julia needs its share directory for stdlib source
   mkdir -p "${tmp}/usr/local/share"
   cp -a "${julia_tmp}"/julia-*/share/julia "${tmp}/usr/local/share/" 2>/dev/null || true
+  # Remove pre-compiled package caches (they will be recompiled on first use)
+  rm -rf "${tmp}/usr/local/share/julia/compiled" 2>/dev/null || true
+  # Remove docs and man pages
+  rm -rf "${tmp}/usr/local/share/julia/doc" "${tmp}/usr/local/share/julia/man" 2>/dev/null || true
+  rm -rf "${tmp}/usr/local/share/doc" "${tmp}/usr/local/share/man" 2>/dev/null || true
+  # Julia needs its etc directory
+  cp -a "${julia_tmp}"/julia-*/etc "${tmp}/usr/local/" 2>/dev/null || true
   rm -rf "${julia_tmp}"
 
   inject_agent_init "${tmp}"
-  build_image_from_dir "${OUT_DIR}/julia${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
+  build_image_from_dir "${OUT_DIR}/julia${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_JULIA_MB}" "${tmp}"
   rm -rf "${tmp}"
   log "julia${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/julia${ARCH_SUFFIX}.ext4"
 }

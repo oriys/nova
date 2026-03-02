@@ -122,6 +122,20 @@ func (m *Manager) rootfsForRuntime(rt domain.Runtime) string {
 		base = "lua"
 	case r == string(domain.RuntimeWasm) || strings.HasPrefix(r, "wasm"):
 		base = "wasm"
+	case r == string(domain.RuntimeGraalVM) || strings.HasPrefix(r, "graalvm"):
+		base = "graalvm"
+	case r == string(domain.RuntimeElixir) || strings.HasPrefix(r, "elixir"):
+		base = "elixir"
+	case r == string(domain.RuntimePerl) || strings.HasPrefix(r, "perl"):
+		base = "perl"
+	case r == string(domain.RuntimeR):
+		base = "r"
+	case r == string(domain.RuntimeJulia) || strings.HasPrefix(r, "julia"):
+		base = "julia"
+	case r == string(domain.RuntimeSwift) || strings.HasPrefix(r, "swift"):
+		base = "swift"
+	case r == string(domain.RuntimeZig):
+		base = "base"
 	case r == string(domain.RuntimeC) || r == string(domain.RuntimeCpp):
 		base = "base"
 	}
