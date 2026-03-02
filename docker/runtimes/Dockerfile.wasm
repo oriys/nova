@@ -1,12 +1,22 @@
 # WASM runtime image (with Wasmtime)
 FROM debian:bookworm-slim
 
-# Install wasmtime (.tar.xz archive requires xz-utils)
+ARG TARGETARCH
+
+# Install wasmtime via direct download (more reliable than installer script)
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates xz-utils && \
-    curl https://wasmtime.dev/install.sh -sSf | bash && \
-    mv /root/.wasmtime/bin/wasmtime /usr/local/bin/ && \
+    WASMTIME_VERSION="v42.0.1" && \
+    case "$TARGETARCH" in \
+        amd64) WASMTIME_ARCH="x86_64" ;; \
+        arm64) WASMTIME_ARCH="aarch64" ;; \
+        *) echo "Unsupported arch: $TARGETARCH" && exit 1 ;; \
+    esac && \
+    curl -fSL "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-${WASMTIME_ARCH}-linux.tar.xz" \
+        -o /tmp/wasmtime.tar.xz && \
+    tar xJf /tmp/wasmtime.tar.xz -C /tmp && \
+    mv /tmp/wasmtime-${WASMTIME_VERSION}-${WASMTIME_ARCH}-linux/wasmtime /usr/local/bin/ && \
     apt-get remove -y curl xz-utils && apt-get autoremove -y && \
-    rm -rf /var/lib/apt/lists/* /root/.wasmtime
+    rm -rf /var/lib/apt/lists/* /tmp/wasmtime*
 
 # Install nova-agent
 COPY bin/nova-agent /usr/local/bin/nova-agent

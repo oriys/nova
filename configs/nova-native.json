@@ -46,5 +46,17 @@
   },
   "gateway": {
     "enabled": true
+  },
+  "libkrun": {
+    "code_dir": "/tmp/nova/libkrun-code",
+    "port_range_min": 40000,
+    "port_range_max": 40100
+  },
+  "kubernetes": {
+    "namespace": "nova-functions",
+    "image_prefix": "nova-runtime"
+  },
+  "wasm": {
+    "code_dir": "/tmp/nova/wasm-code"
   }
 }

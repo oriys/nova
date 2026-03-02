@@ -1234,6 +1234,20 @@ func resolveBinary(preferredPath, name string) string {
 			return preferredPath
 		}
 	}
+	// Check well-known extra locations (e.g. homebrew, user-local installs)
+	home, _ := os.UserHomeDir()
+	extras := []string{
+		"/opt/homebrew/bin/" + name,
+		"/usr/local/bin/" + name,
+	}
+	if home != "" {
+		extras = append(extras, home+"/.bun/bin/"+name, home+"/.deno/bin/"+name)
+	}
+	for _, p := range extras {
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+			return p
+		}
+	}
 	return name
 }
 
