@@ -18,12 +18,18 @@ func TestRuntimeDockerImages_UniqueAndSorted(t *testing.T) {
 		"nova-runtime-base",
 		"nova-runtime-bun",
 		"nova-runtime-deno",
+		"nova-runtime-elixir",
+		"nova-runtime-graalvm",
 		"nova-runtime-java",
+		"nova-runtime-julia",
 		"nova-runtime-lua",
 		"nova-runtime-node",
+		"nova-runtime-perl",
 		"nova-runtime-php",
 		"nova-runtime-python",
+		"nova-runtime-r",
 		"nova-runtime-ruby",
+		"nova-runtime-swift",
 		"nova-runtime-wasm",
 	}
 	if !reflect.DeepEqual(images, want) {

@@ -2,16 +2,22 @@
 # build_rootfs.sh - Build Nova rootfs images for all supported runtimes.
 #
 # Images produced (same naming as internal/firecracker/rootfsForRuntime):
-#   base.ext4   - Go/Rust (static binaries)
-#   python.ext4 - Python (apk python3)
-#   node.ext4   - Node.js (apk nodejs)
-#   ruby.ext4   - Ruby (apk ruby)
-#   java.ext4   - Java (apk openjdk21-jre-headless)
-#   wasm.ext4   - WASM (wasmtime + glibc compat)
-#   php.ext4    - PHP (apk php)
-#   lua.ext4    - Lua (apk lua5.4)
-#   deno.ext4   - Deno (deno binary + glibc compat)
-#   bun.ext4    - Bun (bun binary, musl)
+#   base.ext4    - Go/Rust/Zig/C/C++ (static binaries)
+#   python.ext4  - Python (apk python3)
+#   node.ext4    - Node.js (apk nodejs)
+#   ruby.ext4    - Ruby (apk ruby)
+#   java.ext4    - Java (apk openjdk21-jre-headless)
+#   wasm.ext4    - WASM (wasmtime + glibc compat)
+#   php.ext4     - PHP (apk php)
+#   lua.ext4     - Lua (apk lua5.4)
+#   deno.ext4    - Deno (deno binary + glibc compat)
+#   bun.ext4     - Bun (bun binary, musl)
+#   elixir.ext4  - Elixir (apk elixir + erlang)
+#   perl.ext4    - Perl (apk perl)
+#   r.ext4       - R (apk R)
+#   julia.ext4   - Julia (julia binary + glibc compat)
+#   swift.ext4   - Swift (swift binary + glibc compat)
+#   graalvm.ext4 - GraalVM (openjdk21 + GraalVM CE)
 #
 # This script avoids loop-mount by using `mkfs.ext4 -d <dir>`.
 
@@ -23,8 +29,12 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 WASMTIME_VERSION="${WASMTIME_VERSION:-v41.0.1}"
 DENO_VERSION="${DENO_VERSION:-v2.6.7}"
 BUN_VERSION="${BUN_VERSION:-bun-v1.3.8}"
+JULIA_VERSION="${JULIA_VERSION:-1.11.5}"
+SWIFT_VERSION="${SWIFT_VERSION:-6.1}"
+GRAALVM_VERSION="${GRAALVM_VERSION:-21.0.2}"
 ROOTFS_SIZE_MB="${ROOTFS_SIZE_MB:-256}"
 ROOTFS_SIZE_JAVA_MB="${ROOTFS_SIZE_JAVA_MB:-512}"
+ROOTFS_SIZE_GRAALVM_MB="${ROOTFS_SIZE_GRAALVM_MB:-512}"
 BASE_ROOTFS_SIZE_MB="${BASE_ROOTFS_SIZE_MB:-32}"
 
 OUT_DIR="${OUT_DIR:-/opt/nova/rootfs}"
@@ -40,6 +50,9 @@ if [[ "${TARGET_ARCH}" == "aarch64" ]]; then
   DENO_ARCH="aarch64"
   BUN_ARCH="aarch64"
   BUN_MUSL_DIR="bun-linux-aarch64-musl"
+  JULIA_ARCH="aarch64"
+  SWIFT_PLATFORM="ubuntu2404-aarch64"
+  GRAALVM_ARCH="aarch64"
 else
   ALPINE_URL="${ALPINE_URL:-https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.3-x86_64.tar.gz}"
   ARCH_SUFFIX="-amd64"
@@ -47,6 +60,9 @@ else
   DENO_ARCH="x86_64"
   BUN_ARCH="x64"
   BUN_MUSL_DIR="bun-linux-x64-musl"
+  JULIA_ARCH="x64"
+  SWIFT_PLATFORM="ubuntu2404"
+  GRAALVM_ARCH="x64"
 fi
 
 usage() {
@@ -389,6 +405,102 @@ build_bun_rootfs() {
   log "bun${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/bun${ARCH_SUFFIX}.ext4"
 }
 
+build_elixir_rootfs() {
+  log "Building elixir rootfs (Alpine + erlang + elixir)..."
+  local tmp
+  tmp="$(mktemp -d)"
+  stage_alpine_root "${tmp}"
+  apk_add "${tmp}" elixir
+  inject_agent_init "${tmp}"
+  build_image_from_dir "${OUT_DIR}/elixir${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
+  rm -rf "${tmp}"
+  log "elixir${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/elixir${ARCH_SUFFIX}.ext4"
+}
+
+build_perl_rootfs() {
+  log "Building perl rootfs (Alpine + perl)..."
+  local tmp
+  tmp="$(mktemp -d)"
+  stage_alpine_root "${tmp}"
+  apk_add "${tmp}" perl
+  inject_agent_init "${tmp}"
+  build_image_from_dir "${OUT_DIR}/perl${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
+  rm -rf "${tmp}"
+  log "perl${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/perl${ARCH_SUFFIX}.ext4"
+}
+
+build_r_rootfs() {
+  log "Building R rootfs (Alpine + R)..."
+  local tmp
+  tmp="$(mktemp -d)"
+  stage_alpine_root "${tmp}"
+  apk_add "${tmp}" R
+  inject_agent_init "${tmp}"
+  build_image_from_dir "${OUT_DIR}/r${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
+  rm -rf "${tmp}"
+  log "r${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/r${ARCH_SUFFIX}.ext4"
+}
+
+build_julia_rootfs() {
+  log "Building julia rootfs (Alpine + julia binary)..."
+  local tmp
+  tmp="$(mktemp -d)"
+  stage_alpine_root "${tmp}"
+
+  # julia is glibc-linked; add compatibility layer.
+  apk_add "${tmp}" gcompat libstdc++ libgcc
+
+  local julia_tmp
+  julia_tmp="$(mktemp -d)"
+
+  local julia_major_minor
+  julia_major_minor="$(echo "${JULIA_VERSION}" | cut -d. -f1-2)"
+
+  fetch_asset \
+    "https://julialang-s3.julialang.org/bin/musl/${JULIA_ARCH}/${julia_major_minor}/julia-${JULIA_VERSION}-musl-${JULIA_ARCH}.tar.gz" \
+    "julia${ARCH_SUFFIX}.tar.gz" \
+    "${julia_tmp}/julia.tar.gz"
+
+  tar -xzf "${julia_tmp}/julia.tar.gz" -C "${julia_tmp}"
+  cp -a "${julia_tmp}"/julia-*/bin/julia "${tmp}/usr/local/bin/julia"
+  cp -a "${julia_tmp}"/julia-*/lib/* "${tmp}/usr/local/lib/" 2>/dev/null || true
+  rm -rf "${julia_tmp}"
+
+  inject_agent_init "${tmp}"
+  build_image_from_dir "${OUT_DIR}/julia${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
+  rm -rf "${tmp}"
+  log "julia${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/julia${ARCH_SUFFIX}.ext4"
+}
+
+build_swift_rootfs() {
+  log "Building swift rootfs (Alpine + swift static SDK)..."
+  local tmp
+  tmp="$(mktemp -d)"
+  stage_alpine_root "${tmp}"
+
+  # Swift static binaries only need basic C library. For dynamic Swift
+  # binaries we need gcompat + Swift runtime libs.
+  apk_add "${tmp}" gcompat libstdc++ libgcc
+
+  inject_agent_init "${tmp}"
+  build_image_from_dir "${OUT_DIR}/swift${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_MB}" "${tmp}"
+  rm -rf "${tmp}"
+  log "swift${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/swift${ARCH_SUFFIX}.ext4"
+}
+
+build_graalvm_rootfs() {
+  log "Building graalvm rootfs (Alpine + OpenJDK + GraalVM)..."
+  local tmp
+  tmp="$(mktemp -d)"
+  stage_alpine_root "${tmp}"
+  apk_add "${tmp}" openjdk21-jre-headless
+  chroot "${tmp}" /bin/sh -c 'jli="$(find /usr/lib/jvm -name libjli.so | head -n1)"; [ -n "$jli" ] && ln -sf "$jli" /usr/lib/libjli.so'
+  inject_agent_init "${tmp}"
+  build_image_from_dir "${OUT_DIR}/graalvm${ARCH_SUFFIX}.ext4" "${ROOTFS_SIZE_GRAALVM_MB}" "${tmp}"
+  rm -rf "${tmp}"
+  log "graalvm${ARCH_SUFFIX}.ext4 ready -> ${OUT_DIR}/graalvm${ARCH_SUFFIX}.ext4"
+}
+
 main() {
   check_platform
   require_cmd dd
@@ -414,6 +526,12 @@ main() {
   build_lua_rootfs
   build_deno_rootfs
   build_bun_rootfs
+  build_elixir_rootfs
+  build_perl_rootfs
+  build_r_rootfs
+  build_julia_rootfs
+  build_swift_rootfs
+  build_graalvm_rootfs
 
   log "Done"
 }

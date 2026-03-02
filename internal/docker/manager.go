@@ -467,6 +467,18 @@ func imageForRuntime(rt domain.Runtime, prefix string) string {
 		return prefix + "-bun"
 	case r == string(domain.RuntimeWasm) || strings.HasPrefix(r, "wasm"):
 		return prefix + "-wasm"
+	case r == string(domain.RuntimeGraalVM) || strings.HasPrefix(r, "graalvm"):
+		return prefix + "-graalvm"
+	case r == string(domain.RuntimeElixir) || strings.HasPrefix(r, "elixir"):
+		return prefix + "-elixir"
+	case r == string(domain.RuntimePerl) || strings.HasPrefix(r, "perl"):
+		return prefix + "-perl"
+	case r == string(domain.RuntimeR):
+		return prefix + "-r"
+	case r == string(domain.RuntimeJulia) || strings.HasPrefix(r, "julia"):
+		return prefix + "-julia"
+	case r == string(domain.RuntimeSwift) || strings.HasPrefix(r, "swift"):
+		return prefix + "-swift"
 	default:
 		return prefix + "-base"
 	}
@@ -498,6 +510,7 @@ func runtimeDockerImages(prefix string) []string {
 		domain.RuntimeScala,
 		domain.RuntimeC,
 		domain.RuntimeCpp,
+		domain.RuntimeGraalVM,
 		domain.RuntimeCustom,
 		domain.RuntimeProvided,
 	}

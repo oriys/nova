@@ -34,6 +34,14 @@ var builtinRuntimeSeeds = []builtinRuntimeSeed{
 	{ID: "deno", Name: "Deno", Version: "2.6.7"},
 	{ID: "bun", Name: "Bun", Version: "1.3.8"},
 	{ID: "graalvm", Name: "GraalVM", Version: "21.0.2"},
+	{ID: "elixir", Name: "Elixir", Version: "1.18.3"},
+	{ID: "swift", Name: "Swift", Version: "6.1.0"},
+	{ID: "zig", Name: "Zig", Version: "0.14.1"},
+	{ID: "lua", Name: "Lua", Version: "5.4.7"},
+	{ID: "perl", Name: "Perl", Version: "5.40.2"},
+	{ID: "r", Name: "R", Version: "4.4.3"},
+	{ID: "julia", Name: "Julia", Version: "1.11.5"},
+	{ID: "wasm", Name: "WebAssembly", Version: "1.0"},
 }
 
 func NewPostgresStore(ctx context.Context, dsn string) (*PostgresStore, error) {

@@ -242,8 +242,20 @@ func rootfsForRuntime(rt domain.Runtime, arch domain.Arch) string {
 		base = "deno.ext4"
 	case r == string(domain.RuntimeBun) || strings.HasPrefix(r, "bun"):
 		base = "bun.ext4"
+	case r == string(domain.RuntimeGraalVM) || strings.HasPrefix(r, "graalvm"):
+		base = "graalvm.ext4"
+	case r == string(domain.RuntimeElixir) || strings.HasPrefix(r, "elixir"):
+		base = "elixir.ext4"
+	case r == string(domain.RuntimePerl) || strings.HasPrefix(r, "perl"):
+		base = "perl.ext4"
+	case r == string(domain.RuntimeR):
+		base = "r.ext4"
+	case r == string(domain.RuntimeJulia) || strings.HasPrefix(r, "julia"):
+		base = "julia.ext4"
+	case r == string(domain.RuntimeSwift) || strings.HasPrefix(r, "swift"):
+		base = "swift.ext4"
 	default:
-		// Go, Rust, Zig, Swift, GraalVM use base. (Static native binaries)
+		// Go, Rust, Zig, C, C++ use base. (Static native binaries)
 		base = "base.ext4"
 	}
 	return archSuffixedRootfs(base, arch)
