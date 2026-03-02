@@ -405,6 +405,15 @@ type Store struct {
 	ScheduleStore
 }
 
+// InvalidateFunctionCache clears all in-memory cache entries for a function.
+// This is used in split deployments where the data plane needs to be notified
+// of control plane changes (e.g., code updates).
+func (s *Store) InvalidateFunctionCache(funcID string) {
+	if cached, ok := s.MetadataStore.(*CachedMetadataStore); ok {
+		cached.invalidateFunctionByID(funcID)
+	}
+}
+
 type metadataStoreUnwrapper interface {
 	UnderlyingMetadataStore() MetadataStore
 }

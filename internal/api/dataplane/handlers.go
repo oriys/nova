@@ -250,6 +250,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Cost intelligence
 	mux.HandleFunc("GET /functions/{name}/cost", h.FunctionCost)
 	mux.HandleFunc("GET /cost/summary", h.CostSummary)
+
+	// Internal pool management (used by control plane in split deployments)
+	mux.HandleFunc("POST /internal/pool/evict", h.EvictPool)
 }
 
 func parseLimitQuery(raw string, fallback, max int) int {
@@ -266,4 +269,23 @@ func parseLimitQuery(raw string, fallback, max int) int {
 		limit = max
 	}
 	return limit
+}
+
+// EvictPool handles POST /internal/pool/evict — evicts all pooled VMs for a
+// function and invalidates associated caches. Used by the control plane in
+// split deployments to notify the data plane of code changes.
+func (h *Handler) EvictPool(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		FunctionID string `json:"function_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.FunctionID == "" {
+		http.Error(w, "function_id is required", http.StatusBadRequest)
+		return
+	}
+	h.Store.InvalidateFunctionCache(req.FunctionID)
+	h.Pool.Evict(req.FunctionID)
+	h.Pool.InvalidateSnapshotCache(req.FunctionID)
+	logging.Op().Info("pool evicted via internal API", "function_id", req.FunctionID)
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "evicted"})
 }

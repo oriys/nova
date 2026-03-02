@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/oriys/nova/api/proto/novapb"
 	"github.com/oriys/nova/internal/compiler"
 	"github.com/oriys/nova/internal/domain"
 	"github.com/oriys/nova/internal/executor"
@@ -574,6 +576,13 @@ func (h *Handler) UpdateFunctionCode(w http.ResponseWriter, r *http.Request) {
 	}
 	executor.InvalidateSnapshot(h.Backend.SnapshotDir(), fn.ID)
 	h.Pool.InvalidateSnapshotCache(fn.ID)
+
+	// In split deployments, notify Comet (data plane) to evict its pool and
+	// invalidate caches so the next invocation uses the updated code.
+	if h.CometClient != nil {
+		h.evictOnComet(r.Context(), fn.ID)
+	}
+
 	logging.Op().Info("invalidated snapshot", "function", fn.Name, "reason", "code_updated")
 
 	var compileStatus domain.CompileStatus
@@ -765,4 +774,30 @@ func computeFilesHash(files map[string][]byte) string {
 	}
 
 	return crypto.HashString(combined.String())
+}
+
+// evictOnComet sends a pool eviction request to Comet via gRPC ProxyHTTP.
+// The call is fire-and-forget with its own timeout so it never blocks the
+// HTTP response to the client (VM cleanup on Comet can be slow).
+func (h *Handler) evictOnComet(_ context.Context, funcID string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		body, _ := json.Marshal(map[string]string{"function_id": funcID})
+		resp, err := h.CometClient.ProxyHTTP(ctx, &novapb.ProxyHTTPRequest{
+			Method: "POST",
+			Path:   "/internal/pool/evict",
+			Body:   body,
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
+		})
+		if err != nil {
+			logging.Op().Warn("failed to evict on Comet", "function_id", funcID, "error", err)
+			return
+		}
+		if resp.StatusCode != 200 {
+			logging.Op().Warn("Comet eviction returned non-OK", "function_id", funcID, "status", resp.StatusCode)
+		}
+	}()
 }

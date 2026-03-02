@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/oriys/nova/api/proto/novapb"
 	"github.com/oriys/nova/internal/ai"
 	"github.com/oriys/nova/internal/api"
 	"github.com/oriys/nova/internal/asyncqueue"
@@ -44,13 +45,16 @@ import (
 	"github.com/oriys/nova/internal/wasm"
 	"github.com/oriys/nova/internal/workflow"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 func daemonCmd() *cobra.Command {
 	var (
-		idleTTL  time.Duration
-		httpAddr string
-		logLevel string
+		idleTTL      time.Duration
+		httpAddr     string
+		logLevel     string
+		cometGRPAddr string
 	)
 
 	cmd := &cobra.Command{
@@ -344,6 +348,19 @@ func daemonCmd() *cobra.Command {
 			sandboxMgr := sandbox.NewManager(be)
 			defer sandboxMgr.Shutdown()
 
+			// Connect to Comet gRPC for pool eviction in split deployments
+			var cometClient novapb.NovaServiceClient
+			if cometGRPAddr != "" {
+				cometConn, err := grpc.NewClient(cometGRPAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+				if err != nil {
+					logging.Op().Warn("failed to connect to Comet gRPC", "addr", cometGRPAddr, "error", err)
+				} else {
+					cometClient = novapb.NewNovaServiceClient(cometConn)
+					defer cometConn.Close()
+					logging.Op().Info("connected to Comet gRPC for pool eviction", "addr", cometGRPAddr)
+				}
+			}
+
 			if cfg.Daemon.HTTPAddr != "" {
 				httpServer = api.StartHTTPServer(cfg.Daemon.HTTPAddr, api.ServerConfig{
 					Store:                 s,
@@ -366,6 +383,7 @@ func daemonCmd() *cobra.Command {
 					PlaneMode:             api.PlaneModeControlPlane,
 					LocalNodeID:           strings.TrimSpace(os.Getenv("NOVA_CLUSTER_NODE_ID")),
 					ClusterForwardTimeout: 3 * time.Second,
+					CometClient:           cometClient,
 				})
 				logging.Op().Info("HTTP API started", "addr", cfg.Daemon.HTTPAddr)
 			}
@@ -490,6 +508,7 @@ func daemonCmd() *cobra.Command {
 	cmd.Flags().DurationVar(&idleTTL, "idle-ttl", 60*time.Second, "VM idle timeout")
 	cmd.Flags().StringVar(&httpAddr, "http", "", "HTTP API address")
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level")
+	cmd.Flags().StringVar(&cometGRPAddr, "comet-grpc", "", "Comet gRPC address for pool eviction in split deployments (e.g. 127.0.0.1:9090)")
 
 	return cmd
 }

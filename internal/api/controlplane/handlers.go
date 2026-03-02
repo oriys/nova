@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/oriys/nova/api/proto/novapb"
 	"github.com/oriys/nova/internal/ai"
 	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/backend"
@@ -44,6 +45,7 @@ type Handler struct {
 	TriggerManager  *triggers.Manager // Optional: for hot-loading triggers at runtime
 	JWTSecret       string          // HS256 JWT signing key for auth endpoints
 	AuthHandler     *AuthHandler    // Exposed for revocation checker integration
+	CometClient     novapb.NovaServiceClient // Optional: gRPC client to Comet for split deployments
 }
 
 // RegisterRoutes registers all control plane routes on the given mux.

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/oriys/nova/api/proto/novapb"
 	"github.com/oriys/nova/internal/ai"
 	"github.com/oriys/nova/internal/api/controlplane"
 	"github.com/oriys/nova/internal/api/dataplane"
@@ -70,6 +71,7 @@ type ServerConfig struct {
 	PlaneMode             PlaneMode
 	LocalNodeID           string
 	ClusterForwardTimeout time.Duration
+	CometClient           novapb.NovaServiceClient // Optional: gRPC client to Comet for split deployments
 }
 
 // StartHTTPServer creates and starts the HTTP server with control plane and data plane handlers.
@@ -118,6 +120,7 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 			VolumeManager:   cfg.VolumeManager,
 			AIService:       cfg.AIService,
 			TriggerManager:  cfg.TriggerManager,
+			CometClient:     cfg.CometClient,
 		}
 		if cfg.AuthCfg != nil && cfg.AuthCfg.JWT.Secret != "" {
 			cpHandler.JWTSecret = cfg.AuthCfg.JWT.Secret
