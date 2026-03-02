@@ -137,7 +137,7 @@ function needsCompilation(runtimeId: string): boolean {
 function getDefaultHandler(runtimeId: string): string {
   const base = getBaseRuntime(runtimeId)
   if (base === "java" || base === "kotlin" || base === "scala") {
-    return "example.Handler::handleRequest"
+    return "Handler::handler"
   }
   if (base === "go" || base === "rust" || base === "swift" || base === "zig" || base === "wasm" || base === "graalvm") {
     return "handler"

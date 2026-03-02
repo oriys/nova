@@ -85,7 +85,7 @@ func validateCreateFunctionRequest(req *CreateFunctionRequest) error {
 func defaultHandlerForRuntime(runtime string) string {
 	switch runtimeFamily(runtime) {
 	case "java", "kotlin", "scala":
-		return "example.Handler::handleRequest"
+		return "Handler::handler"
 	case "go", "rust", "swift", "zig", "wasm", "c", "cpp", "graalvm", "provided", "custom":
 		return "handler"
 	default:

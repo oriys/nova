@@ -73,7 +73,7 @@ func TestValidateCreateFunctionRequest_DefaultHandler(t *testing.T) {
 	}{
 		{runtime: "python", expectHandler: "main.handler"},
 		{runtime: "go", expectHandler: "handler"},
-		{runtime: "java", expectHandler: "example.Handler::handleRequest"},
+		{runtime: "java", expectHandler: "Handler::handler"},
 	}
 
 	for _, tt := range tests {
