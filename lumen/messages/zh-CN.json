@@ -43,7 +43,8 @@
     "groupSystem": "系统",
     "groupHelp": "帮助",
     "sandboxes": "沙箱",
-    "tickets": "工单"
+    "tickets": "工单",
+    "images": "镜像"
   },
   "pages": {
     "dashboard": {
@@ -299,6 +300,22 @@
         "deprecated": "已弃用",
         "maintenance": "维护中"
       }
+    },
+    "images": {
+      "title": "镜像",
+      "description": "系统上可用的 Docker 和 rootfs 镜像",
+      "failedToLoad": "加载镜像失败",
+      "retry": "重试",
+      "loading": "加载中...",
+      "refresh": "刷新",
+      "dockerImages": "Docker 镜像",
+      "rootfsImages": "Rootfs 镜像",
+      "noDockerImages": "未找到 Docker 运行时镜像",
+      "noRootfsImages": "未找到 rootfs 镜像",
+      "dockerHint": "运行 'make docker-runtimes' 构建 Docker 镜像",
+      "rootfsHint": "运行 'make rootfs' 构建 rootfs 镜像",
+      "tag": "标签",
+      "size": "大小"
     },
     "configurations": {
       "title": "配置",

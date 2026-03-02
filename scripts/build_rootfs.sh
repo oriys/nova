@@ -55,7 +55,7 @@ if [[ "${TARGET_ARCH}" == "aarch64" ]]; then
   GRAALVM_ARCH="aarch64"
 else
   ALPINE_URL="${ALPINE_URL:-https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.3-x86_64.tar.gz}"
-  ARCH_SUFFIX="-amd64"
+  ARCH_SUFFIX=""
   WASMTIME_ARCH="x86_64"
   DENO_ARCH="x86_64"
   BUN_ARCH="x64"
@@ -457,13 +457,16 @@ build_julia_rootfs() {
   julia_major_minor="$(echo "${JULIA_VERSION}" | cut -d. -f1-2)"
 
   fetch_asset \
-    "https://julialang-s3.julialang.org/bin/musl/${JULIA_ARCH}/${julia_major_minor}/julia-${JULIA_VERSION}-musl-${JULIA_ARCH}.tar.gz" \
-    "julia${ARCH_SUFFIX}.tar.gz" \
+    "https://julialang-s3.julialang.org/bin/linux/${JULIA_ARCH}/${julia_major_minor}/julia-${JULIA_VERSION}-linux-${JULIA_ARCH}.tar.gz" \
+    "julia${ARCH_SUFFIX:-"-amd64"}.tar.gz" \
     "${julia_tmp}/julia.tar.gz"
 
   tar -xzf "${julia_tmp}/julia.tar.gz" -C "${julia_tmp}"
   cp -a "${julia_tmp}"/julia-*/bin/julia "${tmp}/usr/local/bin/julia"
   cp -a "${julia_tmp}"/julia-*/lib/* "${tmp}/usr/local/lib/" 2>/dev/null || true
+  # Julia also needs its share directory for stdlib
+  mkdir -p "${tmp}/usr/local/share"
+  cp -a "${julia_tmp}"/julia-*/share/julia "${tmp}/usr/local/share/" 2>/dev/null || true
   rm -rf "${julia_tmp}"
 
   inject_agent_init "${tmp}"

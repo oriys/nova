@@ -43,7 +43,8 @@
     "groupSystem": "システム",
     "groupHelp": "ヘルプ",
     "sandboxes": "サンドボックス",
-    "tickets": "チケット"
+    "tickets": "チケット",
+    "images": "イメージ"
   },
   "pages": {
     "dashboard": {
@@ -299,6 +300,22 @@
         "deprecated": "非推奨",
         "maintenance": "メンテナンス"
       }
+    },
+    "images": {
+      "title": "イメージ",
+      "description": "システムで利用可能な Docker と rootfs イメージ",
+      "failedToLoad": "イメージの読み込みに失敗しました",
+      "retry": "再試行",
+      "loading": "読み込み中...",
+      "refresh": "更新",
+      "dockerImages": "Docker イメージ",
+      "rootfsImages": "Rootfs イメージ",
+      "noDockerImages": "Docker ランタイムイメージが見つかりません",
+      "noRootfsImages": "rootfs イメージが見つかりません",
+      "dockerHint": "'make docker-runtimes' を実行して Docker イメージをビルド",
+      "rootfsHint": "'make rootfs' を実行して rootfs イメージをビルド",
+      "tag": "タグ",
+      "size": "サイズ"
     },
     "configurations": {
       "title": "設定",

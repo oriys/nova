@@ -43,7 +43,8 @@
     "groupSystem": "系統",
     "groupHelp": "幫助",
     "sandboxes": "沙箱",
-    "tickets": "工單"
+    "tickets": "工單",
+    "images": "映像"
   },
   "pages": {
     "dashboard": {
@@ -299,6 +300,22 @@
         "deprecated": "已淘汰",
         "maintenance": "維護中"
       }
+    },
+    "images": {
+      "title": "映像",
+      "description": "系統上可用的 Docker 和 rootfs 映像",
+      "failedToLoad": "載入映像失敗",
+      "retry": "重試",
+      "loading": "載入中...",
+      "refresh": "重新整理",
+      "dockerImages": "Docker 映像",
+      "rootfsImages": "Rootfs 映像",
+      "noDockerImages": "未找到 Docker 執行環境映像",
+      "noRootfsImages": "未找到 rootfs 映像",
+      "dockerHint": "執行 'make docker-runtimes' 建置 Docker 映像",
+      "rootfsHint": "執行 'make rootfs' 建置 rootfs 映像",
+      "tag": "標籤",
+      "size": "大小"
     },
     "configurations": {
       "title": "設定",

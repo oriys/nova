@@ -1986,6 +1986,29 @@ export const backendsApi = {
   list: () => request<BackendsResponse>("/backends"),
 };
 
+// System images types
+export interface DockerImageInfo {
+  runtime: string;
+  repository: string;
+  tag: string;
+  size: string;
+}
+
+export interface RootfsImageInfo {
+  runtime: string;
+  filename: string;
+  size: number;
+}
+
+export interface SystemImagesResponse {
+  docker_images: DockerImageInfo[];
+  rootfs_images: RootfsImageInfo[];
+}
+
+export const systemApi = {
+  listImages: () => request<SystemImagesResponse>("/system/images"),
+};
+
 export interface TimeSeriesPoint {
   timestamp: string;
   invocations: number;

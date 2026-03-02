@@ -43,7 +43,8 @@
     "groupSystem": "System",
     "groupHelp": "Help",
     "sandboxes": "Sandboxes",
-    "tickets": "Tickets"
+    "tickets": "Tickets",
+    "images": "Images"
   },
   "pages": {
     "dashboard": {
@@ -299,6 +300,22 @@
         "deprecated": "deprecated",
         "maintenance": "maintenance"
       }
+    },
+    "images": {
+      "title": "Images",
+      "description": "Docker and rootfs images available on this system",
+      "failedToLoad": "Failed to load images",
+      "retry": "Retry",
+      "loading": "Loading...",
+      "refresh": "Refresh",
+      "dockerImages": "Docker Images",
+      "rootfsImages": "Rootfs Images",
+      "noDockerImages": "No Docker runtime images found",
+      "noRootfsImages": "No rootfs images found",
+      "dockerHint": "Run 'make docker-runtimes' to build Docker images",
+      "rootfsHint": "Run 'make rootfs' to build rootfs images",
+      "tag": "Tag",
+      "size": "Size"
     },
     "configurations": {
       "title": "Configurations",

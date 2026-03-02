@@ -75,6 +75,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /runtimes/upload", h.UploadRuntime)
 	mux.HandleFunc("DELETE /runtimes/{id}", h.DeleteRuntime)
 
+	// System images (Docker + rootfs)
+	mux.HandleFunc("GET /system/images", h.ListSystemImages)
+
 	// Backends
 	mux.HandleFunc("GET /backends", h.ListBackends)
 

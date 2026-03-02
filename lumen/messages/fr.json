@@ -43,7 +43,8 @@
     "groupSystem": "Système",
     "groupHelp": "Aide",
     "sandboxes": "Bacs à sable",
-    "tickets": "Tickets"
+    "tickets": "Tickets",
+    "images": "Images"
   },
   "pages": {
     "dashboard": {
@@ -299,6 +300,22 @@
         "deprecated": "obsolète",
         "maintenance": "maintenance"
       }
+    },
+    "images": {
+      "title": "Images",
+      "description": "Images Docker et rootfs disponibles sur ce système",
+      "failedToLoad": "Échec du chargement des images",
+      "retry": "Réessayer",
+      "loading": "Chargement...",
+      "refresh": "Actualiser",
+      "dockerImages": "Images Docker",
+      "rootfsImages": "Images Rootfs",
+      "noDockerImages": "Aucune image Docker de runtime trouvée",
+      "noRootfsImages": "Aucune image rootfs trouvée",
+      "dockerHint": "Exécutez 'make docker-runtimes' pour créer les images Docker",
+      "rootfsHint": "Exécutez 'make rootfs' pour créer les images rootfs",
+      "tag": "Tag",
+      "size": "Taille"
     },
     "configurations": {
       "title": "Configurations",
