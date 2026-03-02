@@ -27,9 +27,10 @@ import {
   Zap,
   Server,
   Activity,
+  ClipboardList,
 } from "lucide-react"
 
-type NavKey = "dashboard" | "functions" | "sandboxes" | "events" | "workflows" | "tenancy" | "invocations" | "runtimes" | "gateway" | "triggers" | "volumes" | "layers" | "cluster" | "snapshots" | "accessControl" | "alerting" | "settings" | "docs"
+type NavKey = "dashboard" | "functions" | "sandboxes" | "events" | "workflows" | "tenancy" | "invocations" | "runtimes" | "gateway" | "triggers" | "volumes" | "layers" | "cluster" | "snapshots" | "tickets" | "accessControl" | "alerting" | "settings" | "docs"
 
 // Extra paths that should highlight a merged nav item
 const extraActivePaths: Record<string, string[]> = {
@@ -54,6 +55,7 @@ const navigation: { key: NavKey; href: string; icon: typeof LayoutDashboard }[] 
   { key: "volumes", href: "/volumes", icon: HardDrive },
   { key: "cluster", href: "/cluster", icon: Server },
   { key: "snapshots", href: "/snapshots", icon: Camera },
+  { key: "tickets", href: "/tickets", icon: ClipboardList },
 
   { key: "accessControl", href: "/rbac", icon: ShieldCheck },
   { key: "alerting", href: "/alerts", icon: Activity },

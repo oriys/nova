@@ -1013,6 +1013,52 @@ func (m *mockMetadataStore) CountAuditLogs(ctx context.Context, filter *store.Au
 	return 0, nil
 }
 
+func (m *mockMetadataStore) CreateDurableExecution(ctx context.Context, exec *domain.DurableExecution) error {
+	return nil
+}
+func (m *mockMetadataStore) GetDurableExecution(ctx context.Context, id string) (*domain.DurableExecution, error) {
+	return nil, nil
+}
+func (m *mockMetadataStore) UpdateDurableExecution(ctx context.Context, exec *domain.DurableExecution) error {
+	return nil
+}
+func (m *mockMetadataStore) ListDurableExecutions(ctx context.Context, functionID string, limit, offset int) ([]*domain.DurableExecution, error) {
+	return nil, nil
+}
+func (m *mockMetadataStore) CountDurableExecutions(ctx context.Context, functionID string) (int64, error) {
+	return 0, nil
+}
+func (m *mockMetadataStore) CreateDurableStep(ctx context.Context, step *domain.DurableStep) error {
+	return nil
+}
+func (m *mockMetadataStore) CompleteDurableStep(ctx context.Context, stepID string, output json.RawMessage, durationMs int64) error {
+	return nil
+}
+func (m *mockMetadataStore) FailDurableStep(ctx context.Context, stepID string, errMsg string, durationMs int64) error {
+	return nil
+}
+func (m *mockMetadataStore) ListDurableSteps(ctx context.Context, executionID string) ([]domain.DurableStep, error) {
+	return nil, nil
+}
+
+func (m *mockMetadataStore) CreateTicket(ctx context.Context, t *domain.Ticket) error { return nil }
+func (m *mockMetadataStore) GetTicket(ctx context.Context, id string) (*domain.Ticket, error) {
+	return nil, fmt.Errorf("ticket not found: %s", id)
+}
+func (m *mockMetadataStore) ListTickets(ctx context.Context, limit, offset int) ([]*domain.Ticket, int, error) {
+	return nil, 0, nil
+}
+func (m *mockMetadataStore) UpdateTicket(ctx context.Context, id string, update *store.TicketUpdate) (*domain.Ticket, error) {
+	return nil, fmt.Errorf("ticket not found: %s", id)
+}
+func (m *mockMetadataStore) DeleteTicket(ctx context.Context, id string) error { return nil }
+func (m *mockMetadataStore) CreateTicketComment(ctx context.Context, c *domain.TicketComment) error {
+	return nil
+}
+func (m *mockMetadataStore) ListTicketComments(ctx context.Context, ticketID string, limit, offset int) ([]*domain.TicketComment, int, error) {
+	return nil, 0, nil
+}
+
 // mockWorkflowStore implements store.WorkflowStore for the mockMetadataStore to
 // also satisfy the GetWorkflowByName requirement in ListWorkflowAsyncInvocations.
 type mockWorkflowStore struct {

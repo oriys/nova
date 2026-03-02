@@ -42,7 +42,8 @@
     "groupPlatform": "平台",
     "groupSystem": "系统",
     "groupHelp": "帮助",
-    "sandboxes": "沙箱"
+    "sandboxes": "沙箱",
+    "tickets": "工单"
   },
   "pages": {
     "dashboard": {
@@ -439,6 +440,10 @@
     "layers": {
       "title": "依赖层",
       "description": "管理共享依赖层"
+    },
+    "tickets": {
+      "title": "工单",
+      "description": "提交和跟踪工单"
     },
     "notifications": {
       "title": "通知中心",
@@ -3108,5 +3113,56 @@
     },
     "empty": "暂无审计日志",
     "emptyDescription": "执行平台操作后，审计日志将显示在此处"
+  },
+  "ticketsPage": {
+    "createTicket": "创建工单",
+    "failedToLoad": "加载工单失败",
+    "failedToCreate": "创建工单失败",
+    "failedToUpdate": "更新工单失败",
+    "failedToDelete": "删除工单失败",
+    "failedToComment": "添加回复失败",
+    "title": "标题",
+    "titlePlaceholder": "简要描述请求...",
+    "description": "描述",
+    "descriptionPlaceholder": "详细描述问题或请求...",
+    "priority": "优先级",
+    "priorityLow": "低",
+    "priorityMedium": "中",
+    "priorityHigh": "高",
+    "priorityCritical": "紧急",
+    "category": "分类",
+    "categoryGeneral": "一般",
+    "categoryQuotaRequest": "配额申请",
+    "categoryIncident": "事件",
+    "categoryFeatureRequest": "功能请求",
+    "categoryBugReport": "缺陷报告",
+    "creating": "创建中...",
+    "colTitle": "标题",
+    "colStatus": "状态",
+    "colPriority": "优先级",
+    "colCategory": "分类",
+    "colTenant": "租户",
+    "colCreated": "创建时间",
+    "noTickets": "暂无工单",
+    "showing": "显示 {from}–{to}，共 {total} 条",
+    "status_open": "待处理",
+    "status_in_progress": "处理中",
+    "status_resolved": "已解决",
+    "status_closed": "已关闭",
+    "priority_low": "低",
+    "priority_medium": "中",
+    "priority_high": "高",
+    "priority_critical": "紧急",
+    "category_general": "一般",
+    "category_quota_request": "配额申请",
+    "category_incident": "事件",
+    "category_feature_request": "功能请求",
+    "category_bug_report": "缺陷报告",
+    "deleteTicket": "删除工单",
+    "comments": "回复",
+    "commentPlaceholder": "输入回复...",
+    "internalNote": "内部备注",
+    "sendComment": "发送",
+    "sending": "发送中..."
   }
 }

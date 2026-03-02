@@ -257,6 +257,15 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Audit logs
 	mux.HandleFunc("GET /audit-logs", h.ListAuditLogs)
 	mux.HandleFunc("GET /audit-logs/{id}", h.GetAuditLog)
+
+	// Tickets (work orders)
+	mux.HandleFunc("POST /tickets", h.CreateTicket)
+	mux.HandleFunc("GET /tickets", h.ListTickets)
+	mux.HandleFunc("GET /tickets/{id}", h.GetTicket)
+	mux.HandleFunc("PATCH /tickets/{id}", h.UpdateTicket)
+	mux.HandleFunc("DELETE /tickets/{id}", h.DeleteTicket)
+	mux.HandleFunc("POST /tickets/{id}/comments", h.CreateTicketComment)
+	mux.HandleFunc("GET /tickets/{id}/comments", h.ListTicketComments)
 }
 
 // ListFunctionVersions returns all versions of a function.

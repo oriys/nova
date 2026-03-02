@@ -3607,3 +3607,49 @@ export const sandboxApi = {
     );
   },
 };
+
+// ── Tickets (Work Orders) ───────────────────────────────────────────────────
+
+import type { Ticket, TicketComment, TicketStatus as TicketStatusType, TicketPriority, TicketCategory } from "./types";
+
+export type { Ticket, TicketComment, TicketStatusType as TicketStatus, TicketPriority, TicketCategory };
+
+export const ticketsApi = {
+  list: async (limit: number = 20, offset: number = 0) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(limit));
+    if (offset > 0) params.set("offset", String(offset));
+    return requestPaged<Ticket>(`/tickets?${params.toString()}`);
+  },
+
+  get: (id: string) =>
+    request<Ticket>(`/tickets/${encodeURIComponent(id)}`),
+
+  create: (data: { title: string; description?: string; priority?: TicketPriority; category?: TicketCategory }) =>
+    request<Ticket>("/tickets", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  update: (id: string, data: { status?: TicketStatusType; priority?: TicketPriority; assigned_to?: string }) =>
+    request<Ticket>(`/tickets/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: string) =>
+    requestRaw(`/tickets/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+  listComments: async (ticketId: string, limit: number = 50, offset: number = 0) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(limit));
+    if (offset > 0) params.set("offset", String(offset));
+    return requestPaged<TicketComment>(`/tickets/${encodeURIComponent(ticketId)}/comments?${params.toString()}`);
+  },
+
+  createComment: (ticketId: string, data: { content: string; internal?: boolean }) =>
+    request<TicketComment>(`/tickets/${encodeURIComponent(ticketId)}/comments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+};

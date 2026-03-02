@@ -361,3 +361,34 @@ export function transformSandbox(sb: Sandbox): SandboxData {
     error: sb.error,
   };
 }
+
+// Ticket (work order) types
+
+export type TicketStatus = "open" | "in_progress" | "resolved" | "closed";
+export type TicketPriority = "low" | "medium" | "high" | "critical";
+export type TicketCategory = "general" | "quota_request" | "incident" | "feature_request" | "bug_report";
+
+export interface Ticket {
+  id: string;
+  title: string;
+  description: string;
+  status: TicketStatus;
+  priority: TicketPriority;
+  category: TicketCategory;
+  creator_tenant_id: string;
+  creator_namespace: string;
+  assigned_to?: string;
+  created_at: string;
+  updated_at: string;
+  closed_at?: string;
+}
+
+export interface TicketComment {
+  id: string;
+  ticket_id: string;
+  author_tenant_id: string;
+  author_namespace: string;
+  content: string;
+  internal: boolean;
+  created_at: string;
+}

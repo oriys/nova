@@ -1039,6 +1039,29 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			completed_at TIMESTAMPTZ
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_durable_steps_execution ON durable_steps(execution_id, created_at)`,
+
+		// Tickets (work orders)
+		`CREATE TABLE IF NOT EXISTS tickets (
+			id TEXT PRIMARY KEY,
+			creator_tenant_id TEXT NOT NULL DEFAULT 'default',
+			creator_namespace TEXT NOT NULL DEFAULT 'default',
+			data JSONB NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_tickets_creator_tenant ON tickets(creator_tenant_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets ((data->>'status'))`,
+
+		`CREATE TABLE IF NOT EXISTS ticket_comments (
+			id TEXT PRIMARY KEY,
+			ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+			author_tenant_id TEXT NOT NULL DEFAULT 'default',
+			author_namespace TEXT NOT NULL DEFAULT 'default',
+			content TEXT NOT NULL,
+			internal BOOLEAN NOT NULL DEFAULT FALSE,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_ticket_comments_ticket ON ticket_comments(ticket_id, created_at)`,
 	}
 
 	for _, stmt := range stmts {

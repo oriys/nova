@@ -42,7 +42,8 @@
     "groupPlatform": "プラットフォーム",
     "groupSystem": "システム",
     "groupHelp": "ヘルプ",
-    "sandboxes": "サンドボックス"
+    "sandboxes": "サンドボックス",
+    "tickets": "チケット"
   },
   "pages": {
     "dashboard": {
@@ -439,6 +440,10 @@
     "layers": {
       "title": "レイヤー",
       "description": "共有依存レイヤーを管理"
+    },
+    "tickets": {
+      "title": "チケット",
+      "description": "チケットの送信と追跡"
     },
     "notifications": {
       "title": "通知センター",
@@ -3103,5 +3108,56 @@
     },
     "empty": "監査ログがありません",
     "emptyDescription": "プラットフォーム操作を実行すると、監査ログがここに表示されます"
+  },
+  "ticketsPage": {
+    "createTicket": "チケット作成",
+    "failedToLoad": "チケットの読み込みに失敗しました",
+    "failedToCreate": "チケットの作成に失敗しました",
+    "failedToUpdate": "チケットの更新に失敗しました",
+    "failedToDelete": "チケットの削除に失敗しました",
+    "failedToComment": "コメントの追加に失敗しました",
+    "title": "タイトル",
+    "titlePlaceholder": "リクエストの概要...",
+    "description": "説明",
+    "descriptionPlaceholder": "問題またはリクエストの詳細...",
+    "priority": "優先度",
+    "priorityLow": "低",
+    "priorityMedium": "中",
+    "priorityHigh": "高",
+    "priorityCritical": "緊急",
+    "category": "カテゴリ",
+    "categoryGeneral": "一般",
+    "categoryQuotaRequest": "クォータ申請",
+    "categoryIncident": "インシデント",
+    "categoryFeatureRequest": "機能リクエスト",
+    "categoryBugReport": "バグ報告",
+    "creating": "作成中...",
+    "colTitle": "タイトル",
+    "colStatus": "ステータス",
+    "colPriority": "優先度",
+    "colCategory": "カテゴリ",
+    "colTenant": "テナント",
+    "colCreated": "作成日",
+    "noTickets": "チケットはまだありません",
+    "showing": "{from}–{to} / {total} 件",
+    "status_open": "未対応",
+    "status_in_progress": "対応中",
+    "status_resolved": "解決済み",
+    "status_closed": "クローズ",
+    "priority_low": "低",
+    "priority_medium": "中",
+    "priority_high": "高",
+    "priority_critical": "緊急",
+    "category_general": "一般",
+    "category_quota_request": "クォータ申請",
+    "category_incident": "インシデント",
+    "category_feature_request": "機能リクエスト",
+    "category_bug_report": "バグ報告",
+    "deleteTicket": "チケットを削除",
+    "comments": "コメント",
+    "commentPlaceholder": "返信を入力...",
+    "internalNote": "内部メモ",
+    "sendComment": "送信",
+    "sending": "送信中..."
   }
 }

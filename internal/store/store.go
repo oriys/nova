@@ -348,6 +348,15 @@ type MetadataStore interface {
 	GetTestSuite(ctx context.Context, functionName string) (*TestSuite, error)
 	DeleteTestSuite(ctx context.Context, functionName string) error
 
+	// Tickets (work orders)
+	CreateTicket(ctx context.Context, t *domain.Ticket) error
+	GetTicket(ctx context.Context, id string) (*domain.Ticket, error)
+	ListTickets(ctx context.Context, limit, offset int) ([]*domain.Ticket, int, error)
+	UpdateTicket(ctx context.Context, id string, update *TicketUpdate) (*domain.Ticket, error)
+	DeleteTicket(ctx context.Context, id string) error
+	CreateTicketComment(ctx context.Context, c *domain.TicketComment) error
+	ListTicketComments(ctx context.Context, ticketID string, limit, offset int) ([]*domain.TicketComment, int, error)
+
 	// Database Access (DbResource / DbBinding / CredentialPolicy)
 	CreateDbResource(ctx context.Context, res *DbResourceRecord) (*DbResourceRecord, error)
 	GetDbResource(ctx context.Context, id string) (*DbResourceRecord, error)

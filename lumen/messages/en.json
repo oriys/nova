@@ -42,7 +42,8 @@
     "groupPlatform": "Platform",
     "groupSystem": "System",
     "groupHelp": "Help",
-    "sandboxes": "Sandboxes"
+    "sandboxes": "Sandboxes",
+    "tickets": "Tickets"
   },
   "pages": {
     "dashboard": {
@@ -439,6 +440,10 @@
     "layers": {
       "title": "Layers",
       "description": "Manage shared dependency layers"
+    },
+    "tickets": {
+      "title": "Tickets",
+      "description": "Submit and track work orders"
     },
     "notifications": {
       "title": "Notifications",
@@ -3108,5 +3113,56 @@
     },
     "empty": "No audit logs found",
     "emptyDescription": "Audit logs will appear here when platform operations are performed"
+  },
+  "ticketsPage": {
+    "createTicket": "Create Ticket",
+    "failedToLoad": "Failed to load tickets",
+    "failedToCreate": "Failed to create ticket",
+    "failedToUpdate": "Failed to update ticket",
+    "failedToDelete": "Failed to delete ticket",
+    "failedToComment": "Failed to add comment",
+    "title": "Title",
+    "titlePlaceholder": "Brief summary of the request...",
+    "description": "Description",
+    "descriptionPlaceholder": "Detailed description of the issue or request...",
+    "priority": "Priority",
+    "priorityLow": "Low",
+    "priorityMedium": "Medium",
+    "priorityHigh": "High",
+    "priorityCritical": "Critical",
+    "category": "Category",
+    "categoryGeneral": "General",
+    "categoryQuotaRequest": "Quota Request",
+    "categoryIncident": "Incident",
+    "categoryFeatureRequest": "Feature Request",
+    "categoryBugReport": "Bug Report",
+    "creating": "Creating...",
+    "colTitle": "Title",
+    "colStatus": "Status",
+    "colPriority": "Priority",
+    "colCategory": "Category",
+    "colTenant": "Tenant",
+    "colCreated": "Created",
+    "noTickets": "No tickets yet",
+    "showing": "Showing {from}–{to} of {total}",
+    "status_open": "Open",
+    "status_in_progress": "In Progress",
+    "status_resolved": "Resolved",
+    "status_closed": "Closed",
+    "priority_low": "Low",
+    "priority_medium": "Medium",
+    "priority_high": "High",
+    "priority_critical": "Critical",
+    "category_general": "General",
+    "category_quota_request": "Quota Request",
+    "category_incident": "Incident",
+    "category_feature_request": "Feature Request",
+    "category_bug_report": "Bug Report",
+    "deleteTicket": "Delete Ticket",
+    "comments": "Comments",
+    "commentPlaceholder": "Write a reply...",
+    "internalNote": "Internal Note",
+    "sendComment": "Send",
+    "sending": "Sending..."
   }
 }

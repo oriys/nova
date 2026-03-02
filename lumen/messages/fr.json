@@ -42,7 +42,8 @@
     "groupPlatform": "Plateforme",
     "groupSystem": "Système",
     "groupHelp": "Aide",
-    "sandboxes": "Bacs à sable"
+    "sandboxes": "Bacs à sable",
+    "tickets": "Tickets"
   },
   "pages": {
     "dashboard": {
@@ -439,6 +440,10 @@
     "layers": {
       "title": "Couches",
       "description": "Gérer les couches de dépendances partagées"
+    },
+    "tickets": {
+      "title": "Tickets",
+      "description": "Soumettre et suivre les tickets"
     },
     "notifications": {
       "title": "Notifications",
@@ -3103,5 +3108,56 @@
     },
     "empty": "Aucun journal d'audit",
     "emptyDescription": "Les journaux d'audit apparaîtront ici lors des opérations sur la plateforme"
+  },
+  "ticketsPage": {
+    "createTicket": "Créer un ticket",
+    "failedToLoad": "Échec du chargement des tickets",
+    "failedToCreate": "Échec de la création du ticket",
+    "failedToUpdate": "Échec de la mise à jour du ticket",
+    "failedToDelete": "Échec de la suppression du ticket",
+    "failedToComment": "Échec de l'ajout du commentaire",
+    "title": "Titre",
+    "titlePlaceholder": "Résumé de la demande...",
+    "description": "Description",
+    "descriptionPlaceholder": "Description détaillée du problème ou de la demande...",
+    "priority": "Priorité",
+    "priorityLow": "Basse",
+    "priorityMedium": "Moyenne",
+    "priorityHigh": "Haute",
+    "priorityCritical": "Critique",
+    "category": "Catégorie",
+    "categoryGeneral": "Général",
+    "categoryQuotaRequest": "Demande de quota",
+    "categoryIncident": "Incident",
+    "categoryFeatureRequest": "Demande de fonctionnalité",
+    "categoryBugReport": "Rapport de bug",
+    "creating": "Création...",
+    "colTitle": "Titre",
+    "colStatus": "Statut",
+    "colPriority": "Priorité",
+    "colCategory": "Catégorie",
+    "colTenant": "Locataire",
+    "colCreated": "Créé",
+    "noTickets": "Aucun ticket",
+    "showing": "Affichage {from}–{to} sur {total}",
+    "status_open": "Ouvert",
+    "status_in_progress": "En cours",
+    "status_resolved": "Résolu",
+    "status_closed": "Fermé",
+    "priority_low": "Basse",
+    "priority_medium": "Moyenne",
+    "priority_high": "Haute",
+    "priority_critical": "Critique",
+    "category_general": "Général",
+    "category_quota_request": "Demande de quota",
+    "category_incident": "Incident",
+    "category_feature_request": "Demande de fonctionnalité",
+    "category_bug_report": "Rapport de bug",
+    "deleteTicket": "Supprimer le ticket",
+    "comments": "Commentaires",
+    "commentPlaceholder": "Écrire une réponse...",
+    "internalNote": "Note interne",
+    "sendComment": "Envoyer",
+    "sending": "Envoi..."
   }
 }

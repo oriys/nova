@@ -52,6 +52,7 @@ var AllMenuKeys = []string{
 	"settings",
 	"snapshots",
 	"tenancy",
+	"tickets",
 	"triggers",
 	"tuning",
 	"volumes",
@@ -115,6 +116,10 @@ var AllPermissionCodes = []struct {
 	{"app:install", "app", "install", "Install applications"},
 	{"app:manage", "app", "manage", "Manage applications"},
 	{"rbac:manage", "rbac", "manage", "Manage RBAC roles and assignments"},
+	{"ticket:create", "ticket", "create", "Create tickets"},
+	{"ticket:read", "ticket", "read", "View tickets"},
+	{"ticket:update", "ticket", "update", "Update tickets"},
+	{"ticket:delete", "ticket", "delete", "Delete tickets"},
 }
 
 // basicRolePermissions lists the permission codes granted to the basic tenant
@@ -135,6 +140,9 @@ var basicRolePermissions = map[string]bool{
 	"schedule:manage": true,
 	"log:read":        true,
 	"metrics:read":    true,
+	"ticket:create":   true,
+	"ticket:read":     true,
+	"ticket:update":   true,
 	"app:read":        true,
 	"app:install":     true,
 }
