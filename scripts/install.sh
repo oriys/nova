@@ -13,12 +13,20 @@ export PATH
 INSTALL_DIR="/opt/nova"
 NOVA_CACHE_DIR="${NOVA_CACHE_DIR:-/var/cache/nova/downloads}"
 FC_VERSION="latest"
-ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.3-x86_64.tar.gz"
 WASMTIME_VERSION="v41.0.1"
 DENO_VERSION="v2.6.7"
 BUN_VERSION="bun-v1.3.8"
 ROOTFS_SIZE_MB=256
 ROOTFS_SIZE_JAVA_MB=512
+
+# Architecture detection
+HOST_ARCH="$(uname -m)"
+case "${HOST_ARCH}" in
+  x86_64)  ARCH="x86_64"; BUN_MUSL_DIR="bun-linux-x64-musl" ;;
+  aarch64) ARCH="aarch64"; BUN_MUSL_DIR="bun-linux-aarch64-musl" ;;
+  *) echo "Unsupported architecture: ${HOST_ARCH}"; exit 1 ;;
+esac
+ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/${ARCH}/alpine-minirootfs-3.23.3-${ARCH}.tar.gz"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -85,7 +93,7 @@ cached_curl_pipe() {
 check_root()   { [[ $EUID -eq 0 ]] || err "Run as root: sudo $0"; }
 check_system() {
     [[ "$(uname)" == "Linux" ]]   || err "Linux only"
-    [[ "$(uname -m)" == "x86_64" ]] || err "x86_64 only"
+    [[ "$(uname -m)" == "x86_64" || "$(uname -m)" == "aarch64" ]] || err "x86_64 or aarch64 only"
     [[ -e /dev/kvm ]] || warn "/dev/kvm not found - Firecracker needs KVM"
 }
 
@@ -295,8 +303,8 @@ build_wasm_rootfs() {
     chroot "${mnt}" /bin/sh -c "apk add --no-cache libstdc++ gcompat" >/dev/null 2>&1
 
     cached_curl_pipe \
-        "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
-        "wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
+        "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-${ARCH}-linux.tar.xz" \
+        "wasmtime-${WASMTIME_VERSION}-${ARCH}-linux.tar.xz" \
         | tar -xJf - -C "${mnt}/usr/local/bin" --strip-components=1 --wildcards '*/wasmtime'
 
     # init = nova-agent
@@ -441,8 +449,8 @@ build_deno_rootfs() {
 
     # Download Deno binary
     cached_curl \
-        "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" \
-        /tmp/deno.zip "deno-${DENO_VERSION}-x86_64-unknown-linux-gnu.zip"
+        "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-${ARCH}-unknown-linux-gnu.zip" \
+        /tmp/deno.zip "deno-${DENO_VERSION}-${ARCH}-unknown-linux-gnu.zip"
     unzip -q -o /tmp/deno.zip -d "${rootfs_dir}/usr/local/bin"
     chmod +x "${rootfs_dir}/usr/local/bin/deno"
     rm -f /tmp/deno.zip

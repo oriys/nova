@@ -986,14 +986,14 @@ func enrichExecError(err error, runtime string) error {
 	var pathErr *os.PathError
 	if errors.As(err, &pathErr) && errors.Is(pathErr.Err, syscall.ENOEXEC) {
 		if runtime == "go" || runtime == "rust" || runtime == "zig" || runtime == "swift" || runtime == "graalvm" {
-			return fmt.Errorf("%w (exec format error: /code/handler must be a Linux executable for the VM architecture, e.g. x86_64-unknown-linux-musl)", err)
+			return fmt.Errorf("%w (exec format error: /code/handler must be a Linux executable for the VM architecture, e.g. x86_64-unknown-linux-musl for amd64 or aarch64-unknown-linux-musl for arm64)", err)
 		}
 		return fmt.Errorf("%w (exec format error: check shebang and executable format of /code/handler)", err)
 	}
 	if errors.As(err, &pathErr) && errors.Is(pathErr.Err, syscall.ENOENT) && pathErr.Path == CodePath {
 		if _, statErr := os.Stat(CodePath); statErr == nil {
 			if runtime == "go" || runtime == "rust" || runtime == "zig" || runtime == "swift" || runtime == "graalvm" {
-				return fmt.Errorf("%w (/code/handler exists but required dynamic loader is missing; build a static Linux binary, e.g. Rust target x86_64-unknown-linux-musl)", err)
+				return fmt.Errorf("%w (/code/handler exists but required dynamic loader is missing; build a static Linux binary, e.g. Rust target x86_64-unknown-linux-musl or aarch64-unknown-linux-musl)", err)
 			}
 			return fmt.Errorf("%w (/code/handler exists but its interpreter is missing; check shebang/interpreter path)", err)
 		}
@@ -1170,7 +1170,10 @@ func appendDependencyEnv(env []string, runtime string) []string {
 		}
 	case "deno":
 		env = append(env, "DENO_DIR=/code/.deno")
-		env = append(env, "LD_PRELOAD=/lib/libresolv_stub.so")
+		// libresolv_stub.so is only present in VM rootfs images; skip in Docker mode.
+		if _, err := os.Stat("/lib/libresolv_stub.so"); err == nil {
+			env = append(env, "LD_PRELOAD=/lib/libresolv_stub.so")
+		}
 	case "bun":
 		paths := []string{"/code/node_modules"}
 		for _, lp := range layerPaths {

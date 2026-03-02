@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,24 +17,23 @@ type builtinRuntimeSeed struct {
 	ID      string
 	Name    string
 	Version string
-	Arch    string
 }
 
 var builtinRuntimeSeeds = []builtinRuntimeSeed{
-	{ID: "python", Name: "Python", Version: "3.12.12", Arch: "amd64"},
-	{ID: "node", Name: "Node.js", Version: "24.13.0", Arch: "amd64"},
-	{ID: "go", Name: "Go", Version: "1.25.6", Arch: "amd64"},
-	{ID: "rust", Name: "Rust", Version: "1.93.0", Arch: "amd64"},
-	{ID: "java", Name: "Java", Version: "21.0.10", Arch: "amd64"},
-	{ID: "kotlin", Name: "Kotlin", Version: "2.1.10", Arch: "amd64"},
-	{ID: "scala", Name: "Scala", Version: "3.7.3", Arch: "amd64"},
-	{ID: "c", Name: "C", Version: "14.2.0", Arch: "amd64"},
-	{ID: "cpp", Name: "C++", Version: "14.2.0", Arch: "amd64"},
-	{ID: "ruby", Name: "Ruby", Version: "3.4.8", Arch: "amd64"},
-	{ID: "php", Name: "PHP", Version: "8.4.17", Arch: "amd64"},
-	{ID: "deno", Name: "Deno", Version: "2.6.7", Arch: "amd64"},
-	{ID: "bun", Name: "Bun", Version: "1.3.8", Arch: "amd64"},
-	{ID: "graalvm", Name: "GraalVM", Version: "21.0.2", Arch: "amd64"},
+	{ID: "python", Name: "Python", Version: "3.12.12"},
+	{ID: "node", Name: "Node.js", Version: "24.13.0"},
+	{ID: "go", Name: "Go", Version: "1.25.6"},
+	{ID: "rust", Name: "Rust", Version: "1.93.0"},
+	{ID: "java", Name: "Java", Version: "21.0.10"},
+	{ID: "kotlin", Name: "Kotlin", Version: "2.1.10"},
+	{ID: "scala", Name: "Scala", Version: "3.7.3"},
+	{ID: "c", Name: "C", Version: "14.2.0"},
+	{ID: "cpp", Name: "C++", Version: "14.2.0"},
+	{ID: "ruby", Name: "Ruby", Version: "3.4.8"},
+	{ID: "php", Name: "PHP", Version: "8.4.17"},
+	{ID: "deno", Name: "Deno", Version: "2.6.7"},
+	{ID: "bun", Name: "Bun", Version: "1.3.8"},
+	{ID: "graalvm", Name: "GraalVM", Version: "21.0.2"},
 }
 
 func NewPostgresStore(ctx context.Context, dsn string) (*PostgresStore, error) {
@@ -1070,12 +1070,13 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		}
 	}
 
+	hostArch := runtime.GOARCH
 	for _, rt := range builtinRuntimeSeeds {
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO runtimes (id, name, version, status, created_at)
-			VALUES ($1, $2, $3, 'available', NOW())
-			ON CONFLICT (id) DO NOTHING
-		`, rt.ID, rt.Name, rt.Version); err != nil {
+			INSERT INTO runtimes (id, name, version, arch, status, created_at)
+			VALUES ($1, $2, $3, $4, 'available', NOW())
+			ON CONFLICT (id) DO UPDATE SET arch = EXCLUDED.arch WHERE runtimes.arch = 'amd64' AND $4 != 'amd64'
+		`, rt.ID, rt.Name, rt.Version, hostArch); err != nil {
 			return fmt.Errorf("seed built-in runtime %s: %w", rt.ID, err)
 		}
 	}

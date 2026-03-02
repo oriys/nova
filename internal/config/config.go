@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -418,7 +419,46 @@ func LoadFromFile(path string) (*Config, error) {
 		return nil, err
 	}
 
+	if baseDir, err := filepath.Abs(filepath.Dir(path)); err == nil {
+		resolveRelativePaths(cfg, baseDir)
+	}
+
 	return cfg, nil
+}
+
+func resolveRelativePaths(cfg *Config, baseDir string) {
+	if cfg == nil || strings.TrimSpace(baseDir) == "" {
+		return
+	}
+
+	cfg.Firecracker.FirecrackerBin = resolveConfigPath(baseDir, cfg.Firecracker.FirecrackerBin)
+	cfg.Firecracker.KernelPath = resolveConfigPath(baseDir, cfg.Firecracker.KernelPath)
+	cfg.Firecracker.RootfsDir = resolveConfigPath(baseDir, cfg.Firecracker.RootfsDir)
+	cfg.Firecracker.SnapshotDir = resolveConfigPath(baseDir, cfg.Firecracker.SnapshotDir)
+	cfg.Firecracker.SocketDir = resolveConfigPath(baseDir, cfg.Firecracker.SocketDir)
+	cfg.Firecracker.VsockDir = resolveConfigPath(baseDir, cfg.Firecracker.VsockDir)
+	cfg.Firecracker.LogDir = resolveConfigPath(baseDir, cfg.Firecracker.LogDir)
+
+	cfg.AppleVZ.KernelPath = resolveConfigPath(baseDir, cfg.AppleVZ.KernelPath)
+	cfg.AppleVZ.InitrdPath = resolveConfigPath(baseDir, cfg.AppleVZ.InitrdPath)
+	cfg.AppleVZ.RootfsDir = resolveConfigPath(baseDir, cfg.AppleVZ.RootfsDir)
+	cfg.AppleVZ.CodeDir = resolveConfigPath(baseDir, cfg.AppleVZ.CodeDir)
+	cfg.AppleVZ.SocketDir = resolveConfigPath(baseDir, cfg.AppleVZ.SocketDir)
+	cfg.AppleVZ.VfkitPath = resolveConfigPath(baseDir, cfg.AppleVZ.VfkitPath)
+	cfg.AppleVZ.NovaVZPath = resolveConfigPath(baseDir, cfg.AppleVZ.NovaVZPath)
+	cfg.AppleVZ.SnapshotDirVal = resolveConfigPath(baseDir, cfg.AppleVZ.SnapshotDirVal)
+
+	cfg.Layers.StorageDir = resolveConfigPath(baseDir, cfg.Layers.StorageDir)
+	cfg.Volumes.StorageDir = resolveConfigPath(baseDir, cfg.Volumes.StorageDir)
+	cfg.Observability.OutputCapture.StorageDir = resolveConfigPath(baseDir, cfg.Observability.OutputCapture.StorageDir)
+}
+
+func resolveConfigPath(baseDir, value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || filepath.IsAbs(trimmed) {
+		return value
+	}
+	return filepath.Clean(filepath.Join(baseDir, trimmed))
 }
 
 // LoadFromEnv applies environment variable overrides to the config

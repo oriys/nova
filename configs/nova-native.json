@@ -17,7 +17,7 @@
     "backend": "docker",
     "binary": "/opt/nova/bin/firecracker",
     "kernel": "/opt/nova/kernel/vmlinux",
-    "rootfs_dir": "assets/rootfs",
+    "rootfs_dir": "../assets/rootfs",
     "snapshot_dir": "/tmp/nova/snapshots",
     "socket_dir": "/tmp/nova/sockets",
     "vsock_dir": "/tmp/nova/vsock",
@@ -28,12 +28,12 @@
     "image_prefix": "nova-runtime"
   },
   "applevz": {
-    "kernel_path": "assets/kernel/Image-alpine-arm64",
-    "initrd_path": "assets/kernel/initramfs-alpine-arm64-vsock",
-    "rootfs_dir": "assets/rootfs",
+    "kernel_path": "../assets/kernel/Image-alpine-arm64",
+    "initrd_path": "../assets/kernel/initramfs-alpine-arm64-vsock",
+    "rootfs_dir": "../assets/rootfs",
     "code_dir": "/tmp/nova/applevz-code",
     "socket_dir": "/tmp/nova/applevz-socks",
-    "nova_vz_path": "bin/nova-vz",
+    "nova_vz_path": "../bin/nova-vz",
     "snapshot_dir": "/tmp/nova/applevz-snapshots",
     "default_mem_mb": 256,
     "default_cpus": 1

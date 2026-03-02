@@ -28,6 +28,7 @@ type config struct {
 	initrd        string
 	cmdline       string
 	rootfs        string
+	rootfsRO      bool
 	cpus          uint
 	memoryMB      uint64
 	sharedDir     string
@@ -45,6 +46,7 @@ func main() {
 	flag.StringVar(&cfg.initrd, "initrd", "", "Initial ramdisk")
 	flag.StringVar(&cfg.cmdline, "cmdline", "console=hvc0 root=/dev/vda rw", "Kernel command line")
 	flag.StringVar(&cfg.rootfs, "rootfs", "", "Root filesystem image (required)")
+	flag.BoolVar(&cfg.rootfsRO, "rootfs-readonly", true, "Open rootfs read-only (allows sharing between VMs)")
 	flag.UintVar(&cfg.cpus, "cpus", 1, "CPU count")
 	flag.Uint64Var(&cfg.memoryMB, "memory", 256, "Memory in MB")
 	flag.StringVar(&cfg.sharedDir, "shared-dir", "", "Host directory to share via VirtioFS")
@@ -93,7 +95,7 @@ func run(cfg config) error {
 
 	// Storage (virtio-blk)
 	diskAttach, err := vz.NewDiskImageStorageDeviceAttachmentWithCacheAndSync(
-		cfg.rootfs, false,
+		cfg.rootfs, cfg.rootfsRO,
 		vz.DiskImageCachingModeCached,
 		vz.DiskImageSynchronizationModeFsync,
 	)

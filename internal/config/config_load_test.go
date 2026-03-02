@@ -57,3 +57,50 @@ func TestLoadFromFile_FirecrackerPathFields(t *testing.T) {
 		t.Fatalf("log_dir = %q, want %q", got, want)
 	}
 }
+
+func TestLoadFromFile_ResolvesRelativePathsAgainstConfigDir(t *testing.T) {
+	t.Parallel()
+
+	rootDir := t.TempDir()
+	configDir := filepath.Join(rootDir, "configs")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("mkdir configs: %v", err)
+	}
+
+	cfgPath := filepath.Join(configDir, "nova-native.json")
+	content := `{
+  "firecracker": {
+    "rootfs_dir": "../assets/rootfs"
+  },
+  "applevz": {
+    "kernel_path": "../assets/kernel/Image-alpine-arm64",
+    "initrd_path": "../assets/kernel/initramfs-alpine-arm64-vsock",
+    "rootfs_dir": "../assets/rootfs",
+    "nova_vz_path": "../bin/nova-vz"
+  }
+}`
+	if err := os.WriteFile(cfgPath, []byte(content), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := LoadFromFile(cfgPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	if got, want := cfg.Firecracker.RootfsDir, filepath.Join(rootDir, "assets", "rootfs"); got != want {
+		t.Fatalf("firecracker rootfs_dir = %q, want %q", got, want)
+	}
+	if got, want := cfg.AppleVZ.KernelPath, filepath.Join(rootDir, "assets", "kernel", "Image-alpine-arm64"); got != want {
+		t.Fatalf("applevz kernel_path = %q, want %q", got, want)
+	}
+	if got, want := cfg.AppleVZ.InitrdPath, filepath.Join(rootDir, "assets", "kernel", "initramfs-alpine-arm64-vsock"); got != want {
+		t.Fatalf("applevz initrd_path = %q, want %q", got, want)
+	}
+	if got, want := cfg.AppleVZ.RootfsDir, filepath.Join(rootDir, "assets", "rootfs"); got != want {
+		t.Fatalf("applevz rootfs_dir = %q, want %q", got, want)
+	}
+	if got, want := cfg.AppleVZ.NovaVZPath, filepath.Join(rootDir, "bin", "nova-vz"); got != want {
+		t.Fatalf("applevz nova_vz_path = %q, want %q", got, want)
+	}
+}

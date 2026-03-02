@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -75,10 +76,15 @@ func DefaultConfig() *Config {
 	if v := os.Getenv("NOVA_BACKEND"); v != "" {
 		backend = v
 	}
+	// Use arch-appropriate kernel image name
+	kernelName := "vmlinux"
+	if runtime.GOARCH == "arm64" {
+		kernelName = "Image-arm64"
+	}
 	return &Config{
 		Backend:            backend,
 		FirecrackerBin:     NovaDir + "/bin/firecracker",
-		KernelPath:         NovaDir + "/kernel/vmlinux",
+		KernelPath:         NovaDir + "/kernel/" + kernelName,
 		RootfsDir:          NovaDir + "/rootfs",
 		SnapshotDir:        NovaDir + "/snapshots",
 		SocketDir:          "/tmp/nova/sockets",

@@ -29,36 +29,47 @@ func DetectAvailableBackends() []BackendInfo {
 }
 
 // DetectDefaultBackend returns the best available backend for the current system.
+// Priority: microVM/Apple VZ first, Docker as fallback.
+//
+//	Linux (amd64/arm64): Firecracker > Kata > LibKrun > Docker
+//	macOS (arm64):       Apple VZ    > LibKrun > Docker
+//	any platform:        Kubernetes  > WASM    > Docker
 func DetectDefaultBackend() domain.BackendType {
-	if runtime.GOOS == "linux" {
+	switch runtime.GOOS {
+	case "linux":
+		// Prefer Firecracker microVMs when KVM is available
 		if _, err := os.Stat("/dev/kvm"); err == nil {
 			if _, err := exec.LookPath("firecracker"); err == nil {
 				return domain.BackendFirecracker
 			}
+			if _, err := exec.LookPath("kata-runtime"); err == nil {
+				return domain.BackendKata
+			}
 		}
-	}
-	if _, err := exec.LookPath("docker"); err == nil {
-		return domain.BackendDocker
-	}
-	// Fall back to other available backends
-	if runtime.GOOS == "darwin" {
+		if _, err := exec.LookPath("krun"); err == nil {
+			return domain.BackendLibKrun
+		}
+	case "darwin":
+		// Prefer Apple Virtualization.framework on macOS (typically arm64)
+		if _, err := exec.LookPath("nova-vz"); err == nil {
+			return domain.BackendAppleVZ
+		}
 		if _, err := exec.LookPath("vfkit"); err == nil {
 			return domain.BackendAppleVZ
 		}
 		if _, err := exec.LookPath("krunvm"); err == nil {
 			return domain.BackendLibKrun
 		}
-	} else if runtime.GOOS == "linux" {
-		if _, err := exec.LookPath("krun"); err == nil {
-			return domain.BackendLibKrun
-		}
 	}
+
+	// Cross-platform fallbacks: Kubernetes > WASM > Docker
 	if info := detectKubernetes(); info.Available {
 		return domain.BackendKubernetes
 	}
 	if _, err := exec.LookPath("wasmtime"); err == nil {
 		return domain.BackendWasm
 	}
+	// Docker is the universal fallback
 	return domain.BackendDocker
 }
 

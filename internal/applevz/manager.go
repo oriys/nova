@@ -223,7 +223,7 @@ func (m *Manager) startVM(ctx context.Context, fn *domain.Function, vmID string,
 	}
 
 	// Build kernel command line
-	cmdline := "console=hvc0 root=/dev/vda rw init=/init modules=virtio_blk,ext4,vsock,vmw_vsock_virtio_transport_common,vmw_vsock_virtio_transport"
+	cmdline := "console=hvc0 root=/dev/vda ro init=/init modules=virtio_blk,ext4,vsock,vmw_vsock_virtio_transport_common,vmw_vsock_virtio_transport"
 	if m.config.KernelCmdline != "" {
 		cmdline += " " + m.config.KernelCmdline
 	}

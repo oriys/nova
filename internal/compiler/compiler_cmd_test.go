@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/oriys/nova/internal/domain"
@@ -17,7 +18,7 @@ func TestDockerCreateArgs_UsesShellEntrypoint(t *testing.T) {
 
 	want := []string{
 		"create",
-		"--platform", "linux/amd64",
+		"--platform", "linux/" + runtime.GOARCH,
 		"--network", "host",
 		"--name", "nova-compile-test",
 		"--entrypoint", "/bin/sh",
@@ -45,7 +46,8 @@ func TestResolveCompilePlatform_Default(t *testing.T) {
 	t.Setenv("NOVA_GRAALVM_COMPILE_PLATFORM", "")
 
 	got := resolveCompilePlatform(domain.RuntimeGo)
-	if got != "linux/amd64" {
-		t.Fatalf("expected default platform linux/amd64, got %s", got)
+	want := "linux/" + runtime.GOARCH
+	if got != want {
+		t.Fatalf("expected default platform %s, got %s", want, got)
 	}
 }

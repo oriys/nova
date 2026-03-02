@@ -14,11 +14,19 @@ WASMTIME_VERSION="${WASMTIME_VERSION:-v41.0.1}"
 DENO_VERSION="${DENO_VERSION:-v2.6.7}"
 BUN_VERSION="${BUN_VERSION:-bun-v1.3.8}"
 
-# URLs
-ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-minirootfs-${ALPINE_VERSION}-x86_64.tar.gz"
-WASMTIME_URL="https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz"
-DENO_URL="https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip"
-BUN_URL="https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/bun-linux-x64-musl.zip"
+# Detect host architecture
+HOST_ARCH="$(uname -m)"
+case "${HOST_ARCH}" in
+  x86_64)  ARCH="x86_64"; BUN_MUSL="bun-linux-x64-musl" ;;
+  aarch64|arm64) ARCH="aarch64"; BUN_MUSL="bun-linux-aarch64-musl" ;;
+  *) echo "Unsupported architecture: ${HOST_ARCH}"; exit 1 ;;
+esac
+
+# URLs (architecture-aware)
+ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/${ARCH}/alpine-minirootfs-${ALPINE_VERSION}-${ARCH}.tar.gz"
+WASMTIME_URL="https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-${ARCH}-linux.tar.xz"
+DENO_URL="https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-${ARCH}-unknown-linux-gnu.zip"
+BUN_URL="https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/${BUN_MUSL}.zip"
 
 mkdir -p "${ASSETS_DIR}"
 

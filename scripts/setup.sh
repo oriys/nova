@@ -1,11 +1,13 @@
 #!/bin/bash
 # Nova Serverless Platform - One-Click Deployment Script
 #
-# This script deploys the complete Nova platform on a Linux x86_64 server:
+# This script deploys the complete Nova platform on a Linux server:
 # - PostgreSQL database + schema initialization
 # - Nova control plane + Comet data plane + Zenith gateway
 # - Lumen frontend (Next.js standalone)
 # - Five systemd services, enabled at boot
+#
+# Supported architectures: x86_64 (amd64) and aarch64 (arm64)
 #
 # Usage:
 #   # Option 1: Build locally and deploy to remote server
@@ -27,12 +29,20 @@ INSTALL_DIR="/opt/nova"
 NOVA_CACHE_DIR="${NOVA_CACHE_DIR:-/var/cache/nova/downloads}"
 NOVA_ROOTFS_CACHE_DIR="${NOVA_CACHE_DIR}/rootfs"
 FC_VERSION="latest"
-ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.3-x86_64.tar.gz"
 WASMTIME_VERSION="v41.0.1"
 DENO_VERSION="v2.6.7"
 BUN_VERSION="bun-v1.3.8"
 ROOTFS_SIZE_MB=256
 ROOTFS_SIZE_JAVA_MB=512
+
+# Architecture detection
+HOST_ARCH="$(uname -m)"
+case "${HOST_ARCH}" in
+  x86_64)  ARCH="x86_64"; BUN_MUSL_DIR="bun-linux-x64-musl" ;;
+  aarch64) ARCH="aarch64"; BUN_MUSL_DIR="bun-linux-aarch64-musl" ;;
+  *) echo "Unsupported architecture: ${HOST_ARCH}"; exit 1 ;;
+esac
+ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/${ARCH}/alpine-minirootfs-3.23.3-${ARCH}.tar.gz"
 NODE_VERSION=20
 DOCKER_RUNTIME_IMAGE_PREFIX="${NOVA_DOCKER_IMAGE_PREFIX:-nova-runtime}"
 
@@ -244,7 +254,7 @@ check_root() {
 
 check_system() {
     [[ "$(uname)" == "Linux" ]] || err "This script only supports Linux"
-    [[ "$(uname -m)" == "x86_64" ]] || err "This script only supports x86_64 architecture"
+    [[ "$(uname -m)" == "x86_64" || "$(uname -m)" == "aarch64" ]] || err "This script only supports x86_64 and aarch64 architectures"
     [[ -e /dev/kvm ]] || warn "/dev/kvm not found - Firecracker requires KVM. VMs will not work without it."
 }
 
@@ -778,8 +788,8 @@ build_wasm_rootfs() {
     chroot "${mnt}" /bin/sh -c "apk add --no-cache libstdc++ gcompat" >/dev/null 2>&1
 
     cached_curl_pipe \
-        "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
-        "wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
+        "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-${ARCH}-linux.tar.xz" \
+        "wasmtime-${WASMTIME_VERSION}-${ARCH}-linux.tar.xz" \
         | tar -xJf - -C "${mnt}/usr/local/bin" --strip-components=1 --wildcards '*/wasmtime'
 
     [[ -f "${INSTALL_DIR}/bin/nova-agent" ]] && \
@@ -943,8 +953,8 @@ build_deno_rootfs() {
     deno_zip="$(mktemp /tmp/deno.XXXXXX.zip)"
 
     cached_curl \
-        "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" \
-        "${deno_zip}" "deno-${DENO_VERSION}-x86_64-unknown-linux-gnu.zip"
+        "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-${ARCH}-unknown-linux-gnu.zip" \
+        "${deno_zip}" "deno-${DENO_VERSION}-${ARCH}-unknown-linux-gnu.zip"
     unzip -q -o "${deno_zip}" -d "${rootfs_dir}/usr/local/bin"
     chmod +x "${rootfs_dir}/usr/local/bin/deno"
     rm -f "${deno_zip}"
@@ -1161,14 +1171,14 @@ precache_rootfs_downloads() {
     # Wasmtime and Deno/Bun archives are each used by one builder,
     # but pre-caching avoids download contention during parallel builds.
     cached_curl \
-        "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
-        /dev/null "wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz"
+        "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-${ARCH}-linux.tar.xz" \
+        /dev/null "wasmtime-${WASMTIME_VERSION}-${ARCH}-linux.tar.xz"
     cached_curl \
-        "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" \
-        /dev/null "deno-${DENO_VERSION}-x86_64-unknown-linux-gnu.zip"
+        "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-${ARCH}-unknown-linux-gnu.zip" \
+        /dev/null "deno-${DENO_VERSION}-${ARCH}-unknown-linux-gnu.zip"
     cached_curl \
-        "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/bun-linux-x64-musl.zip" \
-        /dev/null "bun-${BUN_VERSION}-linux-x64-musl.zip"
+        "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/${BUN_MUSL_DIR}.zip" \
+        /dev/null "bun-${BUN_VERSION}-${BUN_MUSL_DIR}.zip"
 }
 
 # Build all rootfs images in parallel.

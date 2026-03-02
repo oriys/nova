@@ -230,7 +230,7 @@ if (in_array('--persistent', $argv)) {
 
 const bootstrapDeno = `// Read and evaluate user handler
 const _handlerCode = await Deno.readTextFile((Deno.env.get("NOVA_CODE_DIR") || "/code") + "/handler");
-const _blob = new Blob([_handlerCode], { type: "application/javascript" });
+const _blob = new Blob([_handlerCode], { type: "application/typescript" });
 const _url = URL.createObjectURL(_blob);
 const _mod = await import(_url);
 const handler = _mod.handler || _mod.default;

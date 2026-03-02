@@ -191,7 +191,7 @@ stage_alpine_root() {
   local root="$1"
   # Fetch to a temporary file then untar
   local tmp_tar="${root}/alpine.tar.gz"
-  fetch_asset "${ALPINE_URL}" "alpine-minirootfs.tar.gz" "${tmp_tar}"
+  fetch_asset "${ALPINE_URL}" "alpine-minirootfs${ARCH_SUFFIX}.tar.gz" "${tmp_tar}"
   tar -xzf "${tmp_tar}" -C "${root}"
   rm "${tmp_tar}"
 
@@ -287,7 +287,7 @@ build_wasm_rootfs() {
   
   fetch_asset \
     "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-${WASMTIME_ARCH}-linux.tar.xz" \
-    "wasmtime.tar.xz" \
+    "wasmtime${ARCH_SUFFIX}.tar.xz" \
     "${wasmtime_tmp}/wasmtime.tar.xz"
 
   tar -xJf "${wasmtime_tmp}/wasmtime.tar.xz" -C "${wasmtime_tmp}"
@@ -347,7 +347,7 @@ build_deno_rootfs() {
   
   fetch_asset \
     "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-${DENO_ARCH}-unknown-linux-gnu.zip" \
-    "deno.zip" \
+    "deno${ARCH_SUFFIX}.zip" \
     "${deno_tmp}/deno.zip"
 
   unzip -q -o "${deno_tmp}/deno.zip" -d "${deno_tmp}"
@@ -375,7 +375,7 @@ build_bun_rootfs() {
   
   fetch_asset \
     "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/${BUN_MUSL_DIR}.zip" \
-    "bun.zip" \
+    "bun${ARCH_SUFFIX}.zip" \
     "${bun_tmp}/bun.zip"
     
   unzip -q -o "${bun_tmp}/bun.zip" -d "${bun_tmp}"

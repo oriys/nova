@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	goRuntime "runtime"
 	"strings"
 	"sync"
 	"time"
@@ -388,9 +389,8 @@ strip = true
 		if _, ok := files[".cargo/config.toml"]; !ok {
 			cargoDir := filepath.Join(workDir, ".cargo")
 			os.MkdirAll(cargoDir, 0755)
-			cargoConfig := `[target.x86_64-unknown-linux-musl]
-rustflags = ["-C", "target-feature=+crt-static"]
-`
+			rustTarget := resolveRustTarget()
+			cargoConfig := fmt.Sprintf("[target.%s]\nrustflags = [\"-C\", \"target-feature=+crt-static\"]\n", rustTarget)
 			if err := os.WriteFile(filepath.Join(cargoDir, "config.toml"), []byte(cargoConfig), 0644); err != nil {
 				return err
 			}
@@ -1108,9 +1108,8 @@ strip = true
 		// Create .cargo/config.toml for static musl linking
 		cargoDir := filepath.Join(workDir, ".cargo")
 		os.MkdirAll(cargoDir, 0755)
-		cargoConfig := `[target.x86_64-unknown-linux-musl]
-rustflags = ["-C", "target-feature=+crt-static"]
-`
+		rustTarget := resolveRustTarget()
+		cargoConfig := fmt.Sprintf("[target.%s]\nrustflags = [\"-C\", \"target-feature=+crt-static\"]\n", rustTarget)
 		if err := os.WriteFile(filepath.Join(cargoDir, "config.toml"), []byte(cargoConfig), 0644); err != nil {
 			return err
 		}
@@ -1200,7 +1199,8 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 		}
 		return "golang:1.23-alpine", fmt.Sprintf("cd /work && go mod tidy && CGO_ENABLED=0 GOOS=linux GOARCH=%s go build -o handler .", goarch)
 	case domain.RuntimeRust:
-		return "rust:1.84-alpine", "apk add --no-cache musl-dev gcc && cd /work && RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target x86_64-unknown-linux-musl && cp target/x86_64-unknown-linux-musl/release/handler /work/handler"
+		rustTarget := resolveRustTarget()
+		return "rust:1.84-alpine", fmt.Sprintf("apk add --no-cache musl-dev gcc && cd /work && RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target %s && cp target/%s/release/handler /work/handler", rustTarget, rustTarget)
 	case domain.RuntimeJava:
 		return "eclipse-temurin:21-jdk", "cd /work && javac Main.java Handler.java && jar cfe handler.jar Main *.class && cp handler.jar handler"
 	case domain.RuntimeKotlin:
@@ -1208,7 +1208,8 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 	case domain.RuntimeSwift:
 		return "swift:5.10", "cd /work && swiftc -o handler -static-executable Handler.swift main.swift"
 	case domain.RuntimeZig:
-		return "euantorano/zig:0.13.0", "cd /work && zig build-exe main.zig -name handler -target x86_64-linux-musl"
+		zigTarget := resolveZigTarget()
+		return "euantorano/zig:0.13.0", fmt.Sprintf("cd /work && zig build-exe main.zig -name handler -target %s", zigTarget)
 	case domain.RuntimeScala:
 		return "eclipse-temurin:21-jdk",
 			`DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-install-recommends scala && cd /work && scalac *.scala && ` +
@@ -1249,11 +1250,27 @@ func dockerCreateArgs(containerName, image, buildCmd string, runtime domain.Runt
 	return args
 }
 
+// resolveRustTarget returns the Rust target triple matching the compile platform.
+func resolveRustTarget() string {
+	if p := resolveCompilePlatform(domain.RuntimeRust); strings.Contains(p, "arm64") || strings.Contains(p, "aarch64") {
+		return "aarch64-unknown-linux-musl"
+	}
+	return "x86_64-unknown-linux-musl"
+}
+
+// resolveZigTarget returns the Zig target triple matching the compile platform.
+func resolveZigTarget() string {
+	if p := resolveCompilePlatform(domain.RuntimeZig); strings.Contains(p, "arm64") || strings.Contains(p, "aarch64") {
+		return "aarch64-linux-musl"
+	}
+	return "x86_64-linux-musl"
+}
+
 func resolveCompilePlatform(runtime domain.Runtime) string {
-	// Default to amd64 for compatibility with x86_64 microVM backends.
+	// Auto-detect from host architecture; override via NOVA_COMPILE_PLATFORM.
 	platform := strings.TrimSpace(os.Getenv("NOVA_COMPILE_PLATFORM"))
 	if platform == "" {
-		platform = "linux/amd64"
+		platform = "linux/" + goRuntime.GOARCH
 	}
 	// Allow GraalVM to be compiled for a different platform in Docker backend
 	// to avoid cross-arch emulation startup overhead on ARM hosts.

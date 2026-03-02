@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -158,7 +159,11 @@ func daemonCmd() *cobra.Command {
 			if defaultBackend == "" || defaultBackend == domain.BackendAuto {
 				detected := backend.DetectDefaultBackend()
 				defaultBackend = detected
-				logging.Op().Info("auto-detected backend", "backend", defaultBackend)
+				logging.Op().Info("auto-detected backend",
+					"backend", defaultBackend,
+					"os", runtime.GOOS,
+					"arch", runtime.GOARCH,
+				)
 			}
 			if defaultBackend == domain.BackendType("k8s") {
 				defaultBackend = domain.BackendKubernetes
@@ -208,7 +213,7 @@ func daemonCmd() *cobra.Command {
 				},
 			}
 			switch defaultBackend {
-			case domain.BackendDocker, domain.BackendWasm, domain.BackendKubernetes, domain.BackendKata, domain.BackendLibKrun, domain.BackendFirecracker:
+			case domain.BackendDocker, domain.BackendWasm, domain.BackendKubernetes, domain.BackendKata, domain.BackendLibKrun, domain.BackendFirecracker, domain.BackendAppleVZ:
 			default:
 				return fmt.Errorf("unsupported default backend for comet: %s", defaultBackend)
 			}

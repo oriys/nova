@@ -21,10 +21,11 @@ ATLAS_LINUX  := $(BINARY_DIR)/atlas-linux
 SERVER       ?= user@server
 PREFIX       ?= nova-runtime
 AGENT_ARCH   ?= amd64
+HOST_ARCH    := $(shell uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
 
 # ─── Backend ──────────────────────────────────────────────────────────────────
 
-.PHONY: build build-linux agent agent-arm64 agent-all comet comet-linux zenith zenith-linux corona corona-linux nebula nebula-linux aurora aurora-linux proto nova-vz
+.PHONY: build build-linux build-linux-arm64 build-linux-all agent agent-arm64 agent-all comet comet-linux zenith zenith-linux corona corona-linux nebula nebula-linux aurora aurora-linux proto nova-vz
 
 proto:  ## Generate gRPC/protobuf code via buf (nova.proto)
 	cd api/proto && buf generate --path nova.proto
@@ -32,6 +33,18 @@ proto:  ## Generate gRPC/protobuf code via buf (nova.proto)
 build: $(NOVA_BIN) $(COMET_BIN) $(ZENITH_BIN) $(CORONA_BIN) $(NEBULA_BIN) $(AURORA_BIN) $(AGENT_BIN)  ## Build all services (native) + agent (linux/amd64)
 
 build-linux: $(NOVA_LINUX) $(COMET_LINUX) $(ZENITH_LINUX) $(CORONA_LINUX) $(NEBULA_LINUX) $(AURORA_LINUX) $(AGENT_BIN)  ## Cross-compile all services + agent for linux/amd64
+
+build-linux-arm64:  ## Cross-compile all services + agent for linux/arm64
+	@mkdir -p $(BINARY_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o $(NOVA_LINUX)-arm64 ./cmd/nova
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o $(COMET_LINUX)-arm64 ./cmd/comet
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o $(ZENITH_LINUX)-arm64 ./cmd/zenith
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o $(CORONA_LINUX)-arm64 ./cmd/corona
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o $(NEBULA_LINUX)-arm64 ./cmd/nebula
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o $(AURORA_LINUX)-arm64 ./cmd/aurora
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o $(BINARY_DIR)/nova-agent-arm64 ./cmd/agent
+
+build-linux-all: build-linux build-linux-arm64  ## Cross-compile all services for both amd64 and arm64
 
 agent: $(AGENT_BIN)  ## Build only the guest agent (linux/amd64)
 agent-arm64: $(BINARY_DIR)/nova-agent-arm64  ## Build guest agent for linux/arm64
