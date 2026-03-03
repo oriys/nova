@@ -72,9 +72,14 @@ func (c *Compiler) CompileAsync(ctx context.Context, fn *domain.Function, source
 	// Mark as compiling
 	c.store.UpdateCompileResult(ctx, fn.ID, nil, "", domain.CompileStatusCompiling, "")
 
+	// Capture tenant scope so the background goroutine can write back to
+	// the correct tenant partition.  context.Background() alone would fall
+	// back to default/default and silently move the function row.
+	scope := store.TenantScopeFromContext(ctx)
+
 	// Run compilation in background
 	go func() {
-		bgCtx := context.Background()
+		bgCtx := store.WithTenantScope(context.Background(), scope.TenantID, scope.Namespace)
 		binary, err := c.compile(bgCtx, fn, sourceCode)
 		if err != nil {
 			logging.Op().Error("compilation failed", "function", fn.Name, "error", err)
@@ -204,9 +209,14 @@ func (c *Compiler) CompileAsyncWithFiles(ctx context.Context, fn *domain.Functio
 	// Mark as compiling
 	c.store.UpdateCompileResult(ctx, fn.ID, nil, "", domain.CompileStatusCompiling, "")
 
+	// Capture tenant scope so the background goroutine can write back to
+	// the correct tenant partition.  context.Background() alone would fall
+	// back to default/default and silently move the function row.
+	scope := store.TenantScopeFromContext(ctx)
+
 	// Run compilation in background
 	go func() {
-		bgCtx := context.Background()
+		bgCtx := store.WithTenantScope(context.Background(), scope.TenantID, scope.Namespace)
 		binary, err := c.compileWithFiles(bgCtx, fn, files)
 		if err != nil {
 			logging.Op().Error("compilation failed", "function", fn.Name, "error", err)
