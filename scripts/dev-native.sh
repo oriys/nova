@@ -18,6 +18,7 @@ CONFIG="$ROOT_DIR/configs/nova-native.json"
 PG_DSN="postgres://nova:nova@localhost:5432/nova?sslmode=disable"
 LOG_DIR="/tmp/nova/logs/native"
 PID_DIR="/tmp/nova/pids"
+GRPC_HEALTH_PROBE="$ROOT_DIR/bin/grpc-health-check"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -182,14 +183,28 @@ stop_service() {
     rm -f "$pid_file"
 }
 
-wait_for_port() {
-    local port="$1"
+wait_for_grpc_health() {
+    local addr="$1"
     local name="$2"
     local timeout="${3:-30}"
     local start=$SECONDS
-    while ! nc -z 127.0.0.1 "$port" 2>/dev/null; do
+    while ! "$GRPC_HEALTH_PROBE" -timeout 2s "$addr" >/dev/null 2>&1; do
         if (( SECONDS - start >= timeout )); then
-            err "$name failed to start within ${timeout}s"
+            err "$name gRPC health check failed within ${timeout}s"
+            return 1
+        fi
+        sleep 0.5
+    done
+}
+
+wait_for_http_health() {
+    local url="$1"
+    local name="$2"
+    local timeout="${3:-30}"
+    local start=$SECONDS
+    while ! curl -sf "$url" >/dev/null 2>&1; do
+        if (( SECONDS - start >= timeout )); then
+            err "$name HTTP health check failed within ${timeout}s"
             return 1
         fi
         sleep 0.5
@@ -202,6 +217,10 @@ do_build() {
     log "Building native binaries..."
     cd "$ROOT_DIR"
     make build nova-vz 2>&1 | tail -5
+    if [ ! -x "$GRPC_HEALTH_PROBE" ] || [ "$ROOT_DIR/scripts/grpc-health-check.go" -nt "$GRPC_HEALTH_PROBE" ]; then
+        log "Building gRPC health probe..."
+        go build -o "$GRPC_HEALTH_PROBE" "$ROOT_DIR/scripts/grpc-health-check.go"
+    fi
     log "Build complete"
 }
 
@@ -253,43 +272,43 @@ do_start() {
     fi
     export NOVA_AGENT_PATH="$ROOT_DIR/bin/nova-agent-darwin"
 
-    # Nova (control plane) - port 9001
+    # Nova (control plane) - gRPC port 9001
     # Start nova first to run DB migrations before other services
     start_service nova \
-        bin/nova daemon --config "$CONFIG" --http :9001 --pg-dsn "$PG_DSN"
-    wait_for_port 9001 "nova" 30
+        bin/nova daemon --config "$CONFIG" --grpc :9001 --pg-dsn "$PG_DSN"
+    wait_for_grpc_health 127.0.0.1:9001 "nova" 30
 
-    # Comet (data plane) - port 9090
+    # Comet (data plane) - gRPC port 9090
     start_service comet \
         bin/comet daemon --config "$CONFIG" --grpc :9090 --pg-dsn "$PG_DSN"
-    wait_for_port 9090 "comet" 15
+    wait_for_grpc_health 127.0.0.1:9090 "comet" 15
 
-    # Aurora (observability) - port 9002
+    # Aurora (observability) - gRPC port 9002
     start_service aurora \
-        bin/aurora daemon --config "$CONFIG" --listen :9002 --pg-dsn "$PG_DSN"
-    wait_for_port 9002 "aurora" 15
+        bin/aurora daemon --config "$CONFIG" --grpc :9002 --pg-dsn "$PG_DSN"
+    wait_for_grpc_health 127.0.0.1:9002 "aurora" 15
 
-    # Corona (scheduler) - port 9003
+    # Corona (scheduler) - gRPC port 9003
     start_service corona \
-        bin/corona daemon --config "$CONFIG" --comet-grpc 127.0.0.1:9090 --listen :9003 --pg-dsn "$PG_DSN"
-    wait_for_port 9003 "corona" 15
+        bin/corona daemon --config "$CONFIG" --comet-grpc 127.0.0.1:9090 --grpc :9003 --pg-dsn "$PG_DSN"
+    wait_for_grpc_health 127.0.0.1:9003 "corona" 15
 
-    # Nebula (event bus) - port 9004
+    # Nebula (event bus) - gRPC port 9004
     start_service nebula \
-        bin/nebula daemon --config "$CONFIG" --comet-grpc 127.0.0.1:9090 --listen :9004 --pg-dsn "$PG_DSN"
-    wait_for_port 9004 "nebula" 15
+        bin/nebula daemon --config "$CONFIG" --comet-grpc 127.0.0.1:9090 --grpc :9004 --pg-dsn "$PG_DSN"
+    wait_for_grpc_health 127.0.0.1:9004 "nebula" 15
 
-    # Zenith (gateway) - port 9000
+    # Zenith (gateway) - HTTP port 9000
     start_service zenith \
         bin/zenith serve \
         --listen :9000 \
-        --nova-url http://127.0.0.1:9001 \
+        --nova-grpc 127.0.0.1:9001 \
         --comet-grpc 127.0.0.1:9090 \
-        --corona-url http://127.0.0.1:9003 \
-        --nebula-url http://127.0.0.1:9004 \
-        --aurora-url http://127.0.0.1:9002
+        --corona-grpc 127.0.0.1:9003 \
+        --nebula-grpc 127.0.0.1:9004 \
+        --aurora-grpc 127.0.0.1:9002
 
-    wait_for_port 9000 "zenith" 10
+    wait_for_http_health http://127.0.0.1:9000/health "zenith" 10
 
     # Lumen frontend (unless --no-frontend)
     if [ "${NO_FRONTEND:-0}" != "1" ]; then
@@ -300,11 +319,11 @@ do_start() {
     log "All services started! 🚀"
     echo ""
     info "  Gateway:    http://localhost:9000"
-    info "  Nova API:   http://localhost:9001"
+    info "  Nova gRPC:  localhost:9001"
     info "  Comet gRPC: localhost:9090"
-    info "  Aurora:     http://localhost:9002"
-    info "  Corona:     http://localhost:9003"
-    info "  Nebula:     http://localhost:9004"
+    info "  Aurora gRPC: localhost:9002"
+    info "  Corona gRPC: localhost:9003"
+    info "  Nebula gRPC: localhost:9004"
     info "  Postgres:   localhost:5432"
     if [ "${NO_FRONTEND:-0}" != "1" ]; then
         info "  Lumen:      http://localhost:3000"

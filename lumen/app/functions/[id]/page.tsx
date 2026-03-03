@@ -103,26 +103,37 @@ export default function FunctionDetailPage({
   const [invokeMeta, setInvokeMeta] = useState<string | null>(null)
   const [invokeMode, setInvokeMode] = useState<"sync" | "async">("sync")
   const [asyncJobs, setAsyncJobs] = useState<AsyncInvocationJob[]>([])
+  const [asyncJobsPage, setAsyncJobsPage] = useState(1)
+  const [asyncJobsPageSize, setAsyncJobsPageSize] = useState(10)
+  const [asyncJobsTotal, setAsyncJobsTotal] = useState(0)
   const [loadingAsyncJobs, setLoadingAsyncJobs] = useState(false)
-  const [retryingAsyncJobId, setRetryingAsyncJobId] = useState<string | null>(null)
+  const [retryingAsyncJobIds, setRetryingAsyncJobIds] = useState<string[]>([])
   const [versions, setVersions] = useState<FunctionVersionEntry[]>([])
   const [schedules, setSchedules] = useState<ScheduleEntry[]>([])
   const loadedFunctionIDRef = useRef<string | null>(null)
 
   const refreshAsyncJobs = useCallback(async (functionName?: string) => {
-    const targetName = functionName
+    const targetName = functionName?.trim() || func?.name
     if (!targetName) return
     setLoadingAsyncJobs(true)
     try {
-      const jobs = await functionsApi.listAsyncInvocations(targetName, 50)
-      setAsyncJobs(jobs || [])
+      const offset = (asyncJobsPage - 1) * asyncJobsPageSize
+      const result = await functionsApi.listAsyncInvocationsPage(targetName, asyncJobsPageSize, undefined, offset)
+      setAsyncJobs(result.items || [])
+      setAsyncJobsTotal(result.total || 0)
     } catch (err) {
       console.error("Failed to fetch async invocations:", err)
       setAsyncJobs([])
+      setAsyncJobsTotal(0)
     } finally {
       setLoadingAsyncJobs(false)
     }
-  }, [])
+  }, [asyncJobsPage, asyncJobsPageSize, func?.name])
+
+  useEffect(() => {
+    if (!func?.name) return
+    void refreshAsyncJobs(func.name)
+  }, [func?.name, refreshAsyncJobs])
 
   const fetchData = useCallback(async () => {
     try {
@@ -147,7 +158,6 @@ export default function FunctionDetailPage({
       // Fetch versions and schedules (non-blocking)
       functionsApi.listVersions(fn.name).then(v => setVersions(v || [])).catch(() => setVersions([]))
       schedulesApi.list(fn.name).then(s => setSchedules(s || [])).catch(() => setSchedules([]))
-      refreshAsyncJobs(fn.name)
 
       setMetrics(fnMetrics)
       setFunc(transformFunction(fn, fnMetrics ?? undefined))
@@ -164,7 +174,7 @@ export default function FunctionDetailPage({
       setRefreshing(false)
       loadedFunctionIDRef.current = id
     }
-  }, [id, logsPage, logsPageSize, refreshAsyncJobs, requestedLogID, t])
+  }, [id, logsPage, logsPageSize, requestedLogID, t])
 
   useEffect(() => {
     fetchData()
@@ -241,24 +251,46 @@ export default function FunctionDetailPage({
     }
   }
 
-  const handleRetryAsyncJob = async (jobID: string) => {
-    setRetryingAsyncJobId(jobID)
+  const asyncJobsTotalPages = Math.max(1, Math.ceil(asyncJobsTotal / asyncJobsPageSize))
+
+  useEffect(() => {
+    if (asyncJobsPage > asyncJobsTotalPages) {
+      setAsyncJobsPage(asyncJobsTotalPages)
+    }
+  }, [asyncJobsPage, asyncJobsTotalPages])
+
+  const handleRetryAsyncJobs = async (jobIDs: string[]) => {
+    if (jobIDs.length === 0) return
+    setRetryingAsyncJobIds(jobIDs)
     setInvokeError(null)
     try {
-      const requeued = await functionsApi.retryAsyncInvocation(jobID)
-      setInvokeMeta(t("retryMeta", {
-        jobId: requeued.id,
-        attempt: requeued.attempt,
-        maxAttempts: requeued.max_attempts,
-      }))
-      if (func) {
-        refreshAsyncJobs(func.name)
+      const results = await Promise.allSettled(jobIDs.map((jobID) => functionsApi.retryAsyncInvocation(jobID)))
+      const succeeded = results.filter((result): result is PromiseFulfilledResult<AsyncInvocationJob> => result.status === "fulfilled")
+      const failed = results.length - succeeded.length
+
+      if (succeeded.length === 1 && jobIDs.length === 1) {
+        const requeued = succeeded[0].value
+        setInvokeMeta(t("retryMeta", {
+          jobId: requeued.id,
+          attempt: requeued.attempt,
+          maxAttempts: requeued.max_attempts,
+        }))
+      } else if (succeeded.length > 0) {
+        setInvokeMeta(`Requeued ${succeeded.length}/${jobIDs.length} async jobs from DLQ.`)
+      }
+
+      if (failed > 0) {
+        setInvokeError(`Failed to requeue ${failed} of ${jobIDs.length} async jobs.`)
+      }
+
+      if (func && succeeded.length > 0) {
+        await refreshAsyncJobs(func.name)
       }
     } catch (err) {
       console.error("Failed to retry async job:", err)
       setInvokeError(err instanceof Error ? err.message : t("retryFailed"))
     } finally {
-      setRetryingAsyncJobId(null)
+      setRetryingAsyncJobIds([])
     }
   }
 
@@ -456,10 +488,18 @@ export default function FunctionDetailPage({
               invokeMode={invokeMode}
               onInvokeModeChange={setInvokeMode}
               asyncJobs={asyncJobs}
+              asyncJobsTotal={asyncJobsTotal}
+              asyncJobsPage={asyncJobsPage}
+              asyncJobsPageSize={asyncJobsPageSize}
               loadingAsyncJobs={loadingAsyncJobs}
-              retryingJobId={retryingAsyncJobId}
+              retryingJobIds={retryingAsyncJobIds}
+              onAsyncJobsPageChange={setAsyncJobsPage}
+              onAsyncJobsPageSizeChange={(size) => {
+                setAsyncJobsPageSize(size)
+                setAsyncJobsPage(1)
+              }}
               onRefreshAsyncJobs={() => refreshAsyncJobs(func.name)}
-              onRetryAsyncJob={handleRetryAsyncJob}
+              onRetryAsyncJobs={handleRetryAsyncJobs}
               onInvoke={handleInvoke}
             />
             <FunctionDependencies func={func} onDependenciesSaved={() => fetchData()} />
