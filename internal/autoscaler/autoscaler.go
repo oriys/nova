@@ -114,7 +114,11 @@ func (a *Autoscaler) loop() {
 
 func (a *Autoscaler) evaluate() {
 	ctx := context.Background()
-	funcs, err := a.store.ListFunctions(ctx, 0, 0)
+
+	// Iterate all tenants and namespaces so we evaluate functions outside
+	// the default tenant.  ListFunctions is tenant-scoped, so a bare
+	// context.Background() would only return default/default functions.
+	funcs, err := a.listAllFunctions(ctx)
 	if err != nil {
 		logging.Op().Error("autoscaler: list functions", "error", err)
 		return
@@ -567,4 +571,33 @@ func estimateDesiredReplicas(ratePerSec, emaLatencyMs, targetUtilization float64
 		desired = minReplicas
 	}
 	return desired
+}
+
+// listAllFunctions iterates every tenant and namespace and returns the
+// combined function list.  This avoids the default-tenant-only behaviour
+// of calling ListFunctions with an unscoped context.
+func (a *Autoscaler) listAllFunctions(ctx context.Context) ([]*domain.Function, error) {
+	tenants, err := a.store.ListTenants(ctx, 0, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	var all []*domain.Function
+	for _, t := range tenants {
+		namespaces, err := a.store.ListNamespaces(ctx, t.ID, 0, 0)
+		if err != nil {
+			logging.Op().Warn("autoscaler: list namespaces", "tenant_id", t.ID, "error", err)
+			continue
+		}
+		for _, ns := range namespaces {
+			scopedCtx := store.WithTenantScope(ctx, t.ID, ns.Name)
+			funcs, err := a.store.ListFunctions(scopedCtx, 0, 0)
+			if err != nil {
+				logging.Op().Warn("autoscaler: list functions", "tenant_id", t.ID, "namespace", ns.Name, "error", err)
+				continue
+			}
+			all = append(all, funcs...)
+		}
+	}
+	return all, nil
 }

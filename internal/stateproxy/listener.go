@@ -60,6 +60,8 @@ type Listener struct {
 	store      *store.Store
 	listener   net.Listener
 	functionID string // default function ID for state scoping
+	tenantID   string // tenant scope for state queries
+	namespace  string // namespace scope for state queries
 }
 
 // Start begins listening on the given address for state proxy connections.
@@ -115,7 +117,7 @@ func (l *Listener) handleMessage(msg *Message) *Message {
 		return stateError("invalid request: " + err.Error())
 	}
 
-	ctx := context.Background()
+	ctx := store.WithTenantScope(context.Background(), l.tenantID, l.namespace)
 
 	switch msg.Type {
 	case MsgTypeStateGet:
@@ -234,6 +236,14 @@ func (l *Listener) resolveFunctionID(_ *StateRequest) string {
 // In production, this would be per-connection based on VM identity.
 func (l *Listener) SetFunctionID(id string) {
 	l.functionID = id
+}
+
+// SetScope sets the tenant scope for state operations.  Without this,
+// queries fall back to the default tenant, which silently returns wrong
+// results for functions in non-default tenants.
+func (l *Listener) SetScope(tenantID, namespace string) {
+	l.tenantID = tenantID
+	l.namespace = namespace
 }
 
 func stateError(msg string) *Message {
