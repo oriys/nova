@@ -305,69 +305,16 @@ func (s *Server) handleCompositeHealth(w http.ResponseWriter, r *http.Request) {
 		"zenith": "healthy",
 	}
 	allHealthy := true
-	postgresKnown := false
-	postgresHealthy := true
 
 	var wg sync.WaitGroup
 
-	// Check Nova concurrently
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		novaHealth, err := s.checkNova(ctx)
-		mu.Lock()
-		defer mu.Unlock()
-		if err != nil {
-			components["nova"] = "unhealthy: " + err.Error()
-			allHealthy = false
-		} else {
-			components["nova"] = "healthy"
-			if ok, known := extractPostgresHealth(novaHealth); known {
-				postgresKnown = true
-				postgresHealthy = postgresHealthy && ok
-			}
-		}
-	}()
-
-	// Check Comet concurrently
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		cometHealth, err := s.checkComet(ctx)
-		mu.Lock()
-		defer mu.Unlock()
-		if err != nil {
-			components["comet"] = "unhealthy: " + err.Error()
-			allHealthy = false
-		} else {
-			components["comet"] = "healthy"
-			if status, ok := cometHealth.Components["postgres"]; ok {
-				postgresKnown = true
-				postgresHealthy = postgresHealthy && isHealthyStatus(status)
-			}
-		}
-	}()
-
-	// Fetch pool stats concurrently
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		activeVMs, totalPools, err := s.fetchCometPoolStats(ctx)
-		if err == nil {
-			mu.Lock()
-			components["pool"] = map[string]any{
-				"active_vms":  activeVMs,
-				"total_pools": totalPools,
-			}
-			mu.Unlock()
-		}
-	}()
-
-	// Check optional components (corona, nebula, aurora) concurrently via gRPC
+	// Check all gRPC services concurrently via standard grpc_health_v1
 	for _, dep := range []struct {
 		name string
 		conn *grpc.ClientConn
 	}{
+		{name: "nova", conn: s.novaConn},
+		{name: "comet", conn: s.cometConn},
 		{name: "corona", conn: s.coronaConn},
 		{name: "nebula", conn: s.nebulaConn},
 		{name: "aurora", conn: s.auroraConn},
@@ -393,15 +340,22 @@ func (s *Server) handleCompositeHealth(w http.ResponseWriter, r *http.Request) {
 		}(dep.name, dep.conn)
 	}
 
-	wg.Wait()
+	// Fetch pool stats concurrently
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		activeVMs, totalPools, err := s.fetchCometPoolStats(ctx)
+		if err == nil {
+			mu.Lock()
+			components["pool"] = map[string]any{
+				"active_vms":  activeVMs,
+				"total_pools": totalPools,
+			}
+			mu.Unlock()
+		}
+	}()
 
-	if !postgresKnown {
-		postgresHealthy = allHealthy
-	}
-	components["postgres"] = postgresHealthy
-	if !postgresHealthy {
-		allHealthy = false
-	}
+	wg.Wait()
 
 	statusText := "ok"
 	httpStatus := http.StatusOK
@@ -493,36 +447,6 @@ func (s *Server) handleProxyHTTPViaNova(w http.ResponseWriter, r *http.Request) 
 	_, _ = w.Write(resp.Body)
 }
 
-func (s *Server) checkNova(ctx context.Context) (map[string]any, error) {
-	resp, err := s.novaClient.HealthCheck(ctx, &novapb.HealthCheckRequest{})
-	if err != nil {
-		return nil, err
-	}
-	if strings.ToLower(strings.TrimSpace(resp.Status)) != "ok" {
-		return nil, fmt.Errorf("status %s", resp.Status)
-	}
-	payload := map[string]any{}
-	if resp.Components != nil {
-		components := map[string]any{}
-		for k, v := range resp.Components {
-			components[k] = v
-		}
-		payload["components"] = components
-	}
-	return payload, nil
-}
-
-func (s *Server) checkComet(ctx context.Context) (*novapb.HealthCheckResponse, error) {
-	resp, err := s.cometClient.HealthCheck(ctx, &novapb.HealthCheckRequest{})
-	if err != nil {
-		return nil, err
-	}
-	if strings.ToLower(strings.TrimSpace(resp.Status)) != "ok" {
-		return nil, fmt.Errorf("status %s", resp.Status)
-	}
-	return resp, nil
-}
-
 func (s *Server) fetchCometPoolStats(ctx context.Context) (int64, *int64, error) {
 	resp, err := s.cometClient.ProxyHTTP(ctx, &novapb.ProxyHTTPRequest{
 		Method: http.MethodGet,
@@ -565,35 +489,6 @@ func (s *Server) checkGRPCHealth(ctx context.Context, conn *grpc.ClientConn) (st
 	default:
 		return "unknown", nil
 	}
-}
-
-func extractPostgresHealth(payload map[string]any) (bool, bool) {
-	rawComponents, ok := payload["components"]
-	if !ok {
-		return false, false
-	}
-	components, ok := rawComponents.(map[string]any)
-	if !ok {
-		return false, false
-	}
-
-	rawPostgres, ok := components["postgres"]
-	if !ok {
-		return false, false
-	}
-
-	switch v := rawPostgres.(type) {
-	case bool:
-		return v, true
-	case string:
-		return isHealthyStatus(v), true
-	default:
-		return false, false
-	}
-}
-
-func isHealthyStatus(value string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(value)), "healthy")
 }
 
 func toInt64(value any) (int64, bool) {

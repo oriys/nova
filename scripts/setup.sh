@@ -1265,7 +1265,7 @@ Requires=postgresql.service
 
 [Service]
 Type=simple
-ExecStart=/opt/nova/bin/nova daemon --config /opt/nova/configs/nova.json --http 127.0.0.1:9001
+ExecStart=/opt/nova/bin/nova daemon --config /opt/nova/configs/nova.json --grpc 127.0.0.1:9001
 Restart=on-failure
 RestartSec=5
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/nova/bin
@@ -1301,7 +1301,7 @@ Requires=nova.service comet.service
 
 [Service]
 Type=simple
-ExecStart=/opt/nova/bin/zenith serve --listen :9000 --nova-url http://127.0.0.1:9001 --comet-grpc 127.0.0.1:9090
+ExecStart=/opt/nova/bin/zenith serve --listen :9000 --nova-grpc 127.0.0.1:9001 --comet-grpc 127.0.0.1:9090
 Restart=on-failure
 RestartSec=5
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/nova/bin
@@ -1446,12 +1446,12 @@ start_services() {
     systemctl enable nova >/dev/null 2>&1
     systemctl start nova
 
-    # Wait for Nova to be ready
+    # Wait for Nova gRPC to be ready
     local retries=10
-    while ! curl -sf http://localhost:9001/health >/dev/null 2>&1; do
+    while ! ss -lnt | grep -q ':9001 '; do
         retries=$((retries - 1))
         if [[ ${retries} -eq 0 ]]; then
-            warn "Nova health check failed - check logs with: journalctl -u nova"
+            warn "Nova port check failed - check logs with: journalctl -u nova"
             break
         fi
         sleep 1

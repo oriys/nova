@@ -26,6 +26,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -124,6 +126,12 @@ func (s *Server) Start(addr string, certFile, keyFile string) error {
 	s.server = grpc.NewServer(opts...)
 	novapb.RegisterNovaServiceServer(s.server, s)
 
+	// Register standard gRPC health service with dynamic status updates
+	healthSrv := health.NewServer()
+	grpc_health_v1.RegisterHealthServer(s.server, healthSrv)
+	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	go s.runHealthUpdater(healthSrv)
+
 	logging.Op().Info("gRPC server started", "addr", addr)
 
 	go func() {
@@ -139,6 +147,26 @@ func (s *Server) Start(addr string, certFile, keyFile string) error {
 func (s *Server) Stop() {
 	if s.server != nil {
 		s.server.GracefulStop()
+	}
+}
+
+// runHealthUpdater periodically checks postgres and updates grpc_health_v1 serving status.
+func (s *Server) runHealthUpdater(hs *health.Server) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		if s.store == nil {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := s.store.PingPostgres(ctx)
+		cancel()
+		if err != nil {
+			hs.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+			logging.Op().Warn("health check: postgres unreachable", "error", err)
+		} else {
+			hs.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+		}
 	}
 }
 
