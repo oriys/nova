@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
+	"net"
 	"os"
 	"os/signal"
 	"strconv"
@@ -17,14 +17,16 @@ import (
 	"github.com/oriys/nova/internal/observability"
 	"github.com/oriys/nova/internal/slo"
 	"github.com/oriys/nova/internal/store"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 func daemonCmd() *cobra.Command {
 	var (
-		logLevel   string
-		listenAddr string
+		logLevel string
+		grpcAddr string
 	)
 
 	cmd := &cobra.Command{
@@ -157,23 +159,22 @@ func daemonCmd() *cobra.Command {
 				}
 			}()
 
-			// HTTP endpoint for Prometheus scraping and health checks
-			var httpServer *http.Server
-			if listenAddr != "" {
-				mux := http.NewServeMux()
-				mux.Handle("/metrics", promhttp.Handler())
-				mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(http.StatusOK)
-					w.Write([]byte(`{"status":"ok","service":"aurora"}`))
-				})
-				httpServer = &http.Server{
-					Addr:    listenAddr,
-					Handler: mux,
+			// gRPC endpoint for health checks
+			var grpcServer *grpc.Server
+			if grpcAddr != "" {
+				grpcServer = grpc.NewServer()
+				healthSrv := health.NewServer()
+				grpc_health_v1.RegisterHealthServer(grpcServer, healthSrv)
+				healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+
+				lis, err := net.Listen("tcp", grpcAddr)
+				if err != nil {
+					return fmt.Errorf("listen gRPC %s: %w", grpcAddr, err)
 				}
 				go func() {
-					logging.Op().Info("Aurora HTTP endpoint started", "addr", listenAddr)
-					if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-						logging.Op().Error("aurora HTTP server error", "error", err)
+					logging.Op().Info("Aurora gRPC endpoint started", "addr", grpcAddr)
+					if err := grpcServer.Serve(lis); err != nil {
+						logging.Op().Error("aurora gRPC server error", "error", err)
 					}
 				}()
 			}
@@ -185,10 +186,8 @@ func daemonCmd() *cobra.Command {
 			<-sigCh
 			logging.Op().Info("shutdown signal received")
 
-			if httpServer != nil {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				httpServer.Shutdown(ctx)
+			if grpcServer != nil {
+				grpcServer.GracefulStop()
 			}
 
 			return nil
@@ -196,7 +195,7 @@ func daemonCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level")
-	cmd.Flags().StringVar(&listenAddr, "listen", ":9002", "HTTP listen address for /metrics and /health")
+	cmd.Flags().StringVar(&grpcAddr, "grpc", ":9002", "gRPC listen address for health checks")
 
 	return cmd
 }

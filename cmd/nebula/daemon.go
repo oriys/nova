@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -31,16 +31,18 @@ import (
 	"github.com/oriys/nova/internal/triggers"
 	"github.com/oriys/nova/internal/wasm"
 	"github.com/oriys/nova/internal/workflow"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 func daemonCmd() *cobra.Command {
 	var (
 		logLevel   string
 		cometAddr  string
-		listenAddr string
+		grpcAddr   string
 	)
 
 	cmd := &cobra.Command{
@@ -314,25 +316,22 @@ func daemonCmd() *cobra.Command {
 				defer triggerMgr.Shutdown()
 			}
 
-			var httpServer *http.Server
-			if listenAddr != "" {
-				mux := http.NewServeMux()
-				mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusOK)
-					_, _ = w.Write([]byte(`{"status":"ok","service":"nebula"}`))
-				})
-				if cfg.Observability.Metrics.Enabled {
-					mux.Handle("/metrics", promhttp.Handler())
-				}
-				httpServer = &http.Server{
-					Addr:    listenAddr,
-					Handler: mux,
+			// Start gRPC server with health service
+			var grpcServer *grpc.Server
+			if grpcAddr != "" {
+				grpcServer = grpc.NewServer()
+				healthSrv := health.NewServer()
+				grpc_health_v1.RegisterHealthServer(grpcServer, healthSrv)
+				healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+
+				lis, err := net.Listen("tcp", grpcAddr)
+				if err != nil {
+					return fmt.Errorf("listen gRPC %s: %w", grpcAddr, err)
 				}
 				go func() {
-					logging.Op().Info("Nebula HTTP endpoint started", "addr", listenAddr)
-					if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-						logging.Op().Error("nebula HTTP server error", "error", err)
+					logging.Op().Info("Nebula gRPC endpoint started", "addr", grpcAddr)
+					if err := grpcServer.Serve(lis); err != nil {
+						logging.Op().Error("nebula gRPC server error", "error", err)
 					}
 				}()
 			}
@@ -344,10 +343,8 @@ func daemonCmd() *cobra.Command {
 			<-sigCh
 			logging.Op().Info("shutdown signal received")
 
-			if httpServer != nil {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				_ = httpServer.Shutdown(ctx)
+			if grpcServer != nil {
+				grpcServer.GracefulStop()
 			}
 
 			if localExec != nil {
@@ -359,7 +356,7 @@ func daemonCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level")
 	cmd.Flags().StringVar(&cometAddr, "comet-grpc", "", "Comet gRPC address for remote invocation (e.g. comet:9090)")
-	cmd.Flags().StringVar(&listenAddr, "listen", "", "HTTP listen address for /health (optional)")
+	cmd.Flags().StringVar(&grpcAddr, "grpc", "", "gRPC listen address for health checks (optional)")
 
 	return cmd
 }

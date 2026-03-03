@@ -4,12 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"strconv"
 	"strings"
@@ -22,6 +20,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -29,21 +28,24 @@ import (
 const defaultBodyLimit = 10 << 20 // 10MB
 
 type Config struct {
-	NovaURL          string
-	CometGRPCAddr    string
-	CoronaURL        string
-	NebulaURL        string
-	AuroraURL        string
-	Timeout          time.Duration
-	CometServiceToken string // Shared secret for Comet gRPC authentication
+	NovaGRPCAddr      string
+	CometGRPCAddr     string
+	CoronaGRPCAddr    string
+	NebulaGRPCAddr    string
+	AuroraGRPCAddr    string
+	Timeout           time.Duration
+	CometServiceToken string // Shared secret for gRPC authentication
 }
 
 type Server struct {
 	cfg         Config
-	novaProxy   *httputil.ReverseProxy
+	novaConn    *grpc.ClientConn
+	novaClient  novapb.NovaServiceClient
 	cometConn   *grpc.ClientConn
 	cometClient novapb.NovaServiceClient
-	httpClient  *http.Client
+	coronaConn  *grpc.ClientConn
+	nebulaConn  *grpc.ClientConn
+	auroraConn  *grpc.ClientConn
 }
 
 type invokeHTTPResponse struct {
@@ -58,67 +60,71 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 10 * time.Second
 	}
-	if strings.TrimSpace(cfg.NovaURL) == "" {
-		return nil, fmt.Errorf("nova URL is required")
+	if strings.TrimSpace(cfg.NovaGRPCAddr) == "" {
+		return nil, fmt.Errorf("nova gRPC address is required")
 	}
 	if strings.TrimSpace(cfg.CometGRPCAddr) == "" {
 		return nil, fmt.Errorf("comet gRPC address is required")
 	}
-	if strings.TrimSpace(cfg.CoronaURL) != "" {
-		u, err := parseTargetURL(cfg.CoronaURL)
-		if err != nil {
-			return nil, fmt.Errorf("parse corona URL: %w", err)
-		}
-		cfg.CoronaURL = u.String()
-	}
-	if strings.TrimSpace(cfg.NebulaURL) != "" {
-		u, err := parseTargetURL(cfg.NebulaURL)
-		if err != nil {
-			return nil, fmt.Errorf("parse nebula URL: %w", err)
-		}
-		cfg.NebulaURL = u.String()
-	}
-	if strings.TrimSpace(cfg.AuroraURL) != "" {
-		u, err := parseTargetURL(cfg.AuroraURL)
-		if err != nil {
-			return nil, fmt.Errorf("parse aurora URL: %w", err)
-		}
-		cfg.AuroraURL = u.String()
+
+	novaConn, err := grpc.Dial(cfg.NovaGRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, fmt.Errorf("dial nova gRPC: %w", err)
 	}
 
-	novaTarget, err := parseTargetURL(cfg.NovaURL)
+	cometConn, err := grpc.Dial(cfg.CometGRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return nil, fmt.Errorf("parse nova URL: %w", err)
-	}
-
-	conn, err := grpc.Dial(cfg.CometGRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
+		novaConn.Close()
 		return nil, fmt.Errorf("dial comet gRPC: %w", err)
 	}
 
 	s := &Server{
 		cfg:         cfg,
-		novaProxy:   newReverseProxy(novaTarget),
-		cometConn:   conn,
-		cometClient: novapb.NewNovaServiceClient(conn),
-		httpClient: &http.Client{
-			Timeout: cfg.Timeout,
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-			},
-		},
+		novaConn:    novaConn,
+		novaClient:  novapb.NewNovaServiceClient(novaConn),
+		cometConn:   cometConn,
+		cometClient: novapb.NewNovaServiceClient(cometConn),
+	}
+
+	// Connect to optional services for health checking
+	if addr := strings.TrimSpace(cfg.CoronaGRPCAddr); addr != "" {
+		conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			logging.Op().Warn("failed to dial corona gRPC", "addr", addr, "error", err)
+		} else {
+			s.coronaConn = conn
+		}
+	}
+	if addr := strings.TrimSpace(cfg.NebulaGRPCAddr); addr != "" {
+		conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			logging.Op().Warn("failed to dial nebula gRPC", "addr", addr, "error", err)
+		} else {
+			s.nebulaConn = conn
+		}
+	}
+	if addr := strings.TrimSpace(cfg.AuroraGRPCAddr); addr != "" {
+		conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			logging.Op().Warn("failed to dial aurora gRPC", "addr", addr, "error", err)
+		} else {
+			s.auroraConn = conn
+		}
 	}
 
 	return s, nil
 }
 
 func (s *Server) Close() error {
-	if s.cometConn != nil {
-		return s.cometConn.Close()
+	var firstErr error
+	for _, conn := range []*grpc.ClientConn{s.novaConn, s.cometConn, s.coronaConn, s.nebulaConn, s.auroraConn} {
+		if conn != nil {
+			if err := conn.Close(); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
 	}
-	return nil
+	return firstErr
 }
 
 type serviceTokenKey struct{}
@@ -161,8 +167,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sandbox API and all other control-plane paths: proxy to Nova
-	s.novaProxy.ServeHTTP(w, r)
+	// All other control-plane paths: proxy to Nova via gRPC
+	s.handleProxyHTTPViaNova(w, r)
 }
 
 func (s *Server) handleInvokeViaGRPC(w http.ResponseWriter, r *http.Request, function string) {
@@ -357,22 +363,22 @@ func (s *Server) handleCompositeHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Check optional components (corona, nebula, aurora) concurrently
+	// Check optional components (corona, nebula, aurora) concurrently via gRPC
 	for _, dep := range []struct {
 		name string
-		url  string
+		conn *grpc.ClientConn
 	}{
-		{name: "corona", url: s.cfg.CoronaURL},
-		{name: "nebula", url: s.cfg.NebulaURL},
-		{name: "aurora", url: s.cfg.AuroraURL},
+		{name: "corona", conn: s.coronaConn},
+		{name: "nebula", conn: s.nebulaConn},
+		{name: "aurora", conn: s.auroraConn},
 	} {
-		if strings.TrimSpace(dep.url) == "" {
+		if dep.conn == nil {
 			continue
 		}
 		wg.Add(1)
-		go func(name, url string) {
+		go func(name string, conn *grpc.ClientConn) {
 			defer wg.Done()
-			st, err := s.checkHTTPComponent(ctx, url)
+			st, err := s.checkGRPCHealth(ctx, conn)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -384,7 +390,7 @@ func (s *Server) handleCompositeHealth(w http.ResponseWriter, r *http.Request) {
 					allHealthy = false
 				}
 			}
-		}(dep.name, dep.url)
+		}(dep.name, dep.conn)
 	}
 
 	wg.Wait()
@@ -410,31 +416,98 @@ func (s *Server) handleCompositeHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleProxyHTTPViaNova forwards control-plane HTTP requests to Nova via gRPC ProxyHTTP.
+func (s *Server) handleProxyHTTPViaNova(w http.ResponseWriter, r *http.Request) {
+	body := []byte{}
+	if r.Body != nil {
+		b, err := io.ReadAll(io.LimitReader(r.Body, defaultBodyLimit))
+		if err != nil {
+			httpjson.Error(w, http.StatusBadRequest, "failed to read request body")
+			return
+		}
+		body = b
+	}
+
+	headers := make(map[string]string)
+	for key, values := range r.Header {
+		if strings.EqualFold(key, "Host") || strings.EqualFold(key, "Content-Length") {
+			continue
+		}
+		if len(values) == 0 {
+			continue
+		}
+		headers[key] = strings.Join(values, ", ")
+	}
+	source := requestSourceFromRequest(r)
+	if source.Function != "" {
+		headers["X-Nova-Source-Function"] = source.Function
+	}
+	if source.IP != "" {
+		headers["X-Nova-Source-IP"] = source.IP
+	}
+	if source.Protocol != "" {
+		headers["X-Nova-Source-Protocol"] = source.Protocol
+	}
+	if source.Port > 0 {
+		headers["X-Nova-Source-Port"] = strconv.Itoa(source.Port)
+	}
+
+	ctx, cancel, _ := novaContextFromRequest(r, s.cfg.CometServiceToken)
+	defer cancel()
+
+	resp, err := s.novaClient.ProxyHTTP(ctx, &novapb.ProxyHTTPRequest{
+		Method:  r.Method,
+		Path:    r.URL.Path,
+		Query:   r.URL.RawQuery,
+		Body:    body,
+		Headers: headers,
+	})
+	if err != nil {
+		statusCode, message := mapGRPCError(err)
+		httpjson.Error(w, statusCode, message)
+		return
+	}
+
+	for key, value := range resp.Headers {
+		k := strings.TrimSpace(key)
+		if k == "" {
+			continue
+		}
+		if strings.EqualFold(k, "Content-Length") || strings.EqualFold(k, "Transfer-Encoding") {
+			continue
+		}
+		if strings.ContainsAny(value, "\r\n") {
+			continue
+		}
+		w.Header().Set(k, value)
+	}
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json")
+	}
+
+	statusCode := int(resp.StatusCode)
+	if statusCode < 100 || statusCode > 999 {
+		statusCode = http.StatusInternalServerError
+	}
+	w.WriteHeader(statusCode)
+	_, _ = w.Write(resp.Body)
+}
+
 func (s *Server) checkNova(ctx context.Context) (map[string]any, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(s.cfg.NovaURL, "/")+"/health", nil)
+	resp, err := s.novaClient.HealthCheck(ctx, &novapb.HealthCheckRequest{})
 	if err != nil {
 		return nil, err
 	}
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return nil, err
+	if strings.ToLower(strings.TrimSpace(resp.Status)) != "ok" {
+		return nil, fmt.Errorf("status %s", resp.Status)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, defaultBodyLimit))
-	if err != nil {
-		return nil, fmt.Errorf("read response body: %w", err)
-	}
-	if len(body) == 0 {
-		return map[string]any{}, nil
-	}
-
 	payload := map[string]any{}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, fmt.Errorf("decode response body: %w", err)
+	if resp.Components != nil {
+		components := map[string]any{}
+		for k, v := range resp.Components {
+			components[k] = v
+		}
+		payload["components"] = components
 	}
 	return payload, nil
 }
@@ -478,59 +551,19 @@ func (s *Server) fetchCometPoolStats(ctx context.Context) (int64, *int64, error)
 	return activeVMs, totalPoolsPtr, nil
 }
 
-func (s *Server) checkHTTPComponent(ctx context.Context, baseURL string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseURL, "/")+"/health", nil)
+func (s *Server) checkGRPCHealth(ctx context.Context, conn *grpc.ClientConn) (string, error) {
+	client := grpc_health_v1.NewHealthClient(conn)
+	resp, err := client.Check(ctx, &grpc_health_v1.HealthCheckRequest{})
 	if err != nil {
 		return "", err
 	}
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, defaultBodyLimit))
-	if err != nil {
-		return "", fmt.Errorf("read response body: %w", err)
-	}
-	if len(body) == 0 {
+	switch resp.Status {
+	case grpc_health_v1.HealthCheckResponse_SERVING:
 		return "healthy", nil
-	}
-
-	payload := map[string]any{}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		// Some services may return plain text; treat HTTP 2xx as healthy.
-		return "healthy", nil
-	}
-
-	rawStatus, ok := payload["status"]
-	if !ok {
-		return "healthy", nil
-	}
-
-	statusValue, ok := rawStatus.(string)
-	if !ok {
-		return "healthy", nil
-	}
-	status := strings.ToLower(strings.TrimSpace(statusValue))
-	switch status {
-	case "", "ok", "healthy":
-		return "healthy", nil
-	case "degraded":
-		return "degraded", nil
-	case "error", "down", "unhealthy":
+	case grpc_health_v1.HealthCheckResponse_NOT_SERVING:
 		return "unhealthy", nil
 	default:
-		if strings.HasPrefix(status, "healthy") {
-			return "healthy", nil
-		}
-		if strings.HasPrefix(status, "unhealthy") {
-			return "unhealthy", nil
-		}
-		return status, nil
+		return "unknown", nil
 	}
 }
 
@@ -923,38 +956,35 @@ func mapGRPCError(err error) (int, string) {
 	}
 }
 
-func parseTargetURL(raw string) (*url.URL, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil, fmt.Errorf("empty target")
-	}
-	if !strings.Contains(raw, "://") {
-		raw = "http://" + raw
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return nil, err
-	}
-	if u.Scheme == "" || u.Host == "" {
-		return nil, fmt.Errorf("invalid target %q", raw)
-	}
-	return u, nil
-}
-
-func newReverseProxy(target *url.URL) *httputil.ReverseProxy {
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	director := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		director(req)
-		req.Host = target.Host
-	}
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		code := http.StatusBadGateway
-		if errors.Is(err, context.DeadlineExceeded) {
-			code = http.StatusGatewayTimeout
+// novaContextFromRequest creates a gRPC context for Nova ProxyHTTP calls, similar to cometContextFromRequest.
+func novaContextFromRequest(r *http.Request, serviceToken string) (context.Context, context.CancelFunc, int32) {
+	timeoutSeconds := int32(0)
+	if rawTimeout := strings.TrimSpace(r.Header.Get("X-Nova-Timeout-S")); rawTimeout != "" {
+		if n, err := strconv.Atoi(rawTimeout); err == nil && n > 0 {
+			timeoutSeconds = int32(n)
 		}
-		logging.Op().Error("reverse proxy error", "target", target.String(), "path", r.URL.Path, "error", err)
-		httpjson.Error(w, code, "upstream request failed")
 	}
-	return proxy
+
+	ctx := r.Context()
+	cancel := func() {}
+	if timeoutSeconds > 0 {
+		var c context.CancelFunc
+		ctx, c = context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+		cancel = c
+	}
+
+	md := metadata.MD{}
+	if serviceToken != "" {
+		md.Set("authorization", "Bearer "+serviceToken)
+	}
+	for _, key := range []string{"X-Nova-Tenant", "X-Nova-Namespace", "X-Request-ID"} {
+		if val := strings.TrimSpace(r.Header.Get(key)); val != "" {
+			md.Set(strings.ToLower(key), val)
+		}
+	}
+	if len(md) > 0 {
+		ctx = metadata.NewOutgoingContext(ctx, md)
+	}
+
+	return ctx, cancel, timeoutSeconds
 }

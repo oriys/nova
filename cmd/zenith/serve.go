@@ -17,11 +17,11 @@ import (
 func serveCmd() *cobra.Command {
 	var (
 		listenAddr    string
-		novaURL       string
+		novaGRPCAddr  string
 		cometGRPCAddr string
-		coronaURL     string
-		nebulaURL     string
-		auroraURL     string
+		coronaGRPCAddr string
+		nebulaGRPCAddr string
+		auroraGRPCAddr string
 		timeout       time.Duration
 		logLevel      string
 	)
@@ -35,11 +35,11 @@ func serveCmd() *cobra.Command {
 			logging.InitStructured("text", logLevel)
 
 			handler, err := zenith.New(zenith.Config{
-				NovaURL:           novaURL,
+				NovaGRPCAddr:      novaGRPCAddr,
 				CometGRPCAddr:     cometGRPCAddr,
-				CoronaURL:         coronaURL,
-				NebulaURL:         nebulaURL,
-				AuroraURL:         auroraURL,
+				CoronaGRPCAddr:    coronaGRPCAddr,
+				NebulaGRPCAddr:    nebulaGRPCAddr,
+				AuroraGRPCAddr:    auroraGRPCAddr,
 				Timeout:           timeout,
 				CometServiceToken: os.Getenv("NOVA_GRPC_SERVICE_TOKEN"),
 			})
@@ -58,11 +58,11 @@ func serveCmd() *cobra.Command {
 				logging.Op().Info(
 					"Zenith gateway started",
 					"addr", listenAddr,
-					"nova", novaURL,
+					"nova_grpc", novaGRPCAddr,
 					"comet_grpc", cometGRPCAddr,
-					"corona", coronaURL,
-					"nebula", nebulaURL,
-					"aurora", auroraURL,
+					"corona_grpc", coronaGRPCAddr,
+					"nebula_grpc", nebulaGRPCAddr,
+					"aurora_grpc", auroraGRPCAddr,
 				)
 				if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 					errCh <- err
@@ -88,11 +88,11 @@ func serveCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&listenAddr, "listen", ":8080", "Zenith listen address")
-	cmd.Flags().StringVar(&novaURL, "nova-url", "http://127.0.0.1:8081", "Nova control plane base URL")
+	cmd.Flags().StringVar(&novaGRPCAddr, "nova-grpc", "127.0.0.1:8081", "Nova control plane gRPC address")
 	cmd.Flags().StringVar(&cometGRPCAddr, "comet-grpc", "127.0.0.1:9090", "Comet gRPC address")
-	cmd.Flags().StringVar(&coronaURL, "corona-url", "", "Corona scheduler base URL (optional, used for health aggregation)")
-	cmd.Flags().StringVar(&nebulaURL, "nebula-url", "", "Nebula event bus base URL (optional, used for health aggregation)")
-	cmd.Flags().StringVar(&auroraURL, "aurora-url", "", "Aurora observability base URL (optional, used for health aggregation)")
+	cmd.Flags().StringVar(&coronaGRPCAddr, "corona-grpc", "", "Corona scheduler gRPC address (optional, used for health aggregation)")
+	cmd.Flags().StringVar(&nebulaGRPCAddr, "nebula-grpc", "", "Nebula event bus gRPC address (optional, used for health aggregation)")
+	cmd.Flags().StringVar(&auroraGRPCAddr, "aurora-grpc", "", "Aurora observability gRPC address (optional, used for health aggregation)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Second, "Upstream timeout")
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level")
 

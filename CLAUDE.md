@@ -57,19 +57,19 @@ The backend is split into five architectural planes, each running as an independ
 
 | Plane | Service | Role | Port | Protocol |
 |-------|---------|------|------|----------|
-| Control Plane | **nova** | Function CRUD, API keys, secrets, auth, gateway management | 9001 | HTTP REST |
+| Control Plane | **nova** | Function CRUD, API keys, secrets, auth, gateway management | 9001 | gRPC (ProxyHTTP) |
 | Isolation & Execution | **comet** | Executor, VM/container pool, backend lifecycle | 9090 | gRPC |
-| Scheduler / Placement | **corona** | Cron scheduling, autoscaling | — | Background worker |
-| Event Ingestion | **nebula** | Event bus, async queue, workflow engine | — | Background worker |
-| Observability | **aurora** | SLO evaluation, Prometheus metrics, output capture | 9002 | HTTP /metrics |
-| Gateway | **zenith** | Unified entry for UI/MCP/CLI traffic | 9000 | HTTP |
+| Scheduler / Placement | **corona** | Cron scheduling, autoscaling | — | gRPC (health only) |
+| Event Ingestion | **nebula** | Event bus, async queue, workflow engine | — | gRPC (health only) |
+| Observability | **aurora** | SLO evaluation, Prometheus metrics, output capture | 9002 | gRPC (health only) |
+| Gateway | **zenith** | Unified entry for UI/MCP/CLI traffic | 9000 | HTTP (only HTTP endpoint) |
 
-1. **`cmd/nova/`** - Control plane daemon. HTTP REST API for function management.
+1. **`cmd/nova/`** - Control plane daemon. gRPC server with ProxyHTTP for function management APIs.
 2. **`cmd/comet/`** - Isolation & execution daemon. gRPC server for function invocation via VM/container pool.
 3. **`cmd/corona/`** - Scheduler/placement daemon. Runs cron scheduler and autoscaler; invokes functions via Comet gRPC.
 4. **`cmd/nebula/`** - Event ingestion daemon. Runs event bus, async queue, workflow engine; invokes functions via Comet gRPC.
 5. **`cmd/aurora/`** - Observability daemon. Runs SLO evaluation and exposes Prometheus metrics.
-6. **`cmd/zenith/`** - Gateway. Routes UI/MCP/CLI traffic to Nova and Comet.
+6. **`cmd/zenith/`** - Gateway. The only HTTP endpoint. Routes UI/MCP/CLI traffic to Nova and Comet via gRPC.
 7. **`cmd/agent/`** - Guest agent that runs as PID 1 inside Firecracker VMs.
 8. **`lumen/`** - Next.js 16 web dashboard with i18n support (en, zh-CN, zh-TW, ja, fr).
 
@@ -107,11 +107,13 @@ The backend is split into five architectural planes, each running as an independ
 
 ### API Endpoints
 
-Control Plane (port 9000):
+All external HTTP endpoints are served by Zenith gateway (port 9000). Internal services communicate via gRPC only.
+
+Control Plane (via Zenith → Nova gRPC ProxyHTTP):
 - `GET/POST /functions`, `GET/PATCH/DELETE /functions/{name}`
 - `GET /runtimes`, `GET /snapshots`
 
-Data Plane (port 9000):
+Data Plane (via Zenith → Comet gRPC):
 - `POST /functions/{name}/invoke`
 - `GET /functions/{name}/logs`, `GET /functions/{name}/metrics`
 - `GET /metrics`, `GET /health`

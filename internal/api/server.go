@@ -74,8 +74,9 @@ type ServerConfig struct {
 	CometClient           novapb.NovaServiceClient // Optional: gRPC client to Comet for split deployments
 }
 
-// StartHTTPServer creates and starts the HTTP server with control plane and data plane handlers.
-func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
+// BuildHTTPHandler creates the HTTP handler with control plane and data plane handlers
+// but does not start a listener. This is used to wire ProxyHTTP in gRPC-only mode.
+func BuildHTTPHandler(cfg ServerConfig) http.Handler {
 	mux := http.NewServeMux()
 	mode := normalizePlaneMode(cfg.PlaneMode)
 	controlPlaneEnabled := mode == PlaneModeAll || mode == PlaneModeControlPlane
@@ -254,6 +255,13 @@ func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
 	// For authenticated control-plane requests, an inner tenantScopeMiddleware pass runs
 	// after auth and enforces identity-bound scope.
 	handler = tenantScopeMiddleware(handler)
+
+	return handler
+}
+
+// StartHTTPServer creates and starts the HTTP server with control plane and data plane handlers.
+func StartHTTPServer(addr string, cfg ServerConfig) *http.Server {
+	handler := BuildHTTPHandler(cfg)
 
 	server := &http.Server{
 		Addr:         addr,

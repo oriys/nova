@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -38,7 +37,6 @@ import (
 	"github.com/oriys/nova/internal/sandbox"
 	"github.com/oriys/nova/internal/scheduler"
 	"github.com/oriys/nova/internal/secrets"
-	"github.com/oriys/nova/internal/service"
 	"github.com/oriys/nova/internal/slo"
 	"github.com/oriys/nova/internal/store"
 	"github.com/oriys/nova/internal/volume"
@@ -52,7 +50,7 @@ import (
 func daemonCmd() *cobra.Command {
 	var (
 		idleTTL      time.Duration
-		httpAddr     string
+		grpcAddr     string
 		logLevel     string
 		cometGRPAddr string
 	)
@@ -78,8 +76,8 @@ func daemonCmd() *cobra.Command {
 			if cmd.Flags().Changed("idle-ttl") {
 				cfg.Pool.IdleTTL = idleTTL
 			}
-			if cmd.Flags().Changed("http") {
-				cfg.Daemon.HTTPAddr = httpAddr
+			if cmd.Flags().Changed("grpc") {
+				cfg.GRPC.Addr = grpcAddr
 			}
 			if cmd.Flags().Changed("log-level") {
 				cfg.Daemon.LogLevel = logLevel
@@ -344,7 +342,6 @@ func daemonCmd() *cobra.Command {
 				logging.Op().Info("AI service enabled", "model", cfg.AI.Model)
 			}
 
-			var httpServer *http.Server
 			sandboxMgr := sandbox.NewManager(be)
 			defer sandboxMgr.Shutdown()
 
@@ -361,56 +358,41 @@ func daemonCmd() *cobra.Command {
 				}
 			}
 
-			if cfg.Daemon.HTTPAddr != "" {
-				httpServer = api.StartHTTPServer(cfg.Daemon.HTTPAddr, api.ServerConfig{
-					Store:                 s,
-					Exec:                  exec,
-					Pool:                  p,
-					Backend:               be,
-					FCAdapter:             fcAdapter,
-					AuthCfg:               &cfg.Auth,
-					RateLimitCfg:          &cfg.RateLimit,
-					GatewayCfg:            &cfg.Gateway,
-					WorkflowService:       wfService,
-					APIKeyManager:         apiKeyManager,
-					SecretsStore:          secretsStore,
-					Scheduler:             sched,
-					RootfsDir:             cfg.Firecracker.RootfsDir,
-					LayerManager:          layerManager,
-					VolumeManager:         volumeManager,
-					AIService:             aiService,
-					SandboxManager:        sandboxMgr,
-					PlaneMode:             api.PlaneModeControlPlane,
-					LocalNodeID:           strings.TrimSpace(os.Getenv("NOVA_CLUSTER_NODE_ID")),
-					ClusterForwardTimeout: 3 * time.Second,
-					CometClient:           cometClient,
-				})
-				logging.Op().Info("HTTP API started", "addr", cfg.Daemon.HTTPAddr)
+			// Build full HTTP handler for ProxyHTTP routing (no HTTP listener)
+			httpHandler := api.BuildHTTPHandler(api.ServerConfig{
+				Store:                 s,
+				Exec:                  exec,
+				Pool:                  p,
+				Backend:               be,
+				FCAdapter:             fcAdapter,
+				AuthCfg:               &cfg.Auth,
+				RateLimitCfg:          &cfg.RateLimit,
+				GatewayCfg:            &cfg.Gateway,
+				WorkflowService:       wfService,
+				APIKeyManager:         apiKeyManager,
+				SecretsStore:          secretsStore,
+				Scheduler:             sched,
+				RootfsDir:             cfg.Firecracker.RootfsDir,
+				LayerManager:          layerManager,
+				VolumeManager:         volumeManager,
+				AIService:             aiService,
+				SandboxManager:        sandboxMgr,
+				PlaneMode:             api.PlaneModeControlPlane,
+				LocalNodeID:           strings.TrimSpace(os.Getenv("NOVA_CLUSTER_NODE_ID")),
+				ClusterForwardTimeout: 3 * time.Second,
+				CometClient:           cometClient,
+			})
+			logging.Op().Info("HTTP handler built for gRPC ProxyHTTP routing")
+
+			// Start gRPC server with ProxyHTTP wired to full HTTP handler
+			if cfg.GRPC.Addr == "" {
+				cfg.GRPC.Addr = ":8081"
 			}
-
-			var grpcUnifiedServer *novagrpc.UnifiedServer
-			if cfg.GRPC.Enabled {
-				// Create compiler for control plane
-				comp := compiler.New(s)
-				funcService := service.NewFunctionService(s, comp)
-
-				grpcUnifiedServer, err = novagrpc.NewUnifiedServer(&novagrpc.Config{
-					Address:         cfg.GRPC.Addr,
-					Store:           s,
-					Executor:        exec,
-					Pool:            p,
-					FunctionService: funcService,
-					Compiler:        comp,
-				})
-				if err != nil {
-					return fmt.Errorf("create gRPC server: %w", err)
-				}
-
-				if err := grpcUnifiedServer.Start(cfg.GRPC.Addr); err != nil {
-					return fmt.Errorf("start gRPC server: %w", err)
-				}
-				logging.Op().Info("unified gRPC API started", "addr", cfg.GRPC.Addr, "mode", cfg.GRPC.Mode)
+			grpcServer := novagrpc.NewServerWithRouter(s, exec, httpHandler, cfg.GRPC.ServiceToken)
+			if err := grpcServer.Start(cfg.GRPC.Addr, cfg.GRPC.CertFile, cfg.GRPC.KeyFile); err != nil {
+				return fmt.Errorf("start gRPC server: %w", err)
 			}
+			logging.Op().Info("Nova gRPC API started", "addr", cfg.GRPC.Addr)
 
 			// Pool metrics recorder: write periodic snapshots for dashboard charts.
 			go func() {
@@ -458,14 +440,7 @@ func daemonCmd() *cobra.Command {
 				select {
 				case <-sigCh:
 					logging.Op().Info("shutdown signal received")
-					if grpcUnifiedServer != nil {
-						grpcUnifiedServer.Stop()
-					}
-					if httpServer != nil {
-						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-						httpServer.Shutdown(ctx)
-						cancel()
-					}
+					grpcServer.Stop()
 					sched.Stop()
 					asyncWorkers.Stop()
 					eventWorkers.Stop()
@@ -506,7 +481,7 @@ func daemonCmd() *cobra.Command {
 	}
 
 	cmd.Flags().DurationVar(&idleTTL, "idle-ttl", 60*time.Second, "VM idle timeout")
-	cmd.Flags().StringVar(&httpAddr, "http", "", "HTTP API address")
+	cmd.Flags().StringVar(&grpcAddr, "grpc", ":8081", "gRPC API address")
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level")
 	cmd.Flags().StringVar(&cometGRPAddr, "comet-grpc", "", "Comet gRPC address for pool eviction in split deployments (e.g. 127.0.0.1:9090)")
 

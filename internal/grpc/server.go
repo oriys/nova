@@ -48,6 +48,18 @@ func firstString(ss []string) string {
 	return ""
 }
 
+// NewServerWithRouter creates a new gRPC server with a custom HTTP router for ProxyHTTP.
+// This allows the gRPC ProxyHTTP method to route through any http.Handler (e.g. the full
+// control-plane + data-plane API handler stack).
+func NewServerWithRouter(s *store.Store, exec *executor.Executor, router http.Handler, serviceToken ...string) *Server {
+	return &Server{
+		store:           s,
+		executor:        exec,
+		dataPlaneRouter: router,
+		serviceToken:    firstString(serviceToken),
+	}
+}
+
 // NewServer creates a new gRPC server
 func NewServer(s *store.Store, exec *executor.Executor, p *pool.Pool, serviceToken ...string) *Server {
 	var clusterRouter *cluster.Router

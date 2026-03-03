@@ -35,7 +35,7 @@ services:
       dockerfile: Dockerfile
       target: nova-runtime
     container_name: nova-controlplane
-    command: ["nova", "daemon", "--config", "configs/nova.json", "--http", ":9001"]
+    command: ["nova", "daemon", "--config", "configs/nova.json", "--grpc", ":9001"]
     environment:
       NOVA_PG_DSN: postgres://nova:nova@postgres:5432/nova?sslmode=disable
       NOVA_LOG_LEVEL: info
@@ -60,7 +60,7 @@ services:
       - nova_code:/tmp/nova/code
       - nova_run:/var/lib/nova/run
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9001/health"]
+      test: ["CMD-SHELL", "nc -z localhost 9001"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -108,16 +108,16 @@ services:
       - "serve"
       - "--listen"
       - ":9000"
-      - "--nova-url"
-      - "http://nova:9001"
+      - "--nova-grpc"
+      - "nova:9001"
       - "--comet-grpc"
       - "comet:9090"
-      - "--corona-url"
-      - "http://corona:9003"
-      - "--nebula-url"
-      - "http://nebula:9004"
-      - "--aurora-url"
-      - "http://aurora:9002"
+      - "--corona-grpc"
+      - "corona:9003"
+      - "--nebula-grpc"
+      - "nebula:9004"
+      - "--aurora-grpc"
+      - "aurora:9002"
     environment:
       NOVA_LOG_LEVEL: info
     ports:
@@ -139,7 +139,7 @@ services:
       dockerfile: Dockerfile
       target: corona-runtime
     container_name: corona-scheduler
-    command: ["corona", "daemon", "--config", "configs/nova.json", "--comet-grpc", "comet:9090", "--listen", ":9003"]
+    command: ["corona", "daemon", "--config", "configs/nova.json", "--comet-grpc", "comet:9090", "--grpc", ":9003"]
     environment:
       NOVA_PG_DSN: postgres://nova:nova@postgres:5432/nova?sslmode=disable
       NOVA_LOG_LEVEL: info
@@ -149,7 +149,7 @@ services:
       comet:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9003/health"]
+      test: ["CMD-SHELL", "nc -z localhost 9003"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -160,7 +160,7 @@ services:
       dockerfile: Dockerfile
       target: nebula-runtime
     container_name: nebula-eventbus
-    command: ["nebula", "daemon", "--config", "configs/nova.json", "--comet-grpc", "comet:9090", "--listen", ":9004"]
+    command: ["nebula", "daemon", "--config", "configs/nova.json", "--comet-grpc", "comet:9090", "--grpc", ":9004"]
     environment:
       NOVA_PG_DSN: postgres://nova:nova@postgres:5432/nova?sslmode=disable
       NOVA_LOG_LEVEL: info
@@ -171,7 +171,7 @@ services:
       comet:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9004/health"]
+      test: ["CMD-SHELL", "nc -z localhost 9004"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -182,7 +182,7 @@ services:
       dockerfile: Dockerfile
       target: aurora-runtime
     container_name: aurora-observability
-    command: ["aurora", "daemon", "--config", "configs/nova.json", "--listen", ":9002"]
+    command: ["aurora", "daemon", "--config", "configs/nova.json", "--grpc", ":9002"]
     environment:
       NOVA_PG_DSN: postgres://nova:nova@postgres:5432/nova?sslmode=disable
       NOVA_LOG_LEVEL: info
@@ -190,7 +190,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9002/health"]
+      test: ["CMD-SHELL", "nc -z localhost 9002"]
       interval: 5s
       timeout: 5s
       retries: 10
