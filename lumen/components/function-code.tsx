@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { Pagination } from "@/components/pagination"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { CodeEditor } from "@/components/code-editor"
@@ -21,10 +22,15 @@ interface FunctionCodeProps {
   invokeMode: "sync" | "async"
   onInvokeModeChange: (mode: "sync" | "async") => void
   asyncJobs: AsyncInvocationJob[]
+  asyncJobsTotal: number
+  asyncJobsPage: number
+  asyncJobsPageSize: number
   loadingAsyncJobs: boolean
-  retryingJobId: string | null
+  retryingJobIds: string[]
+  onAsyncJobsPageChange: (page: number) => void
+  onAsyncJobsPageSizeChange: (pageSize: number) => void
   onRefreshAsyncJobs: () => void
-  onRetryAsyncJob: (jobId: string) => void
+  onRetryAsyncJobs: (jobIds: string[]) => void
   onInvoke: () => void
 }
 
@@ -96,10 +102,15 @@ export function FunctionCode({
   invokeMode,
   onInvokeModeChange,
   asyncJobs,
+  asyncJobsTotal,
+  asyncJobsPage,
+  asyncJobsPageSize,
   loadingAsyncJobs,
-  retryingJobId,
+  retryingJobIds,
+  onAsyncJobsPageChange,
+  onAsyncJobsPageSizeChange,
   onRefreshAsyncJobs,
-  onRetryAsyncJob,
+  onRetryAsyncJobs,
   onInvoke,
 }: FunctionCodeProps) {
   const [code, setCode] = useState("")
@@ -119,14 +130,22 @@ export function FunctionCode({
   const [aiCurlGenerating, setAiCurlGenerating] = useState(false)
   const [aiCurl, setAiCurl] = useState<string | null>(null)
   const [aiCurlCopied, setAiCurlCopied] = useState(false)
+  const [selectedDlqJobIds, setSelectedDlqJobIds] = useState<string[]>([])
 
   const runtimeId = func.runtimeId || getRuntimeId(func.runtime)
   const hasChanges = code !== originalCode
+  const selectableDlqJobIds = asyncJobs.filter((job) => job.status === "dlq").map((job) => job.id)
+  const allDlqSelected = selectableDlqJobIds.length > 0 && selectableDlqJobIds.every((id) => selectedDlqJobIds.includes(id))
+  const retryingSelectedBatch = selectedDlqJobIds.some((id) => retryingJobIds.includes(id))
 
   // Check AI status on mount
   useEffect(() => {
     aiApi.status().then((res) => setAiEnabled(res.enabled)).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    setSelectedDlqJobIds((current) => current.filter((id) => selectableDlqJobIds.includes(id)))
+  }, [asyncJobs])
 
   // Load code from backend
   const loadCode = useCallback(async () => {
@@ -535,26 +554,53 @@ export function FunctionCode({
           </div>
         </div>
 
-        <div className="mt-4 rounded-lg border border-border bg-muted/20 p-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-foreground">Async Queue / DLQ</p>
-              <p className="text-xs text-muted-foreground">Failed jobs are retried with backoff, then moved to DLQ.</p>
+          <div className="mt-4 rounded-lg border border-border bg-muted/20 p-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-foreground">Async Queue / DLQ</p>
+                <p className="text-xs text-muted-foreground">Failed jobs are retried with backoff, then moved to DLQ.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onRetryAsyncJobs(selectedDlqJobIds)}
+                  disabled={selectedDlqJobIds.length === 0 || loadingAsyncJobs || retryingJobIds.length > 0}
+                >
+                  {retryingSelectedBatch ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                  )}
+                  Retry Selected ({selectedDlqJobIds.length})
+                </Button>
+                <Button variant="outline" size="sm" onClick={onRefreshAsyncJobs} disabled={loadingAsyncJobs}>
+                  {loadingAsyncJobs ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  Refresh
+                </Button>
+              </div>
             </div>
-            <Button variant="outline" size="sm" onClick={onRefreshAsyncJobs} disabled={loadingAsyncJobs}>
-              {loadingAsyncJobs ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-2 h-4 w-4" />
-              )}
-              Refresh
-            </Button>
-          </div>
 
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[720px] text-sm">
               <thead>
                 <tr className="border-b border-border">
+                  <th className="px-2 py-2 text-left font-medium text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={allDlqSelected}
+                      onChange={(event) => {
+                        setSelectedDlqJobIds(event.target.checked ? selectableDlqJobIds : [])
+                      }}
+                      disabled={selectableDlqJobIds.length === 0 || loadingAsyncJobs || retryingJobIds.length > 0}
+                      aria-label="Select all DLQ jobs on this page"
+                      className="h-4 w-4 rounded border-border"
+                    />
+                  </th>
                   <th className="px-2 py-2 text-left font-medium text-muted-foreground">Job ID</th>
                   <th className="px-2 py-2 text-left font-medium text-muted-foreground">Status</th>
                   <th className="px-2 py-2 text-left font-medium text-muted-foreground">Attempts</th>
@@ -566,13 +612,34 @@ export function FunctionCode({
               <tbody>
                 {asyncJobs.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-2 py-4 text-center text-xs text-muted-foreground">
+                    <td colSpan={7} className="px-2 py-4 text-center text-xs text-muted-foreground">
                       No async jobs yet.
                     </td>
                   </tr>
                 ) : (
                   asyncJobs.map((job) => (
                     <tr key={job.id} className="border-b border-border/60">
+                      <td className="px-2 py-2">
+                        {job.status === "dlq" ? (
+                          <input
+                            type="checkbox"
+                            checked={selectedDlqJobIds.includes(job.id)}
+                            onChange={(event) => {
+                              setSelectedDlqJobIds((current) => {
+                                if (event.target.checked) {
+                                  return current.includes(job.id) ? current : [...current, job.id]
+                                }
+                                return current.filter((id) => id !== job.id)
+                              })
+                            }}
+                            disabled={retryingJobIds.length > 0}
+                            aria-label={`Select async job ${job.id}`}
+                            className="h-4 w-4 rounded border-border"
+                          />
+                        ) : (
+                          <span className="block h-4 w-4" />
+                        )}
+                      </td>
                       <td className="px-2 py-2">
                         <code className="text-xs">{job.id.slice(0, 12)}</code>
                       </td>
@@ -591,10 +658,10 @@ export function FunctionCode({
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => onRetryAsyncJob(job.id)}
-                            disabled={retryingJobId === job.id}
+                            onClick={() => onRetryAsyncJobs([job.id])}
+                            disabled={retryingJobIds.includes(job.id)}
                           >
-                            {retryingJobId === job.id ? (
+                            {retryingJobIds.includes(job.id) ? (
                               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                             ) : (
                               <RotateCcw className="mr-2 h-4 w-4" />
@@ -611,6 +678,20 @@ export function FunctionCode({
               </tbody>
             </table>
           </div>
+
+          {asyncJobsTotal > 0 && (
+            <div className="mt-3 rounded-lg border border-border bg-card p-3">
+              <Pagination
+                totalItems={asyncJobsTotal}
+                page={asyncJobsPage}
+                pageSize={asyncJobsPageSize}
+                onPageChange={onAsyncJobsPageChange}
+                onPageSizeChange={onAsyncJobsPageSizeChange}
+                pageSizeOptions={[10, 20, 50]}
+                itemLabel="jobs"
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>
