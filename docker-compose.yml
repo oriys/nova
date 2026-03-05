@@ -43,8 +43,8 @@ services:
       NOVA_CODE_DIR: /tmp/nova/code
       NOVA_DOCKER_IMAGE_PREFIX: nova-runtime
       NOVA_DOCKER_NETWORK: nova_default
-      NOVA_MASTER_KEY: "1710f674b5e29cd55bba9c1481625ac255886d763ed7dd6aeab8b21382910d1e"
-      NOVA_AUTH_JWT_SECRET: "nova-dev-jwt-secret"
+      NOVA_MASTER_KEY: "${NOVA_MASTER_KEY:?Set NOVA_MASTER_KEY in .env}"
+      NOVA_AUTH_JWT_SECRET: "${NOVA_AUTH_JWT_SECRET:?Set NOVA_AUTH_JWT_SECRET in .env}"
       NOVA_RUN_DIR: /var/lib/nova/run
       # Optional override (e.g. linux/arm64 on Apple Silicon) to avoid
       # GraalVM x86_64 emulation startup overhead in Docker backend.
@@ -79,7 +79,7 @@ services:
       NOVA_CODE_DIR: /tmp/nova/code
       NOVA_DOCKER_IMAGE_PREFIX: nova-runtime
       NOVA_DOCKER_NETWORK: nova_default
-      NOVA_MASTER_KEY: "1710f674b5e29cd55bba9c1481625ac255886d763ed7dd6aeab8b21382910d1e"
+      NOVA_MASTER_KEY: "${NOVA_MASTER_KEY:?Set NOVA_MASTER_KEY in .env}"
       NOVA_RUN_DIR: /var/lib/nova/run
     depends_on:
       postgres:
@@ -164,7 +164,7 @@ services:
     environment:
       NOVA_PG_DSN: postgres://nova:nova@postgres:5432/nova?sslmode=disable
       NOVA_LOG_LEVEL: info
-      NOVA_MASTER_KEY: "1710f674b5e29cd55bba9c1481625ac255886d763ed7dd6aeab8b21382910d1e"
+      NOVA_MASTER_KEY: "${NOVA_MASTER_KEY:?Set NOVA_MASTER_KEY in .env}"
     depends_on:
       postgres:
         condition: service_healthy

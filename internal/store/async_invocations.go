@@ -42,6 +42,7 @@ var ErrAsyncInvocationNotQueued = errors.New("async invocation is not in queued 
 var ErrAsyncInvocationNotPaused = errors.New("async invocation is not in paused status")
 var ErrAsyncInvocationNotDeletable = errors.New("async invocation cannot be deleted in current status")
 var ErrInvalidIdempotencyKey = errors.New("invalid idempotency key")
+var ErrAsyncVersionConflict = errors.New("async invocation version conflict (concurrent update)")
 
 // AsyncInvocation is a durable async function execution request.
 type AsyncInvocation struct {
@@ -70,6 +71,12 @@ type AsyncInvocation struct {
 	CompletedAt   *time.Time            `json:"completed_at,omitempty"`
 	CreatedAt     time.Time             `json:"created_at"`
 	UpdatedAt     time.Time             `json:"updated_at"`
+	Version       int64                 `json:"version"`
+
+	// Call chain tracking for function-to-function invocations.
+	CallDepth      int    `json:"call_depth,omitempty"`
+	CallChain      string `json:"call_chain,omitempty"`
+	CallerFunction string `json:"caller_function,omitempty"`
 }
 
 // AsyncInvocationSummary describes queue backlog and consume throughput in the current scope.
@@ -258,12 +265,12 @@ func insertAsyncInvocation(ctx context.Context, exec interface {
 			id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, payload, status, attempt, max_attempts,
 			backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 			request_id, output, duration_ms, cold_start, last_error, started_at,
-			completed_at, created_at, updated_at
+			completed_at, created_at, updated_at, version
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
 			$12, $13, $14, $15, $16,
 			$17, $18, $19, $20, $21, $22,
-			$23, $24, $25
+			$23, $24, $25, 1
 		)
 	`, inv.ID, inv.TenantID, inv.Namespace, inv.FunctionID, inv.FunctionName, inv.WorkflowID, inv.WorkflowName, inv.Payload, string(inv.Status), inv.Attempt, inv.MaxAttempts,
 		inv.BackoffBaseMS, inv.BackoffMaxMS, inv.NextRunAt, nullIfEmpty(inv.LockedBy), inv.LockedUntil,
@@ -278,7 +285,7 @@ func (s *PostgresStore) GetAsyncInvocation(ctx context.Context, id string) (*Asy
 		SELECT id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, payload, status, attempt, max_attempts,
 		       backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		       request_id, output, duration_ms, cold_start, last_error, started_at,
-		       completed_at, created_at, updated_at
+		       completed_at, created_at, updated_at, version
 		FROM async_invocations
 		WHERE id = $1 AND tenant_id = $2 AND namespace = $3
 	`, id, scope.TenantID, scope.Namespace))
@@ -301,7 +308,7 @@ func (s *PostgresStore) ListAsyncInvocations(ctx context.Context, limit, offset 
 		SELECT id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, NULL::jsonb, status, attempt, max_attempts,
 		       backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		       request_id, NULL::jsonb, duration_ms, cold_start, last_error, started_at,
-		       completed_at, created_at, updated_at
+		       completed_at, created_at, updated_at, version
 		FROM async_invocations
 		WHERE tenant_id = $1 AND namespace = $2
 	`
@@ -368,7 +375,7 @@ func (s *PostgresStore) ListFunctionAsyncInvocations(ctx context.Context, functi
 		SELECT id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, NULL::jsonb, status, attempt, max_attempts,
 		       backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		       request_id, NULL::jsonb, duration_ms, cold_start, last_error, started_at,
-		       completed_at, created_at, updated_at
+		       completed_at, created_at, updated_at, version
 		FROM async_invocations
 		WHERE tenant_id = $1 AND namespace = $2 AND function_id = $3
 	`
@@ -440,6 +447,7 @@ func (s *PostgresStore) AcquireDueAsyncInvocation(ctx context.Context, workerID 
 		UPDATE async_invocations SET
 			status = 'running',
 			attempt = attempt + 1,
+			version = version + 1,
 			locked_by = $1,
 			locked_until = $2,
 			started_at = COALESCE(started_at, $3),
@@ -454,7 +462,7 @@ func (s *PostgresStore) AcquireDueAsyncInvocation(ctx context.Context, workerID 
 		RETURNING id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, payload, status, attempt, max_attempts,
 		          backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		          request_id, output, duration_ms, cold_start, last_error, started_at,
-		          completed_at, created_at, updated_at
+		          completed_at, created_at, updated_at, version
 	`, workerID, leaseUntil, now))
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -486,6 +494,7 @@ func (s *PostgresStore) AcquireDueAsyncInvocations(ctx context.Context, workerID
 		UPDATE async_invocations SET
 			status = 'running',
 			attempt = attempt + 1,
+			version = version + 1,
 			locked_by = $1,
 			locked_until = $2,
 			started_at = COALESCE(started_at, $3),
@@ -500,7 +509,7 @@ func (s *PostgresStore) AcquireDueAsyncInvocations(ctx context.Context, workerID
 		RETURNING id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, payload, status, attempt, max_attempts,
 		          backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		          request_id, output, duration_ms, cold_start, last_error, started_at,
-		          completed_at, created_at, updated_at
+		          completed_at, created_at, updated_at, version
 	`, workerID, leaseUntil, now, batchSize)
 	if err != nil {
 		return nil, fmt.Errorf("acquire async invocations batch: %w", err)
@@ -526,6 +535,7 @@ func (s *PostgresStore) MarkAsyncInvocationSucceeded(ctx context.Context, id, re
 	ct, err := s.pool.Exec(ctx, `
 		UPDATE async_invocations SET
 			status = 'succeeded',
+			version = version + 1,
 			request_id = $2,
 			output = $3,
 			duration_ms = $4,
@@ -535,13 +545,13 @@ func (s *PostgresStore) MarkAsyncInvocationSucceeded(ctx context.Context, id, re
 			locked_until = NULL,
 			completed_at = $6,
 			updated_at = $6
-		WHERE id = $1
+		WHERE id = $1 AND status = 'running'
 	`, id, nullIfEmpty(requestID), output, durationMS, coldStart, now)
 	if err != nil {
 		return fmt.Errorf("mark async invocation succeeded: %w", err)
 	}
 	if ct.RowsAffected() == 0 {
-		return fmt.Errorf("%w: %s", ErrAsyncInvocationNotFound, id)
+		return fmt.Errorf("%w: %s", ErrAsyncVersionConflict, id)
 	}
 	return nil
 }
@@ -553,18 +563,19 @@ func (s *PostgresStore) MarkAsyncInvocationForRetry(ctx context.Context, id, las
 	ct, err := s.pool.Exec(ctx, `
 		UPDATE async_invocations SET
 			status = 'queued',
+			version = version + 1,
 			last_error = $2,
 			next_run_at = $3,
 			locked_by = NULL,
 			locked_until = NULL,
 			updated_at = NOW()
-		WHERE id = $1
+		WHERE id = $1 AND status = 'running'
 	`, id, nullIfEmpty(lastError), nextRunAt)
 	if err != nil {
 		return fmt.Errorf("mark async invocation retry: %w", err)
 	}
 	if ct.RowsAffected() == 0 {
-		return fmt.Errorf("%w: %s", ErrAsyncInvocationNotFound, id)
+		return fmt.Errorf("%w: %s", ErrAsyncVersionConflict, id)
 	}
 	return nil
 }
@@ -574,18 +585,19 @@ func (s *PostgresStore) MarkAsyncInvocationDLQ(ctx context.Context, id, lastErro
 	ct, err := s.pool.Exec(ctx, `
 		UPDATE async_invocations SET
 			status = 'dlq',
+			version = version + 1,
 			last_error = $2,
 			locked_by = NULL,
 			locked_until = NULL,
 			completed_at = $3,
 			updated_at = $3
-		WHERE id = $1
+		WHERE id = $1 AND status = 'running'
 	`, id, nullIfEmpty(lastError), now)
 	if err != nil {
 		return fmt.Errorf("mark async invocation dlq: %w", err)
 	}
 	if ct.RowsAffected() == 0 {
-		return fmt.Errorf("%w: %s", ErrAsyncInvocationNotFound, id)
+		return fmt.Errorf("%w: %s", ErrAsyncVersionConflict, id)
 	}
 	return nil
 }
@@ -617,7 +629,7 @@ func (s *PostgresStore) RequeueAsyncInvocation(ctx context.Context, id string, m
 		RETURNING id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, payload, status, attempt, max_attempts,
 		          backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		          request_id, output, duration_ms, cold_start, last_error, started_at,
-		          completed_at, created_at, updated_at
+		          completed_at, created_at, updated_at, version
 	`, id, maxAttempts, now, scope.TenantID, scope.Namespace))
 	if err == pgx.ErrNoRows {
 		var status string
@@ -651,7 +663,7 @@ func (s *PostgresStore) PauseAsyncInvocation(ctx context.Context, id string) (*A
 		RETURNING id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, payload, status, attempt, max_attempts,
 		          backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		          request_id, output, duration_ms, cold_start, last_error, started_at,
-		          completed_at, created_at, updated_at
+		          completed_at, created_at, updated_at, version
 	`, id, now, scope.TenantID, scope.Namespace))
 	if err == pgx.ErrNoRows {
 		var status string
@@ -684,7 +696,7 @@ func (s *PostgresStore) ResumeAsyncInvocation(ctx context.Context, id string) (*
 		RETURNING id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, payload, status, attempt, max_attempts,
 		          backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		          request_id, output, duration_ms, cold_start, last_error, started_at,
-		          completed_at, created_at, updated_at
+		          completed_at, created_at, updated_at, version
 	`, id, now, scope.TenantID, scope.Namespace))
 	if err == pgx.ErrNoRows {
 		var status string
@@ -889,6 +901,7 @@ func scanAsyncInvocation(scanner asyncInvocationScanner) (*AsyncInvocation, erro
 		&inv.CompletedAt,
 		&inv.CreatedAt,
 		&inv.UpdatedAt,
+		&inv.Version,
 	)
 	if err != nil {
 		return nil, err
@@ -930,7 +943,7 @@ func (s *PostgresStore) ListWorkflowAsyncInvocations(ctx context.Context, workfl
 		SELECT id, tenant_id, namespace, function_id, function_name, workflow_id, workflow_name, NULL::jsonb, status, attempt, max_attempts,
 		       backoff_base_ms, backoff_max_ms, next_run_at, locked_by, locked_until,
 		       request_id, NULL::jsonb, duration_ms, cold_start, last_error, started_at,
-		       completed_at, created_at, updated_at
+		       completed_at, created_at, updated_at, version
 		FROM async_invocations
 		WHERE tenant_id = $1 AND namespace = $2 AND workflow_id = $3
 	`

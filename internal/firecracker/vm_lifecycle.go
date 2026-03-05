@@ -333,3 +333,69 @@ func (m *Manager) Shutdown() {
 func (m *Manager) SnapshotDir() string {
 	return m.config.SnapshotDir
 }
+
+// ReconcileResources compares in-use CID/IP resources against tracked VMs and
+// reclaims any leaked resources (e.g., from VMs that crashed before cleanup).
+// Returns the number of reclaimed CIDs and IPs.
+func (m *Manager) ReconcileResources() (reclaimedCIDs int, reclaimedIPs int) {
+	m.mu.RLock()
+	activeCIDs := make(map[uint32]struct{}, len(m.vms))
+	activeIPs := make(map[string]struct{}, len(m.vms))
+	for _, vm := range m.vms {
+		if vm.CID != 0 {
+			activeCIDs[vm.CID] = struct{}{}
+		}
+		if vm.GuestIP != "" {
+			activeIPs[vm.GuestIP] = struct{}{}
+		}
+	}
+	m.mu.RUnlock()
+
+	// Reclaim CIDs marked in-use but not owned by any tracked VM
+	inUseCIDs := m.cidPool.inUseItems()
+	for cid := range inUseCIDs {
+		if _, active := activeCIDs[cid]; !active {
+			m.cidPool.release(cid)
+			reclaimedCIDs++
+		}
+	}
+
+	// Reclaim IPs marked in-use but not owned by any tracked VM
+	inUseIPs := m.ipPool.inUseItems()
+	for ip := range inUseIPs {
+		if _, active := activeIPs[ip]; !active {
+			m.ipPool.release(ip)
+			reclaimedIPs++
+		}
+	}
+
+	if reclaimedCIDs > 0 || reclaimedIPs > 0 {
+		logging.Op().Warn("resource reconciliation reclaimed leaked resources",
+			"reclaimed_cids", reclaimedCIDs,
+			"reclaimed_ips", reclaimedIPs,
+			"active_vms", len(activeCIDs),
+		)
+	}
+
+	return reclaimedCIDs, reclaimedIPs
+}
+
+// StartReconciliationLoop starts a background goroutine that periodically
+// reconciles CID/IP resource pools with tracked VMs. Cancel the context to stop.
+func (m *Manager) StartReconciliationLoop(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = 60 * time.Second
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				m.ReconcileResources()
+			}
+		}
+	}()
+}

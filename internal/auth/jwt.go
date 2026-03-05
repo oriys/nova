@@ -121,12 +121,21 @@ func (a *JWTAuthenticator) Authenticate(r *http.Request) *Identity {
 		tier = t
 	}
 
+	scopes := extractTenantScopesFromClaims(claims)
+	if len(scopes) == 0 {
+		// Secure default: bind to "default" tenant when no scopes in JWT
+		scopes = []TenantScope{normalizeTenantScopeWithWildcard(TenantScope{
+			TenantID:  defaultTenantID,
+			Namespace: scopeWildcard,
+		})}
+	}
+
 	return &Identity{
 		Subject:       "user:" + subject,
 		Tier:          tier,
 		Claims:        claims,
 		Policies:      extractPoliciesFromClaims(claims),
-		AllowedScopes: extractTenantScopesFromClaims(claims),
+		AllowedScopes: scopes,
 	}
 }
 

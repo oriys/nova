@@ -82,7 +82,7 @@ func daemonCmd() *cobra.Command {
 				}
 			}
 
-			pgStore, err := store.NewPostgresStore(context.Background(), cfg.Postgres.DSN)
+			pgStore, err := store.NewPostgresStore(context.Background(), cfg.Postgres.DSN, store.PoolOptions{MaxConns: cfg.Postgres.MaxConn, MinConns: cfg.Postgres.MinConn})
 			if err != nil {
 				return err
 			}

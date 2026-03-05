@@ -343,11 +343,6 @@ type MetadataStore interface {
 	GetWorkflowDoc(ctx context.Context, workflowName string) (*WorkflowDoc, error)
 	DeleteWorkflowDoc(ctx context.Context, workflowName string) error
 
-	// Test Suites (per-function persisted test suites)
-	SaveTestSuite(ctx context.Context, ts *TestSuite) error
-	GetTestSuite(ctx context.Context, functionName string) (*TestSuite, error)
-	DeleteTestSuite(ctx context.Context, functionName string) error
-
 	// Tickets (work orders)
 	CreateTicket(ctx context.Context, t *domain.Ticket) error
 	GetTicket(ctx context.Context, id string) (*domain.Ticket, error)
@@ -555,14 +550,6 @@ type FunctionDoc struct {
 type WorkflowDoc struct {
 	WorkflowName string          `json:"workflow_name"`
 	DocContent   json.RawMessage `json:"doc_content"`
-	UpdatedAt    time.Time       `json:"updated_at"`
-	CreatedAt    time.Time       `json:"created_at"`
-}
-
-// TestSuite represents a persisted test suite for a function.
-type TestSuite struct {
-	FunctionName string          `json:"function_name"`
-	TestCases    json.RawMessage `json:"test_cases"`
 	UpdatedAt    time.Time       `json:"updated_at"`
 	CreatedAt    time.Time       `json:"created_at"`
 }

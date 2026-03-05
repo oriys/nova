@@ -18,9 +18,6 @@ type AIRewriteArgs struct {
 	FunctionName string `json:"function_name" jsonschema:"Function name"`
 	Instructions string `json:"instructions" jsonschema:"Rewrite instructions"`
 }
-type AIGenerateTestsArgs struct {
-	FunctionName string `json:"function_name" jsonschema:"Function name"`
-}
 type AIGenerateDocsArgs struct {
 	FunctionName string `json:"function_name" jsonschema:"Function name"`
 }
@@ -50,13 +47,6 @@ func RegisterAITools(s *mcp.Server, c *NovaClient) {
 		Description: "Rewrite function code using AI",
 	}, c, func(ctx context.Context, args AIRewriteArgs, c *NovaClient) (json.RawMessage, error) {
 		return c.Post(ctx, "/ai/rewrite", args)
-	})
-
-	addToolHelper(s, &mcp.Tool{
-		Name:        "nova_ai_generate_tests",
-		Description: "Generate tests for a function using AI",
-	}, c, func(ctx context.Context, args AIGenerateTestsArgs, c *NovaClient) (json.RawMessage, error) {
-		return c.Post(ctx, "/ai/generate-tests", args)
 	})
 
 	addToolHelper(s, &mcp.Tool{

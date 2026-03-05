@@ -1280,20 +1280,6 @@ export const functionsApi = {
   sloStatus: (name: string) =>
     request<FunctionSLOStatus>(`/functions/${encodeURIComponent(name)}/slo/status`),
 
-  getTestSuite: (name: string) =>
-    request<TestSuiteRecord>(`/functions/${encodeURIComponent(name)}/test-suite`),
-
-  saveTestSuite: (name: string, testCases: TestSuiteCase[]) =>
-    request<TestSuiteRecord>(`/functions/${encodeURIComponent(name)}/test-suite`, {
-      method: "PUT",
-      body: JSON.stringify({ test_cases: testCases }),
-    }),
-
-  deleteTestSuite: (name: string) =>
-    request<{ status: string; function_name: string }>(`/functions/${encodeURIComponent(name)}/test-suite`, {
-      method: "DELETE",
-    }),
-
   prewarm: (name: string) =>
     request<{ status: string }>(`/functions/${encodeURIComponent(name)}/prewarm`, {
       method: "POST",
@@ -2793,38 +2779,6 @@ export interface DiagnosticsAnalysisResponse {
   performance_score: number;
 }
 
-// Test Suite types
-export interface TestSuiteRecord {
-  function_name: string;
-  test_cases: TestSuiteCase[];
-  updated_at: string;
-  created_at: string;
-}
-
-export interface TestSuiteCase {
-  id: string;
-  name: string;
-  input: string;
-  expectedOutput: string;
-}
-
-export interface GenerateTestsRequest {
-  function_name: string;
-  runtime: string;
-  code: string;
-  handler?: string;
-}
-
-export interface GeneratedTestCase {
-  name: string;
-  input: string;
-  expected_output: string;
-}
-
-export interface GenerateTestsResponse {
-  test_cases: GeneratedTestCase[];
-}
-
 // AI API
 export const aiApi = {
   status: () => request<AIStatusResponse>("/ai/status"),
@@ -2899,12 +2853,6 @@ export const aiApi = {
         method: "POST",
       }
     ),
-
-  generateTests: (data: GenerateTestsRequest) =>
-    request<GenerateTestsResponse>("/ai/generate-tests", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
 };
 
 // ─── RBAC Types ─────────────────────────────────────────────────────────────

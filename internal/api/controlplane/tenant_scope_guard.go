@@ -12,8 +12,13 @@ import (
 
 func enforceTenantAccess(w http.ResponseWriter, r *http.Request, tenantID string) bool {
 	identity := auth.GetIdentity(r.Context())
-	if identity == nil || !identity.ScopeRestricted() {
-		return true
+	if identity == nil {
+		return true // public path, auth middleware already passed
+	}
+	if !identity.ScopeRestricted() {
+		// No scopes configured: deny access (secure by default)
+		writeTenantForbidden(w)
+		return false
 	}
 
 	tenantID = strings.TrimSpace(tenantID)
@@ -29,8 +34,13 @@ func enforceTenantAccess(w http.ResponseWriter, r *http.Request, tenantID string
 
 func enforceNamespaceAccess(w http.ResponseWriter, r *http.Request, tenantID, namespace string) bool {
 	identity := auth.GetIdentity(r.Context())
-	if identity == nil || !identity.ScopeRestricted() {
-		return true
+	if identity == nil {
+		return true // public path, auth middleware already passed
+	}
+	if !identity.ScopeRestricted() {
+		// No scopes configured: deny access (secure by default)
+		writeTenantForbidden(w)
+		return false
 	}
 
 	if identity.AllowsScope(tenantID, namespace) {
@@ -42,8 +52,12 @@ func enforceNamespaceAccess(w http.ResponseWriter, r *http.Request, tenantID, na
 }
 
 func visibleTenantIDs(identity *auth.Identity) ([]string, bool) {
-	if identity == nil || !identity.ScopeRestricted() {
-		return nil, true
+	if identity == nil {
+		return nil, true // public path
+	}
+	if !identity.ScopeRestricted() {
+		// No scopes configured: no visible tenants (secure by default)
+		return []string{}, false
 	}
 
 	ids := make(map[string]struct{}, len(identity.AllowedScopes))
@@ -63,8 +77,12 @@ func visibleTenantIDs(identity *auth.Identity) ([]string, bool) {
 }
 
 func filterVisibleNamespaces(identity *auth.Identity, tenantID string, namespaces []*store.NamespaceRecord) []*store.NamespaceRecord {
-	if identity == nil || !identity.ScopeRestricted() {
-		return namespaces
+	if identity == nil {
+		return namespaces // public path
+	}
+	if !identity.ScopeRestricted() {
+		// No scopes configured: no visible namespaces (secure by default)
+		return nil
 	}
 	filtered := make([]*store.NamespaceRecord, 0, len(namespaces))
 	for _, ns := range namespaces {

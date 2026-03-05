@@ -154,7 +154,6 @@ Nova 是一个极简的 Serverless 平台，支持多种虚拟化后端（Firecr
 - 代码审查（`POST /ai/review`）：分析函数代码质量和安全性
 - 代码重写（`POST /ai/rewrite`）：优化现有函数代码
 - 诊断分析（`POST /ai/analyze-diagnostics`）：AI 分析函数运行异常
-- 测试生成（`POST /ai/generate-tests`）：为函数自动生成测试用例
 - 文档生成（`POST /ai/generate-docs`）：自动生成 API 文档
 - 可配置 Prompt 模板
 

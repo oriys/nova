@@ -37,14 +37,14 @@ type Handler struct {
 	SecretsStore    *secrets.Store
 	Scheduler       *scheduler.Scheduler
 	ClusterRegistry *cluster.Registry
-	RootfsDir       string          // Directory where rootfs ext4 images are stored
-	GatewayEnabled  bool            // Whether gateway route management is enabled
-	LayerManager    *layer.Manager  // Optional: for shared dependency layers
-	VolumeManager   *volume.Manager // Optional: for persistent volume management
-	AIService       *ai.Service     // Optional: for AI-powered code operations
-	TriggerManager  *triggers.Manager // Optional: for hot-loading triggers at runtime
-	JWTSecret       string          // HS256 JWT signing key for auth endpoints
-	AuthHandler     *AuthHandler    // Exposed for revocation checker integration
+	RootfsDir       string                   // Directory where rootfs ext4 images are stored
+	GatewayEnabled  bool                     // Whether gateway route management is enabled
+	LayerManager    *layer.Manager           // Optional: for shared dependency layers
+	VolumeManager   *volume.Manager          // Optional: for persistent volume management
+	AIService       *ai.Service              // Optional: for AI-powered code operations
+	TriggerManager  *triggers.Manager        // Optional: for hot-loading triggers at runtime
+	JWTSecret       string                   // HS256 JWT signing key for auth endpoints
+	AuthHandler     *AuthHandler             // Exposed for revocation checker integration
 	CometClient     novapb.NovaServiceClient // Optional: gRPC client to Comet for split deployments
 }
 
@@ -238,10 +238,6 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		apiDocHandler := &APIDocHandler{AIService: h.AIService, Store: h.Store}
 		apiDocHandler.RegisterRoutes(mux)
 	}
-
-	// Test Suite handler (CRUD always available, AI generation requires AI service)
-	tsHandler := &TestSuiteHandler{AIService: h.AIService, Store: h.Store}
-	tsHandler.RegisterRoutes(mux)
 
 	// Database Access (DbResource / DbBinding / CredentialPolicy / Audit Logs)
 	mux.HandleFunc("POST /db-resources", h.CreateDbResource)

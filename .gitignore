@@ -13,6 +13,10 @@ bin/
 *.so
 *.dylib
 
+# Go test binaries & coverage
+*.test
+coverage.out
+
 # Go
 /go.sum
 
@@ -31,6 +35,11 @@ Thumbs.db
 
 # Temporary
 /tmp/
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.*.local
 
 # Node
 node_modules/

@@ -22,7 +22,7 @@ pool:
 # Secrets encryption
 secrets:
   enabled: true
-  master_key: "1710f674b5e29cd55bba9c1481625ac255886d763ed7dd6aeab8b21382910d1e"
+  # master_key: Set via NOVA_MASTER_KEY environment variable
 
 # Rootfs mapping:
 #   base.ext4   -> Go, Rust  (static binaries, no runtime needed)

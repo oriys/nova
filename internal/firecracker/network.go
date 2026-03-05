@@ -120,6 +120,17 @@ func (p *resourcePool[T]) inUseCount() int {
 	return len(p.inUse)
 }
 
+// inUseItems returns a snapshot of all items currently marked as in-use.
+func (p *resourcePool[T]) inUseItems() map[T]struct{} {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	snapshot := make(map[T]struct{}, len(p.inUse))
+	for item := range p.inUse {
+		snapshot[item] = struct{}{}
+	}
+	return snapshot
+}
+
 // initCIDPool pre-fills the CID resource pool with available CIDs.
 // CIDs 0-2 are reserved by the vsock spec; we start from 100.
 func (m *Manager) initCIDPool() {

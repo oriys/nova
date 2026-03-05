@@ -14,6 +14,7 @@ import (
 	"github.com/oriys/nova/api/proto/novapb"
 	"github.com/oriys/nova/internal/ai"
 	"github.com/oriys/nova/internal/api"
+	"github.com/oriys/nova/internal/applevz"
 	"github.com/oriys/nova/internal/asyncqueue"
 	"github.com/oriys/nova/internal/auth"
 	"github.com/oriys/nova/internal/autoscaler"
@@ -28,7 +29,6 @@ import (
 	novagrpc "github.com/oriys/nova/internal/grpc"
 	"github.com/oriys/nova/internal/kubernetes"
 	"github.com/oriys/nova/internal/layer"
-	"github.com/oriys/nova/internal/applevz"
 	"github.com/oriys/nova/internal/libkrun"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/metrics"
@@ -114,7 +114,7 @@ func daemonCmd() *cobra.Command {
 				}
 			}
 
-			pgStore, err := store.NewPostgresStore(context.Background(), cfg.Postgres.DSN)
+			pgStore, err := store.NewPostgresStore(context.Background(), cfg.Postgres.DSN, store.PoolOptions{MaxConns: cfg.Postgres.MaxConn, MinConns: cfg.Postgres.MinConn})
 			if err != nil {
 				return err
 			}
@@ -179,7 +179,7 @@ func daemonCmd() *cobra.Command {
 					logging.Op().Info("initializing Firecracker backend")
 					if runtime.GOOS == "linux" {
 						if err := compiler.EnsureDockerToolchainReady(context.Background()); err != nil {
-							return nil, fmt.Errorf("ensure compiler docker images: %w", err)
+							return nil, fmt.Errorf("ensure compiler docker availability: %w", err)
 						}
 					}
 					adapter, err := firecracker.NewAdapter(&cfg.Firecracker)

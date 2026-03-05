@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -44,12 +45,38 @@ var builtinRuntimeSeeds = []builtinRuntimeSeed{
 	{ID: "wasm", Name: "WebAssembly", Version: "1.0"},
 }
 
-func NewPostgresStore(ctx context.Context, dsn string) (*PostgresStore, error) {
+// PoolOptions allows callers to override connection pool parameters.
+type PoolOptions struct {
+	MaxConns int32
+	MinConns int32
+}
+
+func NewPostgresStore(ctx context.Context, dsn string, opts ...PoolOptions) (*PostgresStore, error) {
 	if dsn == "" {
 		return nil, fmt.Errorf("postgres DSN is required")
 	}
 
-	pool, err := pgxpool.New(ctx, dsn)
+	poolCfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("parse postgres DSN: %w", err)
+	}
+
+	if len(opts) > 0 {
+		o := opts[0]
+		if o.MaxConns > 0 {
+			poolCfg.MaxConns = o.MaxConns
+		}
+		if o.MinConns > 0 {
+			poolCfg.MinConns = o.MinConns
+		}
+	}
+	// Apply sensible defaults when DSN doesn't specify pool params
+	// and no explicit options were provided.
+	if poolCfg.MaxConns == 0 {
+		poolCfg.MaxConns = int32(4 * runtime.NumCPU())
+	}
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("create postgres pool: %w", err)
 	}
@@ -66,6 +93,13 @@ func NewPostgresStore(ctx context.Context, dsn string) (*PostgresStore, error) {
 		return nil, err
 	}
 
+	// Run numbered migrations (version-tracked, with rollback support).
+	// ensureSchema handles the baseline DDL; new structural changes go here.
+	if err := RunMigrations(ctx, pool, Migrations); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("run migrations: %w", err)
+	}
+
 	return s, nil
 }
 
@@ -74,6 +108,41 @@ func (s *PostgresStore) Close() error {
 		s.pool.Close()
 	}
 	return nil
+}
+
+// Pool returns the underlying pgxpool.Pool for use by subsystems (e.g. leader
+// election) that need direct database access.
+func (s *PostgresStore) Pool() *pgxpool.Pool {
+	return s.pool
+}
+
+// StartLogRetentionLoop starts a background goroutine that periodically deletes
+// invocation logs older than retention. Call the returned function to stop the loop.
+func (s *PostgresStore) StartLogRetentionLoop(retention time.Duration, interval time.Duration) (stop func()) {
+	if retention <= 0 || interval <= 0 {
+		return func() {}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				n, err := s.CleanupOldInvocationLogs(ctx, retention)
+				if err != nil {
+					// Logged upstream; ignore in background loop.
+					continue
+				}
+				if n > 0 {
+					fmt.Printf("[log-retention] cleaned up %d invocation logs older than %s\n", n, retention)
+				}
+			}
+		}
+	}()
+	return cancel
 }
 
 func (s *PostgresStore) Ping(ctx context.Context) error {
@@ -273,6 +342,7 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_async_invocations_function_created ON async_invocations(function_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_async_invocations_workflow_created ON async_invocations(workflow_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_async_invocations_created ON async_invocations(created_at DESC)`,
+		`ALTER TABLE async_invocations ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1`,
 		`CREATE TABLE IF NOT EXISTS idempotency_keys (
 			scope TEXT NOT NULL,
 			scope_id TEXT NOT NULL,
@@ -860,13 +930,6 @@ func (s *PostgresStore) ensureSchema(ctx context.Context) error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 
-		`CREATE TABLE IF NOT EXISTS test_suites (
-			function_name TEXT PRIMARY KEY,
-			test_cases JSONB NOT NULL DEFAULT '[]',
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		)`,
-
 		// Database Access: resources, bindings, credential policies, audit logs
 		`CREATE TABLE IF NOT EXISTS db_resources (
 			id TEXT PRIMARY KEY,
@@ -1243,33 +1306,5 @@ func (s *PostgresStore) GetWorkflowDoc(ctx context.Context, workflowName string)
 
 func (s *PostgresStore) DeleteWorkflowDoc(ctx context.Context, workflowName string) error {
 	_, err := s.pool.Exec(ctx, `DELETE FROM workflow_docs WHERE workflow_name = $1`, workflowName)
-	return err
-}
-
-// --- Test Suites ---
-
-func (s *PostgresStore) SaveTestSuite(ctx context.Context, ts *TestSuite) error {
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO test_suites (function_name, test_cases, updated_at, created_at)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (function_name) DO UPDATE SET test_cases = $2, updated_at = $3`,
-		ts.FunctionName, ts.TestCases, ts.UpdatedAt, ts.CreatedAt)
-	return err
-}
-
-func (s *PostgresStore) GetTestSuite(ctx context.Context, functionName string) (*TestSuite, error) {
-	var ts TestSuite
-	err := s.pool.QueryRow(ctx, `
-		SELECT function_name, test_cases, updated_at, created_at
-		FROM test_suites WHERE function_name = $1`, functionName).Scan(
-		&ts.FunctionName, &ts.TestCases, &ts.UpdatedAt, &ts.CreatedAt)
-	if err != nil {
-		return nil, err
-	}
-	return &ts, nil
-}
-
-func (s *PostgresStore) DeleteTestSuite(ctx context.Context, functionName string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM test_suites WHERE function_name = $1`, functionName)
 	return err
 }

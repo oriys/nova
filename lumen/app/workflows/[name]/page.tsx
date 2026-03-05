@@ -34,7 +34,6 @@ import { DagViewer } from "@/components/workflow/dag-viewer"
 import { DagEditor } from "@/components/workflow/dag-editor"
 import { CodeDisplay } from "@/components/code-editor"
 import { WorkflowDocs } from "@/components/workflow-docs"
-import { WorkflowTestSuite } from "@/components/workflow-test-suite"
 import { WorkflowGateway } from "@/components/workflow-gateway"
 import { WorkflowMetrics } from "@/components/workflow-metrics"
 import type { LayoutMap } from "@/components/workflow/dag-layout"
@@ -388,12 +387,6 @@ export default function WorkflowDetailPage() {
               {t("tabs.versions")}
             </TabsTrigger>
             <TabsTrigger
-              value="tests"
-              className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
-            >
-              {t("tabs.tests")}
-            </TabsTrigger>
-            <TabsTrigger
               value="docs"
               className="relative h-12 rounded-none border-0 bg-transparent px-4 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 data-[state=active]:after:bg-primary"
             >
@@ -617,13 +610,6 @@ export default function WorkflowDetailPage() {
             {workflow && (
               <WorkflowDocs workflow={workflow} currentVersion={currentVersionDetail} />
             )}
-          </TabsContent>
-
-          <TabsContent value="tests" className="mt-0">
-            <WorkflowTestSuite
-              workflowName={name}
-              hasPublishedVersion={!!workflow && workflow.current_version > 0}
-            />
           </TabsContent>
 
           <TabsContent value="gateway" className="mt-0">

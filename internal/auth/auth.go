@@ -43,13 +43,13 @@ func (id *Identity) ScopeRestricted() bool {
 }
 
 // AllowsScope checks whether this identity can access the given tenant/namespace pair.
-// If no AllowedScopes are configured, access is unrestricted.
+// If no AllowedScopes are configured, access is denied (secure by default).
 func (id *Identity) AllowsScope(tenantID, namespace string) bool {
 	if id == nil {
 		return false
 	}
 	if len(id.AllowedScopes) == 0 {
-		return true
+		return false
 	}
 	for _, scope := range id.AllowedScopes {
 		if scope.Allows(tenantID, namespace) {

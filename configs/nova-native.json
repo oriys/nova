@@ -3,14 +3,12 @@
     "dsn": "postgres://nova:nova@localhost:5432/nova?sslmode=disable"
   },
   "secrets": {
-    "master_key": "1710f674b5e29cd55bba9c1481625ac255886d763ed7dd6aeab8b21382910d1e"
   },
   "auth": {
     "enabled": false,
     "jwt": {
       "enabled": true,
-      "algorithm": "HS256",
-      "secret": "nova-dev-jwt-secret"
+      "algorithm": "HS256"
     }
   },
   "firecracker": {

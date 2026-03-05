@@ -361,9 +361,11 @@ func (h *APIDocHandler) GetWorkflowDoc(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the workflow belongs to the caller's tenant
-	if _, err := h.Store.GetWorkflowByName(r.Context(), name); err != nil {
-		http.Error(w, "workflow not found: "+name, http.StatusNotFound)
-		return
+	if h.Store.WorkflowStore != nil {
+		if _, err := h.Store.GetWorkflowByName(r.Context(), name); err != nil {
+			http.Error(w, "workflow not found: "+name, http.StatusNotFound)
+			return
+		}
 	}
 
 	doc, err := h.Store.GetWorkflowDoc(r.Context(), name)
@@ -384,9 +386,11 @@ func (h *APIDocHandler) SaveWorkflowDoc(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Verify the workflow belongs to the caller's tenant
-	if _, err := h.Store.GetWorkflowByName(r.Context(), name); err != nil {
-		http.Error(w, "workflow not found: "+name, http.StatusNotFound)
-		return
+	if h.Store.WorkflowStore != nil {
+		if _, err := h.Store.GetWorkflowByName(r.Context(), name); err != nil {
+			http.Error(w, "workflow not found: "+name, http.StatusNotFound)
+			return
+		}
 	}
 
 	var req struct {
@@ -434,9 +438,11 @@ func (h *APIDocHandler) DeleteWorkflowDoc(w http.ResponseWriter, r *http.Request
 	}
 
 	// Verify the workflow belongs to the caller's tenant
-	if _, err := h.Store.GetWorkflowByName(r.Context(), name); err != nil {
-		http.Error(w, "workflow not found: "+name, http.StatusNotFound)
-		return
+	if h.Store.WorkflowStore != nil {
+		if _, err := h.Store.GetWorkflowByName(r.Context(), name); err != nil {
+			http.Error(w, "workflow not found: "+name, http.StatusNotFound)
+			return
+		}
 	}
 
 	if err := h.Store.DeleteWorkflowDoc(r.Context(), name); err != nil {

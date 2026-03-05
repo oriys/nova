@@ -161,9 +161,10 @@ type Handler struct {
 	Store         *store.Store
 	Exec          *executor.Executor
 	Pool          *pool.Pool
-	AIService     *ai.Service     // Optional: for AI-powered diagnostics analysis
-	Advisor       interface{}     // Optional: for performance recommendations (type advisor.PerformanceAdvisor)
-	ClusterRouter *cluster.Router // Optional: for cross-node invoke/prewarm routing
+	AIService     *ai.Service              // Optional: for AI-powered diagnostics analysis
+	Advisor       interface{}              // Optional: for performance recommendations (type advisor.PerformanceAdvisor)
+	ClusterRouter *cluster.Router          // Optional: for cross-node invoke/prewarm routing
+	Idempotency   *IdempotencyMiddleware   // Optional: idempotency support for sync invoke
 }
 
 type invocationPaginationStore interface {

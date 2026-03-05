@@ -65,6 +65,18 @@ type InvocationLogSummary struct {
 	AvgDurationMs    int64 `json:"avg_duration_ms"`
 }
 
+// CleanupOldInvocationLogs deletes invocation logs older than the given
+// retention period and returns the number of rows removed.
+func (s *PostgresStore) CleanupOldInvocationLogs(ctx context.Context, retention time.Duration) (int64, error) {
+	cutoff := time.Now().Add(-retention)
+	tag, err := s.pool.Exec(ctx,
+		`DELETE FROM invocation_logs WHERE created_at < $1`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("cleanup old invocation logs: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (s *PostgresStore) SaveInvocationLog(ctx context.Context, log *InvocationLog) error {
 	if log.ID == "" {
 		return fmt.Errorf("invocation log id is required")

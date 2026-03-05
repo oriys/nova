@@ -289,6 +289,17 @@ type Destination struct {
 	Target string `json:"target"` // function name or topic name
 }
 
+// InvokePolicy defines which callers are allowed to invoke a function.
+// This implements a dual-layer permission model similar to AWS Lambda:
+//   - When AllowAll is true (default), any caller may invoke the function.
+//   - When AllowAll is false, only callers listed in AllowedCallers are permitted.
+//   - DenyCallers always takes precedence over allow rules.
+type InvokePolicy struct {
+	AllowAll       bool     `json:"allow_all"`
+	AllowedCallers []string `json:"allowed_callers,omitempty"`
+	DenyCallers    []string `json:"deny_callers,omitempty"`
+}
+
 // CloudEvent represents a CNCF CloudEvents 1.0 envelope.
 type CloudEvent struct {
 	SpecVersion     string          `json:"specversion"`
@@ -404,6 +415,8 @@ type Function struct {
 	Tags                map[string]string  `json:"tags,omitempty"`
 	LogRetentionDays    int                `json:"log_retention_days,omitempty"` // 0 = use global default
 	AsyncDestinations   *AsyncDestinations `json:"async_destinations,omitempty"`
+	InvokePolicy        *InvokePolicy      `json:"invoke_policy,omitempty"`
+	Halted              bool               `json:"halted,omitempty"` // When true, all invocations are rejected (emergency kill switch)
 	CreatedAt           time.Time          `json:"created_at"`
 	UpdatedAt           time.Time          `json:"updated_at"`
 

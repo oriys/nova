@@ -2,6 +2,8 @@ package zenith
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -9,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,8 +22,10 @@ import (
 	"github.com/oriys/nova/internal/pkg/httpjson"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -34,7 +39,11 @@ type Config struct {
 	NebulaGRPCAddr    string
 	AuroraGRPCAddr    string
 	Timeout           time.Duration
-	CometServiceToken string // Shared secret for gRPC authentication
+	MaxTimeout        time.Duration // Global maximum timeout for gRPC calls (default: 300s)
+	CometServiceToken string        // Shared secret for gRPC authentication
+	GRPCTLSCertFile   string        // TLS certificate file for gRPC client connections
+	GRPCTLSKeyFile    string        // TLS key file for gRPC client connections (mTLS)
+	GRPCTLSCAFile     string        // CA certificate file for verifying gRPC server certs
 }
 
 type Server struct {
@@ -56,9 +65,14 @@ type invokeHTTPResponse struct {
 	ColdStart  bool            `json:"cold_start"`
 }
 
+const defaultMaxTimeout = 300 * time.Second // 5 minutes global max
+
 func New(cfg Config) (*Server, error) {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 10 * time.Second
+	}
+	if cfg.MaxTimeout <= 0 {
+		cfg.MaxTimeout = defaultMaxTimeout
 	}
 	if strings.TrimSpace(cfg.NovaGRPCAddr) == "" {
 		return nil, fmt.Errorf("nova gRPC address is required")
@@ -67,12 +81,17 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("comet gRPC address is required")
 	}
 
-	novaConn, err := grpc.Dial(cfg.NovaGRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	dialOpts, err := buildGRPCDialOpts(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("build gRPC dial options: %w", err)
+	}
+
+	novaConn, err := dialWithLB(cfg.NovaGRPCAddr, dialOpts)
 	if err != nil {
 		return nil, fmt.Errorf("dial nova gRPC: %w", err)
 	}
 
-	cometConn, err := grpc.Dial(cfg.CometGRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	cometConn, err := dialWithLB(cfg.CometGRPCAddr, dialOpts)
 	if err != nil {
 		novaConn.Close()
 		return nil, fmt.Errorf("dial comet gRPC: %w", err)
@@ -88,7 +107,7 @@ func New(cfg Config) (*Server, error) {
 
 	// Connect to optional services for health checking
 	if addr := strings.TrimSpace(cfg.CoronaGRPCAddr); addr != "" {
-		conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := dialWithLB(addr, dialOpts)
 		if err != nil {
 			logging.Op().Warn("failed to dial corona gRPC", "addr", addr, "error", err)
 		} else {
@@ -96,7 +115,7 @@ func New(cfg Config) (*Server, error) {
 		}
 	}
 	if addr := strings.TrimSpace(cfg.NebulaGRPCAddr); addr != "" {
-		conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := dialWithLB(addr, dialOpts)
 		if err != nil {
 			logging.Op().Warn("failed to dial nebula gRPC", "addr", addr, "error", err)
 		} else {
@@ -104,7 +123,7 @@ func New(cfg Config) (*Server, error) {
 		}
 	}
 	if addr := strings.TrimSpace(cfg.AuroraGRPCAddr); addr != "" {
-		conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := dialWithLB(addr, dialOpts)
 		if err != nil {
 			logging.Op().Warn("failed to dial aurora gRPC", "addr", addr, "error", err)
 		} else {
@@ -113,6 +132,120 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	return s, nil
+}
+
+// buildGRPCDialOpts builds gRPC dial options with TLS if configured, otherwise insecure.
+func buildGRPCDialOpts(cfg Config) ([]grpc.DialOption, error) {
+	opts := []grpc.DialOption{
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                30 * time.Second,
+			Timeout:             10 * time.Second,
+			PermitWithoutStream: true,
+		}),
+	}
+
+	if cfg.GRPCTLSCertFile != "" && cfg.GRPCTLSKeyFile != "" {
+		// mTLS: client certificate + optional CA
+		cert, err := tls.LoadX509KeyPair(cfg.GRPCTLSCertFile, cfg.GRPCTLSKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("load client TLS key pair: %w", err)
+		}
+		tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
+		if cfg.GRPCTLSCAFile != "" {
+			caCert, err := os.ReadFile(cfg.GRPCTLSCAFile)
+			if err != nil {
+				return nil, fmt.Errorf("read CA file: %w", err)
+			}
+			pool := x509.NewCertPool()
+			if !pool.AppendCertsFromPEM(caCert) {
+				return nil, fmt.Errorf("failed to parse CA certificate")
+			}
+			tlsCfg.RootCAs = pool
+		}
+		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)))
+		logging.Op().Info("gRPC client TLS enabled (mTLS)")
+	} else if cfg.GRPCTLSCAFile != "" {
+		// Server-only TLS verification
+		caCert, err := os.ReadFile(cfg.GRPCTLSCAFile)
+		if err != nil {
+			return nil, fmt.Errorf("read CA file: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse CA certificate")
+		}
+		tlsCfg := &tls.Config{RootCAs: pool}
+		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)))
+		logging.Op().Info("gRPC client TLS enabled (server verification)")
+	} else {
+		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		logging.Op().Warn("gRPC client running without TLS")
+	}
+
+	return opts, nil
+}
+
+// dialWithLB creates a gRPC client connection supporting multiple backends.
+// If addr contains commas (e.g. "host1:9090,host2:9090"), it uses a static
+// resolver with round-robin load balancing.  Otherwise it dials a single
+// address.  A unary retry interceptor is added for transient failures.
+func dialWithLB(addr string, baseOpts []grpc.DialOption) (*grpc.ClientConn, error) {
+	opts := make([]grpc.DialOption, len(baseOpts))
+	copy(opts, baseOpts)
+
+	// Add retry interceptor for Unavailable errors (backend restart, connection drop).
+	opts = append(opts, grpc.WithUnaryInterceptor(retryUnary(3, 200*time.Millisecond)))
+
+	addrs := strings.Split(addr, ",")
+	if len(addrs) > 1 {
+		// Use round-robin with a static resolver.
+		// Build a service config enabling round_robin and increase
+		// the default connection pool to cover all endpoints.
+		opts = append(opts,
+			grpc.WithDefaultServiceConfig(`{"loadBalancingConfig":[{"round_robin":{}}]}`),
+		)
+		// dns:/// doesn't support comma-separated.  Use manual resolver.
+		resolver := newStaticResolver(addrs)
+		opts = append(opts, grpc.WithResolvers(resolver))
+		return grpc.Dial("static:///lb", opts...)
+	}
+
+	return grpc.Dial(addr, opts...)
+}
+
+// retryUnary returns a gRPC unary client interceptor that retries on
+// Unavailable errors with exponential backoff.
+func retryUnary(maxRetries int, baseDelay time.Duration) grpc.UnaryClientInterceptor {
+	return func(
+		ctx context.Context,
+		method string,
+		req, reply interface{},
+		cc *grpc.ClientConn,
+		invoker grpc.UnaryInvoker,
+		callOpts ...grpc.CallOption,
+	) error {
+		var err error
+		for attempt := 0; attempt <= maxRetries; attempt++ {
+			err = invoker(ctx, method, req, reply, cc, callOpts...)
+			if err == nil {
+				return nil
+			}
+			st, ok := status.FromError(err)
+			if !ok || st.Code() != codes.Unavailable {
+				return err
+			}
+			if attempt == maxRetries {
+				break
+			}
+			delay := baseDelay * time.Duration(1<<uint(attempt))
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+		return err
+	}
 }
 
 func (s *Server) Close() error {
@@ -186,7 +319,7 @@ func (s *Server) handleInvokeViaGRPC(w http.ResponseWriter, r *http.Request, fun
 		return
 	}
 
-	ctx, cancel, timeoutSeconds := cometContextFromRequest(r)
+	ctx, cancel, timeoutSeconds := s.cometContextFromRequest(r)
 	defer cancel()
 
 	resp, err := s.cometClient.Invoke(ctx, &novapb.InvokeRequest{
@@ -254,7 +387,7 @@ func (s *Server) handleProxyHTTPViaGRPC(w http.ResponseWriter, r *http.Request) 
 		headers["X-Nova-Source-Port"] = strconv.Itoa(source.Port)
 	}
 
-	ctx, cancel, _ := cometContextFromRequest(r)
+	ctx, cancel, _ := s.cometContextFromRequest(r)
 	defer cancel()
 
 	resp, err := s.cometClient.ProxyHTTP(ctx, &novapb.ProxyHTTPRequest{
@@ -558,7 +691,7 @@ func isCometOnlyHTTPPath(path string) bool {
 	return false
 }
 
-func cometContextFromRequest(r *http.Request) (context.Context, context.CancelFunc, int32) {
+func (s *Server) cometContextFromRequest(r *http.Request) (context.Context, context.CancelFunc, int32) {
 	timeoutSeconds := int32(0)
 	if rawTimeout := strings.TrimSpace(r.Header.Get("X-Nova-Timeout-S")); rawTimeout != "" {
 		if n, err := strconv.Atoi(rawTimeout); err == nil && n > 0 {
@@ -566,18 +699,23 @@ func cometContextFromRequest(r *http.Request) (context.Context, context.CancelFu
 		}
 	}
 
-	ctx := r.Context()
-	cancel := func() {}
-	if timeoutSeconds > 0 {
-		var c context.CancelFunc
-		ctx, c = context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
-		cancel = c
+	// Enforce global max timeout cap
+	maxTimeoutS := int32(s.cfg.MaxTimeout / time.Second)
+	if maxTimeoutS <= 0 {
+		maxTimeoutS = int32(defaultMaxTimeout / time.Second)
 	}
+	if timeoutSeconds <= 0 || timeoutSeconds > maxTimeoutS {
+		timeoutSeconds = maxTimeoutS
+	}
+
+	ctx := r.Context()
+	var c context.CancelFunc
+	ctx, c = context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 
 	md := metadata.MD{}
 	// Attach service token for inter-service auth
-	if s, ok := ctx.Value(serviceTokenKey{}).(string); ok && s != "" {
-		md.Set("authorization", "Bearer "+s)
+	if sv, ok := ctx.Value(serviceTokenKey{}).(string); ok && sv != "" {
+		md.Set("authorization", "Bearer "+sv)
 	}
 	for _, key := range []string{"X-Nova-Tenant", "X-Nova-Namespace", "X-Request-ID"} {
 		if val := strings.TrimSpace(r.Header.Get(key)); val != "" {
@@ -601,7 +739,7 @@ func cometContextFromRequest(r *http.Request) (context.Context, context.CancelFu
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
 
-	return ctx, cancel, timeoutSeconds
+	return ctx, c, timeoutSeconds
 }
 
 type requestSource struct {
@@ -775,7 +913,7 @@ func (s *Server) handleFunctionURL(w http.ResponseWriter, r *http.Request, funct
 
 	payload, _ := json.Marshal(httpEvent)
 
-	ctx, cancel, timeoutSeconds := cometContextFromRequest(r)
+	ctx, cancel, timeoutSeconds := s.cometContextFromRequest(r)
 	defer cancel()
 
 	resp, err := s.cometClient.Invoke(ctx, &novapb.InvokeRequest{

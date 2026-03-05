@@ -532,9 +532,10 @@ prepare_docker_images() {
         "${DOCKER_RUNTIME_IMAGE_PREFIX}-wasm"
         "golang:1.23-alpine"
         "rust:1.84-alpine"
-        "eclipse-temurin:21-jdk"  # java/kotlin/scala
+        "eclipse-temurin:21-jdk"  # java/scala
+        "gmazzo/kotlin:latest"    # kotlin
         "swift:5.10"
-        "euantorano/zig:0.13.0"
+        "alpine:3.20"             # zig (apk add zig at compile time)
         "gcc:14"                   # c/cpp
         "python:3.12-slim"
         "node:20-slim"

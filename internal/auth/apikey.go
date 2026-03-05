@@ -113,13 +113,16 @@ func (a *APIKeyAuthenticator) Authenticate(r *http.Request) *Identity {
 			Tier:    sk.tier,
 			Claims:  map[string]any{"source": "static"},
 		}
-		// Bind static keys to their configured tenant scope
-		if sk.tenantID != "" {
-			id.AllowedScopes = []TenantScope{normalizeTenantScopeWithWildcard(TenantScope{
-				TenantID:  sk.tenantID,
-				Namespace: "*",
-			})}
+		// Bind static keys to their configured tenant scope;
+		// default to "default/*" if no tenantID is configured.
+		tenantID := sk.tenantID
+		if tenantID == "" {
+			tenantID = "default"
 		}
+		id.AllowedScopes = []TenantScope{normalizeTenantScopeWithWildcard(TenantScope{
+			TenantID:  tenantID,
+			Namespace: "*",
+		})}
 		return id
 	}
 

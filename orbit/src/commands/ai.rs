@@ -18,8 +18,6 @@ pub enum AiCmd {
         function_name: String,
         instructions: String,
     },
-    /// Generate tests for a function
-    GenerateTests { function_name: String },
     /// Generate docs for a function
     GenerateDocs { function_name: String },
     /// Generate docs for a workflow
@@ -57,11 +55,6 @@ pub async fn run(cmd: AiCmd, client: &NovaClient, output_format: &str) -> Result
         } => {
             let body = json!({ "function_name": function_name, "instructions": instructions });
             let result = client.post("/ai/rewrite", &body).await?;
-            output::render(&result, &[], "json");
-        }
-        AiCmd::GenerateTests { function_name } => {
-            let body = json!({ "function_name": function_name });
-            let result = client.post("/ai/generate-tests", &body).await?;
             output::render(&result, &[], "json");
         }
         AiCmd::GenerateDocs { function_name } => {

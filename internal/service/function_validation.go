@@ -66,6 +66,12 @@ func validateCreateFunctionRequest(req *CreateFunctionRequest) error {
 	if strings.TrimSpace(req.Code) == "" {
 		return validationErrorf("code is required")
 	}
+	// Enforce a 10 MB code size limit at the handler level to prevent
+	// excessively large payloads from reaching the database.
+	const maxCodeSize = 10 << 20 // 10 MB
+	if len(req.Code) > maxCodeSize {
+		return validationErrorf("code too large: %d bytes exceeds limit of %d bytes", len(req.Code), maxCodeSize)
+	}
 	if req.MemoryMB != 0 && (req.MemoryMB < 128 || req.MemoryMB > 10240) {
 		return validationErrorf("memory_mb must be between 128 and 10240 (AWS Lambda range)")
 	}

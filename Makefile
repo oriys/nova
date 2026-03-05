@@ -217,9 +217,9 @@ all: build orbit atlas frontend docker-backend docker-frontend docker-runtimes  
 
 # ─── Testing ──────────────────────────────────────────────────────────────────
 
-.PHONY: test test-unit test-unit-docker test-integration env-up env-down
+.PHONY: test test-unit test-unit-docker
 
-test: test-unit  ## Run all tests (unit + available integration)
+test: test-unit  ## Run all tests
 
 test-unit:  ## Run unit tests (no external dependencies)
 	go test -short -count=1 ./internal/...
@@ -231,16 +231,6 @@ test-unit-docker:  ## Run unit tests in Docker (no local Go toolchain)
 		-w /src \
 		golang:1.24-alpine \
 		sh -c 'mkdir -p /tmp/go-cache /tmp/go-mod && GOCACHE=/tmp/go-cache GOMODCACHE=/tmp/go-mod go test -short -count=1 ./internal/...'
-
-test-integration:  ## Run integration tests (requires env-up)
-	NOVA_PG_DSN=postgres://nova:nova@localhost:$${NOVA_TEST_PG_PORT:-5433}/nova?sslmode=disable \
-	go test -count=1 -run Integration ./internal/...
-
-env-up:  ## Start test dependencies (Postgres)
-	docker compose -f docker-compose.test.yml up -d --wait
-
-env-down:  ## Stop test dependencies
-	docker compose -f docker-compose.test.yml down -v
 
 # ─── Dev Environment ──────────────────────────────────────────────────────────
 

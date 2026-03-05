@@ -10,8 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	goRuntime "runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -45,16 +45,14 @@ func New(s store.MetadataStore) *Compiler {
 	}
 }
 
-// EnsureDockerToolchainReady verifies Docker and pre-pulls compiler/deps images.
+// EnsureDockerToolchainReady verifies Docker availability for compiler operations.
+// Compiler/dependency images are pulled on demand to avoid large eager downloads.
 func EnsureDockerToolchainReady(ctx context.Context) error {
 	checkCtx, cancel := context.WithTimeout(ctx, compilerImagePullTimeout)
 	defer cancel()
 
 	if err := exec.CommandContext(checkCtx, "docker", "version").Run(); err != nil {
 		return fmt.Errorf("docker not available for compiler: %w", err)
-	}
-	if err := ensureDockerImages(checkCtx, compilerDockerImages(), dockerImageExists, dockerPullImage); err != nil {
-		return err
 	}
 	return nil
 }
@@ -260,6 +258,9 @@ func (c *Compiler) compileWithFiles(ctx context.Context, fn *domain.Function, fi
 	image, buildCmd := dockerCompileCommand(fn.Runtime)
 	if image == "" {
 		return nil, fmt.Errorf("unsupported compiled runtime: %s", fn.Runtime)
+	}
+	if err := ensureDockerImageReady(ctx, image); err != nil {
+		return nil, err
 	}
 
 	containerName := fmt.Sprintf("nova-compile-%s-%d", fn.Name, os.Getpid())
@@ -659,6 +660,16 @@ func dockerPullImage(ctx context.Context, image string) error {
 	return nil
 }
 
+func ensureDockerImageReady(ctx context.Context, image string) error {
+	if strings.TrimSpace(image) == "" {
+		return errors.New("empty docker image reference")
+	}
+	if err := ensureDockerImages(ctx, []string{image}, dockerImageExists, dockerPullImage); err != nil {
+		return fmt.Errorf("ensure docker image %s: %w", image, err)
+	}
+	return nil
+}
+
 // installRubyDeps installs Ruby dependencies from Gemfile
 func (c *Compiler) installRubyDeps(ctx context.Context, gemfile []byte) (map[string][]byte, error) {
 	hash := hashBytes(gemfile)
@@ -682,6 +693,9 @@ func (c *Compiler) installRubyDeps(ctx context.Context, gemfile []byte) (map[str
 	containerName := fmt.Sprintf("nova-rubydeps-%s", hash[:12])
 	image := "ruby:3.3-slim"
 	buildCmd := "cd /work && bundle config set --local path vendor/bundle && bundle install --jobs=4 2>&1"
+	if err := ensureDockerImageReady(ctx, image); err != nil {
+		return nil, err
+	}
 
 	createCmd := exec.CommandContext(ctx, "docker", "create", "--network", "host", "--name", containerName, image, "sh", "-c", buildCmd)
 	var createStderr bytes.Buffer
@@ -757,6 +771,9 @@ func (c *Compiler) installPHPDeps(ctx context.Context, composerJson []byte) (map
 	containerName := fmt.Sprintf("nova-phpdeps-%s", hash[:12])
 	image := "composer:2"
 	buildCmd := "cd /work && composer install --no-dev --no-interaction --optimize-autoloader 2>&1"
+	if err := ensureDockerImageReady(ctx, image); err != nil {
+		return nil, err
+	}
 
 	createCmd := exec.CommandContext(ctx, "docker", "create", "--network", "host", "--name", containerName, image, "sh", "-c", buildCmd)
 	var createStderr bytes.Buffer
@@ -838,6 +855,9 @@ func (c *Compiler) installPythonDeps(ctx context.Context, requirements []byte) (
 	containerName := fmt.Sprintf("nova-pydeps-%s", hash[:12])
 	image := "python:3.12-slim"
 	buildCmd := "pip install --no-cache-dir -r /work/requirements.txt -t /work/deps 2>&1"
+	if err := ensureDockerImageReady(ctx, image); err != nil {
+		return nil, err
+	}
 
 	createCmd := exec.CommandContext(ctx, "docker", "create", "--network", "host", "--name", containerName, image, "sh", "-c", buildCmd)
 	var createStderr bytes.Buffer
@@ -919,6 +939,9 @@ func (c *Compiler) installNodeDeps(ctx context.Context, packageJson []byte) (map
 	containerName := fmt.Sprintf("nova-nodedeps-%s", hash[:12])
 	image := "node:20-slim"
 	buildCmd := "cd /work && npm install --production --no-audit --no-fund 2>&1"
+	if err := ensureDockerImageReady(ctx, image); err != nil {
+		return nil, err
+	}
 
 	createCmd := exec.CommandContext(ctx, "docker", "create", "--network", "host", "--name", containerName, image, "sh", "-c", buildCmd)
 	var createStderr bytes.Buffer
@@ -998,6 +1021,9 @@ func (c *Compiler) compile(ctx context.Context, fn *domain.Function, sourceCode 
 	if image == "" {
 		return nil, fmt.Errorf("unsupported compiled runtime: %s", fn.Runtime)
 	}
+	if err := ensureDockerImageReady(ctx, image); err != nil {
+		return nil, err
+	}
 
 	// Use docker create + docker cp pattern instead of bind mounts (-v).
 	// This works in Docker-in-Docker (e.g. Docker Compose with socket sharing)
@@ -1006,10 +1032,9 @@ func (c *Compiler) compile(ctx context.Context, fn *domain.Function, sourceCode 
 
 	logging.Op().Info("starting compilation", "function", fn.Name, "runtime", fn.Runtime, "image", image)
 
-	// Step 1: Create container (not started)
-	// Force linux/amd64 platform — compiled binaries must run in x86_64 VMs/containers.
-	// Without this, ARM hosts pull ARM images and cross-compilation may fail
-	// (e.g., Rust proc-macros need host-native toolchain).
+	// Step 1: Create container (not started).
+	// Compile platform follows resolveCompilePlatform(runtime), defaulting to
+	// the host architecture unless NOVA_COMPILE_PLATFORM overrides it.
 	createArgs := dockerCreateArgs(containerName, image, buildCmd, fn.Runtime)
 	createCmd := exec.CommandContext(ctx, "docker", createArgs...)
 	var createStderr bytes.Buffer
@@ -1214,12 +1239,12 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 	case domain.RuntimeJava:
 		return "eclipse-temurin:21-jdk", "cd /work && javac Main.java Handler.java && jar cfe handler.jar Main *.class && cp handler.jar handler"
 	case domain.RuntimeKotlin:
-		return "eclipse-temurin:21-jdk", "DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-install-recommends kotlin && cd /work && kotlinc *.kt -include-runtime -d handler.jar && cp handler.jar handler"
+		return "gmazzo/kotlin:latest", "cd /work && kotlinc *.kt -include-runtime -d handler.jar && cp handler.jar handler"
 	case domain.RuntimeSwift:
 		return "swift:5.10", "cd /work && swiftc -o handler -static-executable Handler.swift main.swift"
 	case domain.RuntimeZig:
 		zigTarget := resolveZigTarget()
-		return "euantorano/zig:0.13.0", fmt.Sprintf("cd /work && zig build-exe main.zig -name handler -target %s", zigTarget)
+		return "alpine:3.20", fmt.Sprintf("apk add --no-cache zig >/dev/null && cd /work && zig build-exe main.zig -O ReleaseFast -fstrip -target %s -femit-bin=handler", zigTarget)
 	case domain.RuntimeScala:
 		return "eclipse-temurin:21-jdk",
 			`DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-install-recommends scala && cd /work && scalac *.scala && ` +

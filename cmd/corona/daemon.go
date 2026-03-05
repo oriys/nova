@@ -10,6 +10,7 @@ import (
 
 	"github.com/oriys/nova/internal/autoscaler"
 	"github.com/oriys/nova/internal/backend"
+	"github.com/oriys/nova/internal/cluster"
 	"github.com/oriys/nova/internal/config"
 	"github.com/oriys/nova/internal/docker"
 	"github.com/oriys/nova/internal/domain"
@@ -81,7 +82,7 @@ func daemonCmd() *cobra.Command {
 				metrics.InitPrometheus(cfg.Observability.Metrics.Namespace, cfg.Observability.Metrics.HistogramBuckets)
 			}
 
-			pgStore, err := store.NewPostgresStore(context.Background(), cfg.Postgres.DSN)
+			pgStore, err := store.NewPostgresStore(context.Background(), cfg.Postgres.DSN, store.PoolOptions{MaxConns: cfg.Postgres.MaxConn, MinConns: cfg.Postgres.MinConn})
 			if err != nil {
 				return err
 			}
@@ -177,9 +178,29 @@ func daemonCmd() *cobra.Command {
 
 			// Start scheduler
 			sched := scheduler.New(s, invoker)
-			if err := sched.Start(); err != nil {
-				logging.Op().Warn("failed to start scheduler", "error", err)
+
+			// Leader election — only one Corona instance runs the scheduler.
+			nodeID := os.Getenv("NOVA_CLUSTER_NODE_ID")
+			if nodeID == "" {
+				nodeID = "corona-local"
 			}
+			leaderElector := cluster.NewLeaderElector(pgStore.Pool(), cluster.LeaderConfig{
+				LockKey: cluster.WellKnownLockKeys.Corona,
+				NodeID:  nodeID,
+				OnElected: func() {
+					if err := sched.Start(); err != nil {
+						logging.Op().Warn("failed to start scheduler after election", "error", err)
+					} else {
+						logging.Op().Info("scheduler started (leader elected)")
+					}
+				},
+				OnRevoked: func() {
+					sched.Stop()
+					logging.Op().Info("scheduler stopped (leadership revoked)")
+				},
+			})
+			stopElection := leaderElector.Start(context.Background())
+			defer stopElection()
 			defer sched.Stop()
 
 			// Start autoscaler (needs pool — only available in local mode)

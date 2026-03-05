@@ -27,7 +27,8 @@ func (e *cacheEntry[T]) expired() bool {
 type CachedMetadataStore struct {
 	MetadataStore // underlying store – all uncached methods delegate here
 
-	ttl time.Duration
+	ttl               time.Duration
+	onInvalidate      func(funcID string) // optional callback invoked on writes (e.g., pg NOTIFY)
 
 	// function metadata caches
 	fnByName sync.Map // "tenantID\x00namespace\x00name" → *cacheEntry[*domain.Function]
@@ -83,6 +84,19 @@ func NewCachedMetadataStore(underlying MetadataStore, ttl time.Duration) *Cached
 	return &CachedMetadataStore{
 		MetadataStore: underlying,
 		ttl:           ttl,
+	}
+}
+
+// SetInvalidationCallback registers a function that is called with the
+// function ID whenever a cache-write occurs. Use this to broadcast
+// invalidation events to other instances (e.g., via pg NOTIFY).
+func (c *CachedMetadataStore) SetInvalidationCallback(fn func(funcID string)) {
+	c.onInvalidate = fn
+}
+
+func (c *CachedMetadataStore) notifyPeers(funcID string) {
+	if c.onInvalidate != nil && funcID != "" {
+		c.onInvalidate(funcID)
 	}
 }
 
@@ -415,6 +429,9 @@ func (c *CachedMetadataStore) SaveFunction(ctx context.Context, fn *domain.Funct
 	err := c.MetadataStore.SaveFunction(ctx, fn)
 	if err == nil {
 		c.invalidateFunction(fn)
+		if fn != nil {
+			c.notifyPeers(fn.ID)
+		}
 	}
 	return err
 }
@@ -423,6 +440,9 @@ func (c *CachedMetadataStore) UpdateFunction(ctx context.Context, name string, u
 	fn, err := c.MetadataStore.UpdateFunction(ctx, name, update)
 	if err == nil {
 		c.invalidateFunction(fn)
+		if fn != nil {
+			c.notifyPeers(fn.ID)
+		}
 	}
 	return fn, err
 }
@@ -448,6 +468,7 @@ func (c *CachedMetadataStore) DeleteFunction(ctx context.Context, id string) err
 		c.hasFiles.Delete(id)
 		c.fnLayers.Delete(id)
 		c.fnVols.Delete(id)
+		c.notifyPeers(id)
 	}
 	return err
 }
@@ -458,6 +479,7 @@ func (c *CachedMetadataStore) SaveFunctionCode(ctx context.Context, funcID, sour
 	err := c.MetadataStore.SaveFunctionCode(ctx, funcID, sourceCode, sourceHash)
 	if err == nil {
 		c.fnCode.Delete(funcID)
+		c.notifyPeers(funcID)
 	}
 	return err
 }
@@ -466,6 +488,7 @@ func (c *CachedMetadataStore) UpdateFunctionCode(ctx context.Context, funcID, so
 	err := c.MetadataStore.UpdateFunctionCode(ctx, funcID, sourceCode, sourceHash)
 	if err == nil {
 		c.fnCode.Delete(funcID)
+		c.notifyPeers(funcID)
 	}
 	return err
 }
@@ -474,10 +497,8 @@ func (c *CachedMetadataStore) UpdateCompileResult(ctx context.Context, funcID st
 	err := c.MetadataStore.UpdateCompileResult(ctx, funcID, binary, binaryHash, status, compileError)
 	if err == nil {
 		c.fnCode.Delete(funcID)
-		// Also invalidate function metadata cache since CodeHash changes
-		// after compilation (SaveFunction is called separately, but the
-		// cache may still hold stale data in multi-service deployments).
 		c.invalidateFunctionByID(funcID)
+		c.notifyPeers(funcID)
 	}
 	return err
 }

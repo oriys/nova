@@ -20,7 +20,9 @@ import (
 
 // PostgresConfig holds Postgres connection settings
 type PostgresConfig struct {
-	DSN string `json:"dsn"`
+	DSN     string `json:"dsn"`
+	MaxConn int32  `json:"max_conns"`  // Maximum number of connections in the pool (default: 20)
+	MinConn int32  `json:"min_conns"`  // Minimum number of idle connections maintained (default: 5)
 }
 
 // PoolConfig holds VM pool settings
@@ -70,10 +72,12 @@ type OutputCaptureConfig struct {
 
 // ExecutorConfig holds executor settings
 type ExecutorConfig struct {
-	LogBatchSize     int           `json:"log_batch_size"`     // Number of logs batched before flushing (default: 100)
-	LogBufferSize    int           `json:"log_buffer_size"`    // Channel buffer for pending logs (default: 1000)
-	LogFlushInterval time.Duration `json:"log_flush_interval"` // Periodic flush interval (default: 500ms)
-	LogTimeout       time.Duration `json:"log_timeout"`        // Database persistence timeout (default: 5s)
+	LogBatchSize        int           `json:"log_batch_size"`         // Number of logs batched before flushing (default: 100)
+	LogBufferSize       int           `json:"log_buffer_size"`        // Channel buffer for pending logs (default: 1000)
+	LogFlushInterval    time.Duration `json:"log_flush_interval"`     // Periodic flush interval (default: 500ms)
+	LogTimeout          time.Duration `json:"log_timeout"`            // Database persistence timeout (default: 5s)
+	LogRetentionDays    int           `json:"log_retention_days"`     // Days to keep invocation logs; 0 = keep forever (default: 30)
+	LogCleanupInterval  time.Duration `json:"log_cleanup_interval"`   // How often to run retention cleanup (default: 1h)
 }
 
 // ObservabilityConfig holds all observability-related settings
@@ -284,7 +288,9 @@ func DefaultConfig() *Config {
 		LibKrun:     *libkrunCfg,
 		Kata:        *kataCfg,
 		Postgres: PostgresConfig{
-			DSN: "postgres://nova:nova@localhost:5432/nova?sslmode=disable",
+			DSN:     "postgres://nova:nova@localhost:5432/nova?sslmode=disable",
+			MaxConn: 20,
+			MinConn: 5,
 		},
 		Pool: PoolConfig{
 			IdleTTL:             60 * time.Second,
@@ -293,10 +299,12 @@ func DefaultConfig() *Config {
 			MaxPreWarmWorkers:   8,
 		},
 		Executor: ExecutorConfig{
-			LogBatchSize:     100,
-			LogBufferSize:    1000,
-			LogFlushInterval: 500 * time.Millisecond,
-			LogTimeout:       5 * time.Second,
+			LogBatchSize:       100,
+			LogBufferSize:      1000,
+			LogFlushInterval:   500 * time.Millisecond,
+			LogTimeout:         5 * time.Second,
+			LogRetentionDays:   30,
+			LogCleanupInterval: time.Hour,
 		},
 		Daemon: DaemonConfig{
 			HTTPAddr: "",

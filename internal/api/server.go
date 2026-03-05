@@ -150,8 +150,10 @@ func BuildHTTPHandler(cfg ServerConfig) http.Handler {
 		sbHandler.RegisterRoutes(mux)
 	}
 
-	// Wrap with tracing middleware
-	var handler http.Handler = mux
+	// Wrap with API versioning: strip /v1 prefix so clients can use
+	// either /v1/functions or /functions.
+	var handler http.Handler = stripVersionPrefix(mux)
+	handler = observability.HTTPMiddleware(handler)
 	handler = observability.HTTPMiddleware(handler)
 
 	// Audit logging middleware: captures all mutating requests with actor/tenant context.
@@ -562,4 +564,23 @@ func (h *hostRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.defaultMux.ServeHTTP(w, r)
+}
+
+// stripVersionPrefix returns a handler that transparently strips a /v1 URL
+// prefix, allowing clients to use versioned paths (e.g. /v1/functions) while
+// the underlying router only registers unversioned routes.
+func stripVersionPrefix(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/v1/") || r.URL.Path == "/v1" {
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = strings.TrimPrefix(r.URL.Path, "/v1")
+			if r2.URL.Path == "" {
+				r2.URL.Path = "/"
+			}
+			r2.URL.RawPath = ""
+			next.ServeHTTP(w, r2)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

@@ -158,6 +158,72 @@ func HasSnapshot(snapshotDir, funcID string) bool {
 	return true
 }
 
+// CleanupStaleSnapshots removes snapshot files (and their persistent code
+// drives) that have not been accessed within maxAge. It scans the snapshot
+// directory for *.meta files and uses their modification time as a proxy
+// for last-use. Returns the number of snapshots cleaned up.
+func CleanupStaleSnapshots(snapshotDir string, maxAge time.Duration) (int, error) {
+	if snapshotDir == "" {
+		return 0, nil
+	}
+	entries, err := os.ReadDir(snapshotDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	cutoff := time.Now().Add(-maxAge)
+	cleaned := 0
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".meta") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(cutoff) {
+			continue
+		}
+		funcID := strings.TrimSuffix(entry.Name(), ".meta")
+		if err := InvalidateSnapshot(snapshotDir, funcID); err != nil {
+			logging.Op().Warn("snapshot cleanup failed", "function_id", funcID, "error", err)
+			continue
+		}
+		cleaned++
+	}
+	return cleaned, nil
+}
+
+// StartSnapshotCleanupLoop starts a background goroutine that periodically
+// removes stale snapshots. Returns a function to stop the loop.
+func StartSnapshotCleanupLoop(snapshotDir string, maxAge, interval time.Duration) (stop func()) {
+	if snapshotDir == "" || maxAge <= 0 || interval <= 0 {
+		return func() {}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				n, err := CleanupStaleSnapshots(snapshotDir, maxAge)
+				if err != nil {
+					logging.Op().Warn("snapshot cleanup error", "error", err)
+				} else if n > 0 {
+					logging.Op().Info("cleaned up stale snapshots", "count", n)
+				}
+			}
+		}
+	}()
+	return cancel
+}
+
 // Shutdown gracefully shuts down the executor, waiting for in-flight requests
 func (e *Executor) Shutdown(timeout time.Duration) {
 	e.closing.Store(true)

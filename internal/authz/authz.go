@@ -48,8 +48,8 @@ func (a *Authorizer) Check(identity *auth.Identity, perm domain.Permission, reso
 
 	policies := identity.Policies
 	if len(policies) == 0 {
-		// Apply default role
-		policies = []domain.PolicyBinding{{Role: a.defaultRole}}
+		// No policies: deny by default (secure by default)
+		return errForbidden
 	}
 
 	isWorkflowPerm := isWorkflowPermission(perm)

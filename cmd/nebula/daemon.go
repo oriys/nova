@@ -11,6 +11,7 @@ import (
 
 	"github.com/oriys/nova/internal/asyncqueue"
 	"github.com/oriys/nova/internal/backend"
+	"github.com/oriys/nova/internal/cluster"
 	"github.com/oriys/nova/internal/config"
 	"github.com/oriys/nova/internal/docker"
 	"github.com/oriys/nova/internal/domain"
@@ -88,7 +89,7 @@ func daemonCmd() *cobra.Command {
 				metrics.InitPrometheus(cfg.Observability.Metrics.Namespace, cfg.Observability.Metrics.HistogramBuckets)
 			}
 
-			pgStore, err := store.NewPostgresStore(context.Background(), cfg.Postgres.DSN)
+			pgStore, err := store.NewPostgresStore(context.Background(), cfg.Postgres.DSN, store.PoolOptions{MaxConns: cfg.Postgres.MaxConn, MinConns: cfg.Postgres.MinConn})
 			if err != nil {
 				return err
 			}
@@ -247,8 +248,6 @@ func daemonCmd() *cobra.Command {
 			// Workflow service and engine
 			wfService := workflow.NewService(s)
 			wfEngine := workflow.NewEngine(s, invoker, workflow.EngineConfig{})
-			wfEngine.Start()
-			defer wfEngine.Stop()
 
 			// Async queue workers
 			asyncWorkers := asyncqueue.New(s, invoker, asyncqueue.Config{
@@ -265,22 +264,49 @@ func daemonCmd() *cobra.Command {
 					ProbeInterval:   cfg.Queue.AdaptiveProbeInterval,
 				},
 			})
-			asyncWorkers.Start()
-			defer asyncWorkers.Stop()
 
 			// Event bus workers
 			eventWorkers := eventbus.New(s, invoker, wfService, eventbus.Config{
 				Notifier: notifier,
 			})
-			eventWorkers.Start()
-			defer eventWorkers.Stop()
 
 			// Outbox relay
 			outboxRelay := eventbus.NewOutboxRelay(s, eventbus.OutboxRelayConfig{
 				Notifier: notifier,
 			})
-			outboxRelay.Start()
-			defer outboxRelay.Stop()
+
+			// Leader election — only one Nebula instance runs workers to
+			// prevent duplicate event/async processing in multi-instance deployments.
+			nebulaNodeID := os.Getenv("NOVA_CLUSTER_NODE_ID")
+			if nebulaNodeID == "" {
+				nebulaNodeID = "nebula-local"
+			}
+			leaderElector := cluster.NewLeaderElector(pgStore.Pool(), cluster.LeaderConfig{
+				LockKey: cluster.WellKnownLockKeys.Nebula,
+				NodeID:  nebulaNodeID,
+				OnElected: func() {
+					wfEngine.Start()
+					asyncWorkers.Start()
+					eventWorkers.Start()
+					outboxRelay.Start()
+					logging.Op().Info("nebula workers started (leader elected)")
+				},
+				OnRevoked: func() {
+					outboxRelay.Stop()
+					eventWorkers.Stop()
+					asyncWorkers.Stop()
+					wfEngine.Stop()
+					logging.Op().Info("nebula workers stopped (leadership revoked)")
+				},
+			})
+			stopElection := leaderElector.Start(context.Background())
+			defer stopElection()
+			defer func() {
+				outboxRelay.Stop()
+				eventWorkers.Stop()
+				asyncWorkers.Stop()
+				wfEngine.Stop()
+			}()
 
 			// Trigger manager: load persisted triggers and start connectors.
 			// Requires a local Executor (not just Invoker) because the trigger

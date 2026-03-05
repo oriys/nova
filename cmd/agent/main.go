@@ -80,7 +80,7 @@ const (
 	rubyPath     = "/usr/bin/ruby"
 	javaPath     = "/usr/bin/java"
 	phpPath      = "/usr/bin/php"
-	luaPath      = "/usr/bin/lua"
+	luaPath      = "/usr/bin/lua5.4"
 	denoPath     = "/usr/local/bin/deno"
 	bunPath      = "/usr/local/bin/bun"
 	elixirPath   = "/usr/local/bin/elixir"
@@ -217,10 +217,10 @@ type DurableStepPayload struct {
 
 // DurableStepResponsePayload is the host response to a durable step operation
 type DurableStepResponsePayload struct {
-	StepID  string          `json:"step_id,omitempty"`
-	Cached  bool            `json:"cached,omitempty"` // True if step was already completed (replay)
-	Output  json.RawMessage `json:"output,omitempty"`
-	Error   string          `json:"error,omitempty"`
+	StepID string          `json:"step_id,omitempty"`
+	Cached bool            `json:"cached,omitempty"` // True if step was already completed (replay)
+	Output json.RawMessage `json:"output,omitempty"`
+	Error  string          `json:"error,omitempty"`
 }
 
 type Agent struct {

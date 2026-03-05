@@ -16,14 +16,18 @@ import (
 
 func serveCmd() *cobra.Command {
 	var (
-		listenAddr    string
-		novaGRPCAddr  string
-		cometGRPCAddr string
+		listenAddr     string
+		novaGRPCAddr   string
+		cometGRPCAddr  string
 		coronaGRPCAddr string
 		nebulaGRPCAddr string
 		auroraGRPCAddr string
-		timeout       time.Duration
-		logLevel      string
+		timeout        time.Duration
+		maxTimeout     time.Duration
+		grpcTLSCert    string
+		grpcTLSKey     string
+		grpcTLSCA      string
+		logLevel       string
 	)
 
 	cmd := &cobra.Command{
@@ -41,7 +45,11 @@ func serveCmd() *cobra.Command {
 				NebulaGRPCAddr:    nebulaGRPCAddr,
 				AuroraGRPCAddr:    auroraGRPCAddr,
 				Timeout:           timeout,
+				MaxTimeout:        maxTimeout,
 				CometServiceToken: os.Getenv("NOVA_GRPC_SERVICE_TOKEN"),
+				GRPCTLSCertFile:   grpcTLSCert,
+				GRPCTLSKeyFile:    grpcTLSKey,
+				GRPCTLSCAFile:     grpcTLSCA,
 			})
 			if err != nil {
 				return err
@@ -94,6 +102,10 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&nebulaGRPCAddr, "nebula-grpc", "", "Nebula event bus gRPC address (optional, used for health aggregation)")
 	cmd.Flags().StringVar(&auroraGRPCAddr, "aurora-grpc", "", "Aurora observability gRPC address (optional, used for health aggregation)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Second, "Upstream timeout")
+	cmd.Flags().DurationVar(&maxTimeout, "max-timeout", 300*time.Second, "Global maximum timeout for gRPC calls")
+	cmd.Flags().StringVar(&grpcTLSCert, "grpc-tls-cert", "", "TLS client certificate for gRPC connections")
+	cmd.Flags().StringVar(&grpcTLSKey, "grpc-tls-key", "", "TLS client key for gRPC connections (mTLS)")
+	cmd.Flags().StringVar(&grpcTLSCA, "grpc-tls-ca", "", "CA certificate for verifying gRPC server certs")
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level")
 
 	return cmd

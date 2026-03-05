@@ -53,6 +53,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -60,6 +61,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/oriys/nova/internal/circuitbreaker"
 	"github.com/oriys/nova/internal/domain"
+	"github.com/oriys/nova/internal/invoke"
 	"github.com/oriys/nova/internal/logging"
 	"github.com/oriys/nova/internal/logsink"
 	"github.com/oriys/nova/internal/metrics"
@@ -297,6 +299,10 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		fn.LayerPaths = append(fn.LayerPaths, l.ImagePath)
 	}
 
+	// Inject call chain context as environment variables so in-function SDKs
+	// can propagate the chain when invoking other functions.
+	injectCallChainEnv(ctx, fn)
+
 	// Resolve volume mounts to host-side image paths
 	fn.ResolvedMounts = resolveVolumeMounts(fn.Mounts, volumes)
 
@@ -486,4 +492,26 @@ func (e *Executor) Invoke(ctx context.Context, funcName string, payload json.Raw
 		DurationMs: durationMs,
 		ColdStart:  pvm.ColdStart,
 	}, nil
+}
+
+// callChainContextKey is kept for backward compatibility but the canonical
+// context key is in the invoke package.
+type callChainContextKey struct{}
+
+// injectCallChainEnv reads the CallChain from the context (set by the invoke
+// handler) and injects NOVA_CALL_DEPTH, NOVA_CALL_CHAIN, and
+// NOVA_CALLER_FUNCTION into the function's environment. This allows in-function
+// SDKs to propagate the chain when invoking downstream functions.
+func injectCallChainEnv(ctx context.Context, fn *domain.Function) {
+	cc, ok := invoke.CallChainFromContext(ctx)
+	if !ok {
+		return
+	}
+	if fn.EnvVars == nil {
+		fn.EnvVars = map[string]string{}
+	}
+	fn.EnvVars["NOVA_CALL_DEPTH"] = strconv.Itoa(cc.Depth)
+	fn.EnvVars["NOVA_CALL_CHAIN"] = cc.ChainString()
+	fn.EnvVars["NOVA_CALLER_FUNCTION"] = cc.CallerFunction
+	fn.EnvVars["NOVA_FUNCTION_NAME"] = fn.Name
 }
