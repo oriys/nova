@@ -29,17 +29,19 @@ INSTALL_DIR="/opt/nova"
 NOVA_CACHE_DIR="${NOVA_CACHE_DIR:-/var/cache/nova/downloads}"
 NOVA_ROOTFS_CACHE_DIR="${NOVA_CACHE_DIR}/rootfs"
 FC_VERSION="latest"
-WASMTIME_VERSION="v41.0.1"
-DENO_VERSION="v2.6.7"
-BUN_VERSION="bun-v1.3.8"
+WASMTIME_VERSION="v42.0.1"
+DENO_VERSION="v2.7.2"
+BUN_VERSION="bun-v1.3.10"
 ROOTFS_SIZE_MB=256
 ROOTFS_SIZE_JAVA_MB=512
+ROOTFS_SIZE_GRAALVM_MB=512
+JULIA_VERSION="1.11.5"
 
 # Architecture detection
 HOST_ARCH="$(uname -m)"
 case "${HOST_ARCH}" in
-  x86_64)  ARCH="x86_64"; BUN_MUSL_DIR="bun-linux-x64-musl" ;;
-  aarch64) ARCH="aarch64"; BUN_MUSL_DIR="bun-linux-aarch64-musl" ;;
+  x86_64)  ARCH="x86_64"; BUN_MUSL_DIR="bun-linux-x64-musl"; JULIA_ARCH="x64" ;;
+  aarch64) ARCH="aarch64"; BUN_MUSL_DIR="bun-linux-aarch64-musl"; JULIA_ARCH="aarch64" ;;
   *) echo "Unsupported architecture: ${HOST_ARCH}"; exit 1 ;;
 esac
 ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/${ARCH}/alpine-minirootfs-3.23.3-${ARCH}.tar.gz"
@@ -1008,6 +1010,184 @@ build_bun_rootfs() {
     log "bun.ext4 ready ($(du -h ${output} | cut -f1))"
 }
 
+build_elixir_rootfs() {
+    local output="${INSTALL_DIR}/rootfs/elixir.ext4"
+    local mnt=$(mktemp -d)
+
+    log "Building elixir rootfs (Alpine + erlang + elixir)..."
+
+    cached_curl_pipe "${ALPINE_URL}" "alpine-minirootfs.tar.gz" | tar -xzf - -C "${mnt}"
+    mkdir -p "${mnt}"/{code,tmp}
+    prepare_chroot_dev "${mnt}"
+    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
+
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache elixir" >/dev/null 2>&1
+
+    [[ -f "${INSTALL_DIR}/bin/nova-agent" ]] && \
+        cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
+        chmod +x "${mnt}/init"
+
+    cleanup_chroot_dev "${mnt}"
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
+    rm -rf "${mnt}"
+    log "elixir.ext4 ready ($(du -h ${output} | cut -f1))"
+}
+
+build_perl_rootfs() {
+    local output="${INSTALL_DIR}/rootfs/perl.ext4"
+    local mnt=$(mktemp -d)
+
+    log "Building perl rootfs (Alpine + perl)..."
+
+    cached_curl_pipe "${ALPINE_URL}" "alpine-minirootfs.tar.gz" | tar -xzf - -C "${mnt}"
+    mkdir -p "${mnt}"/{code,tmp}
+    prepare_chroot_dev "${mnt}"
+    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
+
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache perl perl-json" >/dev/null 2>&1
+
+    [[ -f "${INSTALL_DIR}/bin/nova-agent" ]] && \
+        cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
+        chmod +x "${mnt}/init"
+
+    cleanup_chroot_dev "${mnt}"
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
+    rm -rf "${mnt}"
+    log "perl.ext4 ready ($(du -h ${output} | cut -f1))"
+}
+
+build_r_rootfs() {
+    local output="${INSTALL_DIR}/rootfs/r.ext4"
+    local mnt=$(mktemp -d)
+
+    log "Building R rootfs (Alpine + R + jsonlite)..."
+
+    cached_curl_pipe "${ALPINE_URL}" "alpine-minirootfs.tar.gz" | tar -xzf - -C "${mnt}"
+    mkdir -p "${mnt}"/{code,tmp}
+    prepare_chroot_dev "${mnt}"
+    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
+
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache R R-dev gcc musl-dev" >/dev/null 2>&1
+    chroot "${mnt}" /bin/sh -c 'Rscript -e "install.packages(\"jsonlite\", repos=\"https://cloud.r-project.org\", quiet=TRUE)"' >/dev/null 2>&1
+    chroot "${mnt}" /bin/sh -c "apk del --no-cache R-dev gcc musl-dev 2>/dev/null" >/dev/null 2>&1 || true
+
+    [[ -f "${INSTALL_DIR}/bin/nova-agent" ]] && \
+        cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
+        chmod +x "${mnt}/init"
+
+    cleanup_chroot_dev "${mnt}"
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
+    rm -rf "${mnt}"
+    log "r.ext4 ready ($(du -h ${output} | cut -f1))"
+}
+
+build_julia_rootfs() {
+    local output="${INSTALL_DIR}/rootfs/julia.ext4"
+    local mnt=$(mktemp -d)
+
+    log "Building julia rootfs (Debian slim + julia binary)..."
+
+    # Julia requires glibc (uses GNU IFUNC), so we use Debian slim instead of Alpine
+    local debootstrap_check
+    debootstrap_check="$(command -v debootstrap 2>/dev/null || true)"
+    if [[ -z "${debootstrap_check}" ]]; then
+        apt-get install -y --no-install-recommends debootstrap >/dev/null 2>&1
+    fi
+    debootstrap --variant=minbase bookworm "${mnt}" http://deb.debian.org/debian >/dev/null 2>&1
+    mkdir -p "${mnt}"/{code,tmp}
+
+    local julia_major_minor
+    julia_major_minor="$(echo "${JULIA_VERSION}" | cut -d. -f1-2)"
+    local julia_tar julia_tmp
+    julia_tar="$(mktemp /tmp/julia.XXXXXX.tar.gz)"
+    julia_tmp="$(mktemp -d)"
+
+    # URL path uses JULIA_ARCH (x64/aarch64), filename uses actual arch (x86_64/aarch64)
+    local julia_file_arch="${ARCH}"
+    [[ "${ARCH}" == "x86_64" ]] && julia_file_arch="x86_64"
+    [[ "${ARCH}" == "aarch64" ]] && julia_file_arch="aarch64"
+
+    cached_curl \
+        "https://julialang-s3.julialang.org/bin/linux/${JULIA_ARCH}/${julia_major_minor}/julia-${JULIA_VERSION}-linux-${julia_file_arch}.tar.gz" \
+        "${julia_tar}" "julia-${JULIA_VERSION}-linux-${julia_file_arch}.tar.gz"
+    tar -xzf "${julia_tar}" -C "${julia_tmp}"
+    rm -f "${julia_tar}"
+
+    # Copy only essential parts (binary + libs + share), skip compiled caches
+    cp -a "${julia_tmp}"/julia-*/bin/julia "${mnt}/usr/local/bin/julia"
+    mkdir -p "${mnt}/usr/local/lib"
+    cp -a "${julia_tmp}"/julia-*/lib/libjulia* "${mnt}/usr/local/lib/" 2>/dev/null || true
+    cp -a "${julia_tmp}"/julia-*/lib/julia "${mnt}/usr/local/lib/" 2>/dev/null || true
+    mkdir -p "${mnt}/usr/local/share"
+    cp -a "${julia_tmp}"/julia-*/share/julia "${mnt}/usr/local/share/" 2>/dev/null || true
+    rm -rf "${mnt}/usr/local/share/julia/compiled" 2>/dev/null || true
+    rm -rf "${mnt}/usr/local/share/julia/doc" "${mnt}/usr/local/share/julia/man" 2>/dev/null || true
+    rm -rf "${mnt}/usr/local/share/doc" "${mnt}/usr/local/share/man" 2>/dev/null || true
+    cp -a "${julia_tmp}"/julia-*/etc "${mnt}/usr/local/" 2>/dev/null || true
+    rm -rf "${julia_tmp}"
+
+    [[ -f "${INSTALL_DIR}/bin/nova-agent" ]] && \
+        cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
+        chmod +x "${mnt}/init"
+
+    dd if=/dev/zero of="${output}" bs=1M count=1024 2>/dev/null
+    mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
+    rm -rf "${mnt}"
+    log "julia.ext4 ready ($(du -h ${output} | cut -f1))"
+}
+
+build_swift_rootfs() {
+    local output="${INSTALL_DIR}/rootfs/swift.ext4"
+    local mnt=$(mktemp -d)
+
+    log "Building swift rootfs (Alpine + gcompat + libstdc++)..."
+
+    cached_curl_pipe "${ALPINE_URL}" "alpine-minirootfs.tar.gz" | tar -xzf - -C "${mnt}"
+    mkdir -p "${mnt}"/{code,tmp}
+    prepare_chroot_dev "${mnt}"
+    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
+
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache gcompat libstdc++ libgcc" >/dev/null 2>&1
+
+    [[ -f "${INSTALL_DIR}/bin/nova-agent" ]] && \
+        cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
+        chmod +x "${mnt}/init"
+
+    cleanup_chroot_dev "${mnt}"
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_MB} 2>/dev/null
+    mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
+    rm -rf "${mnt}"
+    log "swift.ext4 ready ($(du -h ${output} | cut -f1))"
+}
+
+build_graalvm_rootfs() {
+    local output="${INSTALL_DIR}/rootfs/graalvm.ext4"
+    local mnt=$(mktemp -d)
+
+    log "Building graalvm rootfs (Alpine + OpenJDK)..."
+
+    cached_curl_pipe "${ALPINE_URL}" "alpine-minirootfs.tar.gz" | tar -xzf - -C "${mnt}"
+    mkdir -p "${mnt}"/{code,tmp}
+    prepare_chroot_dev "${mnt}"
+    echo "nameserver 8.8.8.8" > "${mnt}/etc/resolv.conf"
+
+    chroot "${mnt}" /bin/sh -c "apk add --no-cache openjdk21-jre-headless" >/dev/null 2>&1
+    chroot "${mnt}" /bin/sh -c 'jli="$(find /usr/lib/jvm -name libjli.so | head -n1)"; [ -n "$jli" ] && ln -sf "$jli" /usr/lib/libjli.so'
+
+    [[ -f "${INSTALL_DIR}/bin/nova-agent" ]] && \
+        cp "${INSTALL_DIR}/bin/nova-agent" "${mnt}/init" && \
+        chmod +x "${mnt}/init"
+
+    cleanup_chroot_dev "${mnt}"
+    dd if=/dev/zero of="${output}" bs=1M count=${ROOTFS_SIZE_GRAALVM_MB} 2>/dev/null
+    mkfs.ext4 -F -q -d "${mnt}" "${output}" >/dev/null
+    rm -rf "${mnt}"
+    log "graalvm.ext4 ready ($(du -h ${output} | cut -f1))"
+}
+
 rootfs_manifest_path() {
     echo "${INSTALL_DIR}/rootfs/.build-manifest"
 }
@@ -1163,6 +1343,12 @@ build_or_restore_php_rootfs()    { _build_or_restore_rootfs php; }
 build_or_restore_lua_rootfs()    { _build_or_restore_rootfs lua; }
 build_or_restore_deno_rootfs()   { _build_or_restore_rootfs deno; }
 build_or_restore_bun_rootfs()    { _build_or_restore_rootfs bun; }
+build_or_restore_elixir_rootfs() { _build_or_restore_rootfs elixir; }
+build_or_restore_perl_rootfs()   { _build_or_restore_rootfs perl; }
+build_or_restore_r_rootfs()      { _build_or_restore_rootfs r; }
+build_or_restore_julia_rootfs()  { _build_or_restore_rootfs julia; }
+build_or_restore_swift_rootfs()  { _build_or_restore_rootfs swift; }
+build_or_restore_graalvm_rootfs() { _build_or_restore_rootfs graalvm; }
 
 # Pre-download shared assets so parallel rootfs builds don't race on downloads.
 precache_rootfs_downloads() {
@@ -1180,6 +1366,13 @@ precache_rootfs_downloads() {
     cached_curl \
         "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/${BUN_MUSL_DIR}.zip" \
         /dev/null "bun-${BUN_VERSION}-${BUN_MUSL_DIR}.zip"
+    # Julia binary archive
+    local julia_major_minor julia_file_arch
+    julia_major_minor="$(echo "${JULIA_VERSION}" | cut -d. -f1-2)"
+    julia_file_arch="${ARCH}"
+    cached_curl \
+        "https://julialang-s3.julialang.org/bin/linux/${JULIA_ARCH}/${julia_major_minor}/julia-${JULIA_VERSION}-linux-${julia_file_arch}.tar.gz" \
+        /dev/null "julia-${JULIA_VERSION}-linux-${julia_file_arch}.tar.gz"
 }
 
 # Build all rootfs images in parallel.
@@ -1205,7 +1398,13 @@ build_rootfs_images() {
         build_or_restore_php_rootfs \
         build_or_restore_lua_rootfs \
         build_or_restore_deno_rootfs \
-        build_or_restore_bun_rootfs
+        build_or_restore_bun_rootfs \
+        build_or_restore_elixir_rootfs \
+        build_or_restore_perl_rootfs \
+        build_or_restore_r_rootfs \
+        build_or_restore_julia_rootfs \
+        build_or_restore_swift_rootfs \
+        build_or_restore_graalvm_rootfs
 
     write_rootfs_manifest
     log "Updated rootfs build manifest"

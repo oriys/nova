@@ -1,5 +1,5 @@
 # Deno runtime image
-FROM denoland/deno:2.1.4
+FROM denoland/deno:2.7.2
 
 USER root
 

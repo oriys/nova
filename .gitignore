@@ -65,3 +65,4 @@ orbit/target/
 
 # Swift (nova-vz)
 tools/nova-vz/.build/
+wget-log*

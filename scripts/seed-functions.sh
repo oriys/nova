@@ -54,7 +54,7 @@ create_function() {
             java*|kotlin*|scala*)
                 handler="Handler::handler"
                 ;;
-            go*|rust*|swift*|zig*|wasm*|provided*|custom*|c|cpp*)
+            go*|rust*|swift*|zig*|wasm*|provided*|custom*|c|cpp*|graalvm*)
                 handler="handler"
                 ;;
             *)
@@ -163,7 +163,42 @@ main() {
     create_function "hash-generator" "bun" '"const crypto = require(\"crypto\");\n\nfunction handler(event, context) {\n  const data = event.data || \"hello\";\n  const algorithm = event.algorithm || \"sha256\";\n  const hash = crypto.createHash(algorithm).update(data).digest(\"hex\");\n  return { data, algorithm, hash };\n}\n\nmodule.exports = { handler };"'
 
     # ─────────────────────────────────────────────────────────
-    # Compiled Languages (Go, Rust, Java, Kotlin, Scala, C, C++)
+    # Elixir Functions (handler-only style)
+    # ─────────────────────────────────────────────────────────
+    info "Creating Elixir functions..."
+
+    create_function "hello-elixir" "elixir" '"defmodule Handler do\n  def handler(event, context) do\n    name = Map.get(event, \"name\", \"World\")\n    %{message: \"Hello, #{name}!\", runtime: \"elixir\", request_id: context.request_id}\n  end\nend"'
+
+    # ─────────────────────────────────────────────────────────
+    # Lua Functions (handler-only style)
+    # ─────────────────────────────────────────────────────────
+    info "Creating Lua functions..."
+
+    create_function "hello-lua" "lua" '"function handler(event, context)\n    local name = event[\"name\"] or \"World\"\n    return {message = \"Hello, \" .. name .. \"!\", runtime = \"lua\", request_id = context.request_id}\nend"'
+
+    # ─────────────────────────────────────────────────────────
+    # Perl Functions (handler-only style)
+    # ─────────────────────────────────────────────────────────
+    info "Creating Perl functions..."
+
+    create_function "hello-perl" "perl" '"sub handler {\n    my ($event, $context) = @_;\n    my $name = $event->{\"name\"} // \"World\";\n    return {message => \"Hello, $name!\", runtime => \"perl\", request_id => $context->{\"request_id\"} // \"\"};\n}\n1;"'
+
+    # ─────────────────────────────────────────────────────────
+    # R Functions (handler-only style)
+    # ─────────────────────────────────────────────────────────
+    info "Creating R functions..."
+
+    create_function "hello-r" "r" '"handler <- function(event, context) {\n  name <- if (!is.null(event$name)) event$name else \"World\"\n  list(message = paste0(\"Hello, \", name, \"!\"), runtime = \"r\", request_id = context$request_id)\n}"' 256 120
+
+    # ─────────────────────────────────────────────────────────
+    # Julia Functions (handler-only style)
+    # ─────────────────────────────────────────────────────────
+    info "Creating Julia functions..."
+
+    create_function "hello-julia" "julia" '"function handler(event, context)\n    name = get(event, \"name\", \"World\")\n    return Dict(\"message\" => \"Hello, $(name)!\", \"runtime\" => \"julia\", \"request_id\" => get(context, \"request_id\", \"\"))\nend"' 512 120
+
+    # ─────────────────────────────────────────────────────────
+    # Compiled Languages (Go, Rust, Java, Kotlin, Scala, C, C++, Swift, Zig, GraalVM)
     # ─────────────────────────────────────────────────────────
     if [ "${SKIP_COMPILED}" = "1" ]; then
         warn "Skipping compiled languages (SKIP_COMPILED=1)"
@@ -209,6 +244,18 @@ main() {
         create_function "hello-cpp" "cpp" '"#include <string>\n\nstd::string handler(const std::string& event, const std::string& context) {\n    std::string name = \"World\";\n    std::string key = \"\\\"name\\\"\";\n    std::size_t keyPos = event.find(key);\n    if (keyPos != std::string::npos) {\n        std::size_t firstQuote = event.find(\"\\\"\", keyPos + key.size());\n        if (firstQuote != std::string::npos) {\n            std::size_t secondQuote = event.find(\"\\\"\", firstQuote + 1);\n            if (secondQuote != std::string::npos && secondQuote > firstQuote + 1) {\n                name = event.substr(firstQuote + 1, secondQuote - firstQuote - 1);\n            }\n        }\n    }\n    return std::string(\"{\\\"message\\\":\\\"Hello, \") + name + \"!\\\",\\\"runtime\\\":\\\"cpp\\\"}\";\n}"'
 
         create_function "number-stats-cpp" "cpp" '"#include <iomanip>\n#include <regex>\n#include <sstream>\n#include <string>\n\nstd::string handler(const std::string& event, const std::string& context) {\n    std::regex pattern(\"-?\\\\d+(?:\\\\.\\\\d+)?\");\n    auto begin = std::sregex_iterator(event.begin(), event.end(), pattern);\n    auto end = std::sregex_iterator();\n\n    int count = 0;\n    double sum = 0.0;\n    for (auto it = begin; it != end; ++it) {\n        sum += std::stod(it->str());\n        count++;\n    }\n\n    double avg = count == 0 ? 0.0 : sum / count;\n    std::ostringstream out;\n    out << std::fixed << std::setprecision(2);\n    out << \"{\\\"count\\\":\" << count << \",\\\"sum\\\":\" << sum << \",\\\"avg\\\":\" << avg << \"}\";\n    return out.str();\n}"'
+
+        info "Creating Swift functions (will be compiled)..."
+
+        create_function "hello-swift" "swift" '"func handler(event: String, context: NovaContext) -> String {\n    var name = \"World\"\n    let chars = Array(event)\n    let key: [Character] = [\"\\u{22}\", \"n\", \"a\", \"m\", \"e\", \"\\u{22}\"]\n    for i in 0..<(chars.count - key.count) {\n        var match = true\n        for j in 0..<key.count {\n            if chars[i+j] != key[j] { match = false; break }\n        }\n        if match {\n            var s = i + key.count\n            while s < chars.count && chars[s] != Character(\"\\u{22}\") { s += 1 }\n            s += 1\n            var e = s\n            while e < chars.count && chars[e] != Character(\"\\u{22}\") { e += 1 }\n            if e > s { name = String(chars[s..<e]) }\n            break\n        }\n    }\n    return \"{\\u{22}message\\u{22}:\\u{22}Hello, \\(name)!\\u{22},\\u{22}runtime\\u{22}:\\u{22}swift\\u{22}}\"\n}"' 256
+
+        info "Creating Zig functions (will be compiled)..."
+
+        create_function "hello-zig" "zig" '"const std = @import(\"std\");\n\npub fn handler(event: []const u8, allocator: std.mem.Allocator) ![]const u8 {\n    var name: []const u8 = \"World\";\n    if (std.mem.indexOf(u8, event, \"\\\"name\\\"\")) |key_pos| {\n        var i = key_pos + 6;\n        while (i < event.len and event[i] != 34) : (i += 1) {}\n        if (i < event.len) {\n            i += 1;\n            const start = i;\n            while (i < event.len and event[i] != 34) : (i += 1) {}\n            if (i > start) name = event[start..i];\n        }\n    }\n    return try std.fmt.allocPrint(allocator, \"{{\\\"message\\\":\\\"Hello, {s}!\\\",\\\"runtime\\\":\\\"zig\\\"}}\", .{name});\n}"' 256
+
+        info "Creating GraalVM functions (will be compiled to native-image)..."
+
+        create_function "hello-graalvm" "graalvm" '"import java.util.*;\n\npublic class Handler {\n    public static Object handler(String event, Map<String, Object> context) {\n        String name = \"World\";\n        int idx = event.indexOf(\"\\\"name\\\"\");\n        if (idx >= 0) {\n            int colon = event.indexOf(\":\", idx);\n            int q1 = event.indexOf(\"\\\"\", colon + 1);\n            int q2 = event.indexOf(\"\\\"\", q1 + 1);\n            if (q1 >= 0 && q2 > q1) name = event.substring(q1 + 1, q2);\n        }\n        return \"{\\\"message\\\":\\\"Hello, \" + name + \"!\\\",\\\"runtime\\\":\\\"graalvm\\\"}\";\n    }\n}"' 256
 
     fi
 

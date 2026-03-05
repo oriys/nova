@@ -77,13 +77,21 @@ invoke_with_retry "hello-deno" '{"name":"Deno"}'
 invoke_with_retry "base64-codec" '{"operation":"encode","data":"nova"}'
 invoke_with_retry "hello-bun" '{"name":"Bun"}'
 invoke_with_retry "hash-generator" '{"data":"nova","algorithm":"sha256"}'
+invoke_with_retry "hello-elixir" '{"name":"Elixir"}'
+invoke_with_retry "hello-lua" '{"name":"Lua"}'
+invoke_with_retry "hello-perl" '{"name":"Perl"}'
+invoke_with_retry "hello-r" '{"name":"R"}'
+invoke_with_retry "hello-julia" '{"name":"Julia"}'
+invoke_with_retry "hello-swift" '{"name":"Swift"}'
+invoke_with_retry "hello-zig" '{"name":"Zig"}'
+invoke_with_retry "hello-graalvm" '{"name":"GraalVM"}'
 
 echo ""
 echo "=========================================="
 echo "  Warm reuse (3 rapid requests each)"
 echo "=========================================="
 
-for fn in hello-python hello-node hello-go hello-rust hello-java hello-kotlin hello-scala hello-c hello-cpp hello-ruby hello-php hello-deno hello-bun; do
+for fn in hello-python hello-node hello-go hello-rust hello-java hello-kotlin hello-scala hello-c hello-cpp hello-ruby hello-php hello-deno hello-bun hello-elixir hello-lua hello-perl hello-r hello-julia hello-swift hello-zig hello-graalvm; do
   echo ""
   echo "--- ${fn} ---"
   for run_idx in 1 2 3; do

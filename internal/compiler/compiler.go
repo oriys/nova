@@ -346,7 +346,7 @@ func (c *Compiler) writeSourceFilesFromMap(workDir string, runtime domain.Runtim
 			}
 		}
 		if _, ok := files["go.mod"]; !ok {
-			goMod := "module handler\n\ngo 1.23\n"
+			goMod := "module handler\n\ngo 1.24\n"
 			if err := os.WriteFile(filepath.Join(workDir, "go.mod"), []byte(goMod), 0644); err != nil {
 				return err
 			}
@@ -1103,7 +1103,7 @@ func (c *Compiler) writeSourceFiles(workDir string, runtime domain.Runtime, sour
 			return err
 		}
 		// Always write go.mod so `go build` and `go mod tidy` work correctly
-		goMod := "module handler\n\ngo 1.23\n"
+		goMod := "module handler\n\ngo 1.24\n"
 		if err := os.WriteFile(filepath.Join(workDir, "go.mod"), []byte(goMod), 0644); err != nil {
 			return err
 		}
@@ -1232,7 +1232,7 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 		if p := resolveCompilePlatform(runtime); strings.Contains(p, "arm64") {
 			goarch = "arm64"
 		}
-		return "golang:1.23-alpine", fmt.Sprintf("cd /work && go mod tidy && CGO_ENABLED=0 GOOS=linux GOARCH=%s go build -o handler .", goarch)
+		return "golang:1.24-alpine", fmt.Sprintf("cd /work && go mod tidy && CGO_ENABLED=0 GOOS=linux GOARCH=%s go build -o handler .", goarch)
 	case domain.RuntimeRust:
 		rustTarget := resolveRustTarget()
 		return "rust:1.84-alpine", fmt.Sprintf("apk add --no-cache musl-dev gcc && cd /work && RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target %s && cp target/%s/release/handler /work/handler", rustTarget, rustTarget)
@@ -1241,7 +1241,7 @@ func dockerCompileCommand(runtime domain.Runtime) (image, cmd string) {
 	case domain.RuntimeKotlin:
 		return "gmazzo/kotlin:latest", "cd /work && kotlinc *.kt -include-runtime -d handler.jar && cp handler.jar handler"
 	case domain.RuntimeSwift:
-		return "swift:5.10", "cd /work && swiftc -o handler -static-executable Handler.swift main.swift"
+		return "swift:6.1", "cd /work && swiftc -o handler -static-executable Handler.swift main.swift"
 	case domain.RuntimeZig:
 		zigTarget := resolveZigTarget()
 		return "alpine:3.20", fmt.Sprintf("apk add --no-cache zig >/dev/null && cd /work && zig build-exe main.zig -O ReleaseFast -fstrip -target %s -femit-bin=handler", zigTarget)
