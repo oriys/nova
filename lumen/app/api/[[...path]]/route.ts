@@ -7,8 +7,9 @@ const BACKEND_URL =
   "http://localhost:9000";
 
 async function handler(req: NextRequest) {
-  const path = req.nextUrl.pathname.replace(/^\/api/, "");
-  const search = req.nextUrl.search;
+  const requestUrl = new URL(req.url);
+  const path = requestUrl.pathname.replace(/^\/api/, "");
+  const search = requestUrl.search;
   const targetUrl = `${BACKEND_URL}${path}${search}`;
 
   const headers = new Headers();
